@@ -44,6 +44,33 @@ netcast3r recon --input target.com --scope scope.txt --out-of-scope oos.txt
 netcast3r run   --input target.com --scope scope.txt --out-of-scope oos.txt
 ```
 
+## How it works
+
+```
+recon -> [ exegete || prospector ] -> assayer -> chainer -> sentinel -> report
+```
+
+The crawler collects JavaScript inside scope. The exegete reads each file line
+by line and maps its logic. The prospector hunts secrets at the same time. The
+assayer validates every candidate against its provider. The chainer maps the
+escalation, the sentinel scores and de-duplicates, and the report is written
+with the values redacted. If no provider answers, the deterministic path still
+produces a report.
+
+See [docs/architecture.md](docs/architecture.md).
+
+## Lab
+
+The lab proves the pipeline with no provider key and nothing real:
+
+```
+bash lab/run_lab.sh
+netcast3r run --input http://127.0.0.1:8099/ --out results \
+  --patterns lab/patterns.toml --recipes lab/recipes.toml
+```
+
+See [lab/README.md](lab/README.md).
+
 ## Providers
 
 NetCast3r talks to any OpenAI-compatible endpoint. OpenCode Zen and OpenRouter

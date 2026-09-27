@@ -1,0 +1,51 @@
+# Example configuration.
+# Copy to ~/.netcast3r/config.toml and edit. API keys are read from the
+# environment by default, so they never need to sit in this file.
+
+[[providers]]
+name = "opencode"
+base_url = "https://opencode.ai/zen/v1"
+api_key_env = "NETCAST3R_OPENCODE_KEY"
+priority = 10
+models = ["deepseek-v4-flash"]
+
+[[providers]]
+name = "openrouter"
+base_url = "https://openrouter.ai/api/v1"
+api_key_env = "NETCAST3R_OPENROUTER_KEY"
+priority = 20
+models = ["moonshotai/kimi-k2", "qwen/qwen3-coder"]
+
+[[providers]]
+name = "ollama"
+base_url = "http://127.0.0.1:11434/v1"
+priority = 50
+models = ["qwen2.5-coder"]
+
+[[routes]]
+agent = "exegete"
+model = "deepseek-v4-flash"
+provider = "opencode"
+reasoning = true
+
+[[routes]]
+agent = "prospector"
+model = "deepseek-v4-flash"
+provider = "opencode"
+temperature = 0.0
+
+[egress]
+use_public = true
+user_proxies = []
+
+[scope]
+in_scope = ""
+out_of_scope = ""
+
+[run]
+depth = 2
+concurrency = 20
+timeout = 15
+action_tier = "read"
+patterns_file = ""
+recipes_file = ""
