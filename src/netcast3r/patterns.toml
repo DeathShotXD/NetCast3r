@@ -1,0 +1,96 @@
+[[pattern]]
+id = "aws_access_key"
+type = "aws"
+regex = "AKIA[0-9A-Z]{16}"
+description = "AWS access key id"
+
+[[pattern]]
+id = "aws_secret_key"
+type = "aws_secret"
+regex = "(?i)aws[_\\-\\s]?secret[_\\-\\s]?(?:access)?[_\\-\\s]?key[\"']?\\s*[:=]\\s*[\"']?([A-Za-z0-9/+=]{40})"
+description = "AWS secret access key assigned in code"
+
+[[pattern]]
+id = "google_api_key"
+type = "google_api"
+regex = "AIza[0-9A-Za-z\\-_]{35}"
+description = "Google API key"
+
+[[pattern]]
+id = "google_oauth"
+type = "google_oauth"
+regex = "[0-9]+-[0-9A-Za-z_]{32}\\.apps\\.googleusercontent\\.com"
+description = "Google OAuth client id"
+
+[[pattern]]
+id = "stripe_live"
+type = "stripe_live"
+regex = "sk_live_[0-9A-Za-z]{24,}"
+description = "Stripe live secret key"
+
+[[pattern]]
+id = "stripe_test"
+type = "stripe_test"
+regex = "sk_test_[0-9A-Za-z]{24,}"
+description = "Stripe test secret key"
+
+[[pattern]]
+id = "slack_token"
+type = "slack"
+regex = "xox[baprs]-[0-9A-Za-z\\-]{10,}"
+description = "Slack token"
+
+[[pattern]]
+id = "slack_webhook"
+type = "slack_webhook"
+regex = "https://hooks\\.slack\\.com/services/T[0-9A-Za-z_]+/B[0-9A-Za-z_]+/[0-9A-Za-z_]+"
+description = "Slack incoming webhook"
+
+[[pattern]]
+id = "github_token"
+type = "github"
+regex = "gh[pousr]_[0-9A-Za-z]{36,}"
+description = "GitHub token"
+
+[[pattern]]
+id = "gitlab_token"
+type = "gitlab"
+regex = "glpat-[0-9A-Za-z\\-_]{20,}"
+description = "GitLab personal access token"
+
+[[pattern]]
+id = "sendgrid_key"
+type = "sendgrid"
+regex = "SG\\.[0-9A-Za-z\\-_]{22}\\.[0-9A-Za-z\\-_]{43}"
+description = "SendGrid API key"
+
+[[pattern]]
+id = "mapbox_token"
+type = "mapbox"
+regex = "pk\\.[0-9A-Za-z]{60,}"
+description = "Mapbox public token"
+
+[[pattern]]
+id = "firebase_url"
+type = "firebase"
+regex = "https://[a-z0-9\\-]+\\.firebaseio\\.com"
+description = "Firebase database URL"
+
+[[pattern]]
+id = "private_key"
+type = "private_key"
+regex = "-----BEGIN (?:RSA |EC |OPENSSH |DSA |PGP )?PRIVATE KEY-----"
+description = "Private key block"
+
+[[pattern]]
+id = "jwt"
+type = "jwt"
+regex = "eyJ[A-Za-z0-9_\\-]{10,}\\.[A-Za-z0-9_\\-]{10,}\\.[A-Za-z0-9_\\-]{10,}"
+description = "JSON Web Token"
+
+[[pattern]]
+id = "generic_assignment"
+type = "generic"
+regex = "(?i)(?:api[_\\-]?key|apikey|secret|token|password|passwd|access[_\\-]?key)\\s*[:=]\\s*[\"']([A-Za-z0-9\\-_./+=]{12,64})[\"']"
+description = "Generic secret assigned to a variable"
+entropy = 3.2
