@@ -7,6 +7,7 @@ go straight into a program.
 
 from __future__ import annotations
 
+import json
 import time
 from pathlib import Path
 
@@ -44,6 +45,9 @@ def render(target: str, summary: dict, findings: list[dict],
         lines.append(f"- source: {finding.get('source', '')}")
         lines.append(f"- status: {finding.get('status', '')}")
         lines.append("")
+        if finding.get("narrative"):
+            lines.append(str(finding["narrative"]).strip())
+            lines.append("")
         lines.append("Impact")
         lines.append("")
         lines.append(f"{finding.get('impact', '')}")
@@ -81,4 +85,22 @@ def save(target: str, summary: dict, findings: list[dict],
     directory.mkdir(parents=True, exist_ok=True)
     path = directory / "report.md"
     path.write_text(render(target, summary, findings, out_of_scope))
+    return path
+
+
+def save_json(out_dir: str | Path, summary: dict, findings: list[dict]) -> Path:
+    directory = Path(out_dir)
+    directory.mkdir(parents=True, exist_ok=True)
+    path = directory / "results.json"
+    path.write_text(json.dumps({"summary": summary, "findings": findings}, indent=2, default=str))
+    return path
+
+
+def save_jsonl(out_dir: str | Path, findings: list[dict]) -> Path:
+    directory = Path(out_dir)
+    directory.mkdir(parents=True, exist_ok=True)
+    path = directory / "results.jsonl"
+    with open(path, "w") as handle:
+        for finding in findings:
+            handle.write(json.dumps(finding, default=str) + "\n")
     return path

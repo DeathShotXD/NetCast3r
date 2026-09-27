@@ -9,14 +9,15 @@ from __future__ import annotations
 
 
 class Console:
-    def __init__(self, show_reasoning: bool = True):
+    def __init__(self, show_reasoning: bool = True, color: bool = True):
         self.show_reasoning = show_reasoning
         self._rich = None
-        try:
-            from rich.console import Console as RichConsole
-            self._rich = RichConsole()
-        except Exception:
-            self._rich = None
+        if color:
+            try:
+                from rich.console import Console as RichConsole
+                self._rich = RichConsole()
+            except Exception:
+                self._rich = None
 
     def _emit(self, text: str) -> None:
         if self._rich is not None:

@@ -1,9 +1,10 @@
 """Orchestrator.
 
 Runs the pipeline: recon, then the prospector and the exegete side by side,
-then the assayer, the chainer, the sentinel, and the report. Every agent is
-optional. When no provider is reachable the run falls back to the
-deterministic path and still produces a report.
+then the assayer, the chainer, the sentinel, and the report. Every model stage
+is optional. When no provider is reachable the run falls back to the
+deterministic path and still produces a report. A run that is stopped early
+still writes what it has.
 """
 
 from __future__ import annotations
@@ -14,14 +15,16 @@ from pathlib import Path
 
 from .agents import Roster
 from .egress import ProxyPool
+from .http import Session, StopRun
 from .knowledge import Knowledge
 from .providers import ProviderBus
 from .recon import Recon
 from .report import save as save_report
+from .report import save_json, save_jsonl
 from .secrets import Extractor, Secret, load_patterns
 from .store import Store
 from .tui import Console
-from .validate import Validator, load_recipes
+from .validate import Recipe, Validator, load_recipes
 
 
 SEVERITY_BY_TYPE = {
@@ -53,29 +56,58 @@ class RunSummary:
 class Orchestrator:
     def __init__(self, config, scope, store: Store, console: Console | None = None,
                  bus: ProviderBus | None = None, use_agents: bool = True,
-                 validator: Validator | None = None, extractor: Extractor | None = None):
+                 validator: Validator | None = None, extractor: Extractor | None = None,
+                 session: Session | None = None):
         self.config = config
         self.scope = scope
         self.store = store
-        self.console = console or Console()
+        self.console = console or Console(show_reasoning=config.run.verbosity > 1,
+                                          color=config.run.color)
         self.egress = ProxyPool(config.egress)
         self.bus = bus if bus is not None else ProviderBus(config, self.egress)
         self.knowledge = Knowledge()
         self.roster = Roster(self.bus, self.knowledge)
         self.use_agents = use_agents
+        self.session = session or Session(config, self.egress)
         patterns = load_patterns(Path(config.run.patterns_file)) if config.run.patterns_file else None
         recipes = load_recipes(Path(config.run.recipes_file)) if config.run.recipes_file else None
         self.validator = validator or Validator(recipes=recipes or load_recipes(),
                                                 tier=config.run.action_tier,
-                                                timeout=config.run.timeout)
+                                                timeout=config.run.timeout,
+                                                session=self.session)
         self.extractor = extractor or Extractor(patterns=patterns)
+        self._out_of_scope: list[str] = []
 
     def run(self, seeds: list[str]) -> RunSummary:
         target = seeds[0] if seeds else ""
         self.console.header(target)
+        summary: dict = {"pages": 0, "js_files": 0, "endpoints": 0, "candidates": 0,
+                         "verified": 0, "findings": 0, "files_read": 0}
+        findings: list[dict] = []
+        try:
+            summary, findings = self._pipeline(seeds)
+        except StopRun as exc:
+            self.console.line("run", f"stop condition met: {exc}")
+        except KeyboardInterrupt:
+            self.console.line("run", "interrupted, writing what we have")
 
-        recon = Recon(self.scope, self.config)
+        report_path = save_report(target, summary, findings, self.store.path.parent, self._out_of_scope)
+        if self.config.run.output_format == "json":
+            save_json(self.store.path.parent, summary, findings)
+        elif self.config.run.output_format == "jsonl":
+            save_jsonl(self.store.path.parent, findings)
+        self.console.line("scribe", f"report written to {report_path}")
+        self.console.summary({**summary, **self.session.stats.as_dict(), "report": str(report_path)})
+        self.session.close()
+        return RunSummary(target=target, pages=summary["pages"], js_files=summary["js_files"],
+                          endpoints=summary["endpoints"], candidates=summary["candidates"],
+                          verified=summary["verified"], findings=summary["findings"],
+                          report=str(report_path))
+
+    def _pipeline(self, seeds: list[str]):
+        recon = Recon(self.scope, self.config, session=self.session)
         result = recon.crawl(seeds)
+        self._out_of_scope = result.out_of_scope
         self.console.line("recon", f"{len(result.pages)} pages, {len(result.js_urls)} js files, "
                                    f"{len(result.endpoints)} endpoints, "
                                    f"{len(result.out_of_scope)} skipped out of scope")
@@ -90,11 +122,17 @@ class Orchestrator:
 
         candidates = self._prospect(result.js_text)
         self.console.line("prospector", f"{len(candidates)} candidates")
+        candidates = self._triage(candidates)
 
-        exegete_notes = self._exegete(result.js_text)
-
+        self._exegete(result.js_text)
         findings = self._assay(candidates)
-        findings = self._chainer(findings)
+
+        for finding in findings:
+            steps, narrative = self._escalate(finding)
+            finding["reproduction"] = steps
+            if narrative:
+                finding.setdefault("notes", narrative)
+            self._scribe(finding)
         findings = self._sentinel(findings)
 
         for finding in findings:
@@ -109,16 +147,8 @@ class Orchestrator:
             "candidates": len(candidates),
             "verified": len(findings),
             "findings": len(findings),
-            "files_read": len(exegete_notes),
         }
-        report_path = save_report(target, summary, findings, self.store.path.parent,
-                                  result.out_of_scope)
-        self.console.line("scribe", f"report written to {report_path}")
-        self.console.summary({**summary, "report": str(report_path)})
-        return RunSummary(target=target, pages=summary["pages"], js_files=summary["js_files"],
-                          endpoints=summary["endpoints"], candidates=summary["candidates"],
-                          verified=summary["verified"], findings=summary["findings"],
-                          report=str(report_path))
+        return summary, findings
 
     def _prospect(self, js_text: dict) -> list[Secret]:
         candidates: list[Secret] = []
@@ -133,18 +163,31 @@ class Orchestrator:
                 self.store.add_secret(secret.type, secret.value, secret.source, secret.context)
         return candidates
 
+    def _triage(self, candidates: list[Secret]) -> list[Secret]:
+        if not (self.use_agents and candidates and self.roster.prospector.available()):
+            return candidates
+        payload = [{"type": s.type, "value": s.value[:24], "source": s.source} for s in candidates]
+        result = self.roster.prospector.triage(payload, on_reasoning=self._reason("prospector"))
+        data = result.data or {}
+        order = {}
+        for item in data.get("items", []):
+            if isinstance(item, dict) and item.get("value"):
+                order[str(item["value"])[:24]] = int(item.get("priority", 100))
+        if not order:
+            return candidates
+        ranked = sorted(candidates, key=lambda s: order.get(s.value[:24], 100))
+        self.console.line("prospector", "candidates ranked by the model")
+        return ranked
+
     def _exegete(self, js_text: dict) -> dict:
-        if not self.use_agents or not self.roster.exegete.available() or not js_text:
+        if not (self.use_agents and self.roster.exegete.available() and js_text):
             self.console.line("exegete", "no provider reachable, deterministic path in use")
             return {}
-        notes: dict = {}
         self.console.line("exegete", f"reading {len(js_text)} files")
-
-        def reason(text: str) -> None:
-            self.console.reasoning("exegete", text)
-
+        notes: dict = {}
         with ThreadPoolExecutor(max_workers=min(8, len(js_text))) as pool:
-            futures = {pool.submit(self.roster.exegete.analyze, url, text, reason): url
+            futures = {pool.submit(self.roster.exegete.analyze, url, text,
+                                   self._reason("exegete")): url
                        for url, text in js_text.items()}
             for future in as_completed(futures):
                 result = future.result()
@@ -155,6 +198,7 @@ class Orchestrator:
     def _assay(self, candidates: list[Secret]) -> list[dict]:
         findings: list[dict] = []
         for secret in candidates:
+            self._ensure_recipe(secret.type)
             validation = self.validator.validate(secret.type, secret.value, secret.source)
             self.store.add_validation(secret.type, secret.value, validation.status,
                                       validation.provider, validation.detail, validation.evidence)
@@ -162,6 +206,27 @@ class Orchestrator:
             if validation.status == "verified":
                 findings.append(self._finding(secret, validation))
         return findings
+
+    def _ensure_recipe(self, secret_type: str) -> None:
+        if secret_type in self.validator.recipes:
+            return
+        if not (self.use_agents and self.config.run.allow_model_checks
+                and self.roster.assayer.available()):
+            return
+        result = self.roster.assayer.plan(secret_type, "", on_reasoning=self._reason("assayer"))
+        data = result.data or {}
+        url = str(data.get("url") or "")
+        if not url.startswith("http"):
+            return
+        self.validator.recipes[secret_type] = Recipe(
+            type=secret_type,
+            provider=str(data.get("provider") or secret_type),
+            method=str(data.get("method") or "GET").upper(),
+            url=url,
+            headers=dict(data.get("headers") or {}),
+            success_match=str(data.get("success_marker") or ""),
+        )
+        self.console.line("assayer", f"planned a read only check for {secret_type}")
 
     def _finding(self, secret: Secret, validation) -> dict:
         severity = SEVERITY_BY_TYPE.get(secret.type, "high")
@@ -176,20 +241,43 @@ class Orchestrator:
             "impact": (f"A live {secret.type} credential is shipped to every visitor in "
                        f"{secret.source}. Anyone can read it and use it as the account."),
             "proof": validation.evidence or validation.detail,
-            "reproduction": self._escalation(secret.type),
+            "reproduction": [],
         }
 
-    def _escalation(self, secret_type: str) -> list[str]:
-        steps = self.knowledge.escalation(secret_type)
-        if steps:
-            return steps
-        return ["Repeat the proof request to confirm the credential is still live."]
+    def _escalate(self, finding: dict):
+        steps = self.knowledge.escalation(finding["secret_type"])
+        narrative = ""
+        if self.use_agents and self.roster.chainer.available():
+            result = self.roster.chainer.escalate(finding["secret_type"], finding["status"],
+                                                  on_reasoning=self._reason("chainer"))
+            data = result.data or {}
+            ai_steps = [str(step.get("command")) for step in data.get("steps", [])
+                        if isinstance(step, dict) and step.get("command")]
+            if ai_steps:
+                steps = ai_steps + steps
+            if data.get("impact"):
+                finding["impact"] = str(data["impact"])
+            if data.get("severity"):
+                finding["severity"] = str(data["severity"]).lower()
+            narrative = str(data.get("notes") or "")
+        if not steps:
+            steps = ["Repeat the proof request to confirm the credential is still live."]
+        return steps, narrative
 
-    def _chainer(self, findings: list[dict]) -> list[dict]:
-        return findings
+    def _scribe(self, finding: dict) -> None:
+        if not (self.use_agents and self.roster.scribe.available()):
+            return
+        result = self.roster.scribe.write(finding, on_reasoning=self._reason("scribe"))
+        if result.text.strip():
+            finding["narrative"] = result.text.strip()
 
     def _sentinel(self, findings: list[dict]) -> list[dict]:
         unique: dict[tuple[str, str], dict] = {}
         for finding in findings:
             unique.setdefault((finding["secret_type"], finding["value"]), finding)
         return list(unique.values())
+
+    def _reason(self, agent: str):
+        def sink(text: str) -> None:
+            self.console.reasoning(agent, text)
+        return sink
