@@ -1,0 +1,8 @@
+[[recipe]]
+type = "mock"
+provider = "NetCast3r Lab"
+method = "GET"
+url = "http://127.0.0.1:8787/verify?key={value}"
+success_codes = [200]
+success_match = "\"alive\": true"
+fail_match = "\"alive\": false"

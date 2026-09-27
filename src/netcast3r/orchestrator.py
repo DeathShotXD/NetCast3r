@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
+from pathlib import Path
 
 from .agents import Roster
 from .egress import ProxyPool
@@ -17,7 +18,7 @@ from .knowledge import Knowledge
 from .providers import ProviderBus
 from .recon import Recon
 from .report import save as save_report
-from .secrets import Extractor, Secret
+from .secrets import Extractor, Secret, load_patterns
 from .store import Store
 from .tui import Console
 from .validate import Validator, load_recipes
@@ -62,8 +63,12 @@ class Orchestrator:
         self.knowledge = Knowledge()
         self.roster = Roster(self.bus, self.knowledge)
         self.use_agents = use_agents
-        self.validator = validator or Validator(recipes=load_recipes(), tier=config.run.action_tier)
-        self.extractor = extractor or Extractor()
+        patterns = load_patterns(Path(config.run.patterns_file)) if config.run.patterns_file else None
+        recipes = load_recipes(Path(config.run.recipes_file)) if config.run.recipes_file else None
+        self.validator = validator or Validator(recipes=recipes or load_recipes(),
+                                                tier=config.run.action_tier,
+                                                timeout=config.run.timeout)
+        self.extractor = extractor or Extractor(patterns=patterns)
 
     def run(self, seeds: list[str]) -> RunSummary:
         target = seeds[0] if seeds else ""

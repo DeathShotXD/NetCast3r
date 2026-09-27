@@ -28,6 +28,10 @@ def _prepare(args):
         config.run.depth = args.depth
     if getattr(args, "tier", None):
         config.run.action_tier = args.tier
+    if getattr(args, "patterns", None):
+        config.run.patterns_file = args.patterns
+    if getattr(args, "recipes", None):
+        config.run.recipes_file = args.recipes
     seeds = _load_seeds(args.input)
     scope = ScopeManager.from_files(args.scope, args.out_of_scope, extra_in=seeds)
     return config, seeds, scope
@@ -103,6 +107,8 @@ def build_parser() -> argparse.ArgumentParser:
         p.add_argument("--out", help="output directory (default: results)")
         p.add_argument("--depth", type=int, help="crawl depth")
         p.add_argument("--tier", choices=["read", "write", "full"], help="action tier")
+        p.add_argument("--patterns", help="path to a custom secret patterns file")
+        p.add_argument("--recipes", help="path to a custom validation recipes file")
         p.add_argument("--config", help="path to a config file")
 
     recon_parser = sub.add_parser("recon", help="crawl and collect assets only")

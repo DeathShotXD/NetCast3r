@@ -75,6 +75,8 @@ class RunConfig:
     depth: int = 2
     action_tier: str = "read"
     user_agent: str = "Mozilla/5.0 (compatible; NetCast3r)"
+    patterns_file: str = ""
+    recipes_file: str = ""
 
 
 @dataclass

@@ -1,0 +1,5 @@
+[[pattern]]
+id = "lab_token"
+type = "mock"
+regex = "NC3RLABKEY[0-9A-Z]+"
+description = "NetCast3r lab token"
