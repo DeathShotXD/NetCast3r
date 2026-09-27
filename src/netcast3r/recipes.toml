@@ -1,0 +1,75 @@
+# Validation recipes.
+#
+# Each recipe knows how to ask a provider whether a value is alive. The value
+# is substituted for {value} and {value2}. A recipe is read-only unless its
+# write flag is set, and write recipes only run when the run tier allows it.
+#
+#   success_codes  response codes that mean the credential is alive
+#   success_match  a substring that must also appear in the body
+#   fail_codes     response codes that mean the credential is dead
+#   fail_match     a substring that means the credential is dead
+#   write          true if the recipe changes state on the provider side
+
+[[recipe]]
+type = "github"
+provider = "GitHub"
+method = "GET"
+url = "https://api.github.com/user"
+headers = { Authorization = "token {value}", "User-Agent" = "netcast3r" }
+success_codes = [200]
+success_match = "\"login\""
+fail_codes = [401]
+
+[[recipe]]
+type = "slack"
+provider = "Slack"
+method = "POST"
+url = "https://slack.com/api/auth.test"
+headers = { Authorization = "Bearer {value}" }
+success_codes = [200]
+success_match = "\"ok\":true"
+fail_match = "\"ok\":false"
+
+[[recipe]]
+type = "stripe_live"
+provider = "Stripe"
+method = "GET"
+url = "https://api.stripe.com/v1/charges"
+headers = { Authorization = "Bearer {value}" }
+success_codes = [200]
+fail_codes = [401]
+
+[[recipe]]
+type = "sendgrid"
+provider = "SendGrid"
+method = "GET"
+url = "https://api.sendgrid.com/v3/scopes"
+headers = { Authorization = "Bearer {value}" }
+success_codes = [200]
+fail_codes = [401, 403]
+
+[[recipe]]
+type = "google_api"
+provider = "Google"
+method = "GET"
+url = "https://maps.googleapis.com/maps/api/geocode/json?address=test&key={value}"
+success_codes = [200]
+success_match = "\"status\" : \"OK\""
+fail_match = "REQUEST_DENIED"
+
+[[recipe]]
+type = "shodan"
+provider = "Shodan"
+method = "GET"
+url = "https://api.shodan.io/api-info?key={value}"
+success_codes = [200]
+fail_codes = [401]
+
+[[recipe]]
+type = "mock"
+provider = "NetCast3r Lab"
+method = "GET"
+url = "http://127.0.0.1:8787/verify?key={value}"
+success_codes = [200]
+success_match = "\"alive\":true"
+fail_match = "\"alive\":false"
