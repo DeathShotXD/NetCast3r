@@ -1,0 +1,32 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "netcast3r"
+version = "0.1.0"
+description = "Cast a net over the web: crawl a target, read its JavaScript, hunt secrets, validate them, and write the report."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "0xDeathShotX_X", url = "https://github.com/DeathShotXD" }]
+dependencies = [
+    "httpx>=0.27",
+    "rich>=13.0",
+]
+
+[project.optional-dependencies]
+tui = ["textual>=0.80"]
+dev = ["pytest>=8.0"]
+
+[project.scripts]
+netcast3r = "netcast3r.cli:main"
+
+[tool.setuptools]
+package-dir = { "" = "src" }
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+netcast3r = ["*.toml"]
