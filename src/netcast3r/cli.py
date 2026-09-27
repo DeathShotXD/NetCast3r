@@ -8,11 +8,10 @@ from pathlib import Path
 
 from . import __version__
 from .config import load_config
+from .orchestrator import Orchestrator
 from .recon import Recon
 from .scope import ScopeManager
-from .secrets import Extractor
 from .store import Store
-from .validate import Validator, load_recipes
 
 
 def _load_seeds(value: str) -> list[str]:
@@ -67,59 +66,12 @@ def cmd_recon(args) -> int:
 
 def cmd_run(args) -> int:
     config, seeds, scope = _prepare(args)
-    recon = Recon(scope, config)
-    result = recon.crawl(seeds)
-
     out = Path(args.out or "results")
     store = Store(out / "netcast3r.db")
-    for url in result.pages:
-        store.add_asset(url, "page", 200)
-    for url in result.js_urls:
-        store.add_js(url, result.js_text.get(url, ""))
-        store.add_endpoint(url, "js")
-
-    extractor = Extractor()
-    validator = Validator(recipes=load_recipes(), tier=config.run.action_tier,
-                          timeout=config.run.timeout)
-
-    secrets_found = []
-    for url, text in result.js_text.items():
-        for secret in extractor.scan(text, source=url):
-            secrets_found.append(secret)
-            store.add_secret(secret.type, secret.value, secret.source, secret.context)
-            store.add_endpoint(secret.value if secret.value.startswith("/") else url, "secret-context")
-
-    print(f"pages found      : {len(result.pages)}")
-    print(f"js files found   : {len(result.js_urls)}")
-    print(f"candidates found : {len(secrets_found)}")
-    print("")
-
-    verified = 0
-    for secret in secrets_found:
-        validation = validator.validate(secret.type, secret.value, secret.source)
-        store.add_validation(secret.type, secret.value, validation.status,
-                             validation.provider, validation.detail, validation.evidence)
-        marker = {"verified": "LIVE", "unverified": "dead", "unknown": "unknown", "skipped": "held"}.get(
-            validation.status, validation.status)
-        print(f"  [{marker}] {secret.type}: {secret.value[:16]}...  ({validation.detail})")
-        if validation.status == "verified":
-            verified += 1
-            store.add_finding(
-                title=f"{validation.provider} credential exposed in JavaScript",
-                severity="high",
-                secret_type=secret.type,
-                value=secret.value,
-                impact=f"live {secret.type} credential found in {secret.source}",
-                evidence=validation.evidence,
-            )
-
-    counts = store.counts()
+    orchestrator = Orchestrator(config, scope, store)
+    summary = orchestrator.run(seeds)
     store.close()
-    print("")
-    print(f"live credentials : {verified}")
-    print(f"evidence store   : {out / 'netcast3r.db'}")
-    print(f"rows             : {counts}")
-    return 0
+    return 0 if summary else 1
 
 
 def cmd_providers(args) -> int:
