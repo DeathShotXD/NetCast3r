@@ -69,6 +69,7 @@ class OrchestratorTests(unittest.TestCase):
     def test_pipeline_produces_finding_and_report(self):
         config = default_config()
         config.run.depth = 2
+        config.egress.use_public = False
         seed = f"http://127.0.0.1:{self.target_port}/"
         scope = ScopeManager(out_of_scope=["evil.example.net"])
 
