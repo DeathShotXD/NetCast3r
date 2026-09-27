@@ -77,6 +77,17 @@ class RunConfig:
     user_agent: str = "Mozilla/5.0 (compatible; NetCast3r)"
     patterns_file: str = ""
     recipes_file: str = ""
+    requests_per_second: float = 0.0
+    delay: float = 0.0
+    retries: int = 2
+    max_response_size: int = 5_000_000
+    stop_on_rate_limit: bool = True
+    random_user_agent: bool = False
+    user_agents: list[str] = field(default_factory=list)
+    verbosity: int = 1
+    color: bool = True
+    output_format: str = "markdown"
+    allow_model_checks: bool = True
 
 
 @dataclass

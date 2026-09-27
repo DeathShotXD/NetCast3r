@@ -76,12 +76,14 @@ def _render(template: str, value: str, value2: str = "") -> str:
 
 class Validator:
     def __init__(self, recipes: dict[str, Recipe] | None = None, tier: str = "read",
-                 timeout: float = 15.0, client: httpx.Client | None = None, egress=None):
+                 timeout: float = 15.0, client: httpx.Client | None = None, egress=None,
+                 session=None):
         self.recipes = recipes if recipes is not None else load_recipes()
         self.tier = tier
         self.timeout = timeout
         self.client = client
         self.egress = egress
+        self.session = session
 
     def validate(self, secret_type: str, value: str, source: str = "") -> Validation:
         recipe = self.recipes.get(secret_type)
@@ -97,7 +99,9 @@ class Validator:
         proxy = self.egress.get() if self.egress else None
 
         try:
-            if self.client is not None:
+            if self.session is not None:
+                response = self.session.request(recipe.method, url, headers=headers, content=body)
+            elif self.client is not None:
                 response = self.client.request(recipe.method, url, headers=headers, content=body)
             else:
                 with httpx.Client(timeout=self.timeout, follow_redirects=False, proxy=proxy) as client:
@@ -107,6 +111,10 @@ class Validator:
                 self.egress.mark_failed(proxy)
             return Validation(secret_type, value, "unknown", provider=recipe.provider,
                               detail=f"request failed: {type(exc).__name__}")
+
+        if response is None:
+            return Validation(secret_type, value, "unknown", provider=recipe.provider,
+                              detail="no response")
 
         text = response.text or ""
         status = response.status_code

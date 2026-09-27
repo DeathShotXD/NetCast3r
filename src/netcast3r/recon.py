@@ -8,17 +8,20 @@ crawler runs.
 
 from __future__ import annotations
 
+import json
 import re
 import shutil
 from dataclasses import dataclass, field
 from urllib.parse import urljoin
 
-import httpx
+from .http import Session
 
 LINK_RE = re.compile(r"""(?:href|src|action)\s*=\s*["']([^"'#]+)["']""", re.I)
 JS_REF_RE = re.compile(r"""(?:src|href)\s*=\s*["']([^"']+\.js(?:\?[^"']*)?)["']""", re.I)
 JS_IMPORT_RE = re.compile(r"""(?:import\s*\(\s*|from\s*|require\(\s*)["']([^"']+\.js[^"']*)["']""")
 ENDPOINT_RE = re.compile(r"""["'](/[A-Za-z0-9_\-./]{2,}(?:\?[A-Za-z0-9_\-=&%]*)?)["']""")
+ASSET_EXT = (".png", ".jpg", ".jpeg", ".gif", ".svg", ".css", ".woff", ".woff2",
+             ".ico", ".mp4", ".webm", ".pdf", ".zip")
 
 
 @dataclass
@@ -36,23 +39,18 @@ def _absolute(base: str, link: str) -> str:
 
 
 class Recon:
-    def __init__(self, scope, config, client: httpx.Client | None = None):
+    def __init__(self, scope, config, session: Session | None = None):
         self.scope = scope
         self.config = config
-        self.client = client or httpx.Client(
-            timeout=config.run.timeout,
-            follow_redirects=True,
-            headers={"User-Agent": config.run.user_agent},
-        )
+        self.session = session or Session(config)
         self.max_depth = config.run.depth
-        self.max_pages = config.run.concurrency * 25
+        self.max_pages = max(config.run.concurrency * 25, 100)
 
     def _fetch(self, url: str):
-        try:
-            response = self.client.get(url)
-            return response.status_code, response.text, response.headers.get("content-type", "")
-        except Exception:
+        response = self.session.get(url)
+        if response is None:
             return 0, "", ""
+        return response.status_code, response.text, response.headers.get("content-type", "")
 
     def crawl(self, seeds: list[str]) -> ReconResult:
         result = ReconResult()
@@ -87,10 +85,9 @@ class Recon:
                     result.endpoints.append(_absolute(url, endpoint))
             else:
                 result.pages.append(url)
-                links = LINK_RE.findall(text)
-                for link in links:
+                for link in LINK_RE.findall(text):
                     child = _absolute(url, link)
-                    if child.endswith((".png", ".jpg", ".jpeg", ".gif", ".svg", ".css", ".woff", ".woff2")):
+                    if child.endswith(ASSET_EXT):
                         continue
                     if self.scope.is_in_scope(child):
                         if ".js" in child.split("?")[0].lower():
@@ -111,10 +108,12 @@ class Recon:
     def wayback(self, domain: str, limit: int = 5000) -> list[str]:
         query = (f"http://web.archive.org/cdx/search/cdx?url={domain}/*"
                  f"&output=json&fl=original&collapse=urlkey&limit={limit}")
+        response = self.session.get(query)
+        if response is None:
+            return []
         try:
-            with httpx.Client(timeout=self.config.run.timeout) as client:
-                rows = client.get(query).json()
-        except Exception:
+            rows = json.loads(response.text)
+        except json.JSONDecodeError:
             return []
         urls = []
         for row in rows[1:]:
