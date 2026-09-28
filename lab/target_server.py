@@ -8,6 +8,7 @@ Run it on its own or through lab/run_lab.sh.
 
 from __future__ import annotations
 
+import os
 import sys
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
@@ -64,8 +65,9 @@ class Handler(BaseHTTPRequestHandler):
 
 def main() -> None:
     port = int(sys.argv[1]) if len(sys.argv) > 1 else 8099
-    server = ThreadingHTTPServer(("127.0.0.1", port), Handler)
-    print(f"lab target on http://127.0.0.1:{port}")
+    host = os.environ.get("LAB_HOST", "127.0.0.1")
+    server = ThreadingHTTPServer((host, port), Handler)
+    print(f"lab target on http://{host}:{port}")
     try:
         server.serve_forever()
     except KeyboardInterrupt:

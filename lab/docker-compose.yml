@@ -1,0 +1,22 @@
+services:
+  target:
+    image: python:3.12-slim
+    working_dir: /lab
+    environment:
+      LAB_HOST: 0.0.0.0
+    volumes:
+      - ./:/lab:ro
+    command: python target_server.py 8099
+    ports:
+      - "8099:8099"
+
+  verify:
+    image: python:3.12-slim
+    working_dir: /lab
+    environment:
+      LAB_HOST: 0.0.0.0
+    volumes:
+      - ./:/lab:ro
+    command: python verify_server.py 8787
+    ports:
+      - "8787:8787"

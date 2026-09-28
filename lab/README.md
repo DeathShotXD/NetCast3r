@@ -14,6 +14,12 @@ provider key. It has two parts:
 bash lab/run_lab.sh
 ```
 
+Or with Docker:
+
+```
+docker compose -f lab/docker-compose.yml up -d
+```
+
 Then, in another shell:
 
 ```
