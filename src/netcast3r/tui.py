@@ -47,3 +47,37 @@ class Console:
         self._emit("")
         for key, value in data.items():
             self._emit(f"  {key:<18} {value}")
+
+
+class Progress:
+    """A small progress line for a loop with a known size."""
+
+    def __init__(self, console: Console, total: int, label: str = "working"):
+        self.console = console
+        self.total = max(total, 1)
+        self.label = label
+        self.done = 0
+        self._step = max(self.total // 10, 1)
+        self._bar = None
+        if console._rich is not None:
+            try:
+                from rich.progress import Progress as RichProgress
+                self._bar = RichProgress(console=console._rich)
+                self._task = self._bar.add_task(label, total=self.total)
+                self._bar.start()
+            except Exception:
+                self._bar = None
+
+    def advance(self, step: int = 1) -> None:
+        self.done += step
+        if self._bar is not None:
+            self._bar.update(self._task, completed=min(self.done, self.total))
+            return
+        if self.done % self._step == 0 or self.done >= self.total:
+            percent = int(self.done * 100 / self.total)
+            self.console._emit(f"    {self.label} {self.done}/{self.total} ({percent}%)")
+
+    def close(self) -> None:
+        if self._bar is not None:
+            self._bar.update(self._task, completed=self.total)
+            self._bar.stop()

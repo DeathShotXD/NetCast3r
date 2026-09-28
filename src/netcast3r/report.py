@@ -104,3 +104,46 @@ def save_jsonl(out_dir: str | Path, findings: list[dict]) -> Path:
         for finding in findings:
             handle.write(json.dumps(finding, default=str) + "\n")
     return path
+
+
+LEVELS = {"critical": "error", "high": "error", "medium": "warning", "low": "note"}
+
+
+def save_sarif(out_dir: str | Path, findings: list[dict]) -> Path:
+    directory = Path(out_dir)
+    directory.mkdir(parents=True, exist_ok=True)
+    path = directory / "results.sarif"
+    rules: dict[str, dict] = {}
+    results: list[dict] = []
+    for finding in findings:
+        secret_type = finding.get("secret_type", "secret")
+        rules.setdefault(secret_type, {
+            "id": secret_type,
+            "name": secret_type,
+            "shortDescription": {"text": f"Exposed {secret_type} credential"},
+            "helpUri": "https://github.com/DeathShotXD/NetCast3r",
+        })
+        results.append({
+            "ruleId": secret_type,
+            "level": LEVELS.get(str(finding.get("severity", "")).lower(), "warning"),
+            "message": {"text": finding.get("title", "exposed credential")},
+            "locations": [{
+                "physicalLocation": {
+                    "artifactLocation": {"uri": finding.get("source", "")}
+                }
+            }],
+        })
+    document = {
+        "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
+        "version": "2.1.0",
+        "runs": [{
+            "tool": {"driver": {
+                "name": "NetCast3r",
+                "informationUri": "https://github.com/DeathShotXD/NetCast3r",
+                "rules": list(rules.values()),
+            }},
+            "results": results,
+        }],
+    }
+    path.write_text(json.dumps(document, indent=2, default=str))
+    return path
