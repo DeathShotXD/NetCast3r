@@ -7,9 +7,11 @@ import sys
 from pathlib import Path
 
 from . import __version__
+from . import inputs
 from .config import load_config
 from .orchestrator import Orchestrator
 from .recon import Recon
+from .report import save_sarif
 from .scope import ScopeManager
 from .store import Store
 
@@ -110,14 +112,31 @@ def cmd_recon(args) -> int:
 
 
 def cmd_run(args) -> int:
-    config, seeds, scope = _prepare(args)
+    config = load_config(Path(args.config) if getattr(args, "config", None) else None)
+    _apply_options(config, args)
+
+    source = None
+    if getattr(args, "input", None):
+        candidate = Path(args.input)
+        if candidate.exists() and candidate.is_file():
+            try:
+                source = inputs.load(candidate)
+            except Exception:
+                source = None
+    seeds = source.urls if (source and source.urls) else _load_seeds(
+        getattr(args, "input", "") or "", getattr(args, "stdin", False))
     if not seeds:
         print("no input given")
         return 1
+
+    scope = ScopeManager.from_files(args.scope, args.out_of_scope, extra_in=seeds)
     out = Path(args.out or "results")
     store = Store(out / "netcast3r.db")
-    orchestrator = Orchestrator(config, scope, store)
+    orchestrator = Orchestrator(config, scope, store,
+                                seed_bodies=(source.bodies if source else None))
     summary = orchestrator.run(seeds)
+    if getattr(args, "sarif", False):
+        save_sarif(out, orchestrator.last_findings)
     store.close()
     if getattr(args, "fail", False) and summary.findings > 0:
         return 1
@@ -166,6 +185,7 @@ def build_parser() -> argparse.ArgumentParser:
         p.add_argument("--no-color", action="store_true", help="disable colored output")
         p.add_argument("--json", action="store_true", help="also write results.json")
         p.add_argument("--jsonl", action="store_true", help="also write results.jsonl")
+        p.add_argument("--sarif", action="store_true", help="also write results.sarif")
         p.add_argument("--silent", action="store_true", help="quiet output")
         p.add_argument("-v", "--verbose", action="count", default=0, help="raise verbosity")
         p.add_argument("--fail", action="store_true", help="exit non-zero when findings exist")

@@ -23,8 +23,9 @@ from .report import save as save_report
 from .report import save_json, save_jsonl
 from .secrets import Extractor, Secret, load_patterns
 from .store import Store
-from .tui import Console
+from .tui import Console, Progress
 from .validate import Recipe, Validator, load_recipes
+from .wordlist import Wordlist
 
 
 SEVERITY_BY_TYPE = {
@@ -57,7 +58,7 @@ class Orchestrator:
     def __init__(self, config, scope, store: Store, console: Console | None = None,
                  bus: ProviderBus | None = None, use_agents: bool = True,
                  validator: Validator | None = None, extractor: Extractor | None = None,
-                 session: Session | None = None):
+                 session: Session | None = None, seed_bodies: dict | None = None):
         self.config = config
         self.scope = scope
         self.store = store
@@ -77,6 +78,8 @@ class Orchestrator:
                                                 session=self.session)
         self.extractor = extractor or Extractor(patterns=patterns)
         self._out_of_scope: list[str] = []
+        self.seed_bodies = seed_bodies or {}
+        self.last_findings: list[dict] = []
 
     def run(self, seeds: list[str]) -> RunSummary:
         target = seeds[0] if seeds else ""
@@ -91,6 +94,7 @@ class Orchestrator:
         except KeyboardInterrupt:
             self.console.line("run", "interrupted, writing what we have")
 
+        self.last_findings = findings
         report_path = save_report(target, summary, findings, self.store.path.parent, self._out_of_scope)
         if self.config.run.output_format == "json":
             save_json(self.store.path.parent, summary, findings)
@@ -120,7 +124,11 @@ class Orchestrator:
         for url in result.out_of_scope:
             self.store.add_asset(url, "out-of-scope", 0)
 
-        candidates = self._prospect(result.js_text)
+        self._wordlist(result)
+
+        scan_text = dict(result.js_text)
+        scan_text.update(self.seed_bodies)
+        candidates = self._prospect(scan_text)
         self.console.line("prospector", f"{len(candidates)} candidates")
         candidates = self._triage(candidates)
 
@@ -149,6 +157,20 @@ class Orchestrator:
             "findings": len(findings),
         }
         return summary, findings
+
+    def _wordlist(self, result) -> None:
+        words = Wordlist()
+        for text in result.page_text.values():
+            words.add_text(text)
+        for text in result.js_text.values():
+            words.add_text(text)
+        for url in result.endpoints:
+            words.add_url(url)
+        for url in result.js_urls:
+            words.add_url(url)
+        if words.words():
+            words.save(self.store.path.parent / "wordlist.txt")
+            self.console.line("recon", f"{len(words.words())} words saved to wordlist.txt")
 
     def _prospect(self, js_text: dict) -> list[Secret]:
         candidates: list[Secret] = []
@@ -197,6 +219,7 @@ class Orchestrator:
 
     def _assay(self, candidates: list[Secret]) -> list[dict]:
         findings: list[dict] = []
+        progress = Progress(self.console, len(candidates), "validating") if candidates else None
         for secret in candidates:
             self._ensure_recipe(secret.type)
             validation = self.validator.validate(secret.type, secret.value, secret.source)
@@ -205,6 +228,10 @@ class Orchestrator:
             self.console.finding(validation.status, secret.type, secret.value, validation.detail)
             if validation.status == "verified":
                 findings.append(self._finding(secret, validation))
+            if progress:
+                progress.advance()
+        if progress:
+            progress.close()
         return findings
 
     def _ensure_recipe(self, secret_type: str) -> None:
