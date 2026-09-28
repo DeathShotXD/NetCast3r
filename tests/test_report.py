@@ -1,6 +1,9 @@
+import json
+import tempfile
 import unittest
+from pathlib import Path
 
-from netcast3r.report import redact, render
+from netcast3r.report import redact, render, save_sarif
 
 
 class RedactTests(unittest.TestCase):
@@ -33,6 +36,20 @@ class RenderTests(unittest.TestCase):
         self.assertIn("## Out of scope skipped", text)
         self.assertIn("sk_liv...uvwx", text)
         self.assertNotIn("STRIPE_LIVE_PLACEHOLDER", text)
+
+    def test_sarif_output(self):
+        findings = [{
+            "title": "Stripe credential exposed",
+            "severity": "critical",
+            "secret_type": "stripe_live",
+            "source": "https://target/app.js",
+        }]
+        workdir = Path(tempfile.mkdtemp())
+        path = save_sarif(workdir, findings)
+        document = json.loads(path.read_text())
+        self.assertEqual(document["version"], "2.1.0")
+        self.assertEqual(document["runs"][0]["results"][0]["ruleId"], "stripe_live")
+        self.assertEqual(document["runs"][0]["results"][0]["level"], "error")
 
 
 if __name__ == "__main__":
