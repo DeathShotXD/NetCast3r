@@ -31,6 +31,7 @@ class ReconResult:
     endpoints: list = field(default_factory=list)
     historical: list = field(default_factory=list)
     js_text: dict = field(default_factory=dict)
+    page_text: dict = field(default_factory=dict)
     out_of_scope: list = field(default_factory=list)
 
 
@@ -85,6 +86,7 @@ class Recon:
                     result.endpoints.append(_absolute(url, endpoint))
             else:
                 result.pages.append(url)
+                result.page_text[url] = text
                 for link in LINK_RE.findall(text):
                     child = _absolute(url, link)
                     if child.endswith(ASSET_EXT):
