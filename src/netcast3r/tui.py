@@ -7,6 +7,8 @@ rich when it is available and falls back to plain text otherwise.
 
 from __future__ import annotations
 
+import threading
+
 
 class Console:
     def __init__(self, show_reasoning: bool = True, color: bool = True):
@@ -81,3 +83,46 @@ class Progress:
         if self._bar is not None:
             self._bar.update(self._task, completed=self.total)
             self._bar.stop()
+
+
+class Dashboard(Console):
+    """A live surface that keeps the latest status, findings, and reasoning in
+    one panel. It falls back to the plain console when rich is unavailable."""
+
+    is_dashboard = True
+
+    def __init__(self, show_reasoning: bool = True, max_lines: int = 16):
+        super().__init__(show_reasoning=show_reasoning, color=True)
+        self._lines: list[str] = []
+        self._max = max_lines
+        self._lock = threading.Lock()
+        self._live = None
+        if self._rich is not None:
+            try:
+                from rich.live import Live
+                self._live = Live(self._render(), console=self._rich, refresh_per_second=6)
+            except Exception:
+                self._live = None
+
+    def _render(self):
+        from rich.panel import Panel
+        with self._lock:
+            text = "\n".join(self._lines) if self._lines else "starting"
+        return Panel(text, title="netcast3r", border_style="yellow")
+
+    def _emit(self, text: str) -> None:
+        if self._live is None:
+            super()._emit(text)
+            return
+        with self._lock:
+            self._lines.append(text)
+            self._lines = self._lines[-self._max:]
+        self._live.update(self._render())
+
+    def start(self) -> None:
+        if self._live is not None:
+            self._live.start()
+
+    def stop(self) -> None:
+        if self._live is not None:
+            self._live.stop()
