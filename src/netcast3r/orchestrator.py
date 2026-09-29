@@ -136,17 +136,17 @@ class Orchestrator:
         findings = self._assay(candidates)
 
         for finding in findings:
+            self.store.add_finding(finding["title"], finding["severity"],
+                                   finding["secret_type"], finding["value"],
+                                   finding["impact"], finding["proof"])
+
+        for finding in findings:
             steps, narrative = self._escalate(finding)
             finding["reproduction"] = steps
             if narrative:
                 finding.setdefault("notes", narrative)
             self._scribe(finding)
         findings = self._sentinel(findings)
-
-        for finding in findings:
-            self.store.add_finding(finding["title"], finding["severity"],
-                                   finding["secret_type"], finding["value"],
-                                   finding["impact"], finding["proof"])
 
         summary = {
             "pages": len(result.pages),

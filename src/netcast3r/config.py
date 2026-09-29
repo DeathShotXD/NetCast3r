@@ -49,7 +49,7 @@ class RouteConfig:
     model: str
     provider: str = ""
     temperature: float = 0.2
-    max_tokens: int = 4096
+    max_tokens: int = 1024
     reasoning: bool = True
 
 
@@ -88,6 +88,7 @@ class RunConfig:
     color: bool = True
     output_format: str = "markdown"
     allow_model_checks: bool = True
+    max_call_seconds: int = 90
 
 
 @dataclass
@@ -117,34 +118,33 @@ class Config:
 def default_config() -> Config:
     providers = [
         ProviderConfig(
-            name="opencode",
-            base_url="https://opencode.ai/zen/v1",
-            api_key_env="NETCAST3R_OPENCODE_KEY",
-            priority=10,
-            models=["deepseek-v4-flash"],
-        ),
-        ProviderConfig(
             name="openrouter",
             base_url="https://openrouter.ai/api/v1",
             api_key_env="NETCAST3R_OPENROUTER_KEY",
-            priority=20,
-            models=["moonshotai/kimi-k2", "qwen/qwen3-coder"],
+            priority=10,
+            models=[
+                "qwen/qwen3.8-27b:free",
+                "nvidia/nemotron-3.5-lightning:free",
+                "google/gemma-4-31b-it:free",
+            ],
         ),
         ProviderConfig(
             name="ollama",
             base_url="http://127.0.0.1:11434/v1",
-            priority=50,
-            models=["qwen2.5-coder"],
+            priority=20,
+            models=["llama3:8b"],
+        ),
+        ProviderConfig(
+            name="opencode",
+            base_url="https://opencode.ai/zen/v1",
+            api_key_env="NETCAST3R_OPENCODE_KEY",
+            priority=30,
+            models=["mimo-v2.6-flash-free", "big-pickle"],
         ),
     ]
     routes = [
-        RouteConfig(agent="recon", model="deepseek-v4-flash", provider="opencode", temperature=0.1),
-        RouteConfig(agent="exegete", model="deepseek-v4-flash", provider="opencode", reasoning=True),
-        RouteConfig(agent="prospector", model="deepseek-v4-flash", provider="opencode", temperature=0.0),
-        RouteConfig(agent="assayer", model="deepseek-v4-flash", provider="opencode", temperature=0.0),
-        RouteConfig(agent="chainer", model="deepseek-v4-flash", provider="opencode", reasoning=True),
-        RouteConfig(agent="scribe", model="deepseek-v4-flash", provider="opencode", temperature=0.4),
-        RouteConfig(agent="sentinel", model="deepseek-v4-flash", provider="opencode", temperature=0.0),
+        RouteConfig(agent=agent, model="", provider="")
+        for agent in AGENTS
     ]
     egress = EgressConfig(
         public_sources=[

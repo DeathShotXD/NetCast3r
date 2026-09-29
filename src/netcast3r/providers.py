@@ -9,6 +9,7 @@ model or provider so a run keeps going.
 from __future__ import annotations
 
 import json
+import time
 from dataclasses import dataclass
 
 import httpx
@@ -52,6 +53,8 @@ class ProviderBus:
 
     def chat_stream(self, agent: str, messages: list[dict], on_chunk=None):
         route = self.config.route_for(agent)
+        budget = getattr(self.config.run, "max_call_seconds", 90)
+        call_timeout = min(self.timeout, budget)
         last_error = "no provider available"
         for provider, model, key in self._candidates(agent):
             proxy = self.egress.get() if self.egress else None
@@ -66,7 +69,7 @@ class ProviderBus:
                 "stream": True,
             }
             try:
-                with httpx.Client(timeout=self.timeout, proxy=proxy) as client:
+                with httpx.Client(timeout=call_timeout, proxy=proxy) as client:
                     with client.stream("POST", f"{provider.base_url}/chat/completions",
                                        headers=headers, json=payload) as response:
                         if response.status_code in (403, 429):
@@ -78,7 +81,10 @@ class ProviderBus:
                             last_error = f"{provider.name} returned {response.status_code}"
                             continue
                         collected = ""
+                        started = time.monotonic()
                         for line in response.iter_lines():
+                            if time.monotonic() - started > budget:
+                                break
                             if not line or not line.startswith("data:"):
                                 continue
                             data = line[5:].strip()
