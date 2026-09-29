@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="800" height="14" viewBox="0 0 800 14" role="img" aria-label="">
+  <defs>
+    <linearGradient id="dt" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#E8A33D" stop-opacity="0"/>
+      <stop offset="0.4" stop-color="#E8A33D"/>
+      <stop offset="0.7" stop-color="#C9D1D9"/>
+      <stop offset="1" stop-color="#C9D1D9" stop-opacity="0"/>
+    </linearGradient>
+    <linearGradient id="dspark" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#C9D1D9" stop-opacity="0"/>
+      <stop offset="0.5" stop-color="#C9D1D9"/>
+      <stop offset="1" stop-color="#C9D1D9" stop-opacity="0"/>
+    </linearGradient>
+  </defs>
+  <rect x="40" y="6" width="720" height="2" fill="#2A333F"/>
+  <rect x="40" y="5.5" width="720" height="3" fill="url(#dt)" opacity="0.6"/>
+  <rect x="40" y="5" width="90" height="4" fill="url(#dspark)">
+    <animateTransform attributeName="transform" type="translate" from="0 0" to="630 0" dur="3.6s" repeatCount="indefinite"/>
+  </rect>
+  <circle cx="40" cy="7" r="3" fill="#E8A33D"/>
+  <circle cx="760" cy="7" r="3" fill="#C9D1D9"/>
+</svg>

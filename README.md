@@ -4,9 +4,20 @@ Cast a net over the web. NetCast3r crawls a target, reads its JavaScript,
 hunts for secrets and logic holes, validates every credential it finds, and
 writes a report you can submit.
 
-This project is under active construction. The first milestone ships the recon
-fabric, the scope engine, the egress layer, the provider bus, and a validation
-engine that drives a single secret end to end.
+The pipeline, the agent swarm, the validation engine, the evidence store, the
+report writer, the live console, the lab, and the test suite are all in place.
+
+<p align="center">
+  <img src="assets/banner.svg" alt="NetCast3r, cast a net over the web" width="100%">
+</p>
+
+<p align="center">
+  <img src="assets/logo.svg" alt="NetCast3r logo" width="160">
+</p>
+
+<p align="center">
+  <img src="assets/stats.svg" alt="crawl, read js, hunt secrets, validate, escalate, report" width="100%">
+</p>
 
 ## What it does
 
@@ -46,9 +57,9 @@ netcast3r run   --input target.com --scope scope.txt --out-of-scope oos.txt
 
 ## How it works
 
-```
-recon -> [ exegete || prospector ] -> assayer -> chainer -> sentinel -> report
-```
+<p align="center">
+  <img src="assets/pipeline.svg" alt="recon, exegete, prospector, assayer, chainer, scribe" width="100%">
+</p>
 
 The crawler collects JavaScript inside scope. The exegete reads each file line
 by line and maps its logic. The prospector hunts secrets at the same time. The
@@ -58,6 +69,10 @@ with the values redacted. If no provider answers, the deterministic path still
 produces a report.
 
 See [docs/architecture.md](docs/architecture.md).
+
+<p align="center">
+  <img src="assets/divider.svg" alt="" width="100%">
+</p>
 
 ## Lab
 
