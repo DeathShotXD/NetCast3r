@@ -24,7 +24,7 @@ from .report import save_json, save_jsonl
 from .secrets import Extractor, Secret, load_patterns
 from .store import Store
 from .tui import Console, Progress
-from .validate import Recipe, Validator, load_recipes
+from .validate import Recipe, Validation, Validator, load_recipes
 from .wordlist import Wordlist
 
 
@@ -58,7 +58,8 @@ class Orchestrator:
     def __init__(self, config, scope, store: Store, console: Console | None = None,
                  bus: ProviderBus | None = None, use_agents: bool = True,
                  validator: Validator | None = None, extractor: Extractor | None = None,
-                 session: Session | None = None, seed_bodies: dict | None = None):
+                 session: Session | None = None, seed_bodies: dict | None = None,
+                 resume: bool = False):
         self.config = config
         self.scope = scope
         self.store = store
@@ -80,6 +81,9 @@ class Orchestrator:
         self._out_of_scope: list[str] = []
         self.seed_bodies = seed_bodies or {}
         self.last_findings: list[dict] = []
+        self.resume = resume
+        self._known = store.validations_map() if resume else {}
+        self._existing_findings = store.finding_keys() if resume else set()
 
     def run(self, seeds: list[str]) -> RunSummary:
         target = seeds[0] if seeds else ""
@@ -219,14 +223,24 @@ class Orchestrator:
 
     def _assay(self, candidates: list[Secret]) -> list[dict]:
         findings: list[dict] = []
-        progress = Progress(self.console, len(candidates), "validating") if candidates else None
+        show_progress = bool(candidates) and not getattr(self.console, "is_dashboard", False)
+        progress = Progress(self.console, len(candidates), "validating") if show_progress else None
         for secret in candidates:
-            self._ensure_recipe(secret.type)
-            validation = self.validator.validate(secret.type, secret.value, secret.source)
-            self.store.add_validation(secret.type, secret.value, validation.status,
-                                      validation.provider, validation.detail, validation.evidence)
-            self.console.finding(validation.status, secret.type, secret.value, validation.detail)
-            if validation.status == "verified":
+            key = (secret.type, secret.value)
+            if self.resume and key in self._known:
+                known = self._known[key]
+                validation = Validation(secret.type, secret.value, known["status"],
+                                        provider=known["provider"], detail=known["detail"],
+                                        evidence=known["evidence"])
+                self.console.finding(validation.status, secret.type, secret.value,
+                                     f"{validation.detail} (reused)")
+            else:
+                self._ensure_recipe(secret.type)
+                validation = self.validator.validate(secret.type, secret.value, secret.source)
+                self.store.add_validation(secret.type, secret.value, validation.status,
+                                          validation.provider, validation.detail, validation.evidence)
+                self.console.finding(validation.status, secret.type, secret.value, validation.detail)
+            if validation.status == "verified" and key not in self._existing_findings:
                 findings.append(self._finding(secret, validation))
             if progress:
                 progress.advance()

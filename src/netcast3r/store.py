@@ -128,3 +128,19 @@ class Store:
             row = self.conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()
             result[table] = row[0] if row else 0
         return result
+
+    def validations_map(self) -> dict:
+        rows = self.conn.execute(
+            "SELECT type, value, status, provider, detail, evidence FROM validations"
+        ).fetchall()
+        result = {}
+        for secret_type, value, status, provider, detail, evidence in rows:
+            result[(secret_type, value)] = {
+                "status": status, "provider": provider,
+                "detail": detail, "evidence": evidence,
+            }
+        return result
+
+    def finding_keys(self) -> set:
+        rows = self.conn.execute("SELECT secret_type, value FROM findings").fetchall()
+        return {(secret_type, value) for secret_type, value in rows}

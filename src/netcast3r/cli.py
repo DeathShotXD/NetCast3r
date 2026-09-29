@@ -14,6 +14,7 @@ from .recon import Recon
 from .report import save_sarif
 from .scope import ScopeManager
 from .store import Store
+from .tui import Console, Dashboard
 
 
 def _load_seeds(value: str, use_stdin: bool = False) -> list[str]:
@@ -132,9 +133,20 @@ def cmd_run(args) -> int:
     scope = ScopeManager.from_files(args.scope, args.out_of_scope, extra_in=seeds)
     out = Path(args.out or "results")
     store = Store(out / "netcast3r.db")
-    orchestrator = Orchestrator(config, scope, store,
-                                seed_bodies=(source.bodies if source else None))
-    summary = orchestrator.run(seeds)
+
+    console = None
+    if getattr(args, "dashboard", False) and config.run.verbosity > 0:
+        console = Dashboard(show_reasoning=config.run.verbosity > 1)
+    orchestrator = Orchestrator(config, scope, store, console=console,
+                                seed_bodies=(source.bodies if source else None),
+                                resume=getattr(args, "resume", False))
+    if console is not None:
+        console.start()
+    try:
+        summary = orchestrator.run(seeds)
+    finally:
+        if console is not None:
+            console.stop()
     if getattr(args, "sarif", False):
         save_sarif(out, orchestrator.last_findings)
     store.close()
@@ -187,6 +199,8 @@ def build_parser() -> argparse.ArgumentParser:
         p.add_argument("--jsonl", action="store_true", help="also write results.jsonl")
         p.add_argument("--sarif", action="store_true", help="also write results.sarif")
         p.add_argument("--silent", action="store_true", help="quiet output")
+        p.add_argument("--dashboard", action="store_true", help="live dashboard")
+        p.add_argument("--resume", action="store_true", help="reuse earlier validations")
         p.add_argument("-v", "--verbose", action="count", default=0, help="raise verbosity")
         p.add_argument("--fail", action="store_true", help="exit non-zero when findings exist")
         p.add_argument("--config", help="path to a config file")
