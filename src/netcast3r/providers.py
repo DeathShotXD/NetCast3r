@@ -44,12 +44,16 @@ class ProviderBus:
             key = provider.resolve_key()
             if not key and provider.name != "ollama":
                 continue
-            model = route.model if route.provider == provider.name and route.model else (
-                provider.models[0] if provider.models else route.model
-            )
-            if not model:
+            models = list(provider.models)
+            if route.model:
+                if route.model in models:
+                    models.remove(route.model)
+                models.insert(0, route.model)
+            if not models:
                 continue
-            yield provider, model, key
+            for model in models:
+                if model:
+                    yield provider, model, key
 
     def chat_stream(self, agent: str, messages: list[dict], on_chunk=None):
         route = self.config.route_for(agent)
@@ -61,6 +65,8 @@ class ProviderBus:
             headers = {"Content-Type": "application/json"}
             if key:
                 headers["Authorization"] = f"Bearer {key}"
+            if provider.name == "openrouter":
+                headers["X-Title"] = "NetCast3r"
             payload = {
                 "model": model,
                 "messages": messages,
@@ -108,6 +114,9 @@ class ProviderBus:
                                     on_chunk(chunk)
                         if on_chunk:
                             on_chunk(Chunk("done", provider.name))
+                        if not collected:
+                            last_error = f"{provider.name}/{model} returned no content"
+                            continue
                         return collected
             except Exception as exc:
                 last_error = _redact(f"{provider.name}: {type(exc).__name__}", key)
