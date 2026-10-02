@@ -9,3 +9,4 @@ dist/
 build/
 results/
 *.log
+scope.txt
