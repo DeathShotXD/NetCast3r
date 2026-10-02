@@ -2,6 +2,19 @@
 
 Notable changes to NetCast3r, newest first.
 
+## Unreleased
+
+### Added
+
+- Historical JavaScript from the Wayback Machine is now fetched and scanned
+  during a run, not only during recon.
+
+### Fixed
+
+- A route that omits the model no longer fails to load.
+- `--json` and `--jsonl` are written together instead of one suppressing the
+  other.
+
 ## 0.1.0
 
 ### Added

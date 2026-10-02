@@ -123,5 +123,28 @@ class Recon:
                 urls.append(row[0])
         return urls
 
+    def fetch(self, url: str):
+        return self._fetch(url)
+
+    def historical_js(self, domains: list[str], limit: int = 2000,
+                      max_js: int = 25) -> list[str]:
+        found: list[str] = []
+        seen: set[str] = set()
+        for domain in domains:
+            try:
+                rows = self.wayback(domain, limit=limit)
+            except Exception:
+                continue
+            for url in rows:
+                if ".js" not in url.split("?")[0].lower():
+                    continue
+                if url in seen or not self.scope.is_in_scope(url):
+                    continue
+                seen.add(url)
+                found.append(url)
+                if len(found) >= max_js:
+                    return found
+        return found
+
     def external_tools(self) -> list[str]:
         return [tool for tool in ("katana", "gau", "waybackurls", "jsleak") if shutil.which(tool)]

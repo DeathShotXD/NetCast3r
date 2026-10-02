@@ -91,6 +91,9 @@ class RunConfig:
     write_jsonl: bool = False
     allow_model_checks: bool = True
     max_call_seconds: int = 90
+    wayback: bool = True
+    wayback_limit: int = 2000
+    wayback_js_max: int = 25
 
 
 @dataclass

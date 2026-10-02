@@ -11,6 +11,7 @@ from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
+import ipaddress
 from pathlib import Path
 
 from .agents import Roster
@@ -116,6 +117,8 @@ class Orchestrator:
         recon = Recon(self.scope, self.config, session=self.session)
         result = recon.crawl(seeds)
         self._out_of_scope = result.out_of_scope
+        if self.config.run.wayback:
+            self._augment_wayback(recon, seeds, result)
         self.console.line("recon", f"{len(result.pages)} pages, {len(result.js_urls)} js files, "
                                    f"{len(result.endpoints)} endpoints, "
                                    f"{len(result.out_of_scope)} skipped out of scope")
@@ -161,6 +164,39 @@ class Orchestrator:
             "findings": len(findings),
         }
         return summary, findings
+
+    def _seed_domains(self, seeds: list[str]) -> list[str]:
+        domains: list[str] = []
+        for seed in seeds:
+            host = seed.split("//")[-1].split("/")[0].split(":")[0].lower()
+            if not host or host in domains:
+                continue
+            try:
+                ipaddress.ip_address(host)
+                continue
+            except ValueError:
+                pass
+            domains.append(host)
+        return domains
+
+    def _augment_wayback(self, recon: Recon, seeds: list[str], result) -> None:
+        domains = self._seed_domains(seeds)
+        if not domains:
+            return
+        known = set(result.js_text)
+        urls = recon.historical_js(domains, limit=self.config.run.wayback_limit,
+                                   max_js=self.config.run.wayback_js_max)
+        added = 0
+        for url in urls:
+            if url in known:
+                continue
+            status, text, content_type = recon.fetch(url)
+            if status == 200 and text:
+                result.js_urls.append(url)
+                result.js_text[url] = text
+                added += 1
+        if added:
+            self.console.line("recon", f"{added} historical js files from the wayback machine")
 
     def _wordlist(self, result) -> None:
         words = Wordlist()
