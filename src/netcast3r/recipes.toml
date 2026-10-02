@@ -73,3 +73,101 @@ url = "http://127.0.0.1:8787/verify?key={value}"
 success_codes = [200]
 success_match = "\"alive\":true"
 fail_match = "\"alive\":false"
+
+[[recipe]]
+type = "openai"
+provider = "OpenAI"
+method = "GET"
+url = "https://api.openai.com/v1/models"
+headers = { Authorization = "Bearer {value}" }
+success_codes = [200]
+fail_codes = [401, 403]
+
+[[recipe]]
+type = "anthropic"
+provider = "Anthropic"
+method = "GET"
+url = "https://api.anthropic.com/v1/models"
+headers = { "x-api-key" = "{value}", "anthropic-version" = "2023-06-01" }
+success_codes = [200]
+fail_codes = [401, 403]
+
+[[recipe]]
+type = "groq"
+provider = "Groq"
+method = "GET"
+url = "https://api.groq.com/openai/v1/models"
+headers = { Authorization = "Bearer {value}" }
+success_codes = [200]
+fail_codes = [401, 403]
+
+[[recipe]]
+type = "huggingface"
+provider = "Hugging Face"
+method = "GET"
+url = "https://huggingface.co/api/whoami-v2"
+headers = { Authorization = "Bearer {value}" }
+success_codes = [200]
+fail_codes = [401, 403]
+
+[[recipe]]
+type = "digitalocean"
+provider = "DigitalOcean"
+method = "GET"
+url = "https://api.digitalocean.com/v2/account"
+headers = { Authorization = "Bearer {value}" }
+success_codes = [200]
+fail_codes = [401, 403]
+
+[[recipe]]
+type = "npm"
+provider = "npm"
+method = "GET"
+url = "https://registry.npmjs.org/-/whoami"
+headers = { Authorization = "Bearer {value}" }
+success_codes = [200]
+fail_codes = [401, 403]
+
+[[recipe]]
+type = "postman"
+provider = "Postman"
+method = "GET"
+url = "https://api.getpostman.com/me"
+headers = { "X-Api-Key" = "{value}" }
+success_codes = [200]
+fail_codes = [401, 403]
+
+[[recipe]]
+type = "telegram"
+provider = "Telegram"
+method = "GET"
+url = "https://api.telegram.org/bot{value}/getMe"
+success_codes = [200]
+success_match = "\"ok\":true"
+fail_codes = [401, 404]
+fail_match = "\"ok\":false"
+
+[[recipe]]
+type = "discord_webhook"
+provider = "Discord"
+method = "GET"
+url = "{value}"
+success_codes = [200]
+success_match = "\"name\""
+fail_codes = [401, 403, 404]
+
+[[recipe]]
+type = "firebase"
+provider = "Firebase"
+method = "GET"
+url = "{value}/.json"
+success_codes = [200]
+fail_match = "Permission denied"
+
+[[recipe]]
+type = "mapbox_secret"
+provider = "Mapbox"
+method = "GET"
+url = "https://api.mapbox.com/tokens/v2?access_token={value}"
+success_codes = [200]
+fail_codes = [401, 403]

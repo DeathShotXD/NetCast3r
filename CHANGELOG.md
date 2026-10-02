@@ -8,12 +8,19 @@ Notable changes to NetCast3r, newest first.
 
 - Historical JavaScript from the Wayback Machine is now fetched and scanned
   during a run, not only during recon.
+- Patterns and read-only recipes for OpenAI, Anthropic, Groq, Hugging Face,
+  DigitalOcean, npm, Postman, Shopify, Google OAuth secrets, Telegram, Discord
+  webhooks, Sentry DSN, Mapbox secret tokens, database connection strings,
+  Mailgun, Mailchimp, Contentful, Twilio, NVIDIA, and Facebook.
 
 ### Fixed
 
 - A route that omits the model no longer fails to load.
 - `--json` and `--jsonl` are written together instead of one suppressing the
   other.
+- The generic assignment and Telegram patterns no longer match identifier
+  strings and Cloudflare challenge tokens.
+- The Telegram recipe treats an unauthorized response as dead.
 
 ## 0.1.0
 

@@ -73,7 +73,7 @@ description = "Mapbox public token"
 [[pattern]]
 id = "firebase_url"
 type = "firebase"
-regex = "https://[a-z0-9\\-]+\\.firebaseio\\.com"
+regex = "https://[a-z0-9\\-]+(?:-default-rtdb)?\\.(?:firebaseio\\.com|firebasedatabase\\.app)"
 description = "Firebase database URL"
 
 [[pattern]]
@@ -91,6 +91,127 @@ description = "JSON Web Token"
 [[pattern]]
 id = "generic_assignment"
 type = "generic"
-regex = "(?i)(?:api[_\\-]?key|apikey|secret|token|password|passwd|access[_\\-]?key)\\s*[:=]\\s*[\"']([A-Za-z0-9\\-_./+=]{12,64})[\"']"
+regex = "(?i)(?:api[_\\-]?key|apikey|secret|token|password|passwd|access[_\\-]?key)\\s*[:=]\\s*[\"'](?=[A-Za-z0-9\\-_./+=]*[0-9])[A-Za-z0-9\\-_./+=]{16,64}[\"']"
 description = "Generic secret assigned to a variable"
-entropy = 3.2
+entropy = 3.5
+
+[[pattern]]
+id = "openai_key"
+type = "openai"
+regex = "sk-(?:proj-)?[A-Za-z0-9]{40,}"
+description = "OpenAI API key"
+
+[[pattern]]
+id = "anthropic_key"
+type = "anthropic"
+regex = "sk-ant-[A-Za-z0-9_\\-]{40,}"
+description = "Anthropic API key"
+
+[[pattern]]
+id = "groq_key"
+type = "groq"
+regex = "gsk_[A-Za-z0-9]{40,}"
+description = "Groq API key"
+
+[[pattern]]
+id = "huggingface_token"
+type = "huggingface"
+regex = "hf_[A-Za-z0-9]{30,}"
+description = "Hugging Face token"
+
+[[pattern]]
+id = "digitalocean_token"
+type = "digitalocean"
+regex = "dop_v1_[a-f0-9]{64}"
+description = "DigitalOcean personal access token"
+
+[[pattern]]
+id = "npm_token"
+type = "npm"
+regex = "npm_[A-Za-z0-9]{36}"
+description = "npm access token"
+
+[[pattern]]
+id = "postman_key"
+type = "postman"
+regex = "PMAK-[a-f0-9]{24}-[a-f0-9]{34}"
+description = "Postman API key"
+
+[[pattern]]
+id = "shopify_token"
+type = "shopify"
+regex = "shpat_[a-f0-9]{32}"
+description = "Shopify admin access token"
+
+[[pattern]]
+id = "google_oauth_secret"
+type = "google_oauth_secret"
+regex = "GOCSPX-[A-Za-z0-9_\\-]{28}"
+description = "Google OAuth client secret"
+
+[[pattern]]
+id = "telegram_bot_token"
+type = "telegram"
+regex = "(?:api\\.telegram\\.org/bot|[Tt]elegram[^0-9\\n]{0,24})([0-9]{8,10}:[A-Za-z0-9_\\-]{35})"
+group = 1
+description = "Telegram bot token"
+
+[[pattern]]
+id = "discord_webhook"
+type = "discord_webhook"
+regex = "https://(?:discord|discordapp)\\.com/api/webhooks/[0-9]+/[A-Za-z0-9_\\-]+"
+description = "Discord webhook URL"
+
+[[pattern]]
+id = "sentry_dsn"
+type = "sentry_dsn"
+regex = "https://[0-9a-f]{32}@o[0-9]+\\.ingest\\.sentry\\.io/[0-9]+"
+description = "Sentry DSN"
+
+[[pattern]]
+id = "mapbox_secret"
+type = "mapbox_secret"
+regex = "sk\\.[A-Za-z0-9._\\-]{60,}"
+description = "Mapbox secret token"
+
+[[pattern]]
+id = "db_connection"
+type = "db_connection"
+regex = "(?:postgres(?:ql)?|mysql|mongodb(?:\\+srv)?|redis|amqp|mssql)://[A-Za-z0-9._%\\-]+:[^\\s\"'<>@]{6,}@[^\\s\"'<>]{4,}"
+description = "Database connection string with credentials"
+
+[[pattern]]
+id = "mailgun_key"
+type = "mailgun"
+regex = "key-[0-9a-zA-Z]{32}"
+description = "Mailgun API key"
+
+[[pattern]]
+id = "mailchimp_key"
+type = "mailchimp"
+regex = "[0-9a-f]{32}-us[0-9]{1,2}"
+description = "Mailchimp API key"
+
+[[pattern]]
+id = "contentful_token"
+type = "contentful"
+regex = "CFPAT-[A-Za-z0-9_\\-]{20,}"
+description = "Contentful management token"
+
+[[pattern]]
+id = "twilio_sid"
+type = "twilio"
+regex = "SK[0-9a-fA-F]{32}"
+description = "Twilio API key SID"
+
+[[pattern]]
+id = "nvidia_key"
+type = "nvidia"
+regex = "nvapi-[A-Za-z0-9_\\-]{30,}"
+description = "NVIDIA API key"
+
+[[pattern]]
+id = "facebook_token"
+type = "facebook"
+regex = "EAACEdEose0cBA[0-9A-Za-z]+"
+description = "Facebook access token"
