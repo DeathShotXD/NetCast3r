@@ -100,9 +100,9 @@ class Orchestrator:
 
         self.last_findings = findings
         report_path = save_report(target, summary, findings, self.store.path.parent, self._out_of_scope)
-        if self.config.run.output_format == "json":
+        if self.config.run.write_json or self.config.run.output_format == "json":
             save_json(self.store.path.parent, summary, findings)
-        elif self.config.run.output_format == "jsonl":
+        if self.config.run.write_jsonl or self.config.run.output_format == "jsonl":
             save_jsonl(self.store.path.parent, findings)
         self.console.line("scribe", f"report written to {report_path}")
         self.console.summary({**summary, **self.session.stats.as_dict(), "report": str(report_path)})

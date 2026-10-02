@@ -46,7 +46,7 @@ class ProviderConfig:
 @dataclass
 class RouteConfig:
     agent: str
-    model: str
+    model: str = ""
     provider: str = ""
     temperature: float = 0.2
     max_tokens: int = 1024
@@ -87,6 +87,8 @@ class RunConfig:
     verbosity: int = 1
     color: bool = True
     output_format: str = "markdown"
+    write_json: bool = False
+    write_jsonl: bool = False
     allow_model_checks: bool = True
     max_call_seconds: int = 90
 

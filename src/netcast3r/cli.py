@@ -58,10 +58,10 @@ def _apply_options(config, args) -> None:
         run.random_user_agent = True
     if getattr(args, "no_color", False):
         run.color = False
+    if getattr(args, "json", False):
+        run.write_json = True
     if getattr(args, "jsonl", False):
-        run.output_format = "jsonl"
-    elif getattr(args, "json", False):
-        run.output_format = "json"
+        run.write_jsonl = True
     if getattr(args, "silent", False):
         run.verbosity = 0
     elif getattr(args, "verbose", 0) >= 2:
