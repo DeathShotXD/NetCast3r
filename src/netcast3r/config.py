@@ -21,7 +21,7 @@ except ModuleNotFoundError:  # Python 3.10
 HOME = Path.home() / ".netcast3r"
 CONFIG_FILE = HOME / "config.toml"
 
-AGENTS = ("recon", "exegete", "prospector", "assayer", "chainer", "scribe", "sentinel")
+AGENTS = ("recon", "exegete", "prospector", "classifier", "assayer", "chainer", "scribe", "sentinel")
 
 
 @dataclass

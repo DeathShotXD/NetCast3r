@@ -44,6 +44,8 @@ def render(target: str, summary: dict, findings: list[dict],
         lines.append(f"- value: {redact(str(finding.get('value', '')))}")
         lines.append(f"- source: {finding.get('source', '')}")
         lines.append(f"- status: {finding.get('status', '')}")
+        if finding.get("confidence"):
+            lines.append(f"- confidence: {finding.get('confidence')}")
         lines.append("")
         if finding.get("narrative"):
             lines.append(str(finding["narrative"]).strip())

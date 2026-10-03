@@ -13,6 +13,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 import ipaddress
 from pathlib import Path
+from urllib.parse import urlsplit
 
 from .agents import Roster
 from .egress import ProxyPool
@@ -80,6 +81,7 @@ class Orchestrator:
                                                 session=self.session)
         self.extractor = extractor or Extractor(patterns=patterns)
         self._out_of_scope: list[str] = []
+        self._classified = 0
         self.seed_bodies = seed_bodies or {}
         self.last_findings: list[dict] = []
         self.resume = resume
@@ -137,6 +139,7 @@ class Orchestrator:
         scan_text.update(self.seed_bodies)
         candidates = self._prospect(scan_text)
         self.console.line("prospector", f"{len(candidates)} candidates")
+        candidates = self._classify(candidates)
         candidates = self._triage(candidates)
 
         self._exegete(result.js_text)
@@ -160,6 +163,7 @@ class Orchestrator:
             "js_files": len(result.js_urls),
             "endpoints": len(result.endpoints),
             "candidates": len(candidates),
+            "classified": self._classified,
             "verified": len(findings),
             "findings": len(findings),
         }
@@ -225,10 +229,60 @@ class Orchestrator:
                 self.store.add_secret(secret.type, secret.value, secret.source, secret.context)
         return candidates
 
+    def _classify(self, candidates: list[Secret]) -> list[Secret]:
+        if not (self.use_agents and candidates and self.roster.classifier.available()):
+            return candidates
+        unknown: list[Secret] = []
+        for secret in candidates:
+            known = self.knowledge.classification(secret.value)
+            if known and known.get("type"):
+                if known["type"] in self.validator.recipes:
+                    secret.type = known["type"]
+                secret.confidence = max(secret.confidence, float(known.get("confidence", 0) or 0))
+                continue
+            if secret.type == "generic" or secret.type not in self.validator.recipes:
+                unknown.append(secret)
+        if not unknown:
+            return candidates
+        payload = [{"value": s.value[:64], "context": s.context[:120]} for s in unknown[:40]]
+        result = self.roster.classifier.classify(payload, on_reasoning=self._reason("classifier"))
+        data = result.data or {}
+        items = data.get("items", []) if isinstance(data, dict) else []
+        by_value = {}
+        for item in items:
+            if isinstance(item, dict) and item.get("value"):
+                by_value[str(item["value"])[:64]] = item
+        retyped = 0
+        for secret in unknown:
+            item = by_value.get(secret.value[:64])
+            if not item:
+                continue
+            new_type = str(item.get("type", "")).strip().lower().replace(" ", "_")
+            provider = str(item.get("provider", "")).strip().lower().replace(" ", "_")
+            self.knowledge.remember_classification(secret.value, {
+                "type": new_type or provider,
+                "provider": provider,
+                "confidence": item.get("confidence", 0),
+                "is_secret": bool(item.get("is_secret", False)),
+            })
+            if not item.get("is_secret"):
+                continue
+            resolved = new_type if new_type in self.validator.recipes else provider
+            if resolved in self.validator.recipes:
+                secret.type = resolved
+                secret.confidence = max(secret.confidence,
+                                        round(float(item.get("confidence", 0) or 0), 2))
+                retyped += 1
+        if retyped:
+            self._classified = retyped
+            self.console.line("classifier", f"{retyped} candidates re-typed by the model")
+        return candidates
+
     def _triage(self, candidates: list[Secret]) -> list[Secret]:
         if not (self.use_agents and candidates and self.roster.prospector.available()):
             return candidates
-        payload = [{"type": s.type, "value": s.value[:24], "source": s.source} for s in candidates]
+        payload = [{"type": s.type, "value": s.value[:24], "confidence": s.confidence,
+                    "context": s.context[:80], "source": s.source} for s in candidates]
         result = self.roster.prospector.triage(payload, on_reasoning=self._reason("prospector"))
         data = result.data or {}
         order = {}
@@ -293,17 +347,45 @@ class Orchestrator:
         result = self.roster.assayer.plan(secret_type, "", on_reasoning=self._reason("assayer"))
         data = result.data or {}
         url = str(data.get("url") or "")
-        if not url.startswith("http"):
+        method = str(data.get("method") or "GET").upper()
+        if method not in ("GET", "POST"):
+            return
+        if method == "POST" and self.config.run.action_tier not in ("write", "full"):
+            method = "GET"
+        if not self._safe_check(url):
+            self.console.line("assayer", f"rejected an unsafe check for {secret_type}")
             return
         self.validator.recipes[secret_type] = Recipe(
             type=secret_type,
             provider=str(data.get("provider") or secret_type),
-            method=str(data.get("method") or "GET").upper(),
+            method=method,
             url=url,
             headers=dict(data.get("headers") or {}),
             success_match=str(data.get("success_marker") or ""),
+            write=(method != "GET"),
         )
         self.console.line("assayer", f"planned a read only check for {secret_type}")
+
+    @staticmethod
+    def _safe_check(url: str) -> bool:
+        try:
+            parts = urlsplit(url)
+        except Exception:
+            return False
+        if parts.scheme != "https":
+            return False
+        host = (parts.hostname or "").lower()
+        if not host or host in ("localhost", "0.0.0.0", "::1", "169.254.169.254"):
+            return False
+        if host.endswith((".local", ".internal", ".localhost")):
+            return False
+        try:
+            ip = ipaddress.ip_address(host)
+            if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved or ip.is_multicast:
+                return False
+        except ValueError:
+            pass
+        return True
 
     def _finding(self, secret: Secret, validation) -> dict:
         severity = SEVERITY_BY_TYPE.get(secret.type, "high")
@@ -318,6 +400,7 @@ class Orchestrator:
             "impact": (f"A live {secret.type} credential is shipped to every visitor in "
                        f"{secret.source}. Anyone can read it and use it as the account."),
             "proof": validation.evidence or validation.detail,
+            "confidence": secret.confidence,
             "reproduction": [],
         }
 

@@ -7,7 +7,9 @@ Nothing here touches a target; it only reads public references and local notes.
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass, field
+from pathlib import Path
 
 import httpx
 
@@ -84,6 +86,35 @@ DOCS: dict[str, str] = {
 class Knowledge:
     fetched: dict[str, str] = field(default_factory=dict)
     timeout: float = 15.0
+    classifications: dict[str, dict] = field(default_factory=dict)
+    store_path: Path | None = None
+
+    def __post_init__(self):
+        if self.store_path is None:
+            self.store_path = Path.home() / ".netcast3r" / "classifications.json"
+        self._load()
+
+    def _load(self) -> None:
+        try:
+            if self.store_path and self.store_path.exists():
+                self.classifications = json.loads(self.store_path.read_text())
+        except Exception:
+            self.classifications = {}
+
+    def _save(self) -> None:
+        try:
+            if self.store_path:
+                self.store_path.parent.mkdir(parents=True, exist_ok=True)
+                self.store_path.write_text(json.dumps(self.classifications, indent=2))
+        except Exception:
+            pass
+
+    def classification(self, value: str) -> dict | None:
+        return self.classifications.get(value)
+
+    def remember_classification(self, value: str, data: dict) -> None:
+        self.classifications[value] = data
+        self._save()
 
     def hint(self, secret_type: str) -> str:
         return VALIDATION_HINTS.get(secret_type, "")

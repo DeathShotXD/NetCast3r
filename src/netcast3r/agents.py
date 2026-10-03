@@ -104,6 +104,27 @@ class Prospector(Agent):
         return self.ask(task, json.dumps(candidates)[:16000], on_reasoning=on_reasoning)
 
 
+class Classifier(Agent):
+    name = "classifier"
+    role = (
+        "You are a credential classifier. You look at strings pulled from "
+        "client JavaScript and decide whether each is a real credential, name "
+        "the service and the credential type, and rate your confidence. You "
+        "never invent a secret that is not in the input. Answer with compact JSON only."
+    )
+
+    def classify(self, items: list[dict], on_reasoning=None) -> AgentResult:
+        task = (
+            "Classify each item. Return JSON: "
+            '{"items":[{"value":"","type":"","provider":"","is_secret":true,'
+            '"confidence":0.0,"validate":"","reason":""}]}. '
+            "Use a short lowercase snake_case type that matches common provider "
+            "names when you recognise one. Set is_secret to false for values that "
+            "are clearly placeholders, status words, or public identifiers."
+        )
+        return self.ask(task, json.dumps(items)[:16000], on_reasoning=on_reasoning)
+
+
 class Assayer(Agent):
     name = "assayer"
     role = (
@@ -163,6 +184,7 @@ class Roster:
     def __post_init__(self):
         self.exegete = Exegete(self.bus, self.knowledge)
         self.prospector = Prospector(self.bus, self.knowledge)
+        self.classifier = Classifier(self.bus, self.knowledge)
         self.assayer = Assayer(self.bus, self.knowledge)
         self.chainer = Chainer(self.bus, self.knowledge)
         self.scribe = Scribe(self.bus, self.knowledge)
