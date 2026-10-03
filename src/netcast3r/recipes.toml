@@ -171,3 +171,75 @@ method = "GET"
 url = "https://api.mapbox.com/tokens/v2?access_token={value}"
 success_codes = [200]
 fail_codes = [401, 403]
+
+[[recipe]]
+type = "dropbox"
+provider = "Dropbox"
+method = "POST"
+url = "https://api.dropboxapi.com/2/users/get_current_account"
+headers = { Authorization = "Bearer {value}" }
+success_codes = [200]
+fail_codes = [401, 403]
+
+[[recipe]]
+type = "facebook"
+provider = "Facebook"
+method = "GET"
+url = "https://graph.facebook.com/v18.0/me?access_token={value}"
+success_codes = [200]
+success_match = "\"id\""
+fail_match = "\"error\""
+
+[[recipe]]
+type = "gitlab"
+provider = "GitLab"
+method = "GET"
+url = "https://gitlab.com/api/v4/user"
+headers = { "PRIVATE-TOKEN" = "{value}" }
+success_codes = [200]
+fail_codes = [401, 403]
+
+[[recipe]]
+type = "cloudflare"
+provider = "Cloudflare"
+method = "GET"
+url = "https://api.cloudflare.com/client/v4/user/tokens/verify"
+headers = { Authorization = "Bearer {value}" }
+success_codes = [200]
+fail_codes = [401, 403]
+
+[[recipe]]
+type = "newrelic"
+provider = "New Relic"
+method = "GET"
+url = "https://api.newrelic.com/v2/applications.json"
+headers = { "X-Api-Key" = "{value}" }
+success_codes = [200]
+fail_codes = [401, 403]
+
+[[recipe]]
+type = "fastly"
+provider = "Fastly"
+method = "GET"
+url = "https://api.fastly.com/current_user"
+headers = { "Fastly-Key" = "{value}", Accept = "application/json" }
+success_codes = [200]
+fail_codes = [401, 403]
+
+[[recipe]]
+type = "netlify"
+provider = "Netlify"
+method = "GET"
+url = "https://api.netlify.com/api/v1/accounts"
+headers = { Authorization = "Bearer {value}" }
+success_codes = [200]
+fail_codes = [401, 403]
+
+[[recipe]]
+type = "travis"
+provider = "Travis CI"
+method = "GET"
+url = "https://api.travis-ci.org/repos"
+headers = { Authorization = "token {value}", "Travis-API-Version" = "3" }
+success_codes = [200]
+fail_codes = [401, 403]
