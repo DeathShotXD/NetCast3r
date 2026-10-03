@@ -61,12 +61,23 @@ netcast3r run   --input target.com --scope scope.txt --out-of-scope oos.txt
   <img src="assets/pipeline.svg" alt="recon, exegete, prospector, assayer, chainer, scribe" width="100%">
 </p>
 
-The crawler collects JavaScript inside scope. The exegete reads each file line
-by line and maps its logic. The prospector hunts secrets at the same time. The
-assayer validates every candidate against its provider. The chainer maps the
-escalation, the sentinel scores and de-duplicates, and the report is written
-with the values redacted. If no provider answers, the deterministic path still
-produces a report.
+The crawler collects JavaScript inside scope, then pulls historical bundles
+from the Wayback Machine. The exegete reads each file and maps its logic. The
+prospector hunts credentials across 231 patterns. The classifier names any
+candidate the patterns did not recognise, rates its confidence, and remembers
+the answer for later runs. The assayer validates every candidate against its
+provider with read-only recipes. The chainer maps the escalation, the sentinel
+scores and de-duplicates, and the report is written with the values redacted.
+If no provider answers, the deterministic path still produces a report.
+
+## Detection
+
+The pattern catalog is built from the gitleaks rule set and the validation
+recipes follow the keyhacks endpoints. Every candidate is scored for
+confidence using its pattern, its entropy, its length, and the surrounding
+code. Unknown values are handed to the classifier agent, which names the
+service and can re-type the candidate so the right recipe runs. A route that
+omits the model still works: detection and validation never depend on a model.
 
 See [docs/architecture.md](docs/architecture.md).
 

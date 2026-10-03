@@ -6,12 +6,28 @@ Notable changes to NetCast3r, newest first.
 
 ### Added
 
+- The pattern catalog now holds 231 credential types, built from the gitleaks
+  rule set, with keyword prefilters so large catalogs stay fast.
+- Read-only validation recipes for the keyhacks endpoints. 26 recipes cover
+  GitHub, Slack, Stripe, SendGrid, Google, Shodan, OpenAI, Anthropic, Groq,
+  Hugging Face, DigitalOcean, npm, Postman, Telegram, Discord, Firebase,
+  Mapbox, Dropbox, Facebook, GitLab, Cloudflare, New Relic, Fastly, Netlify,
+  and Travis CI.
+- A classifier agent that names candidates the patterns did not recognise,
+  rates its confidence, and re-types the candidate so the right recipe runs.
+  Classifications are remembered in `~/.netcast3r/classifications.json`.
+- A confidence score on every candidate, from its pattern, entropy, length, and
+  surrounding code.
+- Self-assessment counters in the summary: `classified`, `unvalidated`, and the
+  mean `confidence` of the findings.
 - Historical JavaScript from the Wayback Machine is now fetched and scanned
   during a run, not only during recon.
-- Patterns and read-only recipes for OpenAI, Anthropic, Groq, Hugging Face,
-  DigitalOcean, npm, Postman, Shopify, Google OAuth secrets, Telegram, Discord
-  webhooks, Sentry DSN, Mapbox secret tokens, database connection strings,
-  Mailgun, Mailchimp, Contentful, Twilio, NVIDIA, and Facebook.
+
+### Changed
+
+- Model-generated validation checks are limited to safe public `https`
+  endpoints, never loopback, private, link-local, or metadata addresses, and
+  follow the run tier.
 
 ### Fixed
 

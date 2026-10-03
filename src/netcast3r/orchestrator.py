@@ -143,7 +143,10 @@ class Orchestrator:
         candidates = self._triage(candidates)
 
         self._exegete(result.js_text)
+        unvalidated = len([c for c in candidates if c.type not in self.validator.recipes])
         findings = self._assay(candidates)
+        confidence = (round(sum(float(f.get("confidence", 0)) for f in findings) / len(findings), 2)
+                      if findings else 0.0)
 
         for finding in findings:
             self.store.add_finding(finding["title"], finding["severity"],
@@ -164,8 +167,10 @@ class Orchestrator:
             "endpoints": len(result.endpoints),
             "candidates": len(candidates),
             "classified": self._classified,
+            "unvalidated": unvalidated,
             "verified": len(findings),
             "findings": len(findings),
+            "confidence": confidence,
         }
         return summary, findings
 
