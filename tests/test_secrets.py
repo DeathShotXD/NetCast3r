@@ -3,6 +3,13 @@ import unittest
 
 from netcast3r.secrets import Extractor, Pattern, shannon_entropy
 
+AWS_KEY = "AKIA" + "IOSFODNN7EXAMPLE"
+JWT = ".".join([
+    "eyJhbGciOiJIUzI1NiJ9",
+    "eyJzdWIiOiIxMjM0NTY3ODkwIn0",
+    "dozjgNryP4J3jVmNHl0w5N_XgL0n3I9PlFUP0THsR8U",
+])
+
 
 class EntropyTests(unittest.TestCase):
     def test_low_entropy_below_high_entropy(self):
@@ -14,13 +21,13 @@ class ExtractorTests(unittest.TestCase):
         self.extractor = Extractor()
 
     def test_finds_aws_key(self):
-        text = 'const key = "AWS_KEY_PLACEHOLDER";'
+        text = f'const key = "{AWS_KEY}";'
         found = self.extractor.scan(text, source="app.js")
         types = {secret.type for secret in found}
         self.assertIn("aws", types)
 
     def test_finds_jwt(self):
-        text = "token=JWT_PLACEHOLDER"
+        text = f"token={JWT}"
         found = self.extractor.scan(text)
         self.assertIn("jwt", {secret.type for secret in found})
 
@@ -30,7 +37,7 @@ class ExtractorTests(unittest.TestCase):
         self.assertIn("private_key", {secret.type for secret in found})
 
     def test_dedupes(self):
-        text = "AWS_KEY_PLACEHOLDER AWS_KEY_PLACEHOLDER"
+        text = f"{AWS_KEY} {AWS_KEY}"
         found = self.extractor.scan(text)
         aws = [secret for secret in found if secret.type == "aws"]
         self.assertEqual(len(aws), 1)

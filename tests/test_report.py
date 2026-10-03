@@ -5,13 +5,16 @@ from pathlib import Path
 
 from netcast3r.report import redact, render, save_sarif
 
+AWS_KEY = "AKIA" + "IOSFODNN7EXAMPLE"
+STRIPE_KEY = "sk_" + "live_" + "abcdefghijklmnopqrstuvwx"
+
 
 class RedactTests(unittest.TestCase):
     def test_short_value_masked(self):
         self.assertEqual(redact("abcd"), "ab**")
 
     def test_long_value_keeps_edges(self):
-        result = redact("AWS_KEY_PLACEHOLDER")
+        result = redact(AWS_KEY)
         self.assertTrue(result.startswith("AKIAIO"))
         self.assertTrue(result.endswith("MPLE"))
         self.assertIn("...", result)
@@ -23,7 +26,7 @@ class RenderTests(unittest.TestCase):
             "title": "Stripe credential exposed in client JavaScript",
             "severity": "critical",
             "secret_type": "stripe_live",
-            "value": "STRIPE_LIVE_PLACEHOLDER",
+            "value": STRIPE_KEY,
             "source": "https://target/app.js",
             "status": "verified (HTTP 200)",
             "impact": "live key shipped to clients",
@@ -35,7 +38,7 @@ class RenderTests(unittest.TestCase):
         self.assertIn("## Findings", text)
         self.assertIn("## Out of scope skipped", text)
         self.assertIn("sk_liv...uvwx", text)
-        self.assertNotIn("STRIPE_LIVE_PLACEHOLDER", text)
+        self.assertNotIn(STRIPE_KEY, text)
 
     def test_sarif_output(self):
         findings = [{

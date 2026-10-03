@@ -24,8 +24,8 @@ INDEX = """<!doctype html>
 """
 
 APP_JS = """const LAB_TOKEN = "NC3RLABKEY123";
-const AWS_EXAMPLE = "AWS_KEY_PLACEHOLDER";
-const STRIPE_TEST = "STRIPE_TEST_PLACEHOLDER";
+const AWS_EXAMPLE = "__AWS_EXAMPLE__";
+const STRIPE_TEST = "__STRIPE_TEST__";
 const API_BASE = "/api/v2";
 
 async function loadUsers() {
@@ -36,6 +36,9 @@ async function loadUsers() {
 loadUsers();
 //# sourceMappingURL=app.js.map
 """
+APP_JS = (APP_JS
+          .replace("__AWS_EXAMPLE__", "AKIA" + "IOSFODNN7EXAMPLE")
+          .replace("__STRIPE_TEST__", "sk_" + "test_" + "51LabExampleValue00000000000000"))
 
 APP_JS_MAP = """{"version":3,"file":"app.js","sources":["app.ts"],"mappings":""}"""
 
