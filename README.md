@@ -12,7 +12,7 @@ report writer, the live console, the lab, and the test suite are all in place.
 </p>
 
 <p align="center">
-  <img src="assets/logo.svg" alt="NetCast3r logo" width="160">
+  <img src="assets/logo.svg" alt="NetCast3r logo" width="340">
 </p>
 
 <p align="center">
