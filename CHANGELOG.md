@@ -32,6 +32,9 @@ Notable changes to NetCast3r, newest first.
 - Source maps are recovered during recon: inline `data:` maps are decoded and
   remote maps are fetched in scope, so secrets and endpoints in the original
   sources behind a minified bundle are scanned too.
+- Recon probes each host for an OpenAPI document and for open GraphQL
+  introspection, so API routes that are never linked from the JavaScript are
+  carried into the run.
 
 ### Changed
 

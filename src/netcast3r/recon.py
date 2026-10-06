@@ -13,7 +13,7 @@ import json
 import re
 import shutil
 from dataclasses import dataclass, field
-from urllib.parse import unquote, urljoin
+from urllib.parse import unquote, urljoin, urlsplit
 
 from .http import Session
 
@@ -23,6 +23,12 @@ JS_IMPORT_RE = re.compile(r"""(?:import\s*\(\s*|from\s*|require\(\s*)["']([^"']+
 ENDPOINT_RE = re.compile(r"""["'](/[A-Za-z0-9_\-./]{2,}(?:\?[A-Za-z0-9_\-=&%]*)?)["']""")
 SOURCE_MAP_RE = re.compile(r"""//[#@]\s*sourceMappingURL=(\S+)""")
 MAX_SOURCE_MAP = 8_000_000
+
+SPEC_PATHS = ("/openapi.json", "/swagger.json", "/swagger/v1/swagger.json",
+              "/v2/api-docs", "/v3/api-docs", "/api-docs", "/api/swagger.json",
+              "/api/openapi.json", "/.well-known/openapi.json")
+GRAPHQL_PATHS = ("/graphql", "/api/graphql", "/v1/graphql", "/graph")
+GRAPHQL_QUERY = {"query": "{__schema{queryType{name} mutationType{name}}}"}
 ASSET_EXT = (".png", ".jpg", ".jpeg", ".gif", ".svg", ".css", ".woff", ".woff2",
              ".ico", ".mp4", ".webm", ".pdf", ".zip")
 
@@ -92,6 +98,56 @@ class Recon:
         if not contents:
             return None
         return map_url, "\n".join(contents)[:MAX_SOURCE_MAP]
+
+    @staticmethod
+    def _roots(seeds: list[str]) -> list[str]:
+        roots = []
+        for seed in seeds:
+            url = seed if "://" in seed else "https://" + seed
+            parts = urlsplit(url)
+            if parts.scheme and parts.netloc:
+                roots.append(parts.scheme + "://" + parts.netloc)
+        return sorted(set(roots))
+
+    def _spec_paths(self, url: str) -> list[str]:
+        """Read an OpenAPI document and return the paths it declares."""
+        response = self.session.get(url)
+        if response is None or response.status_code != 200 or not response.text:
+            return []
+        try:
+            data = json.loads(response.text)
+        except ValueError:
+            return []
+        paths = data.get("paths") if isinstance(data, dict) else None
+        if not isinstance(paths, dict):
+            return []
+        return [_absolute(url, path) for path in paths if isinstance(path, str)]
+
+    def _graphql_open(self, url: str) -> bool:
+        """True when the endpoint answers an introspection query."""
+        response = self.session.request("POST", url, json=GRAPHQL_QUERY)
+        if response is None or not response.text:
+            return False
+        return "__schema" in response.text or "queryType" in response.text
+
+    def discover_apis(self, seeds: list[str]) -> list[str]:
+        """Probe each seed host for an API description or an open GraphQL endpoint.
+
+        An OpenAPI document lists paths that are never linked from the
+        JavaScript. An open introspection result means the GraphQL root and its
+        mutations are reachable, so the endpoint is worth carrying.
+        """
+        found: list[str] = []
+        for root in self._roots(seeds):
+            for path in SPEC_PATHS:
+                url = root + path
+                if self.scope.is_in_scope(url):
+                    found.extend(self._spec_paths(url))
+            for path in GRAPHQL_PATHS:
+                url = root + path
+                if self.scope.is_in_scope(url) and self._graphql_open(url):
+                    found.append(url)
+        return sorted(set(found))
 
     def crawl(self, seeds: list[str]) -> ReconResult:
         result = ReconResult()

@@ -118,6 +118,9 @@ class Orchestrator:
     def _pipeline(self, seeds: list[str]):
         recon = Recon(self.scope, self.config, session=self.session)
         result = recon.crawl(seeds)
+        discovered = recon.discover_apis(seeds)
+        if discovered:
+            result.endpoints = sorted(set(result.endpoints) | set(discovered))
         self._out_of_scope = result.out_of_scope
         if self.config.run.wayback:
             self._augment_wayback(recon, seeds, result)
