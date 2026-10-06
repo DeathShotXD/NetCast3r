@@ -159,6 +159,27 @@ class ApiDiscoveryTests(unittest.TestCase):
         self.assertEqual(recon.discover_apis(["https://other.net"]), [])
         self.assertEqual(session.posted, [])
 
+    def test_robots_and_sitemap_paths_are_collected(self):
+        scope = ScopeManager(in_scope=["example.com"])
+        robots = "User-agent: *\nDisallow: /admin\nDisallow: /\n"
+        sitemap = "<urlset><url><loc>https://example.com/pricing</loc></url></urlset>"
+        session = _ApiSession(specs={
+            "https://example.com/robots.txt": robots,
+            "https://example.com/sitemap.xml": sitemap,
+        })
+        recon = Recon(scope, default_config(), session=session)
+        found = recon.discover_wellknown(["https://example.com"])
+        self.assertIn("https://example.com/admin", found)
+        self.assertIn("https://example.com/pricing", found)
+        self.assertNotIn("https://example.com/", found)
+
+    def test_out_of_scope_sitemap_entries_are_skipped(self):
+        scope = ScopeManager(in_scope=["example.com"])
+        sitemap = "<urlset><url><loc>https://evil.net/x</loc></url></urlset>"
+        session = _ApiSession(specs={"https://example.com/sitemap.xml": sitemap})
+        recon = Recon(scope, default_config(), session=session)
+        self.assertEqual(recon.discover_wellknown(["https://example.com"]), [])
+
 
 if __name__ == "__main__":
     unittest.main()

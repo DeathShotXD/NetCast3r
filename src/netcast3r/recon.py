@@ -29,6 +29,11 @@ SPEC_PATHS = ("/openapi.json", "/swagger.json", "/swagger/v1/swagger.json",
               "/api/openapi.json", "/.well-known/openapi.json")
 GRAPHQL_PATHS = ("/graphql", "/api/graphql", "/v1/graphql", "/graph")
 GRAPHQL_QUERY = {"query": "{__schema{queryType{name} mutationType{name}}}"}
+WELLKNOWN_PATHS = ("/robots.txt", "/sitemap.xml", "/sitemap_index.xml",
+                   "/sitemap-index.xml")
+DISALLOW_RE = re.compile(r"(?im)^\s*disallow:\s*(\S+)")
+LOC_RE = re.compile(r"<loc>\s*([^<\s]+)\s*</loc>", re.I)
+MAX_SITEMAP_LOCS = 500
 ASSET_EXT = (".png", ".jpg", ".jpeg", ".gif", ".svg", ".css", ".woff", ".woff2",
              ".ico", ".mp4", ".webm", ".pdf", ".zip")
 
@@ -147,6 +152,32 @@ class Recon:
                 url = root + path
                 if self.scope.is_in_scope(url) and self._graphql_open(url):
                     found.append(url)
+        return sorted(set(found))
+
+    def discover_wellknown(self, seeds: list[str]) -> list[str]:
+        """Read robots.txt and sitemaps for paths the site does not link.
+
+        A ``Disallow`` line is a written list of the paths an operator would
+        rather not advertise, and a sitemap enumerates the rest.
+        """
+        found: list[str] = []
+        for root in self._roots(seeds):
+            for path in WELLKNOWN_PATHS:
+                url = root + path
+                if not self.scope.is_in_scope(url):
+                    continue
+                response = self.session.get(url)
+                if response is None or response.status_code != 200 or not response.text:
+                    continue
+                text = response.text
+                for entry in DISALLOW_RE.findall(text):
+                    if entry and entry != "/":
+                        candidate = _absolute(url, entry)
+                        if self.scope.is_in_scope(candidate):
+                            found.append(candidate)
+                for loc in LOC_RE.findall(text)[:MAX_SITEMAP_LOCS]:
+                    if self.scope.is_in_scope(loc):
+                        found.append(loc)
         return sorted(set(found))
 
     def crawl(self, seeds: list[str]) -> ReconResult:

@@ -119,6 +119,7 @@ class Orchestrator:
         recon = Recon(self.scope, self.config, session=self.session)
         result = recon.crawl(seeds)
         discovered = recon.discover_apis(seeds)
+        discovered += recon.discover_wellknown(seeds)
         if discovered:
             result.endpoints = sorted(set(result.endpoints) | set(discovered))
         self._out_of_scope = result.out_of_scope

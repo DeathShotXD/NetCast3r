@@ -35,6 +35,8 @@ Notable changes to NetCast3r, newest first.
 - Recon probes each host for an OpenAPI document and for open GraphQL
   introspection, so API routes that are never linked from the JavaScript are
   carried into the run.
+- Recon reads robots.txt and sitemaps, so the paths an operator disallows and
+  the pages a sitemap lists are carried into the run.
 
 ### Changed
 
