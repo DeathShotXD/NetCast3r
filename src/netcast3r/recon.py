@@ -8,11 +8,12 @@ crawler runs.
 
 from __future__ import annotations
 
+import base64
 import json
 import re
 import shutil
 from dataclasses import dataclass, field
-from urllib.parse import urljoin
+from urllib.parse import unquote, urljoin
 
 from .http import Session
 
@@ -20,6 +21,8 @@ LINK_RE = re.compile(r"""(?:href|src|action)\s*=\s*["']([^"'#]+)["']""", re.I)
 JS_REF_RE = re.compile(r"""(?:src|href)\s*=\s*["']([^"']+\.js(?:\?[^"']*)?)["']""", re.I)
 JS_IMPORT_RE = re.compile(r"""(?:import\s*\(\s*|from\s*|require\(\s*)["']([^"']+\.js[^"']*)["']""")
 ENDPOINT_RE = re.compile(r"""["'](/[A-Za-z0-9_\-./]{2,}(?:\?[A-Za-z0-9_\-=&%]*)?)["']""")
+SOURCE_MAP_RE = re.compile(r"""//[#@]\s*sourceMappingURL=(\S+)""")
+MAX_SOURCE_MAP = 8_000_000
 ASSET_EXT = (".png", ".jpg", ".jpeg", ".gif", ".svg", ".css", ".woff", ".woff2",
              ".ico", ".mp4", ".webm", ".pdf", ".zip")
 
@@ -53,6 +56,43 @@ class Recon:
             return 0, "", ""
         return response.status_code, response.text, response.headers.get("content-type", "")
 
+    def _source_map(self, base_url: str, js_text: str):
+        """Recover original sources from a source map, when one is referenced.
+
+        The map carries ``sourcesContent``: the pre-build source, with the
+        internal paths and string literals that minification keeps out of the
+        served file. Inline ``data:`` maps are decoded in place, remote maps
+        are fetched only while in scope.
+        """
+        match = SOURCE_MAP_RE.search(js_text)
+        if not match:
+            return None
+        ref = match.group(1).strip().strip('"').strip("'")
+        if ref.startswith("data:"):
+            map_url = base_url + "#sourcemap"
+            header, _, payload = ref.partition(",")
+            try:
+                raw = (base64.b64decode(payload).decode("utf-8", "ignore")
+                       if "base64" in header else unquote(payload))
+            except Exception:
+                return None
+        else:
+            map_url = _absolute(base_url, ref)
+            if not self.scope.is_in_scope(map_url):
+                return None
+            response = self.session.get(map_url)
+            if response is None or not response.text:
+                return None
+            raw = response.text
+        try:
+            data = json.loads(raw)
+        except ValueError:
+            return None
+        contents = [c for c in (data.get("sourcesContent") or []) if isinstance(c, str)]
+        if not contents:
+            return None
+        return map_url, "\n".join(contents)[:MAX_SOURCE_MAP]
+
     def crawl(self, seeds: list[str]) -> ReconResult:
         result = ReconResult()
         queue: list[tuple[str, int]] = []
@@ -78,6 +118,13 @@ class Recon:
             if is_js:
                 result.js_urls.append(url)
                 result.js_text[url] = text
+                recovered = self._source_map(url, text)
+                if recovered is not None and recovered[0] not in result.js_text:
+                    map_url, sources = recovered
+                    result.js_text[map_url] = sources
+                    result.js_urls.append(map_url)
+                    for endpoint in ENDPOINT_RE.findall(sources):
+                        result.endpoints.append(_absolute(map_url, endpoint))
                 for ref in JS_IMPORT_RE.findall(text):
                     child = _absolute(url, ref)
                     if self.scope.is_in_scope(child):

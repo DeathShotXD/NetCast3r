@@ -29,6 +29,9 @@ Notable changes to NetCast3r, newest first.
   mean `confidence` of the findings.
 - Historical JavaScript from the Wayback Machine is now fetched and scanned
   during a run, not only during recon.
+- Source maps are recovered during recon: inline `data:` maps are decoded and
+  remote maps are fetched in scope, so secrets and endpoints in the original
+  sources behind a minified bundle are scanned too.
 
 ### Changed
 
