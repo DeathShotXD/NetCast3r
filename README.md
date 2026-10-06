@@ -183,6 +183,14 @@ netcast3r providers
 `--tier` selects the action tier, `--resume` reuses earlier validations, and
 `--fail` exits non-zero when findings exist.
 
+### Exit codes
+
+| Code | Meaning |
+| --- | --- |
+| `0` | the command finished |
+| `1` | no input given, no command given, or `--fail` found something |
+| `2` | the arguments could not be parsed |
+
 ## Scope files
 
 Both scope files take one entry per line. Blank lines and lines starting with
