@@ -13,13 +13,17 @@ Notable changes to NetCast3r, newest first.
 - A shared token module, `netcast3r.theme`, holding the palette, the state and
   severity colors, and the six stage rail, so the console and the dashboard
   render the same run with the same words and the same colors.
-- The pattern catalog now holds 230 credential types, built from the gitleaks
-  rule set, with keyword prefilters so large catalogs stay fast.
-- Read-only validation recipes for the keyhacks endpoints. 26 recipes cover
-  GitHub, Slack, Stripe, SendGrid, Google, Shodan, OpenAI, Anthropic, Groq,
-  Hugging Face, DigitalOcean, npm, Postman, Telegram, Discord, Firebase,
-  Mapbox, Dropbox, Facebook, GitLab, Cloudflare, New Relic, Fastly, Netlify,
-  and Travis CI.
+- The pattern catalog now holds 310 credential types, built from the gitleaks
+  rule set and extended with the modern tokens those rules do not cover, with
+  keyword prefilters so large catalogs stay fast.
+- Validation recipes for the keyhacks endpoints, 135 in all, covering 121
+  providers. A recipe is read-only unless it is marked as a write check.
+- Paired credentials: a recipe can name a companion type, so a value that only
+  works together with a second secret (Twilio, PayPal, Razorpay, Plaid, Censys)
+  is checked with both parts.
+- Write-tier impact proofs: when `--tier write` is set, a `_write` recipe runs
+  in place of the read check, so a token can be shown to hold live access
+  rather than merely being valid.
 - A classifier agent that names candidates the patterns did not recognise,
   rates its confidence, and re-types the candidate so the right recipe runs.
   Classifications are remembered in `~/.netcast3r/classifications.json`.

@@ -1,3 +1,12 @@
+# Secret patterns.
+#
+# Each entry is a regular expression and the metadata used to score it. The
+# set is built from the gitleaks rules and extended with tokens those rules do
+# not cover. A pattern runs only when one of its keywords is present, and a
+# match is dropped when its Shannon entropy is below the stated value. The
+# group field selects the capture group that holds the secret; 0 means the
+# whole match.
+
 [[pattern]]
 id = "1password_secret_key"
 type = "1password_secret_key"
@@ -1503,8 +1512,8 @@ id = "sonar_api_token"
 type = "sonar_api_token"
 regex = "(?i)[\\w.-]{0,50}?(?:sonar[_.-]?(login|token))(?:[ \\t\\w.-]{0,20})[\\s'\"]{0,3}(?:=|>|:{1,3}=|\\|\\||:|=>|\\?=|,)[\\x60'\"\\s=]{0,5}((?:squ_|sqp_|sqa_)?[a-z0-9=_\\-]{40})(?:[\\x60'\"\\s;]|\\\\[nr]|$)"
 description = "Uncovered a Sonar API token, potentially compromising software vulnerability scanning and code security."
-group = 2
 keywords = ["sonar"]
+group = 2
 
 [[pattern]]
 id = "sourcegraph_access_token"
@@ -1716,8 +1725,8 @@ id = "shodan_api_key"
 type = "shodan"
 regex = "(?i)shodan[^A-Za-z0-9]{0,24}([A-Za-z0-9]{32})"
 description = "Shodan API key"
-group = 1
 keywords = ["shodan"]
+group = 1
 
 [[pattern]]
 id = "groq_key"
@@ -1732,3 +1741,612 @@ type = "private_key"
 regex = "-----BEGIN (?:RSA |EC |OPENSSH |DSA |PGP |ENCRYPTED )?PRIVATE KEY-----"
 description = "Private key header"
 keywords = ["-----begin"]
+
+[[pattern]]
+id = "buildkite_api_token"
+type = "buildkite"
+regex = "\\bbkua_[a-f0-9]{40}\\b"
+description = "Uncovered a possible Buildkite API token."
+keywords = ["bkua_"]
+
+[[pattern]]
+id = "circleci_api_token"
+type = "circleci"
+regex = "\\bCCIPAT_[a-zA-Z0-9]{40}\\b"
+description = "Uncovered a possible CircleCI personal API token."
+keywords = ["ccipat_"]
+
+[[pattern]]
+id = "vercel_access_token"
+type = "vercel"
+regex = "(?i)vercel[\\w .-]{0,20}[=:][\\x60'\\\"\\s=]{0,5}([a-z0-9]{24})"
+description = "Uncovered a possible Vercel access token."
+keywords = ["vercel"]
+group = 1
+
+[[pattern]]
+id = "railway_access_token"
+type = "railway"
+regex = "(?i)railway[\\w .-]{0,20}[=:][\\x60'\\\"\\s=]{0,5}([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})"
+description = "Uncovered a possible Railway access token."
+keywords = ["railway"]
+group = 1
+
+[[pattern]]
+id = "render_api_key"
+type = "render"
+regex = "\\brnd_[A-Za-z0-9]{24,40}\\b"
+description = "Uncovered a possible Render API key."
+keywords = ["rnd_"]
+
+[[pattern]]
+id = "vultr_api_key"
+type = "vultr_api_key"
+regex = "(?i)vultr[\\w .-]{0,20}[=:][\\x60'\\\"\\s=]{0,5}([A-Z0-9]{36})"
+description = "Uncovered a possible Vultr API key."
+keywords = ["vultr"]
+group = 1
+
+[[pattern]]
+id = "linode_api_token"
+type = "linode_token"
+regex = "(?i)linode[\\w .-]{0,20}[=:][\\x60'\\\"\\s=]{0,5}([a-f0-9]{64})"
+description = "Uncovered a possible Linode API token."
+keywords = ["linode"]
+group = 1
+
+[[pattern]]
+id = "supabase_access_token"
+type = "supabase"
+regex = "\\bsbp_[a-z0-9]{40}\\b"
+description = "Uncovered a possible Supabase access token."
+keywords = ["sbp_"]
+
+[[pattern]]
+id = "turso_api_token"
+type = "tursodatabase"
+regex = "(?i)turso[\\w .-]{0,20}[=:][\\x60'\\\"\\s=]{0,5}([A-Za-z0-9_\\-\\.]{40,})"
+description = "Uncovered a possible Turso API token."
+entropy = 3.5
+keywords = ["turso"]
+group = 1
+
+[[pattern]]
+id = "neon_api_key"
+type = "neon_api_key"
+regex = "\\bnapi_[a-z0-9]{40,}\\b"
+description = "Uncovered a possible Neon API key."
+keywords = ["napi_"]
+
+[[pattern]]
+id = "resend_api_key"
+type = "resend_api_key"
+regex = "\\bre_[1-9A-HJ-NP-Za-km-z]{8}_[1-9A-HJ-NP-Za-km-z]{24}\\b"
+description = "Uncovered a possible Resend API key."
+keywords = ["re_"]
+
+[[pattern]]
+id = "sparkpost_api_key"
+type = "sparkpost_api_key"
+regex = "(?i)sparkpost[\\w .-]{0,20}[=:][\\x60'\\\"\\s=]{0,5}([a-f0-9]{40})"
+description = "Uncovered a possible SparkPost API key."
+keywords = ["sparkpost"]
+group = 1
+
+[[pattern]]
+id = "twilio_auth_token"
+type = "twilio_auth_token"
+regex = "(?i)twilio[\\w .-]{0,20}[=:][\\x60'\\\"\\s=]{0,5}([a-f0-9]{32})"
+description = "Uncovered a possible Twilio auth token."
+keywords = ["twilio"]
+group = 1
+
+[[pattern]]
+id = "twilio_account_sid"
+type = "twilio_account_sid"
+regex = "\\bAC[0-9a-fA-F]{32}\\b"
+description = "Uncovered a possible Twilio account SID."
+keywords = []
+
+[[pattern]]
+id = "stripe_restricted_key"
+type = "stripe_restricted"
+regex = "\\brk_(?:test|live|prod)_[a-zA-Z0-9]{10,99}\\b"
+description = "Uncovered a possible Stripe restricted key."
+keywords = ["rk_"]
+
+[[pattern]]
+id = "stripe_webhook_secret"
+type = "stripe_webhook"
+regex = "\\bwhsec_[a-zA-Z0-9]{32,}\\b"
+description = "Uncovered a possible Stripe webhook secret."
+keywords = ["whsec_"]
+
+[[pattern]]
+id = "stripe_publishable_key"
+type = "stripe_publishable"
+regex = "\\bpk_(?:test|live|prod)_[a-zA-Z0-9]{10,99}\\b"
+description = "Uncovered a possible Stripe publishable key."
+keywords = ["pk_"]
+
+[[pattern]]
+id = "paypal_client_id"
+type = "paypal_client_id"
+regex = "(?i)(?:paypal|client_id)[\\w .-]{0,20}[=:][\\x60'\\\"\\s=]{0,5}(A[a-zA-Z0-9_-]{20,80})"
+description = "Uncovered a possible PayPal client id."
+keywords = ["paypal"]
+group = 1
+
+[[pattern]]
+id = "paypal_client_secret"
+type = "paypal_client_secret"
+regex = "(?i)paypal[\\w .-]{0,20}[=:][\\x60'\\\"\\s=]{0,5}(E[A-Za-z0-9_-]{20,80})"
+description = "Uncovered a possible PayPal client secret."
+keywords = ["paypal"]
+group = 1
+
+[[pattern]]
+id = "razorpay_key_id"
+type = "razorpay_key_id"
+regex = "\\brzp_(?:test|live)_[A-Za-z0-9]{14}\\b"
+description = "Uncovered a possible Razorpay key id."
+keywords = ["rzp_"]
+
+[[pattern]]
+id = "razorpay_key_secret"
+type = "razorpay_key_secret"
+regex = "(?i)razorpay[\\w .-]{0,20}[=:][\\x60'\\\"\\s=]{0,5}([A-Za-z0-9]{24,40})"
+description = "Uncovered a possible Razorpay key secret."
+keywords = ["razorpay"]
+group = 1
+
+[[pattern]]
+id = "deepgram_api_key"
+type = "deepgram"
+regex = "(?i)deepgram[\\w .-]{0,20}[=:][\\x60'\\\"\\s=]{0,5}([a-z0-9]{40})"
+description = "Uncovered a possible Deepgram API key."
+keywords = ["deepgram"]
+group = 1
+
+[[pattern]]
+id = "elevenlabs_api_key"
+type = "elevenlabs"
+regex = "\\bsk_[a-f0-9]{48}\\b"
+description = "Uncovered a possible ElevenLabs API key."
+keywords = ["sk_"]
+
+[[pattern]]
+id = "replicate_api_token"
+type = "replicate"
+regex = "\\br8_[A-Za-z0-9]{37}\\b"
+description = "Uncovered a possible Replicate API token."
+keywords = ["r8_"]
+
+[[pattern]]
+id = "assemblyai_api_key"
+type = "assemblyai"
+regex = "(?i)assemblyai[\\w .-]{0,20}[=:][\\x60'\\\"\\s=]{0,5}([a-f0-9]{32})"
+description = "Uncovered a possible AssemblyAI API key."
+keywords = ["assemblyai"]
+group = 1
+
+[[pattern]]
+id = "together_api_key"
+type = "together"
+regex = "(?i)together[\\w .-]{0,20}[=:][\\x60'\\\"\\s=]{0,5}([a-f0-9]{64})"
+description = "Uncovered a possible Together API key."
+keywords = ["together"]
+group = 1
+
+[[pattern]]
+id = "fireworks_api_key"
+type = "fireworks"
+regex = "(?i)fireworks[\\w .-]{0,20}[=:][\\x60'\\\"\\s=]{0,5}([A-Za-z0-9]{20,40})"
+description = "Uncovered a possible Fireworks API key."
+keywords = ["fireworks"]
+group = 1
+
+[[pattern]]
+id = "stability_api_key"
+type = "stability"
+regex = "\\bsk-[A-Za-z0-9]{48}\\b"
+description = "Uncovered a possible Stability AI API key."
+keywords = ["sk-"]
+
+[[pattern]]
+id = "xai_api_key"
+type = "xai"
+regex = "\\bxai-[0-9a-zA-Z_]{80}\\b"
+description = "Uncovered a possible xAI API key."
+keywords = ["xai-"]
+
+[[pattern]]
+id = "deepseek_api_key"
+type = "deepseek"
+regex = "(?i)deepseek[\\w .-]{0,20}[=:][\\x60'\\\"\\s=]{0,5}(sk-[a-z0-9]{32})"
+description = "Uncovered a possible DeepSeek API key."
+keywords = ["deepseek"]
+group = 1
+
+[[pattern]]
+id = "posthog_personal_api_key"
+type = "posthog"
+regex = "\\bphx_[a-zA-Z0-9_]{43,48}\\b"
+description = "Uncovered a possible PostHog personal API key."
+keywords = ["phx_"]
+
+[[pattern]]
+id = "posthog_project_api_key"
+type = "posthog_project"
+regex = "\\bphc_[a-zA-Z0-9]{40,50}\\b"
+description = "Uncovered a possible PostHog project API key."
+keywords = ["phc_"]
+
+[[pattern]]
+id = "pagerduty_api_token"
+type = "pagerduty_api_token"
+regex = "\\bu\\+[a-zA-Z0-9_+-]{18}\\b"
+description = "Uncovered a possible PagerDuty API token."
+keywords = ["pagerduty", "u+"]
+
+[[pattern]]
+id = "opsgenie_api_key"
+type = "opsgenie_api_key"
+regex = "(?i)opsgenie[\\w .-]{0,20}[=:][\\x60'\\\"\\s=]{0,5}([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})"
+description = "Uncovered a possible OpsGenie API key."
+keywords = ["opsgenie"]
+group = 1
+
+[[pattern]]
+id = "rollbar_access_token"
+type = "rollbar_access_token"
+regex = "(?i)rollbar[\\w .-]{0,20}[=:][\\x60'\\\"\\s=]{0,5}([a-f0-9]{32})"
+description = "Uncovered a possible Rollbar access token."
+keywords = ["rollbar"]
+group = 1
+
+[[pattern]]
+id = "honeybadger_api_key"
+type = "honeybadger_api_key"
+regex = "(?i)honeybadger[\\w .-]{0,20}[=:][\\x60'\\\"\\s=]{0,5}([a-f0-9]{32})"
+description = "Uncovered a possible Honeybadger API key."
+keywords = ["honeybadger"]
+group = 1
+
+[[pattern]]
+id = "box_access_token"
+type = "box_access_token"
+regex = "(?i)box[\\w .-]{0,20}[=:][\\x60'\\\"\\s=]{0,5}([A-Za-z0-9]{32,64})"
+description = "Uncovered a possible Box access token."
+keywords = ["box_access", "boxclient", "box-client", "box_api"]
+group = 1
+
+[[pattern]]
+id = "bitly_access_token"
+type = "bitly_access_token"
+regex = "\\b[a-f0-9]{40}\\b"
+description = "Uncovered a possible Bitly access token."
+keywords = ["bitly"]
+
+[[pattern]]
+id = "lokalise_api_token"
+type = "lokalise_api_token"
+regex = "\\b[a-f0-9]{40}\\b"
+description = "Uncovered a possible Lokalise API token."
+keywords = ["lokalise"]
+
+[[pattern]]
+id = "pivotal_api_token"
+type = "pivotal_api_token"
+regex = "(?i)pivotaltracker[\\w .-]{0,20}[=:][\\x60'\\\"\\s=]{0,5}([a-f0-9]{32})"
+description = "Uncovered a possible Pivotal Tracker API token."
+keywords = ["pivotaltracker"]
+group = 1
+
+[[pattern]]
+id = "jumpcloud_api_key"
+type = "jumpcloud_api_key"
+regex = "(?i)jumpcloud[\\w .-]{0,20}[=:][\\x60'\\\"\\s=]{0,5}([a-f0-9]{40})"
+description = "Uncovered a possible JumpCloud API key."
+keywords = ["jumpcloud"]
+group = 1
+
+[[pattern]]
+id = "iterable_api_key"
+type = "iterable_api_key"
+regex = "(?i)iterable[\\w .-]{0,20}[=:][\\x60'\\\"\\s=]{0,5}([a-f0-9]{32})"
+description = "Uncovered a possible Iterable API key."
+keywords = ["iterable"]
+group = 1
+
+[[pattern]]
+id = "pendo_integration_key"
+type = "pendo_integration_key"
+regex = "(?i)pendo[\\w .-]{0,20}[=:][\\x60'\\\"\\s=]{0,5}([a-f0-9-]{36})"
+description = "Uncovered a possible Pendo integration key."
+keywords = ["pendo"]
+group = 1
+
+[[pattern]]
+id = "clickup_api_token"
+type = "clickup_api_token"
+regex = "\\bpk_[0-9]{8}_[A-Z0-9]{32}\\b"
+description = "Uncovered a possible ClickUp API token."
+keywords = ["pk_"]
+
+[[pattern]]
+id = "figma_access_token"
+type = "figma_access_token"
+regex = "\\bfigd_[A-Za-z0-9_-]{40}\\b"
+description = "Uncovered a possible Figma access token."
+keywords = ["figd_"]
+
+[[pattern]]
+id = "calendly_api_token"
+type = "calendly_api_token"
+regex = "(?i)calendly[\\w .-]{0,20}[=:][\\x60'\\\"\\s=]{0,5}(eyJ[A-Za-z0-9_\\-\\.]{60,})"
+description = "Uncovered a possible Calendly API token."
+keywords = ["calendly"]
+group = 1
+
+[[pattern]]
+id = "contentful_personal_token"
+type = "contentful_personal_token"
+regex = "\\bCFPAT-[a-zA-Z0-9_\\-]{43}\\b"
+description = "Uncovered a possible Contentful personal access token."
+keywords = ["cfpat-"]
+
+[[pattern]]
+id = "sanity_api_token"
+type = "sanity_api_token"
+regex = "(?i)sanity[\\w .-]{0,20}[=:][\\x60'\\\"\\s=]{0,5}(sk[A-Za-z0-9]{79})"
+description = "Uncovered a possible Sanity API token."
+keywords = ["sanity"]
+group = 1
+
+[[pattern]]
+id = "virustotal_api_key"
+type = "virustotal_api_key"
+regex = "(?i)virustotal[\\w .-]{0,20}[=:][\\x60'\\\"\\s=]{0,5}([a-f0-9]{64})"
+description = "Uncovered a possible VirusTotal API key."
+keywords = ["virustotal"]
+group = 1
+
+[[pattern]]
+id = "hunter_api_key"
+type = "hunter_api_key"
+regex = "(?i)hunter[\\w .-]{0,20}[=:][\\x60'\\\"\\s=]{0,5}([a-f0-9]{40})"
+description = "Uncovered a possible Hunter.io API key."
+keywords = ["hunter"]
+group = 1
+
+[[pattern]]
+id = "abuseipdb_api_key"
+type = "abuseipdb_api_key"
+regex = "(?i)abuseipdb[\\w .-]{0,20}[=:][\\x60'\\\"\\s=]{0,5}([a-f0-9]{80})"
+description = "Uncovered a possible AbuseIPDB API key."
+keywords = ["abuseipdb"]
+group = 1
+
+[[pattern]]
+id = "alienvault_otx_key"
+type = "alienvault_otx_key"
+regex = "(?i)(?:otx|alienvault)[\\w .-]{0,20}[=:][\\x60'\\\"\\s=]{0,5}([a-f0-9]{64})"
+description = "Uncovered a possible AlienVault OTX key."
+keywords = ["alienvault", "otx"]
+group = 1
+
+[[pattern]]
+id = "urlscan_api_key"
+type = "urlscan_api_key"
+regex = "(?i)urlscan[\\w .-]{0,20}[=:][\\x60'\\\"\\s=]{0,5}([a-f0-9-]{36})"
+description = "Uncovered a possible urlscan.io API key."
+keywords = ["urlscan"]
+group = 1
+
+[[pattern]]
+id = "securitytrails_api_key"
+type = "securitytrails_api_key"
+regex = "(?i)securitytrails[\\w .-]{0,20}[=:][\\x60'\\\"\\s=]{0,5}([A-Za-z0-9]{32})"
+description = "Uncovered a possible SecurityTrails API key."
+keywords = ["securitytrails"]
+group = 1
+
+[[pattern]]
+id = "censys_api_id"
+type = "censys_api_id"
+regex = "(?i)censys[\\w .-]{0,20}[=:][\\x60'\\\"\\s=]{0,5}([a-f0-9-]{36})"
+description = "Uncovered a possible Censys API id."
+keywords = ["censys"]
+group = 1
+
+[[pattern]]
+id = "censys_api_secret"
+type = "censys_api_secret"
+regex = "(?i)censys[\\w .-]{0,20}secret[\\w .-]{0,10}[=:][\\x60'\\\"\\s=]{0,5}([A-Za-z0-9]{32})"
+description = "Uncovered a possible Censys API secret."
+keywords = ["censys"]
+group = 1
+
+[[pattern]]
+id = "here_api_key"
+type = "here_api_key"
+regex = "(?i)here[\\w .-]{0,20}[=:][\\x60'\\\"\\s=]{0,5}([A-Za-z0-9_-]{43})"
+description = "Uncovered a possible HERE API key."
+keywords = ["here_api", "here-api", "hereapikey"]
+group = 1
+
+[[pattern]]
+id = "tomtom_api_key"
+type = "tomtom_api_key"
+regex = "(?i)tomtom[\\w .-]{0,20}[=:][\\x60'\\\"\\s=]{0,5}([a-zA-Z0-9]{32})"
+description = "Uncovered a possible TomTom API key."
+keywords = ["tomtom"]
+group = 1
+
+[[pattern]]
+id = "bing_maps_key"
+type = "bing_maps_key"
+regex = "(?i)(?:bing|virtualearth)[\\w .-]{0,20}[=:][\\x60'\\\"\\s=]{0,5}([A-Za-z0-9_-]{64})"
+description = "Uncovered a possible Bing Maps key."
+keywords = ["bing", "virtualearth"]
+group = 1
+
+[[pattern]]
+id = "ipstack_access_key"
+type = "ipstack_key"
+regex = "(?i)ipstack[\\w .-]{0,20}[=:][\\x60'\\\"\\s=]{0,5}([a-f0-9]{32})"
+description = "Uncovered a possible ipstack access key."
+keywords = ["ipstack"]
+group = 1
+
+[[pattern]]
+id = "ipinfo_token"
+type = "ipinfo_token"
+regex = "(?i)ipinfo[\\w .-]{0,20}[=:][\\x60'\\\"\\s=]{0,5}([a-f0-9]{14})"
+description = "Uncovered a possible ipinfo token."
+keywords = ["ipinfo"]
+group = 1
+
+[[pattern]]
+id = "etherscan_api_key"
+type = "etherscan_api_key"
+regex = "\\b[A-Z0-9]{34}\\b"
+description = "Uncovered a possible Etherscan API key."
+keywords = ["etherscan"]
+
+[[pattern]]
+id = "alchemy_api_key"
+type = "alchemy_api_key"
+regex = "(?i)alchemy[\\w .-]{0,20}[=:][\\x60'\\\"\\s=]{0,5}([A-Za-z0-9_-]{32})"
+description = "Uncovered a possible Alchemy API key."
+keywords = ["alchemy"]
+group = 1
+
+[[pattern]]
+id = "infura_api_key"
+type = "infura_api_key"
+regex = "(?i)infura[\\w .-]{0,20}[=:][\\x60'\\\"\\s=]{0,5}([a-f0-9]{32})"
+description = "Uncovered a possible Infura API key."
+keywords = ["infura"]
+group = 1
+
+[[pattern]]
+id = "moralis_api_key"
+type = "moralis_api_key"
+regex = "(?i)moralis[\\w .-]{0,20}[=:][\\x60'\\\"\\s=]{0,5}([A-Za-z0-9]{64})"
+description = "Uncovered a possible Moralis API key."
+keywords = ["moralis"]
+group = 1
+
+[[pattern]]
+id = "quicknode_api_key"
+type = "quicknode_api_key"
+regex = "(?i)quicknode[\\w .-]{0,20}[=:][\\x60'\\\"\\s=]{0,5}([a-f0-9]{40})"
+description = "Uncovered a possible QuickNode API key."
+keywords = ["quicknode"]
+group = 1
+
+[[pattern]]
+id = "dockerhub_pat"
+type = "dockerhub_pat"
+regex = "\\bdckr_pat_[A-Za-z0-9_-]{27}\\b"
+description = "Uncovered a possible Docker Hub personal access token."
+keywords = ["dckr_pat_"]
+
+[[pattern]]
+id = "nuget_api_key"
+type = "nuget_api_key"
+regex = "\\boy2[a-z0-9]{43}\\b"
+description = "Uncovered a possible NuGet API key."
+keywords = ["oy2"]
+
+[[pattern]]
+id = "jetbrains_hub_token"
+type = "jetbrains_hub_token"
+regex = "(?i)jetbrains[\\w .-]{0,20}[=:][\\x60'\\\"\\s=]{0,5}([A-Za-z0-9_\\-]{40,})"
+description = "Uncovered a possible JetBrains Hub token."
+entropy = 3.5
+keywords = ["jetbrains"]
+group = 1
+
+[[pattern]]
+id = "google_oauth_client_secret"
+type = "google_oauth_client_secret"
+regex = "\\bGOCSPX-[A-Za-z0-9_-]{28}\\b"
+description = "Uncovered a possible Google OAuth client secret."
+keywords = ["gocspx-"]
+
+[[pattern]]
+id = "firebase_cloud_messaging_key"
+type = "firebase_cloud_messaging_key"
+regex = "\\bAAAA[a-zA-Z0-9_-]{7}:[a-zA-Z0-9_-]{140}\\b"
+description = "Uncovered a possible Firebase Cloud Messaging key."
+keywords = ["aaaa"]
+
+[[pattern]]
+id = "azure_storage_account_key"
+type = "azure_storage_account_key"
+regex = "AccountKey=([A-Za-z0-9+/=]{88})"
+description = "Uncovered a possible Azure storage account key."
+keywords = ["accountkey"]
+group = 1
+
+[[pattern]]
+id = "doppler_service_token"
+type = "doppler_service_token"
+regex = "\\bdp\\.st\\.[a-z0-9]{43}\\b"
+description = "Uncovered a possible Doppler service token."
+keywords = ["dp.st."]
+
+[[pattern]]
+id = "smtp_credentials"
+type = "smtp_credentials"
+regex = "(?i)smtp://[^/\\s:@]{3,40}:[^/\\s:@]{3,40}@[^\\s\\\"'<>]+"
+description = "Uncovered credentials embedded in an SMTP URL."
+keywords = ["smtp://"]
+
+[[pattern]]
+id = "ftp_credentials"
+type = "ftp_credentials"
+regex = "(?i)ftp://[^/\\s:@]{3,40}:[^/\\s:@]{3,40}@[^\\s\\\"'<>]+"
+description = "Uncovered credentials embedded in an FTP URL."
+keywords = ["ftp://"]
+
+[[pattern]]
+id = "amqp_credentials"
+type = "amqp_credentials"
+regex = "(?i)amqps?://[^/\\s:@]{3,40}:[^/\\s:@]{3,40}@[^\\s\\\"'<>]+"
+description = "Uncovered credentials embedded in an AMQP URL."
+keywords = ["amqp://", "amqps://"]
+
+[[pattern]]
+id = "ldap_credentials"
+type = "ldap_credentials"
+regex = "(?i)ldaps?://[^/\\s:@]{3,40}:[^/\\s:@]{3,40}@[^\\s\\\"'<>]+"
+description = "Uncovered credentials embedded in an LDAP URL."
+keywords = ["ldap://", "ldaps://"]
+
+[[pattern]]
+id = "mssql_connection_string"
+type = "mssql_connection_string"
+regex = "(?i)(?:jdbc:sqlserver://|Server=[^;\\\"']{1,60};[^\\\"']{0,80}Password=)[^\\s\\\"'<>]{6,}"
+description = "Uncovered a possible SQL Server connection string."
+keywords = ["sqlserver", "password="]
+
+[[pattern]]
+id = "aws_secret_access_key"
+type = "aws"
+regex = "(?i)aws[\\w .-]{0,20}[=:][\\x60'\\\"\\s=]{0,5}([A-Za-z0-9/+=]{40})\\b"
+description = "Uncovered a possible AWS secret access key."
+entropy = 3.0
+keywords = ["aws"]
+group = 1
+
+[[pattern]]
+id = "postmark_server_token"
+type = "postmark_server_token"
+regex = "(?i)postmark[\\w .-]{0,20}[=:][\\x60'\\\"\\s=]{0,5}([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})"
+description = "Uncovered a possible Postmark server token."
+keywords = ["postmark"]
+group = 1

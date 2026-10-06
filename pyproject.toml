@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "netcast3r"
 version = "0.1.0"
-description = "Cast a net over the web: crawl a target, read its JavaScript, hunt 230 secret patterns, validate credentials against 26 provider recipes, and write a report you can submit."
+description = "Cast a net over the web: crawl a target, read its JavaScript, hunt 310 secret patterns, validate credentials against 135 provider recipes, and write a report you can submit."
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "MIT" }

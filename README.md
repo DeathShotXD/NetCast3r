@@ -5,8 +5,8 @@
 </p>
 
 Cast a net over the web. NetCast3r crawls a target, reads the JavaScript it
-serves, hunts 230 secret patterns, and checks every candidate against its
-provider with 26 read-only recipes. It returns a four-state verdict, the
+serves, hunts 310 secret patterns, and checks every candidate against its
+provider with 135 read-only recipes. It returns a four-state verdict, the
 evidence behind it, and a report you can submit as-is.
 
 <p align="center">
@@ -27,7 +27,7 @@ evidence behind it, and a report you can submit as-is.
 </p>
 
 <p align="center">
-  <img src="assets/stats.svg" alt="Automated web recon, JavaScript analysis, secret hunting, validation and reporting. 230 patterns, 26 recipes." width="100%">
+  <img src="assets/stats.svg" alt="Automated web recon, JavaScript analysis, secret hunting, validation and reporting. 310 patterns, 135 recipes." width="100%">
 </p>
 
 Detection is only the first step. A pattern match says that something looks
@@ -78,7 +78,7 @@ redacted, so the report can go straight into a program.
 
 The crawler collects JavaScript inside scope, then pulls historical bundles
 from the Wayback Machine. The exegete reads each file and maps its logic. The
-prospector hunts credentials across 230 patterns. The classifier names any
+prospector hunts credentials across 310 patterns. The classifier names any
 candidate the patterns did not recognise, rates its confidence, and remembers
 the answer for later runs. The assayer validates every candidate against its
 provider with read-only recipes. The chainer maps the escalation, the sentinel
@@ -111,13 +111,14 @@ See [docs/architecture.md](docs/architecture.md).
 ## Coverage
 
 <p align="center">
-  <img src="assets/providers.svg" alt="Grid of the 26 providers NetCast3r can validate a candidate against: Google, DigitalOcean, Cloudflare, Fastly, Netlify, Firebase, Mapbox, GitHub, GitLab, npm, Postman, Travis CI, New Relic, Shodan, Slack, Telegram, Discord, Dropbox, Facebook, SendGrid, Stripe, OpenAI, Anthropic, Groq, Hugging Face and the NetCast3r lab. Every check is read-only by default." width="100%">
+  <img src="assets/providers.svg" alt="Scrolling grid of the 121 providers NetCast3r can validate a candidate against, across 135 read-only recipes. Every check is read-only by default." width="100%">
 </p>
 
-230 patterns cover cloud, storage, payments, messaging, CI, and model
-credentials, and each candidate can be put to 26 validation recipes. Every
-check is read-only by default, `--tier write` opts in to the ones that change
-state. A report is written either way, with no provider key required.
+310 patterns cover cloud, storage, payments, messaging, CI, and model
+credentials, and each candidate can be put to 135 read-only recipes across 121
+providers. Every check is read-only by default, `--tier write` opts in to the
+ones that change state. A report is written either way, with no provider key
+required.
 
 ## Example run
 

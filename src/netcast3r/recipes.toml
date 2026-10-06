@@ -1,41 +1,1010 @@
-# Validation recipes.
-#
-# Each recipe knows how to ask a provider whether a value is alive. The value
-# is substituted for {value} and {value2}. A recipe is read-only unless its
-# write flag is set, and write recipes only run when the run tier allows it.
-#
-#   success_codes  response codes that mean the credential is alive
-#   success_match  a substring that must also appear in the body
-#   fail_codes     response codes that mean the credential is dead
-#   fail_match     a substring that means the credential is dead
-#   write          true if the recipe changes state on the provider side
+[[recipe]]
+type = "abuseipdb_api_key"
+provider = "AbuseIPDB"
+method = "GET"
+url = "https://api.abuseipdb.com/api/v2/check?ipAddress=8.8.8.8"
+headers = { Key = "{value}", Accept = "application/json" }
+success_codes = [200]
+success_match = "\"data\""
+fail_codes = [401]
+
+[[recipe]]
+type = "airtable_api_key"
+provider = "Airtable"
+method = "GET"
+url = "https://api.airtable.com/v0/meta/whoami"
+headers = { Authorization = "Bearer {value}" }
+success_codes = [200]
+success_match = "\"id\""
+fail_codes = [401]
+
+[[recipe]]
+type = "airtable_personnal_access_token"
+provider = "Airtable"
+method = "GET"
+url = "https://api.airtable.com/v0/meta/whoami"
+headers = { Authorization = "Bearer {value}" }
+success_codes = [200]
+success_match = "\"id\""
+fail_codes = [401]
+
+[[recipe]]
+type = "alchemy_api_key"
+provider = "Alchemy"
+method = "POST"
+url = "https://eth-mainnet.g.alchemy.com/v2/{value}"
+headers = { Content-Type = "application/json" }
+body = "{\"jsonrpc\":\"2.0\",\"method\":\"eth_blockNumber\",\"params\":[],\"id\":1}"
+success_codes = [200]
+success_match = "\"result\""
+fail_codes = [403]
+
+[[recipe]]
+type = "alienvault_otx_key"
+provider = "AlienVault OTX"
+method = "GET"
+url = "https://otx.alienvault.com/api/v1/user/me"
+headers = { X-OTX-API-KEY = "{value}" }
+success_codes = [200]
+success_match = "\"username\""
+fail_codes = [401]
+
+[[recipe]]
+type = "anthropic"
+provider = "Anthropic"
+method = "GET"
+url = "https://api.anthropic.com/v1/models"
+headers = { x-api-key = "{value}", anthropic-version = "2023-06-01" }
+success_codes = [200]
+fail_codes = [401, 403]
+
+[[recipe]]
+type = "asana_client_secret"
+provider = "Asana"
+method = "GET"
+url = "https://app.asana.com/api/1.0/users/me"
+headers = { Authorization = "Bearer {value}" }
+success_codes = [200]
+success_match = "\"data\""
+fail_codes = [401]
+
+[[recipe]]
+type = "assemblyai"
+provider = "AssemblyAI"
+method = "GET"
+url = "https://api.assemblyai.com/v2/transcript"
+headers = { authorization = "{value}" }
+success_codes = [200]
+success_match = "\"transcripts\""
+fail_codes = [401]
+
+[[recipe]]
+type = "atlassian_api_token"
+provider = "Atlassian"
+method = "GET"
+url = "https://api.atlassian.com/me"
+headers = { Authorization = "Bearer {value}" }
+success_codes = [200]
+success_match = "\"account_id\""
+fail_codes = [401]
+
+[[recipe]]
+type = "bing_maps_key"
+provider = "Bing Maps"
+method = "GET"
+url = "https://dev.virtualearth.net/REST/v1/Locations?locality=Seattle&key={value}"
+success_codes = [200]
+success_match = "ValidCredentials"
+fail_codes = [401]
+
+[[recipe]]
+type = "bitbucket_client_secret"
+provider = "Bitbucket"
+method = "POST"
+url = "https://bitbucket.org/site/oauth2/access_token"
+headers = { Content-Type = "application/x-www-form-urlencoded" }
+body = "grant_type=client_credentials&client_id={value}&client_secret={value2}"
+success_codes = [200]
+success_match = "\"access_token\""
+fail_codes = [400, 401]
+pair_type = "bitbucket_client_id"
+
+[[recipe]]
+type = "bitly_access_token"
+provider = "Bitly"
+method = "GET"
+url = "https://api-ssl.bitly.com/v4/user"
+headers = { Authorization = "Bearer {value}" }
+success_codes = [200]
+success_match = "\"login\""
+fail_codes = [401]
+
+[[recipe]]
+type = "box_access_token"
+provider = "Box"
+method = "GET"
+url = "https://api.box.com/2.0/users/me"
+headers = { Authorization = "Bearer {value}" }
+success_codes = [200]
+success_match = "\"id\""
+fail_codes = [401]
+
+[[recipe]]
+type = "buildkite"
+provider = "Buildkite"
+method = "GET"
+url = "https://api.buildkite.com/v2/access-token"
+headers = { Authorization = "Bearer {value}" }
+success_codes = [200]
+success_match = "\"uuid\""
+fail_codes = [401]
+
+[[recipe]]
+type = "calendly_api_token"
+provider = "Calendly"
+method = "GET"
+url = "https://api.calendly.com/users/me"
+headers = { Authorization = "Bearer {value}" }
+success_codes = [200]
+success_match = "\"resource\""
+fail_codes = [401]
+
+[[recipe]]
+type = "censys_api_secret"
+provider = "Censys"
+method = "GET"
+url = "https://search.censys.io/api/v2/account"
+headers = { Authorization = "Basic {value2}:{value}" }
+success_codes = [200]
+success_match = "\"email\""
+fail_codes = [401]
+pair_type = "censys_api_id"
+
+[[recipe]]
+type = "circleci"
+provider = "CircleCI"
+method = "GET"
+url = "https://circleci.com/api/v2/me"
+headers = { Circle-Token = "{value}" }
+success_codes = [200]
+success_match = "\"id\""
+fail_codes = [401]
+
+[[recipe]]
+type = "clickup_api_token"
+provider = "ClickUp"
+method = "GET"
+url = "https://api.clickup.com/api/v2/user"
+headers = { Authorization = "{value}" }
+success_codes = [200]
+success_match = "\"user\""
+fail_codes = [401]
+
+[[recipe]]
+type = "cloudflare"
+provider = "Cloudflare"
+method = "GET"
+url = "https://api.cloudflare.com/client/v4/user/tokens/verify"
+headers = { Authorization = "Bearer {value}" }
+success_codes = [200]
+fail_codes = [401, 403]
+
+[[recipe]]
+type = "codecov_access_token"
+provider = "Codecov"
+method = "GET"
+url = "https://api.codecov.io/api/v2/"
+headers = { Authorization = "Bearer {value}" }
+success_codes = [200, 404]
+fail_codes = [401, 403]
+
+[[recipe]]
+type = "cohere_api_token"
+provider = "Cohere"
+method = "GET"
+url = "https://api.cohere.com/v1/models"
+headers = { Authorization = "Bearer {value}" }
+success_codes = [200]
+success_match = "\"models\""
+fail_codes = [401]
+
+[[recipe]]
+type = "coinbase_access_token"
+provider = "Coinbase"
+method = "GET"
+url = "https://api.coinbase.com/v2/user"
+headers = { Authorization = "Bearer {value}" }
+success_codes = [200]
+success_match = "\"data\""
+fail_codes = [401]
+
+[[recipe]]
+type = "contentful_delivery_api_token"
+provider = "Contentful"
+method = "GET"
+url = "https://api.contentful.com/users/me"
+headers = { Authorization = "Bearer {value}" }
+success_codes = [200, 404]
+fail_codes = [401]
+
+[[recipe]]
+type = "datadog"
+provider = "Datadog"
+method = "GET"
+url = "https://api.datadoghq.com/api/v1/validate?api_key={value}"
+success_codes = [200]
+success_match = "\"valid\":true"
+fail_codes = [403]
+
+[[recipe]]
+type = "deepgram"
+provider = "Deepgram"
+method = "GET"
+url = "https://api.deepgram.com/v1/projects"
+headers = { Authorization = "Token {value}" }
+success_codes = [200]
+success_match = "\"projects\""
+fail_codes = [401]
+
+[[recipe]]
+type = "digitalocean"
+provider = "DigitalOcean"
+method = "GET"
+url = "https://api.digitalocean.com/v2/account"
+headers = { Authorization = "Bearer {value}" }
+success_codes = [200]
+fail_codes = [401, 403]
+
+[[recipe]]
+type = "discord_webhook"
+provider = "Discord"
+method = "GET"
+url = "{value}"
+success_codes = [200]
+success_match = "\"name\""
+fail_codes = [401, 403, 404]
+
+[[recipe]]
+type = "discord_webhook_write"
+provider = "Discord"
+method = "POST"
+url = "{value}"
+headers = { Content-Type = "application/json" }
+body = "{\"content\":\"netcast3r: proof of access\"}"
+success_codes = [200, 204]
+fail_codes = [401, 404]
+write = true
+
+[[recipe]]
+type = "dockerhub_pat"
+provider = "Docker Hub"
+method = "GET"
+url = "https://hub.docker.com/v2/user/"
+headers = { Authorization = "Bearer {value}" }
+success_codes = [200]
+success_match = "\"username\""
+fail_codes = [401]
+
+[[recipe]]
+type = "doppler_api_token"
+provider = "Doppler"
+method = "GET"
+url = "https://api.doppler.com/v3/me"
+headers = { Authorization = "Bearer {value}" }
+success_codes = [200]
+success_match = "\"workplace\""
+fail_codes = [401]
+
+[[recipe]]
+type = "droneci_access_token"
+provider = "Drone"
+method = "GET"
+url = "https://drone.io/api/user"
+headers = { Authorization = "Bearer {value}" }
+success_codes = [200]
+success_match = "\"login\""
+fail_codes = [401]
+
+[[recipe]]
+type = "dropbox"
+provider = "Dropbox"
+method = "POST"
+url = "https://api.dropboxapi.com/2/users/get_current_account"
+headers = { Authorization = "Bearer {value}" }
+success_codes = [200]
+fail_codes = [401, 403]
+
+[[recipe]]
+type = "elevenlabs"
+provider = "ElevenLabs"
+method = "GET"
+url = "https://api.elevenlabs.io/v1/user"
+headers = { xi-api-key = "{value}" }
+success_codes = [200]
+success_match = "\"subscription\""
+fail_codes = [401]
+
+[[recipe]]
+type = "etherscan_api_key"
+provider = "Etherscan"
+method = "GET"
+url = "https://api.etherscan.io/api?module=account&action=balance&address=0x0000000000000000000000000000000000000000&apikey={value}"
+success_codes = [200]
+success_match = "\"status\":\"1\""
+fail_codes = [200]
+fail_match = "NOTOK"
+
+[[recipe]]
+type = "facebook"
+provider = "Facebook"
+method = "GET"
+url = "https://graph.facebook.com/v18.0/me?access_token={value}"
+success_codes = [200]
+success_match = "\"id\""
+fail_match = "\"error\""
+
+[[recipe]]
+type = "fastly"
+provider = "Fastly"
+method = "GET"
+url = "https://api.fastly.com/current_user"
+headers = { Fastly-Key = "{value}", Accept = "application/json" }
+success_codes = [200]
+fail_codes = [401, 403]
+
+[[recipe]]
+type = "figma_access_token"
+provider = "Figma"
+method = "GET"
+url = "https://api.figma.com/v1/me"
+headers = { X-Figma-Token = "{value}" }
+success_codes = [200]
+success_match = "\"id\""
+fail_codes = [401]
+
+[[recipe]]
+type = "firebase"
+provider = "Firebase"
+method = "GET"
+url = "{value}/.json"
+success_codes = [200]
+fail_match = "Permission denied"
+
+[[recipe]]
+type = "fireworks"
+provider = "Fireworks"
+method = "GET"
+url = "https://api.fireworks.ai/inference/v1/models"
+headers = { Authorization = "Bearer {value}" }
+success_codes = [200]
+success_match = "\"data\""
+fail_codes = [401]
+
+[[recipe]]
+type = "flutterwave_secret_key"
+provider = "Flutterwave"
+method = "GET"
+url = "https://api.flutterwave.com/v3/transactions"
+headers = { Authorization = "Bearer {value}" }
+success_codes = [200]
+success_match = "\"data\""
+fail_codes = [401]
+
+[[recipe]]
+type = "flyio_access_token"
+provider = "Fly.io"
+method = "GET"
+url = "https://api.fly.io/v1/apps"
+headers = { Authorization = "Bearer {value}" }
+success_codes = [200, 404]
+fail_codes = [401]
 
 [[recipe]]
 type = "github"
 provider = "GitHub"
 method = "GET"
 url = "https://api.github.com/user"
-headers = { Authorization = "token {value}", "User-Agent" = "netcast3r" }
+headers = { Authorization = "token {value}", User-Agent = "netcast3r" }
 success_codes = [200]
 success_match = "\"login\""
 fail_codes = [401]
 
 [[recipe]]
-type = "slack"
-provider = "Slack"
+type = "github_write"
+provider = "GitHub"
 method = "POST"
-url = "https://slack.com/api/auth.test"
-headers = { Authorization = "Bearer {value}" }
-success_codes = [200]
-success_match = "\"ok\":true"
-fail_match = "\"ok\":false"
+url = "https://api.github.com/gists"
+headers = { Authorization = "token {value}", Accept = "application/vnd.github+json", User-Agent = "netcast3r" }
+body = "{\"description\":\"netcast3r proof of access\",\"public\":false,\"files\":{\"netcast3r.txt\":{\"content\":\"netcast3r\"}}}"
+success_codes = [201]
+success_match = "\"id\""
+fail_codes = [401, 403, 404]
+write = true
 
 [[recipe]]
-type = "stripe_live"
-provider = "Stripe"
+type = "gitlab"
+provider = "GitLab"
 method = "GET"
-url = "https://api.stripe.com/v1/charges"
+url = "https://gitlab.com/api/v4/user"
+headers = { PRIVATE-TOKEN = "{value}" }
+success_codes = [200]
+fail_codes = [401, 403]
+
+[[recipe]]
+type = "gitlab_write"
+provider = "GitLab"
+method = "POST"
+url = "https://gitlab.com/api/v4/snippets"
+headers = { PRIVATE-TOKEN = "{value}", Content-Type = "application/json" }
+body = "{\"title\":\"netcast3r\",\"content\":\"netcast3r\",\"visibility\":\"private\"}"
+success_codes = [201]
+success_match = "\"id\""
+fail_codes = [401, 403]
+write = true
+
+[[recipe]]
+type = "gocardless_api_token"
+provider = "GoCardless"
+method = "GET"
+url = "https://api.gocardless.com/creditors"
+headers = { Authorization = "Bearer {value}", GoCardless-Version = "2015-07-06" }
+success_codes = [200]
+success_match = "\"creditors\""
+fail_codes = [401]
+
+[[recipe]]
+type = "google_api"
+provider = "Google"
+method = "GET"
+url = "https://maps.googleapis.com/maps/api/geocode/json?address=test&key={value}"
+success_codes = [200]
+success_match = "\"status\" : \"OK\""
+fail_match = "REQUEST_DENIED"
+
+[[recipe]]
+type = "grafana_cloud_api_token"
+provider = "Grafana"
+method = "GET"
+url = "https://grafana.com/api/instances"
 headers = { Authorization = "Bearer {value}" }
+success_codes = [200]
+success_match = "["
+fail_codes = [401]
+
+[[recipe]]
+type = "groq"
+provider = "Groq"
+method = "GET"
+url = "https://api.groq.com/openai/v1/models"
+headers = { Authorization = "Bearer {value}" }
+success_codes = [200]
+fail_codes = [401, 403]
+
+[[recipe]]
+type = "harness_api_key"
+provider = "Harness"
+method = "GET"
+url = "https://app.harness.io/ng/api/user/profile"
+headers = { x-api-key = "{value}" }
+success_codes = [200]
+success_match = "\"data\""
+fail_codes = [401]
+
+[[recipe]]
+type = "hashicorp_tf_api_token"
+provider = "Terraform Cloud"
+method = "GET"
+url = "https://app.terraform.io/api/v2/account/details"
+headers = { Authorization = "Bearer {value}" }
+success_codes = [200]
+success_match = "\"data\""
+fail_codes = [401]
+
+[[recipe]]
+type = "here_api_key"
+provider = "HERE"
+method = "GET"
+url = "https://geocode.search.hereapi.com/v1/geocode?q=Berlin&apiKey={value}"
+success_codes = [200]
+success_match = "\"items\""
+fail_codes = [401]
+
+[[recipe]]
+type = "heroku_api_key"
+provider = "Heroku"
+method = "GET"
+url = "https://api.heroku.com/account"
+headers = { Authorization = "Bearer {value}", Accept = "application/vnd.heroku+json; version=3" }
+success_codes = [200]
+success_match = "\"email\""
+fail_codes = [401]
+
+[[recipe]]
+type = "heroku_api_key_v2"
+provider = "Heroku"
+method = "GET"
+url = "https://api.heroku.com/account"
+headers = { Authorization = "Bearer {value}", Accept = "application/vnd.heroku+json; version=3" }
+success_codes = [200]
+success_match = "\"email\""
+fail_codes = [401]
+
+[[recipe]]
+type = "honeybadger_api_key"
+provider = "Honeybadger"
+method = "GET"
+url = "https://api.honeybadger.io/v1/me"
+headers = { X-API-Key = "{value}" }
+success_codes = [200]
+success_match = "\"id\""
+fail_codes = [401]
+
+[[recipe]]
+type = "hubspot_api_key"
+provider = "HubSpot"
+method = "GET"
+url = "https://api.hubapi.com/crm/v3/objects/contacts?limit=1"
+headers = { Authorization = "Bearer {value}" }
+success_codes = [200]
+success_match = "\"results\""
+fail_codes = [401]
+
+[[recipe]]
+type = "huggingface"
+provider = "Hugging Face"
+method = "GET"
+url = "https://huggingface.co/api/whoami-v2"
+headers = { Authorization = "Bearer {value}" }
+success_codes = [200]
+fail_codes = [401, 403]
+
+[[recipe]]
+type = "hunter_api_key"
+provider = "Hunter"
+method = "GET"
+url = "https://api.hunter.io/v2/account?api_key={value}"
+success_codes = [200]
+success_match = "\"data\""
+fail_codes = [401]
+
+[[recipe]]
+type = "infura_api_key"
+provider = "Infura"
+method = "POST"
+url = "https://mainnet.infura.io/v3/{value}"
+headers = { Content-Type = "application/json" }
+body = "{\"jsonrpc\":\"2.0\",\"method\":\"eth_blockNumber\",\"params\":[],\"id\":1}"
+success_codes = [200]
+success_match = "\"result\""
+fail_codes = [401]
+
+[[recipe]]
+type = "intercom_api_key"
+provider = "Intercom"
+method = "GET"
+url = "https://api.intercom.io/me"
+headers = { Authorization = "Bearer {value}", Intercom-Version = "2.10" }
+success_codes = [200]
+success_match = "\"id\""
+fail_codes = [401]
+
+[[recipe]]
+type = "ipinfo_token"
+provider = "ipinfo"
+method = "GET"
+url = "https://ipinfo.io/8.8.8.8?token={value}"
+success_codes = [200]
+success_match = "\"ip\""
+fail_codes = [403]
+
+[[recipe]]
+type = "ipstack_key"
+provider = "ipstack"
+method = "GET"
+url = "https://api.ipstack.com/8.8.8.8?access_key={value}"
+success_codes = [200]
+success_match = "\"ip\""
+fail_codes = [101]
+fail_match = "invalid_access_key"
+
+[[recipe]]
+type = "iterable_api_key"
+provider = "Iterable"
+method = "GET"
+url = "https://api.iterable.com/api/lists"
+headers = { Api_Key = "{value}" }
+success_codes = [200]
+success_match = "\"lists\""
+fail_codes = [401]
+
+[[recipe]]
+type = "jumpcloud_api_key"
+provider = "JumpCloud"
+method = "GET"
+url = "https://console.jumpcloud.com/api/systems"
+headers = { x-api-key = "{value}" }
+success_codes = [200]
+success_match = "\"results\""
+fail_codes = [401]
+
+[[recipe]]
+type = "launchdarkly_access_token"
+provider = "LaunchDarkly"
+method = "GET"
+url = "https://app.launchdarkly.com/api/v2/projects"
+headers = { Authorization = "{value}" }
+success_codes = [200]
+success_match = "\"items\""
+fail_codes = [401]
+
+[[recipe]]
+type = "linear_api_key"
+provider = "Linear"
+method = "POST"
+url = "https://api.linear.app/graphql"
+headers = { Authorization = "{value}", Content-Type = "application/json" }
+body = "{\"query\":\"{ viewer { id } }\"}"
+success_codes = [200]
+success_match = "\"viewer\""
+fail_codes = [401]
+
+[[recipe]]
+type = "linode_token"
+provider = "Linode"
+method = "GET"
+url = "https://api.linode.com/v4/profile"
+headers = { Authorization = "Bearer {value}" }
+success_codes = [200]
+success_match = "\"username\""
+fail_codes = [401]
+
+[[recipe]]
+type = "lokalise_api_token"
+provider = "Lokalise"
+method = "GET"
+url = "https://api.lokalise.com/api2/projects/"
+headers = { X-Api-Token = "{value}" }
+success_codes = [200]
+success_match = "\"projects\""
+fail_codes = [401]
+
+[[recipe]]
+type = "mailgun_private_api_token"
+provider = "Mailgun"
+method = "GET"
+url = "https://api.mailgun.net/v3/domains"
+headers = { Authorization = "Basic api:{value}" }
+success_codes = [200]
+success_match = "\"total_count\""
+fail_codes = [401]
+
+[[recipe]]
+type = "mapbox_secret"
+provider = "Mapbox"
+method = "GET"
+url = "https://api.mapbox.com/tokens/v2?access_token={value}"
+success_codes = [200]
+fail_codes = [401, 403]
+
+[[recipe]]
+type = "messagebird_api_token"
+provider = "MessageBird"
+method = "GET"
+url = "https://rest.messagebird.com/balance"
+headers = { Authorization = "AccessKey {value}" }
+success_codes = [200]
+success_match = "\"amount\""
+fail_codes = [401]
+
+[[recipe]]
+type = "microsoft_teams_webhook"
+provider = "Microsoft Teams"
+method = "POST"
+url = "{value}"
+headers = { Content-Type = "application/json" }
+body = "{}"
+success_codes = [200, 400]
+fail_codes = [403, 404]
+write = true
+
+[[recipe]]
+type = "mock"
+provider = "NetCast3r Lab"
+method = "GET"
+url = "http://127.0.0.1:8787/verify?key={value}"
+success_codes = [200]
+success_match = "\"alive\":true"
+fail_match = "\"alive\":false"
+
+[[recipe]]
+type = "neon_api_key"
+provider = "Neon"
+method = "GET"
+url = "https://console.neon.tech/api/v2/projects"
+headers = { Authorization = "Bearer {value}" }
+success_codes = [200]
+success_match = "\"projects\""
+fail_codes = [401]
+
+[[recipe]]
+type = "netlify"
+provider = "Netlify"
+method = "GET"
+url = "https://api.netlify.com/api/v1/accounts"
+headers = { Authorization = "Bearer {value}" }
+success_codes = [200]
+fail_codes = [401, 403]
+
+[[recipe]]
+type = "newrelic"
+provider = "New Relic"
+method = "GET"
+url = "https://api.newrelic.com/v2/applications.json"
+headers = { X-Api-Key = "{value}" }
+success_codes = [200]
+fail_codes = [401, 403]
+
+[[recipe]]
+type = "notion_api_token"
+provider = "Notion"
+method = "GET"
+url = "https://api.notion.com/v1/users/me"
+headers = { Authorization = "Bearer {value}", Notion-Version = "2022-06-28" }
+success_codes = [200]
+success_match = "\"bot\""
+fail_codes = [401]
+
+[[recipe]]
+type = "npm"
+provider = "npm"
+method = "GET"
+url = "https://registry.npmjs.org/-/whoami"
+headers = { Authorization = "Bearer {value}" }
+success_codes = [200]
+fail_codes = [401, 403]
+
+[[recipe]]
+type = "openai"
+provider = "OpenAI"
+method = "GET"
+url = "https://api.openai.com/v1/models"
+headers = { Authorization = "Bearer {value}" }
+success_codes = [200]
+fail_codes = [401, 403]
+
+[[recipe]]
+type = "openrouter"
+provider = "OpenRouter"
+method = "GET"
+url = "https://openrouter.ai/api/v1/auth/key"
+headers = { Authorization = "Bearer {value}" }
+success_codes = [200]
+success_match = "\"data\""
+fail_codes = [401]
+
+[[recipe]]
+type = "opsgenie_api_key"
+provider = "OpsGenie"
+method = "GET"
+url = "https://api.opsgenie.com/v2/alerts"
+headers = { Authorization = "GenieKey {value}" }
+success_codes = [200]
+success_match = "\"data\""
+fail_codes = [401]
+
+[[recipe]]
+type = "pagerduty_api_token"
+provider = "PagerDuty"
+method = "GET"
+url = "https://api.pagerduty.com/users"
+headers = { Authorization = "Token token={value}", Accept = "application/vnd.pagerduty+json;version=2" }
+success_codes = [200]
+success_match = "\"users\""
+fail_codes = [401]
+
+[[recipe]]
+type = "paypal_client_secret"
+provider = "PayPal"
+method = "POST"
+url = "https://api-m.paypal.com/v1/oauth2/token"
+headers = { Authorization = "Basic {value2}:{value}", Content-Type = "application/x-www-form-urlencoded" }
+body = "grant_type=client_credentials"
+success_codes = [200]
+success_match = "\"access_token\""
+fail_codes = [401]
+pair_type = "paypal_client_id"
+
+[[recipe]]
+type = "pendo_integration_key"
+provider = "Pendo"
+method = "GET"
+url = "https://app.pendo.io/api/v1/feature"
+headers = { x-pendo-integration-key = "{value}" }
+success_codes = [200]
+fail_codes = [401]
+
+[[recipe]]
+type = "perplexity_api_key"
+provider = "Perplexity"
+method = "POST"
+url = "https://api.perplexity.ai/chat/completions"
+headers = { Authorization = "Bearer {value}", Content-Type = "application/json" }
+body = "{\"model\":\"llama-3.1-sonar-small-128k-online\",\"messages\":[{\"role\":\"user\",\"content\":\"ping\"}],\"max_tokens\":1}"
+success_codes = [200]
+fail_codes = [401]
+fail_match = "invalid_api_key"
+write = true
+
+[[recipe]]
+type = "pivotal_api_token"
+provider = "Pivotal Tracker"
+method = "GET"
+url = "https://www.pivotaltracker.com/services/v5/me"
+headers = { X-TrackerToken = "{value}" }
+success_codes = [200]
+success_match = "\"id\""
+fail_codes = [401]
+
+[[recipe]]
+type = "plaid_secret_key"
+provider = "Plaid"
+method = "POST"
+url = "https://production.plaid.com/institutions/get"
+headers = { Content-Type = "application/json" }
+body = "{\"client_id\":\"{value2}\",\"secret\":\"{value}\",\"count\":1,\"offset\":0}"
+success_codes = [200]
+success_match = "\"institutions\""
+fail_codes = [400]
+pair_type = "plaid_client_id"
+
+[[recipe]]
+type = "planetscale_api_token"
+provider = "PlanetScale"
+method = "GET"
+url = "https://api.planetscale.com/v1/organizations"
+headers = { Authorization = "{value}" }
+success_codes = [200]
+success_match = "\"data\""
+fail_codes = [401]
+
+[[recipe]]
+type = "planetscale_oauth_token"
+provider = "PlanetScale"
+method = "GET"
+url = "https://api.planetscale.com/v1/organizations"
+headers = { Authorization = "{value}" }
+success_codes = [200]
+success_match = "\"data\""
+fail_codes = [401]
+
+[[recipe]]
+type = "posthog"
+provider = "PostHog"
+method = "GET"
+url = "https://app.posthog.com/api/users/@me/"
+headers = { Authorization = "Bearer {value}" }
+success_codes = [200]
+success_match = "\"email\""
+fail_codes = [401]
+
+[[recipe]]
+type = "postman"
+provider = "Postman"
+method = "GET"
+url = "https://api.getpostman.com/me"
+headers = { X-Api-Key = "{value}" }
+success_codes = [200]
+fail_codes = [401, 403]
+
+[[recipe]]
+type = "postmark_server_token"
+provider = "Postmark"
+method = "GET"
+url = "https://api.postmarkapp.com/server"
+headers = { X-Postmark-Server-Token = "{value}" }
+success_codes = [200]
+success_match = "\"Name\""
+fail_codes = [401]
+
+[[recipe]]
+type = "pulumi_api_token"
+provider = "Pulumi"
+method = "GET"
+url = "https://api.pulumi.com/api/user"
+headers = { Authorization = "token {value}" }
+success_codes = [200]
+success_match = "\"githubLogin\""
+fail_codes = [401]
+
+[[recipe]]
+type = "railway"
+provider = "Railway"
+method = "POST"
+url = "https://backboard.railway.app/graphql/v2"
+headers = { Authorization = "Bearer {value}", Content-Type = "application/json" }
+body = "{\"query\":\"query { me { id } }\"}"
+success_codes = [200]
+success_match = "\"me\""
+fail_codes = [401]
+
+[[recipe]]
+type = "razorpay_key_id"
+provider = "Razorpay"
+method = "GET"
+url = "https://api.razorpay.com/v1/payments"
+headers = { Authorization = "Basic {value}:{value2}" }
+success_codes = [200]
+success_match = "\"entity\""
+fail_codes = [401]
+pair_type = "razorpay_key_secret"
+
+[[recipe]]
+type = "razorpay_key_secret"
+provider = "Razorpay"
+method = "GET"
+url = "https://api.razorpay.com/v1/payments"
+headers = { Authorization = "Basic {value2}:{value}" }
+success_codes = [200]
+success_match = "\"entity\""
+fail_codes = [401]
+pair_type = "razorpay_key_id"
+
+[[recipe]]
+type = "render"
+provider = "Render"
+method = "GET"
+url = "https://api.render.com/v1/owners"
+headers = { Authorization = "Bearer {value}" }
+success_codes = [200]
+success_match = "["
+fail_codes = [401]
+
+[[recipe]]
+type = "replicate"
+provider = "Replicate"
+method = "GET"
+url = "https://api.replicate.com/v1/account"
+headers = { Authorization = "Token {value}" }
+success_codes = [200]
+success_match = "\"username\""
+fail_codes = [401]
+
+[[recipe]]
+type = "resend_api_key"
+provider = "Resend"
+method = "GET"
+url = "https://api.resend.com/domains"
+headers = { Authorization = "Bearer {value}" }
+success_codes = [200]
+success_match = "\"data\""
+fail_codes = [401]
+
+[[recipe]]
+type = "rollbar_access_token"
+provider = "Rollbar"
+method = "GET"
+url = "https://api.rollbar.com/api/1/users"
+headers = { X-Rollbar-Access-Token = "{value}" }
+success_codes = [200]
+success_match = "\"result\""
+fail_codes = [401]
+
+[[recipe]]
+type = "rubygems_api_token"
+provider = "RubyGems"
+method = "GET"
+url = "https://rubygems.org/api/v1/profile/me.json"
+headers = { Authorization = "{value}" }
+success_codes = [200]
+success_match = "\"id\""
+fail_codes = [401]
+
+[[recipe]]
+type = "securitytrails_api_key"
+provider = "SecurityTrails"
+method = "GET"
+url = "https://api.securitytrails.com/v1/account/usage"
+headers = { APIKEY = "{value}" }
 success_codes = [200]
 fail_codes = [401]
 
@@ -49,13 +1018,54 @@ success_codes = [200]
 fail_codes = [401, 403]
 
 [[recipe]]
-type = "google_api"
-provider = "Google"
+type = "sendinblue_api_token"
+provider = "Brevo"
 method = "GET"
-url = "https://maps.googleapis.com/maps/api/geocode/json?address=test&key={value}"
+url = "https://api.brevo.com/v3/account"
+headers = { api-key = "{value}" }
 success_codes = [200]
-success_match = "\"status\" : \"OK\""
-fail_match = "REQUEST_DENIED"
+success_match = "\"email\""
+fail_codes = [401]
+
+[[recipe]]
+type = "sentry_access_token"
+provider = "Sentry"
+method = "GET"
+url = "https://sentry.io/api/0/"
+headers = { Authorization = "Bearer {value}" }
+success_codes = [200]
+success_match = "\"email\""
+fail_codes = [401]
+
+[[recipe]]
+type = "sentry_org_token"
+provider = "Sentry"
+method = "GET"
+url = "https://sentry.io/api/0/organizations/"
+headers = { Authorization = "Bearer {value}" }
+success_codes = [200]
+success_match = "["
+fail_codes = [401]
+
+[[recipe]]
+type = "sentry_user_token"
+provider = "Sentry"
+method = "GET"
+url = "https://sentry.io/api/0/"
+headers = { Authorization = "Bearer {value}" }
+success_codes = [200]
+success_match = "\"email\""
+fail_codes = [401]
+
+[[recipe]]
+type = "shippo_api_token"
+provider = "Shippo"
+method = "GET"
+url = "https://api.goshippo.com/addresses/"
+headers = { Authorization = "ShippoToken {value}" }
+success_codes = [200]
+success_match = "\"results\""
+fail_codes = [401]
 
 [[recipe]]
 type = "shodan"
@@ -66,76 +1076,137 @@ success_codes = [200]
 fail_codes = [401]
 
 [[recipe]]
-type = "mock"
-provider = "NetCast3r Lab"
-method = "GET"
-url = "http://127.0.0.1:8787/verify?key={value}"
-success_codes = [200]
-success_match = "\"alive\":true"
-fail_match = "\"alive\":false"
-
-[[recipe]]
-type = "openai"
-provider = "OpenAI"
-method = "GET"
-url = "https://api.openai.com/v1/models"
+type = "slack"
+provider = "Slack"
+method = "POST"
+url = "https://slack.com/api/auth.test"
 headers = { Authorization = "Bearer {value}" }
 success_codes = [200]
-fail_codes = [401, 403]
+success_match = "\"ok\":true"
+fail_match = "\"ok\":false"
 
 [[recipe]]
-type = "anthropic"
-provider = "Anthropic"
-method = "GET"
-url = "https://api.anthropic.com/v1/models"
-headers = { "x-api-key" = "{value}", "anthropic-version" = "2023-06-01" }
+type = "slack_webhook"
+provider = "Slack"
+method = "POST"
+url = "{value}"
+headers = { Content-Type = "application/json" }
+body = "{\"text\":\"\"}"
+success_codes = [200, 400]
+fail_codes = [403, 404]
+write = true
+
+[[recipe]]
+type = "slack_webhook_write"
+provider = "Slack"
+method = "POST"
+url = "{value}"
+headers = { Content-Type = "application/json" }
+body = "{\"text\":\"netcast3r: proof of access\"}"
 success_codes = [200]
-fail_codes = [401, 403]
+success_match = "ok"
+fail_codes = [403, 404]
+write = true
 
 [[recipe]]
-type = "groq"
-provider = "Groq"
+type = "snyk_api_token"
+provider = "Snyk"
 method = "GET"
-url = "https://api.groq.com/openai/v1/models"
+url = "https://api.snyk.io/rest/self?version=2023-11-28"
+headers = { Authorization = "token {value}" }
+success_codes = [200]
+success_match = "\"data\""
+fail_codes = [401]
+
+[[recipe]]
+type = "sonar_api_token"
+provider = "SonarCloud"
+method = "GET"
+url = "https://sonarcloud.io/api/authentication/validate"
+headers = { Authorization = "Basic {value}:" }
+success_codes = [200]
+success_match = "\"valid\":true"
+fail_codes = [401]
+
+[[recipe]]
+type = "sourcegraph_access_token"
+provider = "Sourcegraph"
+method = "POST"
+url = "https://sourcegraph.com/.api/graphql"
+headers = { Authorization = "token {value}", Content-Type = "application/json" }
+body = "{\"query\":\"{ currentUser { username } }\"}"
+success_codes = [200]
+success_match = "currentUser"
+fail_codes = [401]
+
+[[recipe]]
+type = "sparkpost_api_key"
+provider = "SparkPost"
+method = "GET"
+url = "https://api.sparkpost.com/api/v1/account"
+headers = { Authorization = "{value}" }
+success_codes = [200]
+success_match = "\"results\""
+fail_codes = [401]
+
+[[recipe]]
+type = "square_access_token"
+provider = "Square"
+method = "GET"
+url = "https://connect.squareup.com/v2/locations"
+headers = { Authorization = "Bearer {value}", Square-Version = "2024-01-18" }
+success_codes = [200]
+success_match = "\"locations\""
+fail_codes = [401]
+
+[[recipe]]
+type = "stability"
+provider = "Stability"
+method = "GET"
+url = "https://api.stability.ai/v1/user/account"
 headers = { Authorization = "Bearer {value}" }
 success_codes = [200]
-fail_codes = [401, 403]
+success_match = "\"id\""
+fail_codes = [401]
 
 [[recipe]]
-type = "huggingface"
-provider = "Hugging Face"
+type = "stripe_live"
+provider = "Stripe"
 method = "GET"
-url = "https://huggingface.co/api/whoami-v2"
+url = "https://api.stripe.com/v1/charges"
 headers = { Authorization = "Bearer {value}" }
 success_codes = [200]
-fail_codes = [401, 403]
+fail_codes = [401]
 
 [[recipe]]
-type = "digitalocean"
-provider = "DigitalOcean"
+type = "stripe_restricted"
+provider = "Stripe"
 method = "GET"
-url = "https://api.digitalocean.com/v2/account"
+url = "https://api.stripe.com/v1/charges"
 headers = { Authorization = "Bearer {value}" }
 success_codes = [200]
-fail_codes = [401, 403]
+success_match = "\"data\""
+fail_codes = [401]
 
 [[recipe]]
-type = "npm"
-provider = "npm"
+type = "stripe_webhook"
+provider = "Stripe"
 method = "GET"
-url = "https://registry.npmjs.org/-/whoami"
+url = "https://api.stripe.com/v1/account"
 headers = { Authorization = "Bearer {value}" }
 success_codes = [200]
-fail_codes = [401, 403]
+success_match = "\"id\""
+fail_codes = [401]
 
 [[recipe]]
-type = "postman"
-provider = "Postman"
+type = "supabase"
+provider = "Supabase"
 method = "GET"
-url = "https://api.getpostman.com/me"
-headers = { "X-Api-Key" = "{value}" }
+url = "https://api.supabase.com/v1/projects"
+headers = { Authorization = "Bearer {value}" }
 success_codes = [200]
-fail_codes = [401, 403]
+success_match = "["
+fail_codes = [401]
 
 [[recipe]]
 type = "telegram"
@@ -148,98 +1219,120 @@ fail_codes = [401, 404]
 fail_match = "\"ok\":false"
 
 [[recipe]]
-type = "discord_webhook"
-provider = "Discord"
+type = "together"
+provider = "Together"
 method = "GET"
-url = "{value}"
-success_codes = [200]
-success_match = "\"name\""
-fail_codes = [401, 403, 404]
-
-[[recipe]]
-type = "firebase"
-provider = "Firebase"
-method = "GET"
-url = "{value}/.json"
-success_codes = [200]
-fail_match = "Permission denied"
-
-[[recipe]]
-type = "mapbox_secret"
-provider = "Mapbox"
-method = "GET"
-url = "https://api.mapbox.com/tokens/v2?access_token={value}"
-success_codes = [200]
-fail_codes = [401, 403]
-
-[[recipe]]
-type = "dropbox"
-provider = "Dropbox"
-method = "POST"
-url = "https://api.dropboxapi.com/2/users/get_current_account"
+url = "https://api.together.xyz/v1/models"
 headers = { Authorization = "Bearer {value}" }
 success_codes = [200]
-fail_codes = [401, 403]
+success_match = "\"data\""
+fail_codes = [401]
 
 [[recipe]]
-type = "facebook"
-provider = "Facebook"
+type = "tomtom_api_key"
+provider = "TomTom"
 method = "GET"
-url = "https://graph.facebook.com/v18.0/me?access_token={value}"
+url = "https://api.tomtom.com/search/2/geocode/Berlin.json?key={value}"
 success_codes = [200]
-success_match = "\"id\""
-fail_match = "\"error\""
-
-[[recipe]]
-type = "gitlab"
-provider = "GitLab"
-method = "GET"
-url = "https://gitlab.com/api/v4/user"
-headers = { "PRIVATE-TOKEN" = "{value}" }
-success_codes = [200]
-fail_codes = [401, 403]
-
-[[recipe]]
-type = "cloudflare"
-provider = "Cloudflare"
-method = "GET"
-url = "https://api.cloudflare.com/client/v4/user/tokens/verify"
-headers = { Authorization = "Bearer {value}" }
-success_codes = [200]
-fail_codes = [401, 403]
-
-[[recipe]]
-type = "newrelic"
-provider = "New Relic"
-method = "GET"
-url = "https://api.newrelic.com/v2/applications.json"
-headers = { "X-Api-Key" = "{value}" }
-success_codes = [200]
-fail_codes = [401, 403]
-
-[[recipe]]
-type = "fastly"
-provider = "Fastly"
-method = "GET"
-url = "https://api.fastly.com/current_user"
-headers = { "Fastly-Key" = "{value}", Accept = "application/json" }
-success_codes = [200]
-fail_codes = [401, 403]
-
-[[recipe]]
-type = "netlify"
-provider = "Netlify"
-method = "GET"
-url = "https://api.netlify.com/api/v1/accounts"
-headers = { Authorization = "Bearer {value}" }
-success_codes = [200]
-fail_codes = [401, 403]
+success_match = "\"results\""
+fail_codes = [401]
 
 [[recipe]]
 type = "travis"
 provider = "Travis CI"
 method = "GET"
 url = "https://api.travis-ci.org/repos"
-headers = { Authorization = "token {value}", "Travis-API-Version" = "3" }
+headers = { Authorization = "token {value}", Travis-API-Version = "3" }
 success_codes = [200]
 fail_codes = [401, 403]
+
+[[recipe]]
+type = "tursodatabase"
+provider = "Turso"
+method = "GET"
+url = "https://api.turso.tech/v1/organizations"
+headers = { Authorization = "Bearer {value}" }
+success_codes = [200]
+success_match = "\"organizations\""
+fail_codes = [401]
+
+[[recipe]]
+type = "twilio_api_key"
+provider = "Twilio"
+method = "GET"
+url = "https://api.twilio.com/2010-04-01/Accounts.json"
+headers = { Authorization = "Basic {value}:{value2}" }
+success_codes = [200]
+success_match = "\"sid\""
+fail_codes = [401]
+pair_type = "twilio_auth_token"
+
+[[recipe]]
+type = "twilio_auth_token"
+provider = "Twilio"
+method = "GET"
+url = "https://api.twilio.com/2010-04-01/Accounts.json"
+headers = { Authorization = "Basic {value2}:{value}" }
+success_codes = [200]
+success_match = "\"sid\""
+fail_codes = [401]
+pair_type = "twilio_api_key"
+
+[[recipe]]
+type = "typeform_api_token"
+provider = "Typeform"
+method = "GET"
+url = "https://api.typeform.com/me"
+headers = { Authorization = "Bearer {value}" }
+success_codes = [200]
+success_match = "\"alias\""
+fail_codes = [401]
+
+[[recipe]]
+type = "urlscan_api_key"
+provider = "urlscan.io"
+method = "GET"
+url = "https://urlscan.io/user/quotas/"
+headers = { API-Key = "{value}" }
+success_codes = [200]
+fail_codes = [401]
+
+[[recipe]]
+type = "vercel"
+provider = "Vercel"
+method = "GET"
+url = "https://api.vercel.com/v2/user"
+headers = { Authorization = "Bearer {value}" }
+success_codes = [200]
+success_match = "\"user\""
+fail_codes = [403]
+
+[[recipe]]
+type = "virustotal_api_key"
+provider = "VirusTotal"
+method = "GET"
+url = "https://www.virustotal.com/api/v3/ip_addresses/8.8.8.8"
+headers = { x-apikey = "{value}" }
+success_codes = [200]
+success_match = "\"data\""
+fail_codes = [401]
+
+[[recipe]]
+type = "vultr_api_key"
+provider = "Vultr"
+method = "GET"
+url = "https://api.vultr.com/v2/account"
+headers = { Authorization = "Bearer {value}" }
+success_codes = [200]
+success_match = "\"account\""
+fail_codes = [401]
+
+[[recipe]]
+type = "xai"
+provider = "xAI"
+method = "GET"
+url = "https://api.x.ai/v1/models"
+headers = { Authorization = "Bearer {value}" }
+success_codes = [200]
+success_match = "\"data\""
+fail_codes = [401]

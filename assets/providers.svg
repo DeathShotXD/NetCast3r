@@ -1,122 +1,542 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="960" height="220" viewBox="0 0 960 220" role="img" aria-label="Animated grid of the 26 providers NetCast3r can validate a candidate against: Google, DigitalOcean, Cloudflare, Fastly, Netlify, Firebase, Mapbox, GitHub, GitLab, npm, Postman, Travis CI, New Relic, Shodan, Slack, Telegram, Discord, Dropbox, Facebook, SendGrid, Stripe, OpenAI, Anthropic, Groq, Hugging Face and the NetCast3r lab. Every check is read-only by default.">
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="180" viewBox="0 0 960 180" role="img" aria-label="Scrolling grid of the 121 providers NetCast3r can validate a candidate against, across 135 read-only recipes. Every check is read-only by default.">
   <defs>
     <pattern id="vgrid" width="27" height="27" patternUnits="userSpaceOnUse">
       <path d="M27 0H0v27" fill="none" stroke="#9F23DD" stroke-width="1" opacity=".11"/>
     </pattern>
-    <clipPath id="vclip"><rect x="1" y="1" width="958" height="218" rx="6"/></clipPath>
-    <linearGradient id="vsheen" x1="0" y1="0" x2="1" y2="0">
-      <stop offset="0" stop-color="#C8F81A" stop-opacity="0"/>
-      <stop offset=".5" stop-color="#C8F81A" stop-opacity=".13"/>
-      <stop offset="1" stop-color="#C8F81A" stop-opacity="0"/>
-    </linearGradient>
+    <clipPath id="vclip"><rect x="1" y="1" width="958" height="178" rx="6"/></clipPath>
     <style><![CDATA[
       .m{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace}
-      .ch{opacity:0;animation:in .5s ease-out forwards}
-      .r1{animation-delay:.05s}.r2{animation-delay:.18s}.r3{animation-delay:.31s}.r4{animation-delay:.44s}
-      @keyframes in{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
-      .sw{animation:sw 6s linear 1.4s infinite}
-      @keyframes sw{from{transform:translateX(-170px)}to{transform:translateX(1010px)}}
-      @media (prefers-reduced-motion:reduce){.ch{opacity:1;animation:none;transform:none}.sw{animation:none;opacity:0}}
+      .m1{animation:m1 150s linear infinite}
+      .m2{animation:m2 185s linear infinite}
+      @keyframes m1{from{transform:translateX(0)}to{transform:translateX(-8052px)}}
+      @keyframes m2{from{transform:translateX(0)}to{transform:translateX(-7920px)}}
+      @media (prefers-reduced-motion:reduce){.m1,.m2{animation:none}}
     ]]></style>
   </defs>
 
-  <rect x=".5" y=".5" width="959" height="219" rx="6" fill="#05030A" stroke="#170F3F"/>
+  <rect x=".5" y=".5" width="959" height="179" rx="6" fill="#05030A" stroke="#170F3F"/>
   <g clip-path="url(#vclip)">
-    <rect width="960" height="220" fill="url(#vgrid)" opacity=".5"/>
-    <rect class="sw" x="-170" y="0" width="140" height="220" fill="url(#vsheen)"/>
+    <rect width="960" height="180" fill="url(#vgrid)" opacity=".5"/>
+    <g class="m">
+  <g class="m1" font-size="11" letter-spacing=".3" text-anchor="middle">
+    <g transform="translate(0,70)">
+      <g fill="#0A0614" stroke="#4C2377" stroke-width="1.2">
+      <rect x="0" y="0" width="124" height="24" rx="3"/>
+      <text x="62" y="16" fill="#F5E9DC">AbuseIPDB</text>
+      <rect x="132" y="0" width="124" height="24" rx="3"/>
+      <text x="194" y="16" fill="#F5E9DC">Airtable</text>
+      <rect x="264" y="0" width="124" height="24" rx="3"/>
+      <text x="326" y="16" fill="#F5E9DC">Alchemy</text>
+      <rect x="396" y="0" width="124" height="24" rx="3"/>
+      <text x="458" y="16" fill="#F5E9DC">AlienVault OTX</text>
+      <rect x="528" y="0" width="124" height="24" rx="3"/>
+      <text x="590" y="16" fill="#F5E9DC">Anthropic</text>
+      <rect x="660" y="0" width="124" height="24" rx="3"/>
+      <text x="722" y="16" fill="#F5E9DC">Asana</text>
+      <rect x="792" y="0" width="124" height="24" rx="3"/>
+      <text x="854" y="16" fill="#F5E9DC">AssemblyAI</text>
+      <rect x="924" y="0" width="124" height="24" rx="3"/>
+      <text x="986" y="16" fill="#F5E9DC">Atlassian</text>
+      <rect x="1056" y="0" width="124" height="24" rx="3"/>
+      <text x="1118" y="16" fill="#F5E9DC">Bing Maps</text>
+      <rect x="1188" y="0" width="124" height="24" rx="3"/>
+      <text x="1250" y="16" fill="#F5E9DC">Bitbucket</text>
+      <rect x="1320" y="0" width="124" height="24" rx="3"/>
+      <text x="1382" y="16" fill="#F5E9DC">Bitly</text>
+      <rect x="1452" y="0" width="124" height="24" rx="3"/>
+      <text x="1514" y="16" fill="#F5E9DC">Box</text>
+      <rect x="1584" y="0" width="124" height="24" rx="3"/>
+      <text x="1646" y="16" fill="#F5E9DC">Brevo</text>
+      <rect x="1716" y="0" width="124" height="24" rx="3"/>
+      <text x="1778" y="16" fill="#F5E9DC">Buildkite</text>
+      <rect x="1848" y="0" width="124" height="24" rx="3"/>
+      <text x="1910" y="16" fill="#F5E9DC">Calendly</text>
+      <rect x="1980" y="0" width="124" height="24" rx="3"/>
+      <text x="2042" y="16" fill="#F5E9DC">Censys</text>
+      <rect x="2112" y="0" width="124" height="24" rx="3"/>
+      <text x="2174" y="16" fill="#F5E9DC">CircleCI</text>
+      <rect x="2244" y="0" width="124" height="24" rx="3"/>
+      <text x="2306" y="16" fill="#F5E9DC">ClickUp</text>
+      <rect x="2376" y="0" width="124" height="24" rx="3"/>
+      <text x="2438" y="16" fill="#F5E9DC">Cloudflare</text>
+      <rect x="2508" y="0" width="124" height="24" rx="3"/>
+      <text x="2570" y="16" fill="#F5E9DC">Codecov</text>
+      <rect x="2640" y="0" width="124" height="24" rx="3"/>
+      <text x="2702" y="16" fill="#F5E9DC">Cohere</text>
+      <rect x="2772" y="0" width="124" height="24" rx="3"/>
+      <text x="2834" y="16" fill="#F5E9DC">Coinbase</text>
+      <rect x="2904" y="0" width="124" height="24" rx="3"/>
+      <text x="2966" y="16" fill="#F5E9DC">Contentful</text>
+      <rect x="3036" y="0" width="124" height="24" rx="3"/>
+      <text x="3098" y="16" fill="#F5E9DC">Datadog</text>
+      <rect x="3168" y="0" width="124" height="24" rx="3"/>
+      <text x="3230" y="16" fill="#F5E9DC">Deepgram</text>
+      <rect x="3300" y="0" width="124" height="24" rx="3"/>
+      <text x="3362" y="16" fill="#F5E9DC">DigitalOcean</text>
+      <rect x="3432" y="0" width="124" height="24" rx="3"/>
+      <text x="3494" y="16" fill="#F5E9DC">Discord</text>
+      <rect x="3564" y="0" width="124" height="24" rx="3"/>
+      <text x="3626" y="16" fill="#F5E9DC">Docker Hub</text>
+      <rect x="3696" y="0" width="124" height="24" rx="3"/>
+      <text x="3758" y="16" fill="#F5E9DC">Doppler</text>
+      <rect x="3828" y="0" width="124" height="24" rx="3"/>
+      <text x="3890" y="16" fill="#F5E9DC">Drone</text>
+      <rect x="3960" y="0" width="124" height="24" rx="3"/>
+      <text x="4022" y="16" fill="#F5E9DC">Dropbox</text>
+      <rect x="4092" y="0" width="124" height="24" rx="3"/>
+      <text x="4154" y="16" fill="#F5E9DC">ElevenLabs</text>
+      <rect x="4224" y="0" width="124" height="24" rx="3"/>
+      <text x="4286" y="16" fill="#F5E9DC">Etherscan</text>
+      <rect x="4356" y="0" width="124" height="24" rx="3"/>
+      <text x="4418" y="16" fill="#F5E9DC">Facebook</text>
+      <rect x="4488" y="0" width="124" height="24" rx="3"/>
+      <text x="4550" y="16" fill="#F5E9DC">Fastly</text>
+      <rect x="4620" y="0" width="124" height="24" rx="3"/>
+      <text x="4682" y="16" fill="#F5E9DC">Figma</text>
+      <rect x="4752" y="0" width="124" height="24" rx="3"/>
+      <text x="4814" y="16" fill="#F5E9DC">Firebase</text>
+      <rect x="4884" y="0" width="124" height="24" rx="3"/>
+      <text x="4946" y="16" fill="#F5E9DC">Fireworks</text>
+      <rect x="5016" y="0" width="124" height="24" rx="3"/>
+      <text x="5078" y="16" fill="#F5E9DC">Flutterwave</text>
+      <rect x="5148" y="0" width="124" height="24" rx="3"/>
+      <text x="5210" y="16" fill="#F5E9DC">Fly.io</text>
+      <rect x="5280" y="0" width="124" height="24" rx="3"/>
+      <text x="5342" y="16" fill="#F5E9DC">GitHub</text>
+      <rect x="5412" y="0" width="124" height="24" rx="3"/>
+      <text x="5474" y="16" fill="#F5E9DC">GitLab</text>
+      <rect x="5544" y="0" width="124" height="24" rx="3"/>
+      <text x="5606" y="16" fill="#F5E9DC">GoCardless</text>
+      <rect x="5676" y="0" width="124" height="24" rx="3"/>
+      <text x="5738" y="16" fill="#F5E9DC">Google</text>
+      <rect x="5808" y="0" width="124" height="24" rx="3"/>
+      <text x="5870" y="16" fill="#F5E9DC">Grafana</text>
+      <rect x="5940" y="0" width="124" height="24" rx="3"/>
+      <text x="6002" y="16" fill="#F5E9DC">Groq</text>
+      <rect x="6072" y="0" width="124" height="24" rx="3"/>
+      <text x="6134" y="16" fill="#F5E9DC">HERE</text>
+      <rect x="6204" y="0" width="124" height="24" rx="3"/>
+      <text x="6266" y="16" fill="#F5E9DC">Harness</text>
+      <rect x="6336" y="0" width="124" height="24" rx="3"/>
+      <text x="6398" y="16" fill="#F5E9DC">Heroku</text>
+      <rect x="6468" y="0" width="124" height="24" rx="3"/>
+      <text x="6530" y="16" fill="#F5E9DC">Honeybadger</text>
+      <rect x="6600" y="0" width="124" height="24" rx="3"/>
+      <text x="6662" y="16" fill="#F5E9DC">HubSpot</text>
+      <rect x="6732" y="0" width="124" height="24" rx="3"/>
+      <text x="6794" y="16" fill="#F5E9DC">Hugging Face</text>
+      <rect x="6864" y="0" width="124" height="24" rx="3"/>
+      <text x="6926" y="16" fill="#F5E9DC">Hunter</text>
+      <rect x="6996" y="0" width="124" height="24" rx="3"/>
+      <text x="7058" y="16" fill="#F5E9DC">Infura</text>
+      <rect x="7128" y="0" width="124" height="24" rx="3"/>
+      <text x="7190" y="16" fill="#F5E9DC">Intercom</text>
+      <rect x="7260" y="0" width="124" height="24" rx="3"/>
+      <text x="7322" y="16" fill="#F5E9DC">Iterable</text>
+      <rect x="7392" y="0" width="124" height="24" rx="3"/>
+      <text x="7454" y="16" fill="#F5E9DC">JumpCloud</text>
+      <rect x="7524" y="0" width="124" height="24" rx="3"/>
+      <text x="7586" y="16" fill="#F5E9DC">LaunchDarkly</text>
+      <rect x="7656" y="0" width="124" height="24" rx="3"/>
+      <text x="7718" y="16" fill="#F5E9DC">Linear</text>
+      <rect x="7788" y="0" width="124" height="24" rx="3"/>
+      <text x="7850" y="16" fill="#F5E9DC">Linode</text>
+      <rect x="7920" y="0" width="124" height="24" rx="3"/>
+      <text x="7982" y="16" fill="#F5E9DC">Lokalise</text>
+      </g>
+    </g>
+    <g transform="translate(8052,70)">
+      <g fill="#0A0614" stroke="#4C2377" stroke-width="1.2">
+      <rect x="0" y="0" width="124" height="24" rx="3"/>
+      <text x="62" y="16" fill="#F5E9DC">AbuseIPDB</text>
+      <rect x="132" y="0" width="124" height="24" rx="3"/>
+      <text x="194" y="16" fill="#F5E9DC">Airtable</text>
+      <rect x="264" y="0" width="124" height="24" rx="3"/>
+      <text x="326" y="16" fill="#F5E9DC">Alchemy</text>
+      <rect x="396" y="0" width="124" height="24" rx="3"/>
+      <text x="458" y="16" fill="#F5E9DC">AlienVault OTX</text>
+      <rect x="528" y="0" width="124" height="24" rx="3"/>
+      <text x="590" y="16" fill="#F5E9DC">Anthropic</text>
+      <rect x="660" y="0" width="124" height="24" rx="3"/>
+      <text x="722" y="16" fill="#F5E9DC">Asana</text>
+      <rect x="792" y="0" width="124" height="24" rx="3"/>
+      <text x="854" y="16" fill="#F5E9DC">AssemblyAI</text>
+      <rect x="924" y="0" width="124" height="24" rx="3"/>
+      <text x="986" y="16" fill="#F5E9DC">Atlassian</text>
+      <rect x="1056" y="0" width="124" height="24" rx="3"/>
+      <text x="1118" y="16" fill="#F5E9DC">Bing Maps</text>
+      <rect x="1188" y="0" width="124" height="24" rx="3"/>
+      <text x="1250" y="16" fill="#F5E9DC">Bitbucket</text>
+      <rect x="1320" y="0" width="124" height="24" rx="3"/>
+      <text x="1382" y="16" fill="#F5E9DC">Bitly</text>
+      <rect x="1452" y="0" width="124" height="24" rx="3"/>
+      <text x="1514" y="16" fill="#F5E9DC">Box</text>
+      <rect x="1584" y="0" width="124" height="24" rx="3"/>
+      <text x="1646" y="16" fill="#F5E9DC">Brevo</text>
+      <rect x="1716" y="0" width="124" height="24" rx="3"/>
+      <text x="1778" y="16" fill="#F5E9DC">Buildkite</text>
+      <rect x="1848" y="0" width="124" height="24" rx="3"/>
+      <text x="1910" y="16" fill="#F5E9DC">Calendly</text>
+      <rect x="1980" y="0" width="124" height="24" rx="3"/>
+      <text x="2042" y="16" fill="#F5E9DC">Censys</text>
+      <rect x="2112" y="0" width="124" height="24" rx="3"/>
+      <text x="2174" y="16" fill="#F5E9DC">CircleCI</text>
+      <rect x="2244" y="0" width="124" height="24" rx="3"/>
+      <text x="2306" y="16" fill="#F5E9DC">ClickUp</text>
+      <rect x="2376" y="0" width="124" height="24" rx="3"/>
+      <text x="2438" y="16" fill="#F5E9DC">Cloudflare</text>
+      <rect x="2508" y="0" width="124" height="24" rx="3"/>
+      <text x="2570" y="16" fill="#F5E9DC">Codecov</text>
+      <rect x="2640" y="0" width="124" height="24" rx="3"/>
+      <text x="2702" y="16" fill="#F5E9DC">Cohere</text>
+      <rect x="2772" y="0" width="124" height="24" rx="3"/>
+      <text x="2834" y="16" fill="#F5E9DC">Coinbase</text>
+      <rect x="2904" y="0" width="124" height="24" rx="3"/>
+      <text x="2966" y="16" fill="#F5E9DC">Contentful</text>
+      <rect x="3036" y="0" width="124" height="24" rx="3"/>
+      <text x="3098" y="16" fill="#F5E9DC">Datadog</text>
+      <rect x="3168" y="0" width="124" height="24" rx="3"/>
+      <text x="3230" y="16" fill="#F5E9DC">Deepgram</text>
+      <rect x="3300" y="0" width="124" height="24" rx="3"/>
+      <text x="3362" y="16" fill="#F5E9DC">DigitalOcean</text>
+      <rect x="3432" y="0" width="124" height="24" rx="3"/>
+      <text x="3494" y="16" fill="#F5E9DC">Discord</text>
+      <rect x="3564" y="0" width="124" height="24" rx="3"/>
+      <text x="3626" y="16" fill="#F5E9DC">Docker Hub</text>
+      <rect x="3696" y="0" width="124" height="24" rx="3"/>
+      <text x="3758" y="16" fill="#F5E9DC">Doppler</text>
+      <rect x="3828" y="0" width="124" height="24" rx="3"/>
+      <text x="3890" y="16" fill="#F5E9DC">Drone</text>
+      <rect x="3960" y="0" width="124" height="24" rx="3"/>
+      <text x="4022" y="16" fill="#F5E9DC">Dropbox</text>
+      <rect x="4092" y="0" width="124" height="24" rx="3"/>
+      <text x="4154" y="16" fill="#F5E9DC">ElevenLabs</text>
+      <rect x="4224" y="0" width="124" height="24" rx="3"/>
+      <text x="4286" y="16" fill="#F5E9DC">Etherscan</text>
+      <rect x="4356" y="0" width="124" height="24" rx="3"/>
+      <text x="4418" y="16" fill="#F5E9DC">Facebook</text>
+      <rect x="4488" y="0" width="124" height="24" rx="3"/>
+      <text x="4550" y="16" fill="#F5E9DC">Fastly</text>
+      <rect x="4620" y="0" width="124" height="24" rx="3"/>
+      <text x="4682" y="16" fill="#F5E9DC">Figma</text>
+      <rect x="4752" y="0" width="124" height="24" rx="3"/>
+      <text x="4814" y="16" fill="#F5E9DC">Firebase</text>
+      <rect x="4884" y="0" width="124" height="24" rx="3"/>
+      <text x="4946" y="16" fill="#F5E9DC">Fireworks</text>
+      <rect x="5016" y="0" width="124" height="24" rx="3"/>
+      <text x="5078" y="16" fill="#F5E9DC">Flutterwave</text>
+      <rect x="5148" y="0" width="124" height="24" rx="3"/>
+      <text x="5210" y="16" fill="#F5E9DC">Fly.io</text>
+      <rect x="5280" y="0" width="124" height="24" rx="3"/>
+      <text x="5342" y="16" fill="#F5E9DC">GitHub</text>
+      <rect x="5412" y="0" width="124" height="24" rx="3"/>
+      <text x="5474" y="16" fill="#F5E9DC">GitLab</text>
+      <rect x="5544" y="0" width="124" height="24" rx="3"/>
+      <text x="5606" y="16" fill="#F5E9DC">GoCardless</text>
+      <rect x="5676" y="0" width="124" height="24" rx="3"/>
+      <text x="5738" y="16" fill="#F5E9DC">Google</text>
+      <rect x="5808" y="0" width="124" height="24" rx="3"/>
+      <text x="5870" y="16" fill="#F5E9DC">Grafana</text>
+      <rect x="5940" y="0" width="124" height="24" rx="3"/>
+      <text x="6002" y="16" fill="#F5E9DC">Groq</text>
+      <rect x="6072" y="0" width="124" height="24" rx="3"/>
+      <text x="6134" y="16" fill="#F5E9DC">HERE</text>
+      <rect x="6204" y="0" width="124" height="24" rx="3"/>
+      <text x="6266" y="16" fill="#F5E9DC">Harness</text>
+      <rect x="6336" y="0" width="124" height="24" rx="3"/>
+      <text x="6398" y="16" fill="#F5E9DC">Heroku</text>
+      <rect x="6468" y="0" width="124" height="24" rx="3"/>
+      <text x="6530" y="16" fill="#F5E9DC">Honeybadger</text>
+      <rect x="6600" y="0" width="124" height="24" rx="3"/>
+      <text x="6662" y="16" fill="#F5E9DC">HubSpot</text>
+      <rect x="6732" y="0" width="124" height="24" rx="3"/>
+      <text x="6794" y="16" fill="#F5E9DC">Hugging Face</text>
+      <rect x="6864" y="0" width="124" height="24" rx="3"/>
+      <text x="6926" y="16" fill="#F5E9DC">Hunter</text>
+      <rect x="6996" y="0" width="124" height="24" rx="3"/>
+      <text x="7058" y="16" fill="#F5E9DC">Infura</text>
+      <rect x="7128" y="0" width="124" height="24" rx="3"/>
+      <text x="7190" y="16" fill="#F5E9DC">Intercom</text>
+      <rect x="7260" y="0" width="124" height="24" rx="3"/>
+      <text x="7322" y="16" fill="#F5E9DC">Iterable</text>
+      <rect x="7392" y="0" width="124" height="24" rx="3"/>
+      <text x="7454" y="16" fill="#F5E9DC">JumpCloud</text>
+      <rect x="7524" y="0" width="124" height="24" rx="3"/>
+      <text x="7586" y="16" fill="#F5E9DC">LaunchDarkly</text>
+      <rect x="7656" y="0" width="124" height="24" rx="3"/>
+      <text x="7718" y="16" fill="#F5E9DC">Linear</text>
+      <rect x="7788" y="0" width="124" height="24" rx="3"/>
+      <text x="7850" y="16" fill="#F5E9DC">Linode</text>
+      <rect x="7920" y="0" width="124" height="24" rx="3"/>
+      <text x="7982" y="16" fill="#F5E9DC">Lokalise</text>
+      </g>
+    </g>
+  </g>
+  <g class="m2" font-size="11" letter-spacing=".3" text-anchor="middle">
+    <g transform="translate(0,106)">
+      <g fill="#0A0614" stroke="#4C2377" stroke-width="1.2">
+      <rect x="0" y="0" width="124" height="24" rx="3"/>
+      <text x="62" y="16" fill="#F5E9DC">Mailgun</text>
+      <rect x="132" y="0" width="124" height="24" rx="3"/>
+      <text x="194" y="16" fill="#F5E9DC">Mapbox</text>
+      <rect x="264" y="0" width="124" height="24" rx="3"/>
+      <text x="326" y="16" fill="#F5E9DC">MessageBird</text>
+      <rect x="396" y="0" width="124" height="24" rx="3"/>
+      <text x="458" y="16" fill="#F5E9DC">Microsoft Teams</text>
+      <rect x="528" y="0" width="124" height="24" rx="3"/>
+      <text x="590" y="16" fill="#F5E9DC">Neon</text>
+      <rect x="660" y="0" width="124" height="24" rx="3"/>
+      <text x="722" y="16" fill="#F5E9DC">NetCast3r Lab</text>
+      <rect x="792" y="0" width="124" height="24" rx="3"/>
+      <text x="854" y="16" fill="#F5E9DC">Netlify</text>
+      <rect x="924" y="0" width="124" height="24" rx="3"/>
+      <text x="986" y="16" fill="#F5E9DC">New Relic</text>
+      <rect x="1056" y="0" width="124" height="24" rx="3"/>
+      <text x="1118" y="16" fill="#F5E9DC">Notion</text>
+      <rect x="1188" y="0" width="124" height="24" rx="3"/>
+      <text x="1250" y="16" fill="#F5E9DC">OpenAI</text>
+      <rect x="1320" y="0" width="124" height="24" rx="3"/>
+      <text x="1382" y="16" fill="#F5E9DC">OpenRouter</text>
+      <rect x="1452" y="0" width="124" height="24" rx="3"/>
+      <text x="1514" y="16" fill="#F5E9DC">OpsGenie</text>
+      <rect x="1584" y="0" width="124" height="24" rx="3"/>
+      <text x="1646" y="16" fill="#F5E9DC">PagerDuty</text>
+      <rect x="1716" y="0" width="124" height="24" rx="3"/>
+      <text x="1778" y="16" fill="#F5E9DC">PayPal</text>
+      <rect x="1848" y="0" width="124" height="24" rx="3"/>
+      <text x="1910" y="16" fill="#F5E9DC">Pendo</text>
+      <rect x="1980" y="0" width="124" height="24" rx="3"/>
+      <text x="2042" y="16" fill="#F5E9DC">Perplexity</text>
+      <rect x="2112" y="0" width="124" height="24" rx="3"/>
+      <text x="2174" y="16" fill="#F5E9DC">Pivotal Tracker</text>
+      <rect x="2244" y="0" width="124" height="24" rx="3"/>
+      <text x="2306" y="16" fill="#F5E9DC">Plaid</text>
+      <rect x="2376" y="0" width="124" height="24" rx="3"/>
+      <text x="2438" y="16" fill="#F5E9DC">PlanetScale</text>
+      <rect x="2508" y="0" width="124" height="24" rx="3"/>
+      <text x="2570" y="16" fill="#F5E9DC">PostHog</text>
+      <rect x="2640" y="0" width="124" height="24" rx="3"/>
+      <text x="2702" y="16" fill="#F5E9DC">Postman</text>
+      <rect x="2772" y="0" width="124" height="24" rx="3"/>
+      <text x="2834" y="16" fill="#F5E9DC">Postmark</text>
+      <rect x="2904" y="0" width="124" height="24" rx="3"/>
+      <text x="2966" y="16" fill="#F5E9DC">Pulumi</text>
+      <rect x="3036" y="0" width="124" height="24" rx="3"/>
+      <text x="3098" y="16" fill="#F5E9DC">Railway</text>
+      <rect x="3168" y="0" width="124" height="24" rx="3"/>
+      <text x="3230" y="16" fill="#F5E9DC">Razorpay</text>
+      <rect x="3300" y="0" width="124" height="24" rx="3"/>
+      <text x="3362" y="16" fill="#F5E9DC">Render</text>
+      <rect x="3432" y="0" width="124" height="24" rx="3"/>
+      <text x="3494" y="16" fill="#F5E9DC">Replicate</text>
+      <rect x="3564" y="0" width="124" height="24" rx="3"/>
+      <text x="3626" y="16" fill="#F5E9DC">Resend</text>
+      <rect x="3696" y="0" width="124" height="24" rx="3"/>
+      <text x="3758" y="16" fill="#F5E9DC">Rollbar</text>
+      <rect x="3828" y="0" width="124" height="24" rx="3"/>
+      <text x="3890" y="16" fill="#F5E9DC">RubyGems</text>
+      <rect x="3960" y="0" width="124" height="24" rx="3"/>
+      <text x="4022" y="16" fill="#F5E9DC">SecurityTrails</text>
+      <rect x="4092" y="0" width="124" height="24" rx="3"/>
+      <text x="4154" y="16" fill="#F5E9DC">SendGrid</text>
+      <rect x="4224" y="0" width="124" height="24" rx="3"/>
+      <text x="4286" y="16" fill="#F5E9DC">Sentry</text>
+      <rect x="4356" y="0" width="124" height="24" rx="3"/>
+      <text x="4418" y="16" fill="#F5E9DC">Shippo</text>
+      <rect x="4488" y="0" width="124" height="24" rx="3"/>
+      <text x="4550" y="16" fill="#F5E9DC">Shodan</text>
+      <rect x="4620" y="0" width="124" height="24" rx="3"/>
+      <text x="4682" y="16" fill="#F5E9DC">Slack</text>
+      <rect x="4752" y="0" width="124" height="24" rx="3"/>
+      <text x="4814" y="16" fill="#F5E9DC">Snyk</text>
+      <rect x="4884" y="0" width="124" height="24" rx="3"/>
+      <text x="4946" y="16" fill="#F5E9DC">SonarCloud</text>
+      <rect x="5016" y="0" width="124" height="24" rx="3"/>
+      <text x="5078" y="16" fill="#F5E9DC">Sourcegraph</text>
+      <rect x="5148" y="0" width="124" height="24" rx="3"/>
+      <text x="5210" y="16" fill="#F5E9DC">SparkPost</text>
+      <rect x="5280" y="0" width="124" height="24" rx="3"/>
+      <text x="5342" y="16" fill="#F5E9DC">Square</text>
+      <rect x="5412" y="0" width="124" height="24" rx="3"/>
+      <text x="5474" y="16" fill="#F5E9DC">Stability</text>
+      <rect x="5544" y="0" width="124" height="24" rx="3"/>
+      <text x="5606" y="16" fill="#F5E9DC">Stripe</text>
+      <rect x="5676" y="0" width="124" height="24" rx="3"/>
+      <text x="5738" y="16" fill="#F5E9DC">Supabase</text>
+      <rect x="5808" y="0" width="124" height="24" rx="3"/>
+      <text x="5870" y="16" fill="#F5E9DC">Telegram</text>
+      <rect x="5940" y="0" width="124" height="24" rx="3"/>
+      <text x="6002" y="16" fill="#F5E9DC">Terraform Cloud</text>
+      <rect x="6072" y="0" width="124" height="24" rx="3"/>
+      <text x="6134" y="16" fill="#F5E9DC">Together</text>
+      <rect x="6204" y="0" width="124" height="24" rx="3"/>
+      <text x="6266" y="16" fill="#F5E9DC">TomTom</text>
+      <rect x="6336" y="0" width="124" height="24" rx="3"/>
+      <text x="6398" y="16" fill="#F5E9DC">Travis CI</text>
+      <rect x="6468" y="0" width="124" height="24" rx="3"/>
+      <text x="6530" y="16" fill="#F5E9DC">Turso</text>
+      <rect x="6600" y="0" width="124" height="24" rx="3"/>
+      <text x="6662" y="16" fill="#F5E9DC">Twilio</text>
+      <rect x="6732" y="0" width="124" height="24" rx="3"/>
+      <text x="6794" y="16" fill="#F5E9DC">Typeform</text>
+      <rect x="6864" y="0" width="124" height="24" rx="3"/>
+      <text x="6926" y="16" fill="#F5E9DC">Vercel</text>
+      <rect x="6996" y="0" width="124" height="24" rx="3"/>
+      <text x="7058" y="16" fill="#F5E9DC">VirusTotal</text>
+      <rect x="7128" y="0" width="124" height="24" rx="3"/>
+      <text x="7190" y="16" fill="#F5E9DC">Vultr</text>
+      <rect x="7260" y="0" width="124" height="24" rx="3"/>
+      <text x="7322" y="16" fill="#F5E9DC">ipinfo</text>
+      <rect x="7392" y="0" width="124" height="24" rx="3"/>
+      <text x="7454" y="16" fill="#F5E9DC">ipstack</text>
+      <rect x="7524" y="0" width="124" height="24" rx="3"/>
+      <text x="7586" y="16" fill="#F5E9DC">npm</text>
+      <rect x="7656" y="0" width="124" height="24" rx="3"/>
+      <text x="7718" y="16" fill="#F5E9DC">urlscan.io</text>
+      <rect x="7788" y="0" width="124" height="24" rx="3"/>
+      <text x="7850" y="16" fill="#F5E9DC">xAI</text>
+      </g>
+    </g>
+    <g transform="translate(7920,106)">
+      <g fill="#0A0614" stroke="#4C2377" stroke-width="1.2">
+      <rect x="0" y="0" width="124" height="24" rx="3"/>
+      <text x="62" y="16" fill="#F5E9DC">Mailgun</text>
+      <rect x="132" y="0" width="124" height="24" rx="3"/>
+      <text x="194" y="16" fill="#F5E9DC">Mapbox</text>
+      <rect x="264" y="0" width="124" height="24" rx="3"/>
+      <text x="326" y="16" fill="#F5E9DC">MessageBird</text>
+      <rect x="396" y="0" width="124" height="24" rx="3"/>
+      <text x="458" y="16" fill="#F5E9DC">Microsoft Teams</text>
+      <rect x="528" y="0" width="124" height="24" rx="3"/>
+      <text x="590" y="16" fill="#F5E9DC">Neon</text>
+      <rect x="660" y="0" width="124" height="24" rx="3"/>
+      <text x="722" y="16" fill="#F5E9DC">NetCast3r Lab</text>
+      <rect x="792" y="0" width="124" height="24" rx="3"/>
+      <text x="854" y="16" fill="#F5E9DC">Netlify</text>
+      <rect x="924" y="0" width="124" height="24" rx="3"/>
+      <text x="986" y="16" fill="#F5E9DC">New Relic</text>
+      <rect x="1056" y="0" width="124" height="24" rx="3"/>
+      <text x="1118" y="16" fill="#F5E9DC">Notion</text>
+      <rect x="1188" y="0" width="124" height="24" rx="3"/>
+      <text x="1250" y="16" fill="#F5E9DC">OpenAI</text>
+      <rect x="1320" y="0" width="124" height="24" rx="3"/>
+      <text x="1382" y="16" fill="#F5E9DC">OpenRouter</text>
+      <rect x="1452" y="0" width="124" height="24" rx="3"/>
+      <text x="1514" y="16" fill="#F5E9DC">OpsGenie</text>
+      <rect x="1584" y="0" width="124" height="24" rx="3"/>
+      <text x="1646" y="16" fill="#F5E9DC">PagerDuty</text>
+      <rect x="1716" y="0" width="124" height="24" rx="3"/>
+      <text x="1778" y="16" fill="#F5E9DC">PayPal</text>
+      <rect x="1848" y="0" width="124" height="24" rx="3"/>
+      <text x="1910" y="16" fill="#F5E9DC">Pendo</text>
+      <rect x="1980" y="0" width="124" height="24" rx="3"/>
+      <text x="2042" y="16" fill="#F5E9DC">Perplexity</text>
+      <rect x="2112" y="0" width="124" height="24" rx="3"/>
+      <text x="2174" y="16" fill="#F5E9DC">Pivotal Tracker</text>
+      <rect x="2244" y="0" width="124" height="24" rx="3"/>
+      <text x="2306" y="16" fill="#F5E9DC">Plaid</text>
+      <rect x="2376" y="0" width="124" height="24" rx="3"/>
+      <text x="2438" y="16" fill="#F5E9DC">PlanetScale</text>
+      <rect x="2508" y="0" width="124" height="24" rx="3"/>
+      <text x="2570" y="16" fill="#F5E9DC">PostHog</text>
+      <rect x="2640" y="0" width="124" height="24" rx="3"/>
+      <text x="2702" y="16" fill="#F5E9DC">Postman</text>
+      <rect x="2772" y="0" width="124" height="24" rx="3"/>
+      <text x="2834" y="16" fill="#F5E9DC">Postmark</text>
+      <rect x="2904" y="0" width="124" height="24" rx="3"/>
+      <text x="2966" y="16" fill="#F5E9DC">Pulumi</text>
+      <rect x="3036" y="0" width="124" height="24" rx="3"/>
+      <text x="3098" y="16" fill="#F5E9DC">Railway</text>
+      <rect x="3168" y="0" width="124" height="24" rx="3"/>
+      <text x="3230" y="16" fill="#F5E9DC">Razorpay</text>
+      <rect x="3300" y="0" width="124" height="24" rx="3"/>
+      <text x="3362" y="16" fill="#F5E9DC">Render</text>
+      <rect x="3432" y="0" width="124" height="24" rx="3"/>
+      <text x="3494" y="16" fill="#F5E9DC">Replicate</text>
+      <rect x="3564" y="0" width="124" height="24" rx="3"/>
+      <text x="3626" y="16" fill="#F5E9DC">Resend</text>
+      <rect x="3696" y="0" width="124" height="24" rx="3"/>
+      <text x="3758" y="16" fill="#F5E9DC">Rollbar</text>
+      <rect x="3828" y="0" width="124" height="24" rx="3"/>
+      <text x="3890" y="16" fill="#F5E9DC">RubyGems</text>
+      <rect x="3960" y="0" width="124" height="24" rx="3"/>
+      <text x="4022" y="16" fill="#F5E9DC">SecurityTrails</text>
+      <rect x="4092" y="0" width="124" height="24" rx="3"/>
+      <text x="4154" y="16" fill="#F5E9DC">SendGrid</text>
+      <rect x="4224" y="0" width="124" height="24" rx="3"/>
+      <text x="4286" y="16" fill="#F5E9DC">Sentry</text>
+      <rect x="4356" y="0" width="124" height="24" rx="3"/>
+      <text x="4418" y="16" fill="#F5E9DC">Shippo</text>
+      <rect x="4488" y="0" width="124" height="24" rx="3"/>
+      <text x="4550" y="16" fill="#F5E9DC">Shodan</text>
+      <rect x="4620" y="0" width="124" height="24" rx="3"/>
+      <text x="4682" y="16" fill="#F5E9DC">Slack</text>
+      <rect x="4752" y="0" width="124" height="24" rx="3"/>
+      <text x="4814" y="16" fill="#F5E9DC">Snyk</text>
+      <rect x="4884" y="0" width="124" height="24" rx="3"/>
+      <text x="4946" y="16" fill="#F5E9DC">SonarCloud</text>
+      <rect x="5016" y="0" width="124" height="24" rx="3"/>
+      <text x="5078" y="16" fill="#F5E9DC">Sourcegraph</text>
+      <rect x="5148" y="0" width="124" height="24" rx="3"/>
+      <text x="5210" y="16" fill="#F5E9DC">SparkPost</text>
+      <rect x="5280" y="0" width="124" height="24" rx="3"/>
+      <text x="5342" y="16" fill="#F5E9DC">Square</text>
+      <rect x="5412" y="0" width="124" height="24" rx="3"/>
+      <text x="5474" y="16" fill="#F5E9DC">Stability</text>
+      <rect x="5544" y="0" width="124" height="24" rx="3"/>
+      <text x="5606" y="16" fill="#F5E9DC">Stripe</text>
+      <rect x="5676" y="0" width="124" height="24" rx="3"/>
+      <text x="5738" y="16" fill="#F5E9DC">Supabase</text>
+      <rect x="5808" y="0" width="124" height="24" rx="3"/>
+      <text x="5870" y="16" fill="#F5E9DC">Telegram</text>
+      <rect x="5940" y="0" width="124" height="24" rx="3"/>
+      <text x="6002" y="16" fill="#F5E9DC">Terraform Cloud</text>
+      <rect x="6072" y="0" width="124" height="24" rx="3"/>
+      <text x="6134" y="16" fill="#F5E9DC">Together</text>
+      <rect x="6204" y="0" width="124" height="24" rx="3"/>
+      <text x="6266" y="16" fill="#F5E9DC">TomTom</text>
+      <rect x="6336" y="0" width="124" height="24" rx="3"/>
+      <text x="6398" y="16" fill="#F5E9DC">Travis CI</text>
+      <rect x="6468" y="0" width="124" height="24" rx="3"/>
+      <text x="6530" y="16" fill="#F5E9DC">Turso</text>
+      <rect x="6600" y="0" width="124" height="24" rx="3"/>
+      <text x="6662" y="16" fill="#F5E9DC">Twilio</text>
+      <rect x="6732" y="0" width="124" height="24" rx="3"/>
+      <text x="6794" y="16" fill="#F5E9DC">Typeform</text>
+      <rect x="6864" y="0" width="124" height="24" rx="3"/>
+      <text x="6926" y="16" fill="#F5E9DC">Vercel</text>
+      <rect x="6996" y="0" width="124" height="24" rx="3"/>
+      <text x="7058" y="16" fill="#F5E9DC">VirusTotal</text>
+      <rect x="7128" y="0" width="124" height="24" rx="3"/>
+      <text x="7190" y="16" fill="#F5E9DC">Vultr</text>
+      <rect x="7260" y="0" width="124" height="24" rx="3"/>
+      <text x="7322" y="16" fill="#F5E9DC">ipinfo</text>
+      <rect x="7392" y="0" width="124" height="24" rx="3"/>
+      <text x="7454" y="16" fill="#F5E9DC">ipstack</text>
+      <rect x="7524" y="0" width="124" height="24" rx="3"/>
+      <text x="7586" y="16" fill="#F5E9DC">npm</text>
+      <rect x="7656" y="0" width="124" height="24" rx="3"/>
+      <text x="7718" y="16" fill="#F5E9DC">urlscan.io</text>
+      <rect x="7788" y="0" width="124" height="24" rx="3"/>
+      <text x="7850" y="16" fill="#F5E9DC">xAI</text>
+      </g>
+    </g>
+  </g>
+    </g>
   </g>
 
   <g fill="none" stroke="#C8F81A" stroke-width="1.6" stroke-linecap="square">
     <path d="M9 21V9h12"/>
-    <path d="M951 21V9h12"/>
-    <path d="M9 199v12h12"/>
-    <path d="M951 199v12h12"/>
+    <path d="M951 21V9h-12"/>
+    <path d="M9 159v12h12"/>
+    <path d="M951 159v12h-12"/>
   </g>
   <path d="M872 26h62" stroke="#9F23DD" stroke-width="3" stroke-linecap="round" opacity=".9"/>
 
   <g class="m">
-    <text x="32" y="44" font-size="15" font-weight="700" letter-spacing="1.6" fill="#F5E9DC">VALIDATED AGAINST<tspan fill="#C8F81A"> 26 PROVIDERS</tspan></text>
-    <text x="928" y="44" font-size="11.5" letter-spacing=".8" text-anchor="end" fill="#A89591">// READ-ONLY BY DEFAULT</text>
-    <path d="M32 58H928" stroke="#241640" stroke-width="1"/>
-  </g>
-
-  <g class="m ch r1" font-size="11" letter-spacing=".3" text-anchor="middle">
-    <g fill="#0A0614" stroke="#4C2377" stroke-width="1.2">
-      <rect x="32" y="76" width="121" height="26" rx="3"/>
-      <rect x="161" y="76" width="121" height="26" rx="3"/>
-      <rect x="290" y="76" width="121" height="26" rx="3"/>
-      <rect x="419" y="76" width="121" height="26" rx="3"/>
-      <rect x="548" y="76" width="121" height="26" rx="3"/>
-      <rect x="677" y="76" width="121" height="26" rx="3"/>
-      <rect x="806" y="76" width="121" height="26" rx="3"/>
-    </g>
-    <g fill="#F5E9DC">
-      <text x="92" y="94">Google</text>
-      <text x="221" y="94">DigitalOcean</text>
-      <text x="350" y="94">Cloudflare</text>
-      <text x="479" y="94">Fastly</text>
-      <text x="608" y="94">Netlify</text>
-      <text x="737" y="94">Firebase</text>
-      <text x="866" y="94">Mapbox</text>
-    </g>
-  </g>
-
-  <g class="m ch r2" font-size="11" letter-spacing=".3" text-anchor="middle">
-    <g fill="#0A0614" stroke="#4C2377" stroke-width="1.2">
-      <rect x="32" y="112" width="121" height="26" rx="3"/>
-      <rect x="161" y="112" width="121" height="26" rx="3"/>
-      <rect x="290" y="112" width="121" height="26" rx="3"/>
-      <rect x="419" y="112" width="121" height="26" rx="3"/>
-      <rect x="548" y="112" width="121" height="26" rx="3"/>
-      <rect x="677" y="112" width="121" height="26" rx="3"/>
-      <rect x="806" y="112" width="121" height="26" rx="3"/>
-    </g>
-    <g fill="#F5E9DC">
-      <text x="92" y="130">GitHub</text>
-      <text x="221" y="130">GitLab</text>
-      <text x="350" y="130">npm</text>
-      <text x="479" y="130">Postman</text>
-      <text x="608" y="130">Travis CI</text>
-      <text x="737" y="130">New Relic</text>
-      <text x="866" y="130">Shodan</text>
-    </g>
-  </g>
-
-  <g class="m ch r3" font-size="11" letter-spacing=".3" text-anchor="middle">
-    <g fill="#0A0614" stroke="#4C2377" stroke-width="1.2">
-      <rect x="32" y="148" width="121" height="26" rx="3"/>
-      <rect x="161" y="148" width="121" height="26" rx="3"/>
-      <rect x="290" y="148" width="121" height="26" rx="3"/>
-      <rect x="419" y="148" width="121" height="26" rx="3"/>
-      <rect x="548" y="148" width="121" height="26" rx="3"/>
-      <rect x="677" y="148" width="121" height="26" rx="3"/>
-      <rect x="806" y="148" width="121" height="26" rx="3"/>
-    </g>
-    <g fill="#F5E9DC">
-      <text x="92" y="166">Slack</text>
-      <text x="221" y="166">Telegram</text>
-      <text x="350" y="166">Discord</text>
-      <text x="479" y="166">Dropbox</text>
-      <text x="608" y="166">Facebook</text>
-      <text x="737" y="166">SendGrid</text>
-      <text x="866" y="166">Stripe</text>
-    </g>
-  </g>
-
-  <g class="m ch r4" font-size="11" letter-spacing=".3" text-anchor="middle">
-    <g fill="#0A0614" stroke="#4C2377" stroke-width="1.2">
-      <rect x="32" y="184" width="121" height="26" rx="3"/>
-      <rect x="161" y="184" width="121" height="26" rx="3"/>
-      <rect x="290" y="184" width="121" height="26" rx="3"/>
-      <rect x="419" y="184" width="121" height="26" rx="3"/>
-      <rect x="548" y="184" width="121" height="26" rx="3"/>
-    </g>
-    <g fill="#F5E9DC">
-      <text x="92" y="202">OpenAI</text>
-      <text x="221" y="202">Anthropic</text>
-      <text x="350" y="202">Groq</text>
-      <text x="479" y="202">Hugging Face</text>
-      <text x="608" y="202">NetCast3r Lab</text>
-    </g>
+    <text x="32" y="40" font-size="15" font-weight="700" letter-spacing="1.6" fill="#F5E9DC">VALIDATED ACROSS<tspan fill="#C8F81A"> 121 PROVIDERS</tspan></text>
+    <text x="928" y="40" font-size="11.5" letter-spacing=".8" text-anchor="end" fill="#A89591">// READ-ONLY BY DEFAULT</text>
+    <path d="M32 54H928" stroke="#241640" stroke-width="1"/>
+    <text x="480" y="152" font-size="11.5" letter-spacing=".6" text-anchor="middle" fill="#A89591">135 read-only recipes - every check asks the provider whether a value is alive</text>
   </g>
 </svg>
