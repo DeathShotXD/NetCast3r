@@ -37,6 +37,8 @@ Notable changes to NetCast3r, newest first.
   the template is read once instead of on every render.
 - The local dashboard server rejects foreign `Host` headers, sends a strict
   Content Security Policy and `nosniff`, and compresses large responses.
+- The local dashboard server streams server-sent events, so the page reloads
+  itself when the rendered file changes on disk.
 - Model-generated validation checks are limited to safe public `https`
   endpoints, never loopback, private, link-local, or metadata addresses, and
   follow the run tier.

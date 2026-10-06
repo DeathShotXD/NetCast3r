@@ -987,6 +987,14 @@ el("fgen").textContent = "generated " + (DATA.generated || "-");
 document.title = "NetCast3r - " + (DATA.target || "dashboard");
 if(!DATA.running){ el("dot").style.background = "#9F23DD"; el("dot").style.boxShadow = "0 0 10px #9F23DD"; }
 
+/* ---------------- live reload ---------------- */
+if(location.protocol === "http:" || location.protocol === "https:"){
+  try{
+    var es = new EventSource("/events");
+    es.addEventListener("reload", function(){ location.reload(); });
+  }catch(e){}
+}
+
 runBoot();
 })();
 </script>

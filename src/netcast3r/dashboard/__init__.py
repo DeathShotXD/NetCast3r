@@ -315,7 +315,50 @@ class _Handler(BaseHTTPRequestHandler):
         if self.path in ("/", "/index.html"):
             self._send(200, "text/html; charset=utf-8", self.path_file.read_bytes())
             return
+        if self.path == "/events":
+            self._events()
+            return
         self._send(404, "text/plain; charset=utf-8", b"not found")
+
+    def _mtime(self) -> float:
+        try:
+            return self.path_file.stat().st_mtime
+        except OSError:
+            return 0.0
+
+    def _events(self) -> None:
+        """Push a reload event whenever the rendered file changes on disk.
+
+        One long-lived connection per page, held open by this handler thread.
+        A heartbeat comment every fifteen seconds lets a dropped client be
+        noticed through the failed write.
+        """
+        self.send_response(200)
+        self.send_header("Content-Type", "text/event-stream")
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("X-Accel-Buffering", "no")
+        self.end_headers()
+        seen = self._mtime()
+        try:
+            self.wfile.write(b": connected\n\n")
+            self.wfile.flush()
+            idle = 0
+            while True:
+                time.sleep(1.0)
+                now = self._mtime()
+                if now != seen:
+                    seen = now
+                    self.wfile.write(b"event: reload\ndata: " + str(now).encode() + b"\n\n")
+                    self.wfile.flush()
+                    idle = 0
+                    continue
+                idle += 1
+                if idle >= 15:
+                    idle = 0
+                    self.wfile.write(b": ping\n\n")
+                    self.wfile.flush()
+        except (BrokenPipeError, ConnectionResetError, OSError):
+            return
 
     do_HEAD = do_GET
 

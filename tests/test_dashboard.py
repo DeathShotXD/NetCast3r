@@ -1,8 +1,13 @@
 import json
+import os
 import re
 import shutil
+import socket
 import tempfile
+import threading
+import time
 import unittest
+from http.server import ThreadingHTTPServer
 from pathlib import Path
 
 from netcast3r import dashboard as dash
@@ -112,6 +117,37 @@ class ServerTests(unittest.TestCase):
     def test_other_hosts_are_rejected(self):
         for host in ("evil.example", "example.com:8899", "10.0.0.5", ""):
             self.assertFalse(dash._host_allowed(host), host)
+
+    def test_events_stream_pushes_a_reload_on_change(self):
+        tmp = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, tmp, True)
+        path = dash.save(tmp, dash.demo_data())
+        handler = type("H", (dash._Handler,), {"path_file": path})
+        srv = ThreadingHTTPServer(("127.0.0.1", 0), handler)
+        self.addCleanup(srv.shutdown)
+        threading.Thread(target=srv.serve_forever, daemon=True).start()
+
+        sock = socket.create_connection(("127.0.0.1", srv.server_address[1]))
+        self.addCleanup(sock.close)
+        sock.settimeout(8)
+        sock.sendall(b"GET /events HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n")
+
+        seen = b""
+        while b": connected" not in seen:
+            chunk = sock.recv(4096)
+            if not chunk:
+                break
+            seen += chunk
+        self.assertIn(b"text/event-stream", seen)
+        self.assertIn(b": connected", seen)
+
+        os.utime(path, (time.time() + 5, time.time() + 5))
+        while b"event: reload" not in seen:
+            chunk = sock.recv(4096)
+            if not chunk:
+                break
+            seen += chunk
+        self.assertIn(b"event: reload", seen)
 
 
 class DemoTests(unittest.TestCase):
