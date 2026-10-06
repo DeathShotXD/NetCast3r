@@ -63,3 +63,18 @@ Alternatives that keep the shape: `AGENT DRIVEN`, `PIPELINED`, `MODULAR`,
 Both are far larger than README use needs. Suggested derivatives once the text
 is fixed: logo 512 x 512, banner 1983 x 793 for the header plus a 1280 x 640
 crop for the social card.
+
+## Regenerating the derivatives
+
+The four webp files the project ships are cut from these two PNGs: the README
+pair in `assets/`, and the pair the HTML dashboard embeds. After any fix to the
+artwork, rebuild them with:
+
+```
+python3 assets/make_webp.py
+```
+
+The script trims the logo to its alpha box, resizes both with Lanczos, and
+writes `assets/logo.webp`, `assets/banner.webp`,
+`src/netcast3r/dashboard/logo.webp`, and `src/netcast3r/dashboard/banner.webp`.
+Then run the tests and commit the artwork with the notes.
