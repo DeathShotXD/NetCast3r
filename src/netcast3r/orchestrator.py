@@ -134,11 +134,14 @@ class Orchestrator:
             self.store.add_asset(url, "out-of-scope", 0)
 
         self._wordlist(result)
+        self.console.counts(pages=len(result.pages), js_files=len(result.js_urls),
+                            endpoints=len(result.endpoints))
 
         scan_text = dict(result.js_text)
         scan_text.update(self.seed_bodies)
         candidates = self._prospect(scan_text)
         self.console.line("prospector", f"{len(candidates)} candidates")
+        self.console.counts(candidates=len(candidates))
         candidates = self._classify(candidates)
         candidates = self._triage(candidates)
 
@@ -160,6 +163,7 @@ class Orchestrator:
                 finding.setdefault("notes", narrative)
             self._scribe(finding)
         findings = self._sentinel(findings)
+        self.console.counts(verified=len(findings), findings=len(findings))
 
         summary = {
             "pages": len(result.pages),
