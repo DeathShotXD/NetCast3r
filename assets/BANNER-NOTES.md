@@ -77,4 +77,6 @@ python3 assets/make_webp.py
 The script trims the logo to its alpha box, resizes both with Lanczos, and
 writes `assets/logo.webp`, `assets/banner.webp`,
 `src/netcast3r/dashboard/logo.webp`, and `src/netcast3r/dashboard/banner.webp`.
-Then run the tests and commit the artwork with the notes.
+The README pair is encoded at a higher quality than the dashboard pair, because
+the dashboard embeds its pair as base64 inside every file it writes. Then run
+the tests and commit the artwork with the notes.

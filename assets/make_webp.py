@@ -35,8 +35,8 @@ def write(path: Path, image: Image.Image, quality: int) -> None:
 def main() -> None:
     write(ROOT / "logo.webp", logo(512), 90)
     write(ROOT / "banner.webp", banner(1600), 86)
-    write(DASH / "logo.webp", logo(512), 90)
-    write(DASH / "banner.webp", banner(1100), 84)
+    write(DASH / "logo.webp", logo(512), 85)
+    write(DASH / "banner.webp", banner(1100), 80)
 
 
 if __name__ == "__main__":
