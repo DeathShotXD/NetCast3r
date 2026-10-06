@@ -32,12 +32,19 @@ Notable changes to NetCast3r, newest first.
 
 ### Changed
 
+- The dashboard renders in a single pass, so a value that contains a
+  placeholder token can no longer trigger a second round of replacement, and
+  the template is read once instead of on every render.
+- The local dashboard server rejects foreign `Host` headers, sends a strict
+  Content Security Policy and `nosniff`, and compresses large responses.
 - Model-generated validation checks are limited to safe public `https`
   endpoints, never loopback, private, link-local, or metadata addresses, and
   follow the run tier.
 
 ### Fixed
 
+- The dashboard escapes every HTML-significant character in the run data, so a
+  finding value can no longer close the JSON script block or inject markup.
 - The over-broad gitleaks `generic-api-key` rule is dropped in favour of the
   stricter curated generic rule, which removes JavaScript property names from
   the candidate set.

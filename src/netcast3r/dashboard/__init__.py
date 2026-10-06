@@ -10,7 +10,9 @@ Open the file directly, or hand it to the local server.
 from __future__ import annotations
 
 import base64
+import gzip
 import json
+import re
 import time
 import webbrowser
 from functools import lru_cache
@@ -24,8 +26,9 @@ TEMPLATE_NAME = "template.html"
 OUTPUT_NAME = "dashboard.html"
 
 
+@lru_cache(maxsize=1)
 def template_text() -> str:
-    """Read the shipped template from the installed package."""
+    """Read the shipped template from the installed package, once."""
     return resources.files("netcast3r.dashboard").joinpath(TEMPLATE_NAME).read_text("utf-8")
 
 
@@ -36,17 +39,41 @@ def _data_uri(name: str) -> str:
     return "data:image/webp;base64," + base64.b64encode(raw).decode("ascii")
 
 
+_TOKENS = (
+    "__NETCAST3R_VARS__",
+    "__NETCAST3R_LOGO__",
+    "__NETCAST3R_BANNER__",
+    "__NETCAST3R_DATA__",
+)
+_TOKEN_RE = re.compile("|".join(map(re.escape, _TOKENS)))
+
+
+def _payload(data: dict) -> str:
+    """Serialise the run for the JSON script block, safe to embed in HTML.
+
+    The HTML tokenizer, not the JSON parser, decides where the block ends, so
+    the HTML-significant characters are escaped. With ``ensure_ascii`` on this
+    also covers U+2028 and U+2029, which would otherwise end a line in
+    JavaScript. Every escape stays valid JSON, so the page reads the original
+    text back.
+    """
+    raw = json.dumps(data, default=str, ensure_ascii=True, separators=(",", ":"))
+    return raw.replace("<", "\\u003c").replace(">", "\\u003e").replace("&", "\\u0026")
+
+
 def render(data: dict) -> str:
-    """Fill the template with the palette, the artwork, and the run data."""
-    payload = json.dumps(data, default=str, indent=None, separators=(",", ":"))
-    # A literal close script tag inside JSON would end the block early.
-    payload = payload.replace("</", "<\\/")
-    html = template_text()
-    html = html.replace("__NETCAST3R_VARS__", T.css_vars())
-    html = html.replace("__NETCAST3R_LOGO__", _data_uri("logo.webp"))
-    html = html.replace("__NETCAST3R_BANNER__", _data_uri("banner.webp"))
-    html = html.replace("__NETCAST3R_DATA__", payload)
-    return html
+    """Fill the template with the palette, the artwork, and the run data.
+
+    The substitution is a single pass, so a value that contains one of the
+    placeholder tokens cannot trigger a second round of replacement.
+    """
+    values = {
+        "__NETCAST3R_VARS__": T.css_vars(),
+        "__NETCAST3R_LOGO__": _data_uri("logo.webp"),
+        "__NETCAST3R_BANNER__": _data_uri("banner.webp"),
+        "__NETCAST3R_DATA__": _payload(data),
+    }
+    return _TOKEN_RE.sub(lambda match: values[match.group(0)], template_text())
 
 
 def build_data(*, target: str = "", summary: dict | None = None,
@@ -230,23 +257,67 @@ def demo_data() -> dict:
 
 # -- local server ------------------------------------------------------------
 
+_OK_HOSTS = {"127.0.0.1", "localhost", "::1"}
+
+
+def _host_allowed(value: str) -> bool:
+    """Only loopback names may reach the dashboard.
+
+    A page on another origin must not be able to rebind DNS to the local port
+    and read the run, so the Host header is checked against the loopback names
+    before anything is served.
+    """
+    host = (value or "").strip().lower()
+    if host.startswith("["):                       # [::1]:8899
+        host = host[1:host.find("]")] if "]" in host else host[1:]
+    elif host.count(":") == 1:                     # 127.0.0.1:8899
+        host = host.split(":", 1)[0]
+    return host in _OK_HOSTS
+
+
+_CSP = (
+    "default-src 'none'; img-src 'self' data:; "
+    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
+    "font-src https://fonts.gstatic.com; script-src 'self' 'unsafe-inline'; "
+    "connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
+)
+
+
 class _Handler(BaseHTTPRequestHandler):
-    """Serves one rendered file and refreshes it when the data changes."""
+    """Serves the rendered dashboard from loopback only."""
 
     path_file: Path = Path(OUTPUT_NAME)
+    protocol_version = "HTTP/1.1"
+
+    def _send(self, code: int, ctype: str, body: bytes) -> None:
+        compressed = False
+        if len(body) > 1024 and "gzip" in self.headers.get("Accept-Encoding", ""):
+            body = gzip.compress(body, 6)
+            compressed = True
+        self.send_response(code)
+        self.send_header("Content-Type", ctype)
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.send_header("Referrer-Policy", "no-referrer")
+        self.send_header("Content-Security-Policy", _CSP)
+        if compressed:
+            self.send_header("Content-Encoding", "gzip")
+            self.send_header("Vary", "Accept-Encoding")
+        self.end_headers()
+        if self.command != "HEAD":
+            self.wfile.write(body)
 
     def do_GET(self) -> None:  # noqa: N802
-        if self.path in ("/", "/index.html"):
-            body = self.path_file.read_text("utf-8").encode("utf-8")
-            self.send_response(200)
-            self.send_header("Content-Type", "text/html; charset=utf-8")
-            self.send_header("Content-Length", str(len(body)))
-            self.send_header("Cache-Control", "no-store")
-            self.end_headers()
-            self.wfile.write(body)
+        if not _host_allowed(self.headers.get("Host", "")):
+            self.send_error(421)
             return
-        self.send_response(404)
-        self.end_headers()
+        if self.path in ("/", "/index.html"):
+            self._send(200, "text/html; charset=utf-8", self.path_file.read_bytes())
+            return
+        self._send(404, "text/plain; charset=utf-8", b"not found")
+
+    do_HEAD = do_GET
 
     def log_message(self, fmt: str, *args) -> None:
         return

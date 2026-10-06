@@ -28,11 +28,28 @@ class RenderTests(unittest.TestCase):
         self.assertEqual(len(data["stages"]), 6)
 
     def test_close_script_in_a_value_cannot_break_out(self):
-        data = dash.build_data(target="x", findings=[{"value": "</script><b>"}])
+        data = dash.build_data(target="x",
+                               findings=[{"value": "</script><b>&amp;<!--"}])
         payload = DATA_RE.search(dash.render(data)).group(1)
-        self.assertNotIn("</script>", payload)
-        self.assertIn("<\\/script>", payload)
-        json.loads(payload.replace("<\\/", "</"))
+        self.assertNotIn("</script", payload)
+        self.assertNotIn("<", payload)
+        self.assertNotIn(">", payload)
+        self.assertNotIn("&", payload)
+        parsed = json.loads(payload)
+        self.assertEqual(parsed["findings"][0]["value"], "</script><b>&amp;<!--")
+
+    def test_line_separators_stay_ascii_and_read_back(self):
+        data = dash.build_data(target="x", findings=[{"value": "a\u2028b\u2029c"}])
+        payload = DATA_RE.search(dash.render(data)).group(1)
+        self.assertTrue(payload.isascii())
+        self.assertEqual(json.loads(payload)["findings"][0]["value"], "a\u2028b\u2029c")
+
+    def test_a_value_holding_a_token_is_not_substituted_again(self):
+        data = dash.build_data(target="x",
+                               findings=[{"value": "__NETCAST3R_LOGO__"}])
+        payload = DATA_RE.search(dash.render(data)).group(1)
+        self.assertEqual(json.loads(payload)["findings"][0]["value"],
+                         "__NETCAST3R_LOGO__")
 
     def test_summary_and_counts_are_carried(self):
         data = dash.build_data(summary={"pages": 3}, counts={"secrets": 9},
@@ -84,6 +101,17 @@ class StoreTests(unittest.TestCase):
         loaded = dash.load(self.tmp)
         self.assertEqual(loaded["summary"]["pages"], 7)
         self.assertEqual(loaded["findings"][0]["value"], "abc")
+
+
+class ServerTests(unittest.TestCase):
+    def test_loopback_hosts_are_allowed(self):
+        for host in ("127.0.0.1", "localhost", "127.0.0.1:8899",
+                     "localhost:8899", "[::1]:8899"):
+            self.assertTrue(dash._host_allowed(host), host)
+
+    def test_other_hosts_are_rejected(self):
+        for host in ("evil.example", "example.com:8899", "10.0.0.5", ""):
+            self.assertFalse(dash._host_allowed(host), host)
 
 
 class DemoTests(unittest.TestCase):
