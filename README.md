@@ -4,9 +4,10 @@
   <img src="assets/logo.webp" alt="NetCast3r logo" width="340">
 </p>
 
-Cast a net over the web. NetCast3r crawls a target, reads its JavaScript,
-hunts for secrets, validates every credential against its provider, and
-writes a report you can submit.
+Cast a net over the web. NetCast3r crawls a target, reads the JavaScript it
+serves, hunts 230 secret patterns, and checks every candidate against its
+provider with 26 read-only recipes. It returns a four-state verdict, the
+evidence behind it, and a report you can submit as-is.
 
 <p align="center">
   <img src="assets/banner.webp" alt="NetCast3r - cast a net over the web" width="100%">
@@ -16,20 +17,50 @@ writes a report you can submit.
   <img alt="tests passing" src="https://img.shields.io/github/actions/workflow/status/DeathShotXD/NetCast3r/tests.yml?branch=main&amp;style=for-the-badge&amp;label=tests&amp;labelColor=170F3F&amp;color=9F23DD">
   <img alt="python 3.10+" src="https://img.shields.io/badge/python-3.10%2B-4C2377?style=for-the-badge&amp;labelColor=170F3F">
   <img alt="MIT license" src="https://img.shields.io/badge/license-MIT-281550?style=for-the-badge&amp;labelColor=170F3F">
+  <img alt="security policy" src="https://img.shields.io/badge/security-policy-170F3F?style=for-the-badge&amp;labelColor=170F3F">
+  <img alt="outputs: markdown, json, jsonl, sarif" src="https://img.shields.io/badge/outputs-MD%20%C2%B7%20JSON%20%C2%B7%20JSONL%20%C2%B7%20SARIF-6CA52E?style=for-the-badge&amp;labelColor=170F3F">
+  <img alt="for authorized testing only" src="https://img.shields.io/badge/use-authorized%20testing%20only-C8F81A?style=for-the-badge&amp;labelColor=170F3F">
+</p>
+
+<p align="center">
+  <b><a href="#install">Install</a></b> | <b><a href="#usage">Usage</a></b> | <b><a href="#outputs">Outputs</a></b> | <b><a href="#docs">Docs</a></b> | <b><a href="SECURITY.md">Security</a></b> | <b><a href="CONTRIBUTING.md">Contributing</a></b>
 </p>
 
 <p align="center">
   <img src="assets/stats.svg" alt="Automated web recon, JavaScript analysis, secret hunting, validation and reporting. 230 patterns, 26 recipes." width="100%">
 </p>
 
-The pipeline, the agent swarm, the validation engine, the evidence store, the
-report writer, the live console, the HTML dashboard, the lab, and the test
-suite are all in place.
+Detection is only the first step. A pattern match says that something looks
+like a key; NetCast3r asks the provider whether it is alive, records what that
+key can reach, and escalates when write access is enabled. Every finding
+leaves the pipeline with evidence, reproduction steps, and the value already
+redacted, so the report can go straight into a program.
+
+<details>
+<summary>Contents</summary>
+
+- [What it does](#what-it-does)
+- [How it works](#how-it-works)
+- [What it finds](#what-it-finds)
+- [Coverage](#coverage)
+- [Example run](#example-run)
+- [Outputs](#outputs)
+- [Dashboard](#dashboard)
+- [Install](#install)
+- [Usage](#usage)
+- [Scope files](#scope-files)
+- [Lab](#lab)
+- [Model providers](#model-providers)
+- [Docs](#docs)
+- [Responsible use](#responsible-use)
+- [License](#license)
+
+</details>
 
 ## What it does
 
 <p align="center">
-  <img src="assets/checklist.svg" alt="Crawl targets, collect JavaScript files, hunt secrets, validate credentials, escalate and report. More than just a crawler." width="100%">
+  <img src="assets/checklist.svg" alt="Run checklist: crawl targets, collect JavaScript files, hunt secrets, validate credentials, escalate and report. More than just a crawler." width="100%">
 </p>
 
 - **Crawl** a target and every endpoint it can reach, then collect the JavaScript
@@ -54,6 +85,8 @@ provider with read-only recipes. The chainer maps the escalation, the sentinel
 scores and de-duplicates, and the report is written with the values redacted.
 If no provider answers, the deterministic path still produces a report.
 
+See [docs/architecture.md](docs/architecture.md).
+
 ## What it finds
 
 <p align="center">
@@ -74,6 +107,37 @@ service and can re-type the candidate so the right recipe runs. A route that
 omits the model still works: detection and validation never depend on a model.
 
 See [docs/architecture.md](docs/architecture.md).
+
+## Coverage
+
+<p align="center">
+  <img src="assets/providers.svg" alt="Grid of the 26 providers NetCast3r can validate a candidate against: Google, DigitalOcean, Cloudflare, Fastly, Netlify, Firebase, Mapbox, GitHub, GitLab, npm, Postman, Travis CI, New Relic, Shodan, Slack, Telegram, Discord, Dropbox, Facebook, SendGrid, Stripe, OpenAI, Anthropic, Groq, Hugging Face and the NetCast3r lab. Every check is read-only by default." width="100%">
+</p>
+
+230 patterns cover cloud, storage, payments, messaging, CI, and model
+credentials, and each candidate can be put to 26 validation recipes. Every
+check is read-only by default, `--tier write` opts in to the ones that change
+state. A report is written either way, with no provider key required.
+
+## Example run
+
+<p align="center">
+  <img src="assets/demo.svg" alt="Animated terminal window running an example scan: recon reports 42 pages and 61 JavaScript files, the exegete reads them, the prospector finds 4 candidates, the assayer plans a read only check, an AWS key comes back confirmed and a database URL corroborated, and scribe writes report.md and dashboard.html." width="100%">
+</p>
+
+Recon collects, the exegete reads, the prospector ranks, the assayer puts each
+candidate to its provider, and scribe writes the report and the dashboard.
+With `--dashboard` the same run is mirrored live into the browser.
+
+## Outputs
+
+| File | What it is |
+| --- | --- |
+| `report.md` | the submission-ready report: impact, proof, reproduction, remediation |
+| `results.json` | summary and findings, for scripts |
+| `results.jsonl` | one finding per line, for streaming into other tools |
+| `results.sarif` | SARIF 2.1.0, upload it to GitHub code scanning |
+| `dashboard.html` | the self-contained dashboard, plus `dashboard.json` beside it |
 
 ## Dashboard
 
@@ -111,7 +175,13 @@ netcast3r --version
 ```bash
 netcast3r recon --input target.com --scope scope.txt --out-of-scope oos.txt
 netcast3r run   --input target.com --scope scope.txt --out-of-scope oos.txt --html
+netcast3r run   --input target.com --scope scope.txt --json --jsonl --sarif
+netcast3r providers
 ```
+
+`--depth`, `--rate`, `--delay`, `--timeout`, and `--retries` tune the crawl.
+`--tier` selects the action tier, `--resume` reuses earlier validations, and
+`--fail` exits non-zero when findings exist.
 
 ## Scope files
 
@@ -138,10 +208,24 @@ netcast3r run --input http://127.0.0.1:8099/ --out results \
 
 See [lab/README.md](lab/README.md).
 
-## Providers
+## Model providers
 
 NetCast3r talks to any OpenAI-compatible endpoint. OpenCode Zen and OpenRouter
 are configured first by default; Ollama and custom endpoints are supported.
+Run `netcast3r providers` to see what is configured. The classifier is
+optional: detection and validation work without it.
+
+<p align="center">
+  <img src="assets/divider.svg" alt="" width="100%">
+</p>
+
+## Docs
+
+- [Architecture](docs/architecture.md) - stages, scope, tiers, and the fallback path
+- [Design](docs/DESIGN.md) - palette, type, and the validation ladder
+- [Contributing](CONTRIBUTING.md) - the ground rules for a pull request
+- [Security policy](SECURITY.md) - how to report a problem in NetCast3r
+- [Changelog](CHANGELOG.md) - what changed in each version
 
 ## Responsible use
 

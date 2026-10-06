@@ -1,0 +1,122 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="220" viewBox="0 0 960 220" role="img" aria-label="Animated grid of the 26 providers NetCast3r can validate a candidate against: Google, DigitalOcean, Cloudflare, Fastly, Netlify, Firebase, Mapbox, GitHub, GitLab, npm, Postman, Travis CI, New Relic, Shodan, Slack, Telegram, Discord, Dropbox, Facebook, SendGrid, Stripe, OpenAI, Anthropic, Groq, Hugging Face and the NetCast3r lab. Every check is read-only by default.">
+  <defs>
+    <pattern id="vgrid" width="27" height="27" patternUnits="userSpaceOnUse">
+      <path d="M27 0H0v27" fill="none" stroke="#9F23DD" stroke-width="1" opacity=".11"/>
+    </pattern>
+    <clipPath id="vclip"><rect x="1" y="1" width="958" height="218" rx="6"/></clipPath>
+    <linearGradient id="vsheen" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#C8F81A" stop-opacity="0"/>
+      <stop offset=".5" stop-color="#C8F81A" stop-opacity=".13"/>
+      <stop offset="1" stop-color="#C8F81A" stop-opacity="0"/>
+    </linearGradient>
+    <style><![CDATA[
+      .m{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace}
+      .ch{opacity:0;animation:in .5s ease-out forwards}
+      .r1{animation-delay:.05s}.r2{animation-delay:.18s}.r3{animation-delay:.31s}.r4{animation-delay:.44s}
+      @keyframes in{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+      .sw{animation:sw 6s linear 1.4s infinite}
+      @keyframes sw{from{transform:translateX(-170px)}to{transform:translateX(1010px)}}
+      @media (prefers-reduced-motion:reduce){.ch{opacity:1;animation:none;transform:none}.sw{animation:none;opacity:0}}
+    ]]></style>
+  </defs>
+
+  <rect x=".5" y=".5" width="959" height="219" rx="6" fill="#05030A" stroke="#170F3F"/>
+  <g clip-path="url(#vclip)">
+    <rect width="960" height="220" fill="url(#vgrid)" opacity=".5"/>
+    <rect class="sw" x="-170" y="0" width="140" height="220" fill="url(#vsheen)"/>
+  </g>
+
+  <g fill="none" stroke="#C8F81A" stroke-width="1.6" stroke-linecap="square">
+    <path d="M9 21V9h12"/>
+    <path d="M951 21V9h12"/>
+    <path d="M9 199v12h12"/>
+    <path d="M951 199v12h12"/>
+  </g>
+  <path d="M872 26h62" stroke="#9F23DD" stroke-width="3" stroke-linecap="round" opacity=".9"/>
+
+  <g class="m">
+    <text x="32" y="44" font-size="15" font-weight="700" letter-spacing="1.6" fill="#F5E9DC">VALIDATED AGAINST<tspan fill="#C8F81A"> 26 PROVIDERS</tspan></text>
+    <text x="928" y="44" font-size="11.5" letter-spacing=".8" text-anchor="end" fill="#A89591">// READ-ONLY BY DEFAULT</text>
+    <path d="M32 58H928" stroke="#241640" stroke-width="1"/>
+  </g>
+
+  <g class="m ch r1" font-size="11" letter-spacing=".3" text-anchor="middle">
+    <g fill="#0A0614" stroke="#4C2377" stroke-width="1.2">
+      <rect x="32" y="76" width="121" height="26" rx="3"/>
+      <rect x="161" y="76" width="121" height="26" rx="3"/>
+      <rect x="290" y="76" width="121" height="26" rx="3"/>
+      <rect x="419" y="76" width="121" height="26" rx="3"/>
+      <rect x="548" y="76" width="121" height="26" rx="3"/>
+      <rect x="677" y="76" width="121" height="26" rx="3"/>
+      <rect x="806" y="76" width="121" height="26" rx="3"/>
+    </g>
+    <g fill="#F5E9DC">
+      <text x="92" y="94">Google</text>
+      <text x="221" y="94">DigitalOcean</text>
+      <text x="350" y="94">Cloudflare</text>
+      <text x="479" y="94">Fastly</text>
+      <text x="608" y="94">Netlify</text>
+      <text x="737" y="94">Firebase</text>
+      <text x="866" y="94">Mapbox</text>
+    </g>
+  </g>
+
+  <g class="m ch r2" font-size="11" letter-spacing=".3" text-anchor="middle">
+    <g fill="#0A0614" stroke="#4C2377" stroke-width="1.2">
+      <rect x="32" y="112" width="121" height="26" rx="3"/>
+      <rect x="161" y="112" width="121" height="26" rx="3"/>
+      <rect x="290" y="112" width="121" height="26" rx="3"/>
+      <rect x="419" y="112" width="121" height="26" rx="3"/>
+      <rect x="548" y="112" width="121" height="26" rx="3"/>
+      <rect x="677" y="112" width="121" height="26" rx="3"/>
+      <rect x="806" y="112" width="121" height="26" rx="3"/>
+    </g>
+    <g fill="#F5E9DC">
+      <text x="92" y="130">GitHub</text>
+      <text x="221" y="130">GitLab</text>
+      <text x="350" y="130">npm</text>
+      <text x="479" y="130">Postman</text>
+      <text x="608" y="130">Travis CI</text>
+      <text x="737" y="130">New Relic</text>
+      <text x="866" y="130">Shodan</text>
+    </g>
+  </g>
+
+  <g class="m ch r3" font-size="11" letter-spacing=".3" text-anchor="middle">
+    <g fill="#0A0614" stroke="#4C2377" stroke-width="1.2">
+      <rect x="32" y="148" width="121" height="26" rx="3"/>
+      <rect x="161" y="148" width="121" height="26" rx="3"/>
+      <rect x="290" y="148" width="121" height="26" rx="3"/>
+      <rect x="419" y="148" width="121" height="26" rx="3"/>
+      <rect x="548" y="148" width="121" height="26" rx="3"/>
+      <rect x="677" y="148" width="121" height="26" rx="3"/>
+      <rect x="806" y="148" width="121" height="26" rx="3"/>
+    </g>
+    <g fill="#F5E9DC">
+      <text x="92" y="166">Slack</text>
+      <text x="221" y="166">Telegram</text>
+      <text x="350" y="166">Discord</text>
+      <text x="479" y="166">Dropbox</text>
+      <text x="608" y="166">Facebook</text>
+      <text x="737" y="166">SendGrid</text>
+      <text x="866" y="166">Stripe</text>
+    </g>
+  </g>
+
+  <g class="m ch r4" font-size="11" letter-spacing=".3" text-anchor="middle">
+    <g fill="#0A0614" stroke="#4C2377" stroke-width="1.2">
+      <rect x="32" y="184" width="121" height="26" rx="3"/>
+      <rect x="161" y="184" width="121" height="26" rx="3"/>
+      <rect x="290" y="184" width="121" height="26" rx="3"/>
+      <rect x="419" y="184" width="121" height="26" rx="3"/>
+      <rect x="548" y="184" width="121" height="26" rx="3"/>
+    </g>
+    <g fill="#F5E9DC">
+      <text x="92" y="202">OpenAI</text>
+      <text x="221" y="202">Anthropic</text>
+      <text x="350" y="202">Groq</text>
+      <text x="479" y="202">Hugging Face</text>
+      <text x="608" y="202">NetCast3r Lab</text>
+    </g>
+  </g>
+</svg>
