@@ -4,9 +4,11 @@ from __future__ import annotations
 
 import argparse
 import sys
+import time
 from pathlib import Path
 
 from . import __version__
+from . import dashboard as dash
 from . import inputs
 from .config import load_config
 from .orchestrator import Orchestrator
@@ -112,9 +114,34 @@ def cmd_recon(args) -> int:
     return 0
 
 
+def _write_dashboard(out, orchestrator, summary, store, started) -> Path:
+    """Render the HTML dashboard from everything the run collected."""
+    events = list(getattr(orchestrator.console, "events", []) or [])
+    data = {
+        "pages": summary.pages, "js_files": summary.js_files,
+        "endpoints": summary.endpoints, "candidates": summary.candidates,
+        "verified": summary.verified, "findings": summary.findings,
+    }
+    for event in events:
+        if event.get("kind") == "summary":
+            data.update(event.get("data") or {})
+    payload = dash.build_data(
+        target=summary.target,
+        summary=data,
+        findings=list(orchestrator.last_findings),
+        counts=store.counts(),
+        events=events,
+        stages=dash.stages_completed(events),
+        elapsed_ms=int((time.time() - started) * 1000),
+        running=False,
+    )
+    return dash.save(out, payload)
+
+
 def cmd_run(args) -> int:
     config = load_config(Path(args.config) if getattr(args, "config", None) else None)
     _apply_options(config, args)
+    started = time.time()
 
     source = None
     if getattr(args, "input", None):
@@ -149,6 +176,9 @@ def cmd_run(args) -> int:
             console.stop()
     if getattr(args, "sarif", False):
         save_sarif(out, orchestrator.last_findings)
+    if getattr(args, "html", False):
+        path = _write_dashboard(out, orchestrator, summary, store, started)
+        orchestrator.console.line("scribe", f"dashboard written to {path}")
     store.close()
     if getattr(args, "fail", False) and summary.findings > 0:
         return 1
@@ -165,6 +195,23 @@ def cmd_providers(args) -> int:
     print("routes:")
     for route in config.routes:
         print(f"  {route.agent:<11} {route.provider:<12} {route.model}")
+    return 0
+
+
+def cmd_dashboard(args) -> int:
+    out = Path(args.out or "results")
+    if args.demo or not args.results:
+        data = dash.demo_data()
+    else:
+        data = dash.load(args.results)
+    if out.suffix.lower() in (".html", ".htm"):
+        path = dash.save(out.parent, data, name=out.name)
+    else:
+        path = dash.save(out, data)
+    if args.save_only:
+        print(f"dashboard  {path}")
+        return 0
+    dash.serve(path, port=args.port, open_browser=not args.no_open)
     return 0
 
 
@@ -198,6 +245,7 @@ def build_parser() -> argparse.ArgumentParser:
         p.add_argument("--json", action="store_true", help="also write results.json")
         p.add_argument("--jsonl", action="store_true", help="also write results.jsonl")
         p.add_argument("--sarif", action="store_true", help="also write results.sarif")
+        p.add_argument("--html", action="store_true", help="also write the HTML dashboard")
         p.add_argument("--silent", action="store_true", help="quiet output")
         p.add_argument("--dashboard", action="store_true", help="live dashboard")
         p.add_argument("--resume", action="store_true", help="reuse earlier validations")
@@ -216,6 +264,15 @@ def build_parser() -> argparse.ArgumentParser:
     providers_parser = sub.add_parser("providers", help="show providers and routes")
     providers_parser.add_argument("--config", help="path to a config file")
     providers_parser.set_defaults(func=cmd_providers)
+
+    dash_parser = sub.add_parser("dashboard", help="open the HTML dashboard")
+    dash_parser.add_argument("--results", help="a results directory or a dashboard.json")
+    dash_parser.add_argument("--demo", action="store_true", help="show the sample run")
+    dash_parser.add_argument("--out", help="output directory, or a .html file path (default: results)")
+    dash_parser.add_argument("--port", type=int, default=8899, help="port for the local server")
+    dash_parser.add_argument("--no-open", action="store_true", help="do not open a browser")
+    dash_parser.add_argument("--save-only", action="store_true", help="write the file and exit")
+    dash_parser.set_defaults(func=cmd_dashboard)
 
     return parser
 

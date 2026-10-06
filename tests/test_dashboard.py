@@ -1,0 +1,108 @@
+import json
+import re
+import shutil
+import tempfile
+import unittest
+from pathlib import Path
+
+from netcast3r import dashboard as dash
+from netcast3r import theme as T
+
+DATA_RE = re.compile(
+    r'<script id="nc-data" type="application/json">(.*?)</script>', re.S
+)
+
+
+class RenderTests(unittest.TestCase):
+    def test_render_fills_both_placeholders(self):
+        html = dash.render(dash.demo_data())
+        self.assertNotIn("__NETCAST3R_VARS__", html)
+        self.assertNotIn("__NETCAST3R_DATA__", html)
+        self.assertIn(f"--acid: {T.ACID};", html)
+
+    def test_rendered_data_is_valid_json(self):
+        html = dash.render(dash.demo_data())
+        data = json.loads(DATA_RE.search(html).group(1))
+        self.assertEqual(data["target"], "https://target.example")
+        self.assertEqual(len(data["findings"]), 4)
+        self.assertEqual(len(data["stages"]), 6)
+
+    def test_close_script_in_a_value_cannot_break_out(self):
+        data = dash.build_data(target="x", findings=[{"value": "</script><b>"}])
+        payload = DATA_RE.search(dash.render(data)).group(1)
+        self.assertNotIn("</script>", payload)
+        self.assertIn("<\\/script>", payload)
+        json.loads(payload.replace("<\\/", "</"))
+
+    def test_summary_and_counts_are_carried(self):
+        data = dash.build_data(summary={"pages": 3}, counts={"secrets": 9},
+                               findings=[], events=[])
+        self.assertEqual(data["summary"]["pages"], 3)
+        self.assertEqual(data["counts"]["secrets"], 9)
+
+
+class StageTests(unittest.TestCase):
+    def test_stages_completed_infers_the_earlier_stages(self):
+        events = [{"agent": "recon"}, {"agent": "assayer"}, {"agent": "scribe"}]
+        self.assertEqual(dash.stages_completed(events),
+                         [s["key"] for s in T.STAGES])
+
+    def test_stages_completed_stops_where_the_run_stopped(self):
+        events = [{"agent": "recon"}, {"agent": "exegete"}]
+        self.assertEqual(dash.stages_completed(events), ["crawl", "readjs"])
+
+    def test_stages_completed_ignores_unknown_agents(self):
+        self.assertEqual(dash.stages_completed([{"agent": "nobody"}]), [])
+
+
+class StoreTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.tmp, True)
+
+    def test_save_writes_html_and_payload(self):
+        path = dash.save(self.tmp, dash.demo_data())
+        self.assertTrue(path.exists())
+        self.assertEqual(path.name, "dashboard.html")
+        self.assertTrue((self.tmp / "dashboard.json").exists())
+        self.assertIn("NETCAST", path.read_text())
+
+    def test_save_honours_a_custom_file_name(self):
+        path = dash.save(self.tmp, dash.demo_data(), name="report.html")
+        self.assertEqual(path.name, "report.html")
+        self.assertTrue((self.tmp / "report.json").exists())
+
+    def test_load_reads_the_payload_back(self):
+        dash.save(self.tmp, dash.demo_data())
+        loaded = dash.load(self.tmp)
+        self.assertEqual(loaded["target"], "https://target.example")
+        self.assertEqual(len(loaded["findings"]), 4)
+
+    def test_load_falls_back_to_results_json(self):
+        (self.tmp / "results.json").write_text(json.dumps(
+            {"summary": {"pages": 7}, "findings": [{"value": "abc"}]}))
+        loaded = dash.load(self.tmp)
+        self.assertEqual(loaded["summary"]["pages"], 7)
+        self.assertEqual(loaded["findings"][0]["value"], "abc")
+
+
+class DemoTests(unittest.TestCase):
+    def test_demo_data_covers_every_state_and_stage(self):
+        data = dash.demo_data()
+        states = {f["status"] for f in data["findings"]}
+        self.assertEqual(states,
+                         {"confirmed", "corroborated", "inferred", "unresolved"})
+        self.assertEqual(data["stages"], [s["key"] for s in T.STAGES])
+        self.assertTrue(data["log"])
+        self.assertGreater(data["summary"]["pages"], 0)
+
+    def test_template_ships_with_the_package(self):
+        text = dash.template_text()
+        self.assertTrue(text.lstrip().startswith("<!doctype html>"))
+        self.assertIn("--font-mono", text)
+        self.assertIn("prefers-reduced-motion", text)
+        self.assertTrue(text.isascii())
+
+
+if __name__ == "__main__":
+    unittest.main()
