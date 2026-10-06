@@ -1,0 +1,53 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="250" viewBox="0 0 960 250" role="img" aria-label="Run checklist: crawl targets, collect JavaScript files, hunt secrets, validate credentials, escalate and report. More than just a crawler.">
+  <defs>
+    <pattern id="cgrid" width="27" height="27" patternUnits="userSpaceOnUse">
+      <path d="M27 0H0v27" fill="none" stroke="#9F23DD" stroke-width="1" opacity=".11"/>
+    </pattern>
+    <clipPath id="cclip"><rect x="1" y="1" width="958" height="248" rx="6"/></clipPath>
+    <filter id="vglow" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="3.4" result="b"/>
+      <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <style><![CDATA[
+      .m{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace}
+      .d{font-family:"Arial Black","Arial Bold",Arial,"Helvetica Neue",sans-serif;font-weight:900;font-style:italic}
+      .row{opacity:0;animation:in .55s ease-out forwards}
+      .r1{animation-delay:.05s}.r2{animation-delay:.15s}.r3{animation-delay:.25s}.r4{animation-delay:.35s}.r5{animation-delay:.45s}
+      @keyframes in{from{opacity:0;transform:translateX(-14px)}to{opacity:1;transform:none}}
+      @media (prefers-reduced-motion:reduce){.row{opacity:1;animation:none;transform:none}}
+    ]]></style>
+  </defs>
+
+  <rect x=".5" y=".5" width="959" height="249" rx="6" fill="#05030A" stroke="#170F3F"/>
+  <g clip-path="url(#cclip)"><rect width="960" height="250" fill="url(#cgrid)" opacity=".5"/></g>
+
+  <g fill="none" stroke="#C8F81A" stroke-width="1.6" stroke-linecap="square">
+    <path d="M9 21V9h12"/>
+    <path d="M951 21V9h-12"/>
+    <path d="M9 229v12h12"/>
+    <path d="M951 229v12h-12"/>
+  </g>
+  <path d="M872 26h62" stroke="#9F23DD" stroke-width="3" stroke-linecap="round" opacity=".9"/>
+
+  <path d="M74 40H58v170h16" fill="none" stroke="#C8F81A" stroke-width="1.8" stroke-linecap="square"/>
+  <path d="M368 40h16v170h-16" fill="none" stroke="#C8F81A" stroke-width="1.8" stroke-linecap="square"/>
+
+  <g class="m" font-size="17" letter-spacing=".8">
+    <g class="row r1"><text x="80" y="70" fill="#C8F81A" font-weight="700">//</text><text x="118" y="70" fill="#F5E9DC">CRAWL TARGETS</text></g>
+    <g class="row r2"><text x="80" y="101" fill="#C8F81A" font-weight="700">//</text><text x="118" y="101" fill="#F5E9DC">COLLECT JS FILES</text></g>
+    <g class="row r3"><text x="80" y="132" fill="#C8F81A" font-weight="700">//</text><text x="118" y="132" fill="#F5E9DC">HUNT SECRETS</text></g>
+    <g class="row r4"><text x="80" y="163" fill="#C8F81A" font-weight="700">//</text><text x="118" y="163" fill="#F5E9DC">VALIDATE CREDENTIALS</text></g>
+    <g class="row r5"><text x="80" y="194" fill="#C8F81A" font-weight="700">//</text><text x="118" y="194" fill="#F5E9DC">ESCALATE &amp; REPORT</text></g>
+  </g>
+
+  <text class="m" x="452" y="56" font-size="22" font-weight="700" fill="#C8F81A" letter-spacing="2" transform="rotate(-7 452 56)">////</text>
+
+  <g transform="rotate(-7 630 130)" filter="url(#vglow)">
+    <g class="d" fill="#9F23DD" font-size="40" letter-spacing="1.5">
+      <text x="470" y="92">MORE</text>
+      <text x="470" y="140">THAN JUST</text>
+      <text x="470" y="188">A CRAWLER</text>
+    </g>
+    <path d="M464 206q96 16 202-8" fill="none" stroke="#9F23DD" stroke-width="5" stroke-linecap="round" opacity=".95"/>
+  </g>
+</svg>
