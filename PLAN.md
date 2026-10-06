@@ -45,6 +45,11 @@ This is a working plan, not a contract.
 - Sat - release checklist
 - Sun - tag the release
 
+## Status
+
+Week 4 Mon (interactive dashboard) and Thu (CI that runs the tests on push)
+are done. The rest of the weeks stands as written.
+
 ## Commit conventions
 
 - one change per commit, present tense

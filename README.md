@@ -8,11 +8,11 @@ The pipeline, the agent swarm, the validation engine, the evidence store, the
 report writer, the live console, the lab, and the test suite are all in place.
 
 <p align="center">
-  <img src="assets/banner.svg" alt="NetCast3r, cast a net over the web" width="100%">
+  <img src="assets/banner.webp" alt="NetCast3r, cast a net over the web" width="100%">
 </p>
 
 <p align="center">
-  <img src="assets/logo.svg" alt="NetCast3r logo" width="340">
+  <img src="assets/logo.webp" alt="NetCast3r logo" width="340">
 </p>
 
 <p align="center">
@@ -52,8 +52,25 @@ netcast3r --version
 
 ```
 netcast3r recon --input target.com --scope scope.txt --out-of-scope oos.txt
-netcast3r run   --input target.com --scope scope.txt --out-of-scope oos.txt
+netcast3r run   --input target.com --scope scope.txt --out-of-scope oos.txt --html
 ```
+
+## Dashboard
+
+`--html` writes a self-contained dashboard next to the report. It carries its
+own artwork and styles, so the single file opens in any browser, attaches to an
+email, or sits in a repository without a build step.
+
+```
+netcast3r dashboard --results results            open the run you just finished
+netcast3r dashboard --demo --out dashboard.html  write the sample run and exit
+```
+
+The dashboard shows the six stage rail, the counters, the coverage split, the
+validation ladder, the severity donut, the caught credentials, the findings
+table, and the agent log, all driven by the events of one run. The console uses
+the same palette and the same state names, so a run reads the same in the
+terminal and in the browser. See [docs/DESIGN.md](docs/DESIGN.md).
 
 ## How it works
 

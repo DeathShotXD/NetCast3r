@@ -6,6 +6,14 @@ Notable changes to NetCast3r, newest first.
 
 ### Added
 
+- An HTML dashboard, written with `--html` on `run` and `recon` or with the
+  `dashboard` command. One self-contained file carries the artwork, the style,
+  and the run: stage rail, counters, coverage, validation ladder, severity
+  split, caught credentials, findings table, and the agent log.
+- A shared token module, `netcast3r.theme`, holding the palette, the state and
+  severity colors, and the six stage rail, so the console and the dashboard
+  render the same run with the same words and the same colors.
+- Banner and logo artwork with notes on the fixes that are worth doing by hand.
 - The pattern catalog now holds 231 credential types, built from the gitleaks
   rule set, with keyword prefilters so large catalogs stay fast.
 - Read-only validation recipes for the keyhacks endpoints. 26 recipes cover
