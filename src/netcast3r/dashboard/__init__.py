@@ -19,6 +19,7 @@ from functools import lru_cache
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from importlib import resources
 from pathlib import Path
+from urllib.parse import parse_qs, urlparse
 
 from .. import theme as T
 
@@ -287,6 +288,7 @@ class _Handler(BaseHTTPRequestHandler):
     """Serves the rendered dashboard from loopback only."""
 
     path_file: Path = Path(OUTPUT_NAME)
+    data_file: Path | None = None
     protocol_version = "HTTP/1.1"
 
     def _send(self, code: int, ctype: str, body: bytes) -> None:
@@ -308,15 +310,70 @@ class _Handler(BaseHTTPRequestHandler):
         if self.command != "HEAD":
             self.wfile.write(body)
 
+    def _json(self, obj, code: int = 200) -> None:
+        body = json.dumps(obj, default=str, ensure_ascii=True,
+                          separators=(",", ":")).encode("utf-8")
+        self._send(code, "application/json; charset=utf-8", body)
+
+    def _load_data(self) -> dict:
+        if self.data_file is None or not self.data_file.exists():
+            return {}
+        try:
+            return json.loads(self.data_file.read_text("utf-8"))
+        except (OSError, ValueError):
+            return {}
+
+    def _findings_page(self, query: dict) -> dict:
+        """Filter, sort, and page the findings so a large run stays browsable."""
+        items = list(self._load_data().get("findings") or [])
+        text = (query.get("q", [""])[0] or "").strip().lower()
+        status = (query.get("status", [""])[0] or "").strip().lower()
+        severity = (query.get("severity", [""])[0] or "").strip().lower()
+        if text:
+            items = [f for f in items if text in json.dumps(f, default=str).lower()]
+        if status:
+            items = [f for f in items if str(f.get("status", "")).lower() == status]
+        if severity:
+            items = [f for f in items if str(f.get("severity", "")).lower() == severity]
+
+        rank = {"critical": 0, "high": 1, "medium": 2, "low": 3, "info": 4}
+        if (query.get("sort", ["severity"])[0] or "severity") == "confidence":
+            items.sort(key=lambda f: -float(f.get("confidence") or 0))
+        else:
+            items.sort(key=lambda f: rank.get(str(f.get("severity", "")).lower(), 9))
+
+        total = len(items)
+        try:
+            limit = max(1, min(int(query.get("limit", ["100"])[0]), 500))
+        except ValueError:
+            limit = 100
+        try:
+            offset = max(0, int(query.get("offset", ["0"])[0]))
+        except ValueError:
+            offset = 0
+        return {"total": total, "offset": offset, "limit": limit,
+                "items": items[offset:offset + limit]}
+
     def do_GET(self) -> None:  # noqa: N802
         if not _host_allowed(self.headers.get("Host", "")):
             self.send_error(421)
             return
-        if self.path in ("/", "/index.html"):
-            self._send(200, "text/html; charset=utf-8", self.path_file.read_bytes())
-            return
-        if self.path == "/events":
+        parsed = urlparse(self.path)
+        route = parsed.path
+        if route == "/events":
             self._events()
+            return
+        if route == "/api/data":
+            if self.data_file is None or not self.data_file.exists():
+                self._json({"error": "no data file"}, 404)
+            else:
+                self._json(self._load_data())
+            return
+        if route == "/api/findings":
+            self._json(self._findings_page(parse_qs(parsed.query)))
+            return
+        if route in ("/", "/index.html"):
+            self._send(200, "text/html; charset=utf-8", self.path_file.read_bytes())
             return
         self._send(404, "text/plain; charset=utf-8", b"not found")
 
@@ -370,7 +427,10 @@ def serve(path: str | Path, port: int = 8899, open_browser: bool = True,
           host: str = "127.0.0.1") -> None:
     """Serve a rendered dashboard locally."""
     target = Path(path).resolve()
-    handler = type("Handler", (_Handler,), {"path_file": target})
+    handler = type("Handler", (_Handler,), {
+        "path_file": target,
+        "data_file": target.with_suffix(".json"),
+    })
     server = ThreadingHTTPServer((host, port), handler)
     url = f"http://{host}:{port}/"
     print(f"dashboard  {target}")

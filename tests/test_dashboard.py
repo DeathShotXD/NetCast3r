@@ -7,6 +7,7 @@ import tempfile
 import threading
 import time
 import unittest
+import urllib.request
 from http.server import ThreadingHTTPServer
 from pathlib import Path
 
@@ -109,6 +110,14 @@ class StoreTests(unittest.TestCase):
 
 
 class ServerTests(unittest.TestCase):
+    def _server(self, path):
+        handler = type("H", (dash._Handler,), {
+            "path_file": path, "data_file": path.with_suffix(".json")})
+        srv = ThreadingHTTPServer(("127.0.0.1", 0), handler)
+        self.addCleanup(srv.shutdown)
+        threading.Thread(target=srv.serve_forever, daemon=True).start()
+        return srv
+
     def test_loopback_hosts_are_allowed(self):
         for host in ("127.0.0.1", "localhost", "127.0.0.1:8899",
                      "localhost:8899", "[::1]:8899"):
@@ -122,10 +131,7 @@ class ServerTests(unittest.TestCase):
         tmp = Path(tempfile.mkdtemp())
         self.addCleanup(shutil.rmtree, tmp, True)
         path = dash.save(tmp, dash.demo_data())
-        handler = type("H", (dash._Handler,), {"path_file": path})
-        srv = ThreadingHTTPServer(("127.0.0.1", 0), handler)
-        self.addCleanup(srv.shutdown)
-        threading.Thread(target=srv.serve_forever, daemon=True).start()
+        srv = self._server(path)
 
         sock = socket.create_connection(("127.0.0.1", srv.server_address[1]))
         self.addCleanup(sock.close)
@@ -148,6 +154,27 @@ class ServerTests(unittest.TestCase):
                 break
             seen += chunk
         self.assertIn(b"event: reload", seen)
+
+    def test_findings_api_pages_filters_and_sorts(self):
+        tmp = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, tmp, True)
+        path = dash.save(tmp, dash.demo_data())
+        srv = self._server(path)
+        base = f"http://127.0.0.1:{srv.server_address[1]}"
+
+        page = json.loads(urllib.request.urlopen(base + "/api/findings?limit=2").read())
+        self.assertEqual(page["total"], 4)
+        self.assertEqual(len(page["items"]), 2)
+
+        tail = json.loads(urllib.request.urlopen(base + "/api/findings?offset=3").read())
+        self.assertEqual(len(tail["items"]), 1)
+
+        confirmed = json.loads(
+            urllib.request.urlopen(base + "/api/findings?status=confirmed").read())
+        self.assertEqual(confirmed["total"], 1)
+
+        data = json.loads(urllib.request.urlopen(base + "/api/data").read())
+        self.assertEqual(data["target"], "https://target.example")
 
 
 class DemoTests(unittest.TestCase):

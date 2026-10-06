@@ -39,6 +39,9 @@ Notable changes to NetCast3r, newest first.
   Content Security Policy and `nosniff`, and compresses large responses.
 - The local dashboard server streams server-sent events, so the page reloads
   itself when the rendered file changes on disk.
+- The local dashboard server exposes the run at `/api/data` and a filtered,
+  sorted, paged findings list at `/api/findings`, so a large run stays
+  browsable without scrolling the whole file.
 - Model-generated validation checks are limited to safe public `https`
   endpoints, never loopback, private, link-local, or metadata addresses, and
   follow the run tier.
