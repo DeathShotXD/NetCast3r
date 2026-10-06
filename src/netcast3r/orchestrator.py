@@ -328,6 +328,12 @@ class Orchestrator:
         findings: list[dict] = []
         show_progress = bool(candidates) and not getattr(self.console, "is_dashboard", False)
         progress = Progress(self.console, len(candidates), "validating") if show_progress else None
+        by_source: dict[tuple[str, str], str] = {}
+        by_type: dict[str, str] = {}
+        for candidate in candidates:
+            by_type.setdefault(candidate.type, candidate.value)
+            if candidate.source:
+                by_source.setdefault((candidate.source, candidate.type), candidate.value)
         for secret in candidates:
             key = (secret.type, secret.value)
             if self.resume and key in self._known:
@@ -339,7 +345,17 @@ class Orchestrator:
                                      f"{validation.detail} (reused)")
             else:
                 self._ensure_recipe(secret.type)
-                validation = self.validator.validate(secret.type, secret.value, secret.source)
+                pair = ""
+                for name in (secret.type, f"{secret.type}_write"):
+                    recipe = self.validator.recipes.get(name)
+                    if recipe is not None and recipe.pair_type:
+                        pair = recipe.pair_type
+                        break
+                value2 = ""
+                if pair:
+                    value2 = (by_source.get((secret.source, pair), "")
+                              or by_type.get(pair, ""))
+                validation = self.validator.validate(secret.type, secret.value, secret.source, value2)
                 self.store.add_validation(secret.type, secret.value, validation.status,
                                           validation.provider, validation.detail, validation.evidence)
                 self.console.finding(validation.status, secret.type, secret.value, validation.detail)

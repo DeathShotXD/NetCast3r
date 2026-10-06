@@ -35,6 +35,7 @@ class Recipe:
     fail_codes: list = field(default_factory=list)
     fail_match: str = ""
     write: bool = False
+    pair_type: str = ""
 
 
 @dataclass
@@ -65,6 +66,7 @@ def load_recipes(path: Path | None = None) -> dict[str, Recipe]:
             fail_codes=list(row.get("fail_codes", [])),
             fail_match=row.get("fail_match", ""),
             write=bool(row.get("write", False)),
+            pair_type=row.get("pair_type", ""),
         )
         recipes[recipe.type] = recipe
     return recipes
@@ -85,17 +87,29 @@ class Validator:
         self.egress = egress
         self.session = session
 
-    def validate(self, secret_type: str, value: str, source: str = "") -> Validation:
-        recipe = self.recipes.get(secret_type)
+    def _recipe_for(self, secret_type: str) -> Recipe | None:
+        """A write variant wins over the read recipe when the tier allows it."""
+        if self.tier in ("write", "full"):
+            variant = self.recipes.get(f"{secret_type}_write")
+            if variant is not None:
+                return variant
+        return self.recipes.get(secret_type)
+
+    def validate(self, secret_type: str, value: str, source: str = "",
+                 value2: str = "") -> Validation:
+        recipe = self._recipe_for(secret_type)
         if recipe is None:
             return Validation(secret_type, value, "unknown", detail="no recipe for this type")
+        if recipe.pair_type and not value2:
+            return Validation(secret_type, value, "unknown", provider=recipe.provider,
+                              detail=f"needs a paired {recipe.pair_type} value")
         if recipe.write and self.tier not in ("write", "full"):
             return Validation(secret_type, value, "skipped", provider=recipe.provider,
                               detail="write recipe held back at the current tier")
 
-        url = _render(recipe.url, value)
-        headers = {key: _render(val, value) for key, val in recipe.headers.items()}
-        body = _render(recipe.body, value) or None
+        url = _render(recipe.url, value, value2)
+        headers = {key: _render(val, value, value2) for key, val in recipe.headers.items()}
+        body = _render(recipe.body, value, value2) or None
         proxy = self.egress.get() if self.egress else None
 
         try:
