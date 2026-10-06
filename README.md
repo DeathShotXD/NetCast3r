@@ -1,12 +1,12 @@
 # NetCast3r
 
-Cast a net over the web. NetCast3r crawls a target, reads its JavaScript,
-hunts for secrets, validates every credential against its provider, and
-writes a report you can submit.
-
 <p align="center">
   <img src="assets/logo.webp" alt="NetCast3r logo" width="340">
 </p>
+
+Cast a net over the web. NetCast3r crawls a target, reads its JavaScript,
+hunts for secrets, validates every credential against its provider, and
+writes a report you can submit.
 
 <p align="center">
   <img src="assets/banner.webp" alt="NetCast3r - cast a net over the web" width="100%">
