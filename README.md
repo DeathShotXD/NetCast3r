@@ -1,17 +1,15 @@
-<p align="center">
-  <img src="assets/banner.webp" alt="NetCast3r, cast a net over the web" width="100%">
-</p>
-
-<p align="center">
-  <img src="assets/logo.webp" alt="NetCast3r logo" width="260">
-</p>
-
 # NetCast3r
 
+Cast a net over the web. NetCast3r crawls a target, reads its JavaScript,
+hunts for secrets, validates every credential against its provider, and
+writes a report you can submit.
+
 <p align="center">
-  <b>Cast a net over the web.</b><br>
-  Crawl a target, read its JavaScript, hunt for secrets, validate every
-  credential, and write a report you can submit.
+  <img src="assets/logo.webp" alt="NetCast3r logo" width="340">
+</p>
+
+<p align="center">
+  <img src="assets/banner.webp" alt="NetCast3r - cast a net over the web" width="100%">
 </p>
 
 <p align="center">
