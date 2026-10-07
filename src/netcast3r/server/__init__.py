@@ -84,6 +84,19 @@ def _problem(status: int, title: str, detail: str = "") -> Response:
     return Response(status=status, body=body, content_type="application/problem+json")
 
 
+def _str_list(value) -> list[str]:
+    if isinstance(value, str):
+        value = [value]
+    return [str(item).strip() for item in (value or []) if str(item).strip()]
+
+
+def _int_or(value, default: int) -> int:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
+
+
 PLACEHOLDER = """<!doctype html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>NetCast3r</title>
@@ -285,10 +298,35 @@ class Server:
             provider = self.index.add_provider(
                 name=body.get("name", ""), kind=body.get("kind", "openai"),
                 base_url=body.get("base_url", ""), model=body.get("model", ""),
-                key_name=body.get("key_name", ""))
+                key_name=body.get("key_name", ""),
+                models=_str_list(body.get("models")),
+                priority=_int_or(body.get("priority"), 100),
+                enabled=1 if body.get("enabled", True) in (True, 1, "1") else 0)
             if body.get("api_key"):
                 self.keys.set(provider["key_name"] or provider["id"], body["api_key"])
+            provider["masked"] = mask(self.keys.get(provider.get("key_name", "")))
             return _json(provider, 201)
+
+        @add("PATCH", r"/api/v1/providers/(?P<id>[A-Za-z0-9_]+)")
+        def patch_provider(ctx):
+            body = ctx.json()
+            if not self.index.get_provider(ctx.params["id"]):
+                return _problem(404, "provider not found")
+            fields = {}
+            for key in ("name", "kind", "base_url", "model", "key_name", "last_checked"):
+                if key in body:
+                    fields[key] = str(body[key])
+            if "models" in body:
+                fields["models"] = _str_list(body.get("models"))
+            if "priority" in body:
+                fields["priority"] = _int_or(body.get("priority"), 100)
+            if "enabled" in body:
+                fields["enabled"] = 1 if body.get("enabled") in (True, 1, "1") else 0
+            provider = self.index.update_provider(ctx.params["id"], **fields)
+            if body.get("api_key"):
+                self.keys.set(provider.get("key_name") or provider["id"], body["api_key"])
+            provider["masked"] = mask(self.keys.get(provider.get("key_name", "")))
+            return _json(provider)
 
         @add("DELETE", r"/api/v1/providers/(?P<id>[A-Za-z0-9_]+)")
         def delete_provider(ctx):
@@ -559,12 +597,14 @@ class _Handler(BaseHTTPRequestHandler):
 
 def build_server(results_dir: str | Path = "results", base: Path | None = None,
                  runner=None, config=None, workers: int = 2) -> Server:
-    from .runner import run_scan
+    from . import runner as runner_module
+    from .runner import DashboardBridge, run_scan
 
     base = Path(base) if base else Path.home() / ".netcast3r"
     index = Index(base / "netcast3r.db")
     bus = EventBus()
     keys = KeyStore(base)
+    runner_module.set_dashboard_bridge(DashboardBridge(index, keys))
     jobs = JobManager(index, bus, runner or run_scan, workers=workers)
     server = Server(index, bus, jobs, keys, config=config, token=secrets.token_urlsafe(24))
     jobs.recover()

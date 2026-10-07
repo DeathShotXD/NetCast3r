@@ -75,7 +75,10 @@ CREATE TABLE IF NOT EXISTS providers (
     key_name TEXT,
     healthy INTEGER DEFAULT 0,
     last_checked TEXT,
-    meta_json TEXT
+    meta_json TEXT,
+    models_json TEXT DEFAULT '[]',
+    priority INTEGER DEFAULT 100,
+    enabled INTEGER DEFAULT 1
 );
 
 CREATE TABLE IF NOT EXISTS settings (
@@ -108,7 +111,19 @@ class Index:
         self.conn.execute("PRAGMA journal_mode=WAL")
         self.conn.execute("PRAGMA foreign_keys=ON")
         self.conn.executescript(SCHEMA)
+        self._migrate()
         self.conn.commit()
+
+    def _migrate(self) -> None:
+        """Columns added after the first release, for existing databases."""
+        have = {row["name"] for row in self.conn.execute("PRAGMA table_info(providers)")}
+        for column, ddl in (
+            ("models_json", "ALTER TABLE providers ADD COLUMN models_json TEXT DEFAULT '[]'"),
+            ("priority", "ALTER TABLE providers ADD COLUMN priority INTEGER DEFAULT 100"),
+            ("enabled", "ALTER TABLE providers ADD COLUMN enabled INTEGER DEFAULT 1"),
+        ):
+            if column not in have:
+                self.conn.execute(ddl)
 
     def close(self) -> None:
         with self._lock:
@@ -355,13 +370,18 @@ class Index:
 
     # -- providers --------------------------------------------------------
     def add_provider(self, name: str, kind: str = "openai", base_url: str = "",
-                     model: str = "", key_name: str = "") -> dict:
+                     model: str = "", key_name: str = "", models: list[str] | None = None,
+                     priority: int = 100, enabled: int = 1) -> dict:
         provider_id = _new_id("prv")
+        rows = [str(item) for item in (models or []) if str(item).strip()]
+        if not rows and model:
+            rows = [model]
         with self._lock:
             self.conn.execute(
-                "INSERT INTO providers (id, name, kind, base_url, model, key_name) "
-                "VALUES (?, ?, ?, ?, ?, ?)",
-                (provider_id, name, kind, base_url, model, key_name),
+                "INSERT INTO providers (id, name, kind, base_url, model, key_name, "
+                "models_json, priority, enabled) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (provider_id, name, kind, base_url, model, key_name,
+                 json.dumps(rows), int(priority), int(enabled)),
             )
             self.conn.commit()
         return self.get_provider(provider_id)
@@ -369,20 +389,42 @@ class Index:
     def get_provider(self, provider_id: str) -> dict | None:
         with self._lock:
             row = self.conn.execute("SELECT * FROM providers WHERE id = ?", (provider_id,)).fetchone()
-        return dict(row) if row else None
+        return self._provider_row(row) if row else None
 
     def list_providers(self) -> list[dict]:
         with self._lock:
-            rows = self.conn.execute("SELECT * FROM providers ORDER BY name").fetchall()
-        return [dict(row) for row in rows]
+            rows = self.conn.execute(
+                "SELECT * FROM providers ORDER BY priority, name").fetchall()
+        return [self._provider_row(row) for row in rows]
+
+    @staticmethod
+    def _provider_row(row) -> dict:
+        item = dict(row)
+        try:
+            item["models"] = [str(m) for m in json.loads(item.get("models_json") or "[]")]
+        except (ValueError, TypeError):
+            item["models"] = []
+        if not item["models"] and item.get("model"):
+            item["models"] = [item["model"]]
+        item["priority"] = int(item.get("priority") or 100)
+        item["enabled"] = int(item.get("enabled", 1) or 0)
+        return item
 
     def update_provider(self, provider_id: str, **fields) -> dict | None:
-        allowed = {"name", "kind", "base_url", "model", "key_name", "healthy", "last_checked"}
+        allowed = {"name", "kind", "base_url", "model", "key_name", "healthy",
+                   "last_checked", "priority", "enabled"}
         sets, values = [], []
         for key, value in fields.items():
-            if key in allowed:
+            if key == "models":
+                rows = [str(item) for item in (value or []) if str(item).strip()]
+                sets.append("models_json = ?")
+                values.append(json.dumps(rows))
+                if rows and not fields.get("model"):
+                    sets.append("model = ?")
+                    values.append(rows[0])
+            elif key in allowed:
                 sets.append(f"{key} = ?")
-                values.append(value)
+                values.append(int(value) if key in {"priority", "enabled", "healthy"} else value)
         if sets:
             values.append(provider_id)
             with self._lock:

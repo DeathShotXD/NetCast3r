@@ -27,11 +27,25 @@ def _redact(text: str, key: str) -> str:
     return text
 
 
+def _ms(since: float) -> int:
+    return int((time.monotonic() - since) * 1000)
+
+
 class ProviderBus:
-    def __init__(self, config, egress=None, timeout: float = 120.0):
+    def __init__(self, config, egress=None, timeout: float = 120.0, observer=None):
         self.config = config
         self.egress = egress
         self.timeout = timeout
+        self.observer = observer
+
+    def _observe(self, data: dict) -> None:
+        """Tell the dashboard what the bus is doing, without ever failing a call."""
+        if self.observer is None:
+            return
+        try:
+            self.observer(data)
+        except Exception:  # noqa: BLE001 - an observer must not break the stream
+            pass
 
     def _candidates(self, agent: str):
         route = self.config.route_for(agent)
@@ -61,6 +75,9 @@ class ProviderBus:
         call_timeout = min(self.timeout, budget)
         last_error = "no provider available"
         for provider, model, key in self._candidates(agent):
+            attempt = time.monotonic()
+            self._observe({"kind": "call", "agent": agent,
+                           "provider": provider.name, "model": model})
             proxy = self.egress.get() if self.egress else None
             headers = {"Content-Type": "application/json"}
             if key:
@@ -82,9 +99,17 @@ class ProviderBus:
                             if self.egress and proxy:
                                 self.egress.mark_failed(proxy)
                             last_error = f"{provider.name} returned {response.status_code}"
+                            self._observe({"kind": "done", "agent": agent,
+                                           "provider": provider.name, "model": model,
+                                           "ok": False, "ms": _ms(attempt),
+                                           "error": f"HTTP {response.status_code}"})
                             continue
                         if response.status_code >= 400:
                             last_error = f"{provider.name} returned {response.status_code}"
+                            self._observe({"kind": "done", "agent": agent,
+                                           "provider": provider.name, "model": model,
+                                           "ok": False, "ms": _ms(attempt),
+                                           "error": f"HTTP {response.status_code}"})
                             continue
                         collected = ""
                         started = time.monotonic()
@@ -116,10 +141,21 @@ class ProviderBus:
                             on_chunk(Chunk("done", provider.name))
                         if not collected:
                             last_error = f"{provider.name}/{model} returned no content"
+                            self._observe({"kind": "done", "agent": agent,
+                                           "provider": provider.name, "model": model,
+                                           "ok": False, "ms": _ms(attempt),
+                                           "error": "no content"})
                             continue
+                        self._observe({"kind": "done", "agent": agent,
+                                       "provider": provider.name, "model": model,
+                                       "ok": True, "ms": _ms(attempt)})
                         return collected
             except Exception as exc:
                 last_error = _redact(f"{provider.name}: {type(exc).__name__}", key)
+                self._observe({"kind": "done", "agent": agent,
+                               "provider": provider.name, "model": model,
+                               "ok": False, "ms": _ms(attempt),
+                               "error": type(exc).__name__})
                 if self.egress and proxy:
                     self.egress.mark_failed(proxy)
                 continue

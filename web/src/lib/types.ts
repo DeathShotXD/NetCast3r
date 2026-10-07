@@ -76,6 +76,9 @@ export interface Provider {
   kind: string;
   base_url: string;
   model: string;
+  models: string[];
+  priority: number;
+  enabled: number;
   key_name: string;
   healthy: number;
   last_checked?: string;

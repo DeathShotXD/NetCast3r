@@ -55,6 +55,25 @@ Notable changes to NetCast3r, newest first.
   carried into the run.
 - Recon reads robots.txt and sitemaps, so the paths an operator disallows and
   the pages a sitemap lists are carried into the run.
+- Assistive provider setup on the Providers screen: pick a provider from the
+  preset grid (OpenRouter, NVIDIA, opencode zen, groq, deepseek, mistral,
+  cerebras, openai, anthropic, gemini, ollama, custom), paste a key, and the
+  connect step saves it to the key store, creates or updates the provider,
+  calls its `/models` endpoint, and hands back the reachable model list with a
+  latency readout. Picked models join the pool as chips. Providers gained
+  `PATCH /api/v1/providers/:id` plus models, priority, and enabled columns
+  (migrated in place on existing databases).
+- The provider pool is now the unit of work: every enabled provider is merged
+  into a run over the config file by name, its key is resolved from the key
+  store, and the bus tries them in priority order, rotating to the next model
+  or provider on a rate limit, so an NVIDIA key and an OpenRouter key work
+  side by side. Cards carry an on switch, move up/down ordering, live health
+  from the last probe, and click-to-drop model chips.
+- A model activity panel on live runs: a reasoning stream (timestamped,
+  coloured per agent, following the newest line) next to a call timeline that
+  shows each provider attempt with its model, agent, latency, and failure
+  (`HTTP 429`, connection errors). Both are emitted as `reasoning` and `model`
+  events, so a finished run replays the same panel from its stored history.
 
 ### Changed
 
@@ -65,6 +84,10 @@ Notable changes to NetCast3r, newest first.
   totals, HUD corner brackets on key panels, gradient buttons with a light
   sweep, staggered screen entrances, count-up counters, a stage progress bar,
   and shared empty states. Motion follows `prefers-reduced-motion`.
+- The live event stream now carries the model's work: reasoning pieces and
+  provider call attempts are emitted as their own event types, and under
+  backpressure the stream sheds log and reasoning lines before anything else,
+  so findings and state changes survive a burst.
 - The dashboard renders in a single pass, so a value that contains a
   placeholder token can no longer trigger a second round of replacement, and
   the template is read once instead of on every render.

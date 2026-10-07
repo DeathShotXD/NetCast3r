@@ -301,6 +301,138 @@ class EventConsoleTests(unittest.TestCase):
         self.assertEqual(logs[0].payload["text"], "bar  4/4 (100%)")
         self.assertNotIn("\x1b", logs[1].payload["text"])
 
+    def test_reasoning_pieces_are_streamed_as_events(self):
+        from netcast3r.server.events import Event
+        from netcast3r.server.runner import EventConsole
+
+        seen: list[Event] = []
+        console = EventConsole(seen.append, "run_1")
+        console.reasoning("prospector", "checking value\n\n  ranking candidates  ")
+        reasons = [event for event in seen if event.type == "reasoning"]
+        self.assertEqual([event.payload["text"] for event in reasons],
+                         ["checking value", "ranking candidates"])
+        self.assertTrue(all(event.agent == "prospector" and event.run_id == "run_1"
+                            for event in reasons))
+        self.assertEqual([row["kind"] for row in console.events[-2:]], ["reason", "reason"])
+
+    def test_model_calls_are_streamed_with_provider_and_latency(self):
+        from netcast3r.server.events import Event
+        from netcast3r.server.runner import EventConsole
+
+        seen: list[Event] = []
+        console = EventConsole(seen.append, "run_1")
+        console.model_call({"kind": "call", "agent": "classifier",
+                            "provider": "nvidia", "model": "nemotron"})
+        console.model_call({"kind": "done", "agent": "classifier", "provider": "nvidia",
+                            "model": "nemotron", "ok": True, "ms": 420})
+        models = [event for event in seen if event.type == "model"]
+        self.assertEqual(len(models), 2)
+        self.assertEqual(models[1].payload["ms"], 420)
+        self.assertIn("nvidia/nemotron ok 420ms", console.events[-1]["text"])
+
+
+class ProviderPoolTests(unittest.TestCase):
+    """Providers configured on the dashboard carry models, priority, and an on switch."""
+
+    def setUp(self):
+        self.tmp = TemporaryDirectory()
+        base = Path(self.tmp.name)
+        self.index = Index(base / "netcast3r.db")
+        self.bus = EventBus()
+        self.keys = KeyStore(base)
+        self.jobs = JobManager(self.index, self.bus, fake_runner, workers=1)
+        self.server = Server(self.index, self.bus, self.jobs, self.keys, token=TOKEN)
+
+    def tearDown(self):
+        self.jobs.shutdown()
+        self.index.close()
+        self.tmp.cleanup()
+
+    def call(self, method, path, body=None, token=TOKEN):
+        headers = {"host": "127.0.0.1:7857"}
+        if token:
+            headers["x-netcast3r-token"] = token
+        payload = json.dumps(body).encode() if body is not None else b""
+        return self.server.route(method, path, {}, headers, payload)
+
+    @staticmethod
+    def data(response):
+        return json.loads(response.body.decode()) if response.body else None
+
+    def test_patch_updates_models_priority_and_enabled(self):
+        created = self.data(self.call("POST", "/api/v1/providers", body={
+            "name": "nvidia", "base_url": "https://integrate.api.nvidia.com/v1",
+            "key_name": "nvidia", "models": ["nvidia/llama-3.1-8b"], "priority": 10}))
+        patched = self.data(self.call(
+            "PATCH", f"/api/v1/providers/{created['id']}",
+            body={"models": ["nvidia/nemotron-3-500e", "nvidia/llama-3.3-70b"],
+                  "priority": 5, "enabled": False}))
+        self.assertEqual(patched["models"], ["nvidia/nemotron-3-500e", "nvidia/llama-3.3-70b"])
+        self.assertEqual(patched["model"], "nvidia/nemotron-3-500e")
+        self.assertEqual(patched["priority"], 5)
+        self.assertEqual(patched["enabled"], 0)
+        listed = self.data(self.call("GET", "/api/v1/providers"))["items"]
+        self.assertEqual(listed[0]["id"], created["id"])
+        self.assertFalse(listed[0]["enabled"])
+
+    def test_patch_rejects_an_unknown_provider(self):
+        response = self.call("PATCH", "/api/v1/providers/prv_missing", body={"priority": 1})
+        self.assertEqual(response.status, 404)
+
+
+class DashboardBridgeTests(unittest.TestCase):
+    """A scan must see what the Providers screen is configured with."""
+
+    def setUp(self):
+        self.tmp = TemporaryDirectory()
+        base = Path(self.tmp.name)
+        self.index = Index(base / "netcast3r.db")
+        self.keys = KeyStore(base)
+
+    def tearDown(self):
+        self.index.close()
+        self.tmp.cleanup()
+
+    def test_bridge_merges_dashboard_providers_into_the_run_config(self):
+        from netcast3r.config import Config, ProviderConfig, default_config
+        from netcast3r.server.runner import DashboardBridge
+
+        self.keys.set("nvidia", "nvapi-secret")
+        self.index.add_provider(name="nvidia", base_url="https://integrate.api.nvidia.com/v1",
+                                key_name="nvidia", models=["nemotron-3-500e"], priority=5)
+        self.index.add_provider(name="openrouter", base_url="https://openrouter.ai/api/v1",
+                                key_name="openrouter", models=["qwen:free"], priority=10)
+        self.index.add_provider(name="off", base_url="https://off.example/v1",
+                                key_name="off", models=["x"], enabled=0)
+        config = default_config()
+        applied = DashboardBridge(self.index, self.keys).apply(config)
+        self.assertEqual(applied, 2)
+        nvidia = config.provider("nvidia")
+        self.assertIsNotNone(nvidia)
+        self.assertEqual(nvidia.api_key, "nvapi-secret")
+        self.assertEqual(nvidia.models, ["nemotron-3-500e"])
+        self.assertEqual(nvidia.priority, 5)
+        self.assertEqual(config.provider("off"), None)
+        # a configured name wins field by field over the config file default
+        openrouter = config.provider("openrouter")
+        self.assertEqual(openrouter.base_url, "https://openrouter.ai/api/v1")
+        self.assertEqual(openrouter.models, ["qwen:free"])
+        # ollama from the defaults survives untouched
+        self.assertIsNotNone(config.provider("ollama"))
+        self.assertEqual([p.name for p in config.ordered_providers()[:2]],
+                         ["nvidia", "openrouter"])
+
+    def test_bridge_resolves_keys_from_the_store_by_name(self):
+        from netcast3r.config import default_config
+        from netcast3r.server.runner import DashboardBridge
+
+        self.keys.set("groq", "gsk_secret")
+        self.index.add_provider(name="groq", base_url="https://api.groq.com/openai/v1",
+                                key_name="groq", models=["llama-3.1-8b"])
+        config = default_config()
+        DashboardBridge(self.index, self.keys).apply(config)
+        self.assertEqual(config.provider("groq").resolve_key(), "gsk_secret")
+
 
 class KeyStoreTests(unittest.TestCase):
     def test_mask_and_redact(self):

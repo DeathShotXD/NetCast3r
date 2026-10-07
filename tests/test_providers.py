@@ -71,6 +71,18 @@ class ProviderBusTests(unittest.TestCase):
         self.assertTrue(done)
         self.assertEqual(done[0].text, "ollama")
 
+    def test_observer_sees_every_attempt(self):
+        seen = []
+        bus = ProviderBus(self._config(), observer=seen.append)
+        bus.chat_stream("scribe", [{"role": "user", "content": "hi"}])
+        kinds = [row["kind"] for row in seen]
+        self.assertEqual(kinds, ["call", "done", "call", "done"])
+        self.assertFalse(seen[1]["ok"])
+        self.assertEqual(seen[1]["provider"], "openrouter")
+        self.assertTrue(seen[3]["ok"])
+        self.assertEqual(seen[3]["provider"], "ollama")
+        self.assertGreaterEqual(seen[3]["ms"], 0)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -70,10 +70,10 @@ class EventBus:
         return event
 
     def _shed(self, sub: queue.Queue) -> None:
-        """Drop the oldest log line, or collapse progress, to make room."""
+        """Drop the oldest log line or reasoning piece, or collapse progress."""
         try:
             dropped = sub.get_nowait()
-            while dropped.type == "log" and not sub.empty():
+            while dropped.type in ("log", "reasoning") and not sub.empty():
                 dropped = sub.get_nowait()
             kept = dropped.to_dict()
             kept["type"] = "lagged"

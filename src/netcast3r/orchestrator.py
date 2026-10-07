@@ -61,14 +61,15 @@ class Orchestrator:
                  bus: ProviderBus | None = None, use_agents: bool = True,
                  validator: Validator | None = None, extractor: Extractor | None = None,
                  session: Session | None = None, seed_bodies: dict | None = None,
-                 resume: bool = False):
+                 resume: bool = False, observer=None):
         self.config = config
         self.scope = scope
         self.store = store
         self.console = console or Console(show_reasoning=config.run.verbosity > 1,
                                           color=config.run.color)
         self.egress = ProxyPool(config.egress)
-        self.bus = bus if bus is not None else ProviderBus(config, self.egress)
+        self.bus = bus if bus is not None else ProviderBus(config, self.egress,
+                                                           observer=observer)
         self.knowledge = Knowledge()
         self.roster = Roster(self.bus, self.knowledge)
         self.use_agents = use_agents

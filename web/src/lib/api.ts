@@ -54,7 +54,9 @@ export const api = {
     request<{ name: string; masked: string }>('PUT', `/keys/${name}`, { value }),
   deleteKey: (name: string) => request<{ deleted: boolean }>('DELETE', `/keys/${name}`),
   providers: () => request<{ items: Provider[] }>('GET', '/providers'),
-  addProvider: (body: Record<string, string>) => request<Provider>('POST', '/providers', body),
+  addProvider: (body: Record<string, unknown>) => request<Provider>('POST', '/providers', body),
+  patchProvider: (id: string, body: Record<string, unknown>) =>
+    request<Provider>('PATCH', `/providers/${id}`, body),
   deleteProvider: (id: string) => request<{ deleted: boolean }>('DELETE', `/providers/${id}`),
   testProvider: (id: string) =>
     request<{ ok: boolean; reason: string; latency_ms?: number; models?: string[]; detail?: string }>(
