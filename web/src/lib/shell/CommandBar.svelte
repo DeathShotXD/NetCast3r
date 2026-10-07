@@ -1,0 +1,78 @@
+<script lang="ts">
+  import { store } from '../state.svelte';
+  import { statusColor, statusLabel } from '../format';
+
+  let {
+    onMenu = () => {}
+  }: { onMenu?: () => void } = $props();
+
+  let search = $state('');
+
+  const labels: Record<string, string> = {
+    home: 'home',
+    new: 'new scan',
+    live: 'live run',
+    findings: 'findings',
+    runs: 'runs',
+    keys: 'providers and keys',
+    help: 'help'
+  };
+
+  const running = $derived(store.runs.find((run) => run.status === 'running') ?? store.liveRun);
+  const status = $derived(running?.status ?? '');
+  const crumb = $derived(
+    store.screen === 'live' && store.liveRun ? store.liveRun.target : labels[store.screen] ?? ''
+  );
+
+  function submit(event: SubmitEvent) {
+    event.preventDefault();
+    store.query = search.trim();
+    store.go('findings');
+  }
+</script>
+
+<header
+  class="sticky top-0 z-20 flex items-center gap-3 border-b border-indigo-deep bg-void/85 px-4 py-3 backdrop-blur-sm sm:px-6"
+>
+  <button class="btn btn-quiet px-2! lg:hidden" type="button" onclick={onMenu} aria-label="open navigation">
+    <span aria-hidden="true">≡</span>
+  </button>
+
+  <p class="mono truncate text-sm text-bone-dust">
+    <span class="text-slate">netcast3r</span>
+    <span class="text-slate"> / </span>
+    <span class="text-bone">{crumb}</span>
+  </p>
+
+  <span
+    class="chip ml-1 hidden sm:inline-flex"
+    style="color:{statusColor(status)}"
+    role="status"
+    aria-live="polite"
+  >
+    <svg viewBox="0 0 8 8" class="h-[7px] w-[7px] fill-current" aria-hidden="true">
+      <circle cx="4" cy="4" r="3.4" />
+    </svg>
+    {status ? statusLabel(status) : 'idle'}
+  </span>
+
+  <form class="ml-auto flex items-center gap-2" onsubmit={submit} role="search">
+    <input
+      class="field w-[clamp(120px,26vw,260px)]! py-1.5! text-sm!"
+      type="search"
+      placeholder="search findings"
+      aria-label="search findings"
+      bind:value={search}
+    />
+    <button class="btn px-3! py-1.5!" type="submit" aria-label="search">go</button>
+  </form>
+
+  <button
+    class="btn btn-acid py-1.5!"
+    type="button"
+    onclick={() => store.go('new')}
+    title="start a scan"
+  >
+    new scan
+  </button>
+</header>
