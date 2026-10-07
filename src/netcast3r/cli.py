@@ -198,6 +198,13 @@ def cmd_providers(args) -> int:
     return 0
 
 
+def cmd_ui(args) -> int:
+    from .server import serve
+    serve(host=args.host, port=args.port, open_browser=not args.no_open,
+          results_dir=Path(args.out or "results"), auth_required=not args.no_auth)
+    return 0
+
+
 def cmd_dashboard(args) -> int:
     out = Path(args.out or "results")
     if args.demo or not args.results:
@@ -273,6 +280,14 @@ def build_parser() -> argparse.ArgumentParser:
     dash_parser.add_argument("--no-open", action="store_true", help="do not open a browser")
     dash_parser.add_argument("--save-only", action="store_true", help="write the file and exit")
     dash_parser.set_defaults(func=cmd_dashboard)
+
+    ui_parser = sub.add_parser("ui", help="start the dashboard backend")
+    ui_parser.add_argument("--host", default="127.0.0.1", help="bind address")
+    ui_parser.add_argument("--port", type=int, default=7857, help="bind port")
+    ui_parser.add_argument("--out", help="results directory (default: results)")
+    ui_parser.add_argument("--no-open", action="store_true", help="do not open a browser")
+    ui_parser.add_argument("--no-auth", action="store_true", help="disable the session token")
+    ui_parser.set_defaults(func=cmd_ui)
 
     return parser
 
