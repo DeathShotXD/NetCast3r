@@ -5,6 +5,7 @@
   import { store } from '../state.svelte';
   import type { Finding } from '../types';
   import Chip from '../ui/Chip.svelte';
+  import EmptyState from '../ui/EmptyState.svelte';
 
   let items = $state<Finding[]>([]);
   let total = $state(0);
@@ -59,7 +60,7 @@
   onMount(load);
 </script>
 
-<div class="fade-rise mx-auto flex max-w-[1180px] flex-col gap-5">
+<div class="stagger mx-auto flex max-w-[1180px] flex-col gap-5">
   <section class="flex flex-wrap items-end gap-4">
     <div class="mr-auto">
       <p class="eyebrow">findings</p>
@@ -98,15 +99,16 @@
 
   <section class="panel overflow-hidden">
     {#if items.length === 0}
-      <div class="px-6 py-12 text-center">
-        <p class="eyebrow">empty</p>
-        <p class="mt-2 text-sm text-bone-dust">
-          No findings match. Run a scan, or widen the filters above.
-        </p>
-        <button class="btn btn-acid mt-5" type="button" onclick={() => store.go('new')}>
-          start a scan
-        </button>
-      </div>
+      <EmptyState
+        eyebrow="empty"
+        title={q || severity || triage ? 'No findings match' : 'Nothing caught yet'}
+        body={q || severity || triage
+          ? 'No finding satisfies every filter at once. Clear one of the boxes above, or run another scan.'
+          : 'Findings land here the moment a run validates a credential against the provider that issued it.'}
+        action="start a scan"
+        onAction={() => store.go('new')}
+        hint={q || severity || triage ? '> tip: leave a filter blank to include everything' : ''}
+      />
     {:else}
       <div class="overflow-x-auto">
         <table class="w-full min-w-[760px] border-collapse text-left">

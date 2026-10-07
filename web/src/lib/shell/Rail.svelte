@@ -1,6 +1,9 @@
 <script lang="ts">
   import { store } from '../state.svelte';
   import type { Screen } from '../types';
+  import { countup } from '../actions';
+  import Mark from '../ui/Mark.svelte';
+  import NetMotif from '../ui/NetMotif.svelte';
 
   let {
     open = false,
@@ -20,6 +23,10 @@
   const isActive = (id: Screen) =>
     id === store.screen || (id === 'live' && store.screen === 'live');
 
+  const running = $derived(
+    store.runs.find((run) => run.status === 'running') ?? store.liveRun ?? null
+  );
+
   function go(id: Screen) {
     store.go(id);
     onNavigate();
@@ -35,20 +42,12 @@
 {/if}
 
 <aside
-  class="fixed inset-y-0 left-0 z-40 flex w-[248px] flex-col border-r border-indigo-deep bg-void-soft px-3 py-4 transition-transform duration-300 lg:static lg:z-auto lg:translate-x-0 {open
+  class="fixed inset-y-0 left-0 z-40 flex w-[248px] flex-col border-r border-indigo-deep bg-void-soft px-3 py-4 transition-transform duration-300 lg:translate-x-0 {open
     ? 'translate-x-0'
     : '-translate-x-full'}"
 >
   <div class="flex items-center gap-3 px-2">
-    <svg viewBox="0 0 32 32" class="h-7 w-7" aria-hidden="true">
-      <rect width="32" height="32" rx="7" fill="var(--nc-void)" stroke="var(--nc-indigo)" />
-      <path
-        d="M7 21 L16 9 L25 21 M7 24 L25 24 M11 24 L16 15 L21 24"
-        stroke="var(--nc-acid)"
-        stroke-width="1.5"
-        fill="none"
-      />
-    </svg>
+    <Mark class="h-9 w-9 shrink-0" />
     <div class="leading-tight">
       <p class="font-mono text-sm tracking-[0.2em] text-bone">NETCAST3R</p>
       <p class="eyebrow tracking-[0.24em]!">dashboard</p>
@@ -74,7 +73,39 @@
     {/each}
   </nav>
 
-  <div class="mt-auto space-y-3 px-2 pt-4">
+  <!-- status module: the rail's midsection earns its keep -->
+  <div class="mt-auto hidden min-h-0 flex-1 flex-col gap-3 pt-4 [@media(min-height:680px)]:flex">
+    <div class="panel panel-hud relative min-h-[180px] flex-1 overflow-hidden p-4">
+      <NetMotif class="pointer-events-none absolute inset-x-0 bottom-0 h-[130px] w-full opacity-60" animated={false} />
+      <div class="relative z-[1] flex h-full flex-col gap-2">
+        <p class="eyebrow">net status</p>
+        {#if running}
+          <p class="mono truncate text-xs text-acid">{running.target}</p>
+          <span class="chip self-start" style="color:var(--nc-acid)">
+            <span class="pulse-live h-[7px] w-[7px] rounded-full bg-acid" aria-hidden="true"></span>
+            {running.status === 'queued' ? 'queued' : 'casting'}
+          </span>
+        {:else}
+          <p class="mono text-xs leading-relaxed text-bone-dust">idle // no scan running</p>
+        {/if}
+        <div class="mt-auto grid grid-cols-2 gap-2 border-t border-indigo-deep pt-2.5">
+          <div>
+            <p class="eyebrow">runs</p>
+            <p class="num mt-0.5 text-sm text-bone" use:countup={store.totals?.runs ?? 0}>0</p>
+          </div>
+          <div>
+            <p class="eyebrow">findings</p>
+            <p class="num mt-0.5 text-sm text-acid" use:countup={store.totals?.findings ?? 0}>0</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="mt-auto space-y-3 px-2 pt-4 [@media(min-height:680px)]:mt-0">
+    <button class="btn btn-acid w-full" type="button" onclick={() => go('new')}>
+      cast a net
+    </button>
     <p class="border-t border-indigo-deep pt-3 text-[11px] leading-relaxed text-ash">
       Authorized testing only. Point this at systems you are allowed to test.
     </p>

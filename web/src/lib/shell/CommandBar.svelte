@@ -20,6 +20,7 @@
 
   const running = $derived(store.runs.find((run) => run.status === 'running') ?? store.liveRun);
   const status = $derived(running?.status ?? '');
+  const scanActive = $derived(status === 'running' || status === 'queued');
   const crumb = $derived(
     store.screen === 'live' && store.liveRun ? store.liveRun.target : labels[store.screen] ?? ''
   );
@@ -33,15 +34,16 @@
 
 <header
   class="sticky top-0 z-20 flex items-center gap-3 border-b border-indigo-deep bg-void/85 px-4 py-3 backdrop-blur-sm sm:px-6"
+  class:run-line={scanActive}
 >
   <button class="btn btn-quiet px-2! lg:hidden" type="button" onclick={onMenu} aria-label="open navigation">
     <span aria-hidden="true">≡</span>
   </button>
 
-  <p class="mono truncate text-sm text-bone-dust">
+  <p class="mono flex min-w-0 items-center gap-2 truncate text-sm text-bone-dust">
     <span class="text-slate">netcast3r</span>
     <span class="text-slate"> / </span>
-    <span class="text-bone">{crumb}</span>
+    <span class="truncate text-bone">{crumb}</span>
   </p>
 
   <span

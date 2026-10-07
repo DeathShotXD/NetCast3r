@@ -30,7 +30,7 @@
   ];
 </script>
 
-<div class="fade-rise mx-auto flex max-w-[980px] flex-col gap-6">
+<div class="stagger mx-auto flex max-w-[980px] flex-col gap-6">
   <section>
     <p class="eyebrow">help</p>
     <h1 class="mt-1 text-xl text-bone">What every word on screen means</h1>

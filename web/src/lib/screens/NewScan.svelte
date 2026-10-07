@@ -77,7 +77,7 @@
   }
 </script>
 
-<div class="fade-rise mx-auto grid max-w-[1180px] gap-5 lg:grid-cols-[1.15fr_1fr]">
+<div class="stagger mx-auto grid max-w-[1180px] gap-5 lg:grid-cols-[1.15fr_1fr]">
   <section class="panel p-6">
     <p class="eyebrow">new scan</p>
     <h1 class="mt-1 text-xl text-bone">Where should we look?</h1>

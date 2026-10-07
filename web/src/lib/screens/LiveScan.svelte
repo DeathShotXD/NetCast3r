@@ -7,7 +7,9 @@
   import type { Run, RunEvent } from '../types';
   import Chip from '../ui/Chip.svelte';
   import Confirm from '../ui/Confirm.svelte';
+  import EmptyState from '../ui/EmptyState.svelte';
   import StageRail from '../ui/StageRail.svelte';
+  import { countup } from '../actions';
 
   const stages = STAGES as unknown as { key: string; label: string }[];
   const TERMINAL = ['done', 'failed', 'stopped', 'interrupted'];
@@ -188,37 +190,36 @@
 
 {#if !store.activeRunId}
   <div class="fade-rise mx-auto max-w-[720px]">
-    <div class="panel p-8 text-center">
-      <p class="eyebrow">live runs</p>
-      <h1 class="mt-2 text-xl text-bone">No run selected</h1>
-      <p class="mx-auto mt-3 max-w-[46ch] text-sm leading-relaxed text-bone-dust">
-        Start a scan and it appears here with a live stage rail, running counters, and every line
-        the agents print as they work.
-      </p>
-      <button class="btn btn-acid mt-6" type="button" onclick={() => store.go('new')}>
-        start a scan
-      </button>
-      {#if store.runs.length > 0}
-        <div class="mx-auto mt-8 max-w-[420px] border-t border-indigo-deep pt-4 text-left">
-          <p class="eyebrow mb-2">or reopen</p>
-          {#each store.runs.slice(0, 5) as item (item.id)}
-            <button
-              class="row-link flex w-full items-center gap-3 rounded px-3 py-2 text-left"
-              type="button"
-              onclick={() => store.watch(item.id)}
-            >
-              <span class="h-2 w-2 rounded-full" style="background:{statusColor(item.status)}"></span>
-              <span class="min-w-0 flex-1 truncate text-sm text-bone">{item.target}</span>
-              <span class="mono text-xs text-ash">{statusLabel(item.status)}</span>
-            </button>
-          {/each}
-        </div>
-      {/if}
+    <div class="panel overflow-hidden">
+      <EmptyState
+        eyebrow="live runs"
+        title="No run selected"
+        body="Start a scan and it appears here with a live stage rail, running counters, and every line the agents print as they work."
+        action="start a scan"
+        onAction={() => store.go('new')}
+      >
+        {#if store.runs.length > 0}
+          <div class="mt-5 w-full max-w-[420px] border-t border-indigo-deep pt-4 text-left">
+            <p class="eyebrow mb-2">or reopen</p>
+            {#each store.runs.slice(0, 5) as item (item.id)}
+              <button
+                class="row-link flex w-full items-center gap-3 rounded px-3 py-2 text-left"
+                type="button"
+                onclick={() => store.watch(item.id)}
+              >
+                <span class="h-2 w-2 rounded-full" style="background:{statusColor(item.status)}"></span>
+                <span class="min-w-0 flex-1 truncate text-sm text-bone">{item.target}</span>
+                <span class="mono text-xs text-ash">{statusLabel(item.status)}</span>
+              </button>
+            {/each}
+          </div>
+        {/if}
+      </EmptyState>
     </div>
   </div>
 {:else if run}
-  <div class="fade-rise mx-auto flex max-w-[1180px] flex-col gap-5">
-    <section class="panel p-5" class:finish-glow={finished}>
+  <div class="stagger mx-auto flex max-w-[1180px] flex-col gap-5">
+    <section class="panel panel-hud p-5" class:finish-glow={finished}>
       <div class="flex flex-wrap items-center gap-3">
         <div class="min-w-0">
           <p class="eyebrow">run {run.id.slice(-6)}</p>
@@ -247,9 +248,9 @@
 
     <section class="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6" aria-label="counters">
       {#each [['pages', 'pages'], ['js files', 'js_files'], ['endpoints', 'endpoints'], ['candidates', 'candidates'], ['verified', 'verified'], ['findings', 'findings']] as [label, key] (key)}
-        <div class="panel px-4 py-3">
+        <div class="panel kpi px-4 py-3">
           <p class="eyebrow">{label}</p>
-          <p class="num mt-1 text-xl text-bone">{counts[key] ?? 0}</p>
+          <p class="num mt-1 text-xl text-bone" use:countup={counts[key] ?? 0}>0</p>
         </div>
       {/each}
     </section>

@@ -58,6 +58,13 @@ Notable changes to NetCast3r, newest first.
 
 ### Changed
 
+- The served dashboard got a visual pass in the style of the project art: an
+  ambient backdrop of grid, glow and drifting mesh behind every screen, a
+  banner-derived monogram, a redrawn cast-net hero with floating credential
+  chips, a rail status module that fills the column with live run state and
+  totals, HUD corner brackets on key panels, gradient buttons with a light
+  sweep, staggered screen entrances, count-up counters, a stage progress bar,
+  and shared empty states. Motion follows `prefers-reduced-motion`.
 - The dashboard renders in a single pass, so a value that contains a
   placeholder token can no longer trigger a second round of replacement, and
   the template is read once instead of on every render.

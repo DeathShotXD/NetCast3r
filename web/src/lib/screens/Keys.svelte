@@ -106,7 +106,7 @@
   onMount(load);
 </script>
 
-<div class="fade-rise mx-auto flex max-w-[1180px] flex-col gap-5">
+<div class="stagger mx-auto flex max-w-[1180px] flex-col gap-5">
   <section>
     <p class="eyebrow">providers and keys</p>
     <h1 class="mt-1 text-xl text-bone">Bring your own model</h1>

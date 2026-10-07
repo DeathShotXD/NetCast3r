@@ -4,6 +4,7 @@
   import { ago, finishedThrough, sevColor, sevShape, stageForAgent, statusColor, statusLabel, triageLabel } from '../format';
   import { store } from '../state.svelte';
   import { STAGES } from '../../tokens';
+  import { countup } from '../actions';
   import NetMotif from '../ui/NetMotif.svelte';
   import StageRail from '../ui/StageRail.svelte';
   import Chip from '../ui/Chip.svelte';
@@ -114,10 +115,10 @@
   });
 </script>
 
-<div class="fade-rise mx-auto flex max-w-[1180px] flex-col gap-6">
+<div class="stagger mx-auto flex max-w-[1180px] flex-col gap-6">
   <!-- Hero -->
-  <section class="panel-raised grid-noise relative overflow-hidden p-6 sm:p-8">
-    <NetMotif class="pointer-events-none absolute -right-6 -top-4 h-[220px] w-[440px] opacity-70" />
+  <section class="panel-raised panel-hud relative overflow-hidden p-6 sm:p-8">
+    <NetMotif class="pointer-events-none absolute -right-6 -top-4 h-[240px] w-[500px] opacity-90" chips />
     <div class="relative max-w-[620px]">
       <p class="eyebrow" style="color:{hero.color}">{hero.eyebrow}</p>
       <h1 class="mt-2 text-2xl font-semibold leading-tight text-bone sm:text-[31px]">
@@ -136,9 +137,9 @@
   <!-- KPIs -->
   <section class="grid grid-cols-2 gap-3 lg:grid-cols-4" aria-label="summary">
     {#each kpis as kpi (kpi.label)}
-      <div class="panel flex flex-col gap-1 p-4">
+      <div class="panel kpi flex flex-col gap-1 p-4">
         <p class="eyebrow">{kpi.label}</p>
-        <p class="num text-[31px] leading-none" style="color:{kpi.color}">{kpi.value}</p>
+        <p class="num text-[31px] leading-none" style="color:{kpi.color}" use:countup={kpi.value}>0</p>
         <p class="text-xs text-bone-dust">{kpi.note}</p>
       </div>
     {/each}
@@ -146,7 +147,7 @@
 
   <!-- Last run -->
   {#if lastRun}
-    <section class="panel p-5">
+    <section class="panel panel-hud p-5">
       <div class="mb-4 flex flex-wrap items-center gap-3">
         <p class="eyebrow">last run</p>
         <button
@@ -178,7 +179,7 @@
 
   <!-- Recent findings + runs -->
   <section class="grid gap-4 lg:grid-cols-2">
-    <div class="panel overflow-hidden">
+    <div class="panel panel-hover overflow-hidden">
       <div class="flex items-center justify-between border-b border-indigo-deep px-5 py-3">
         <p class="eyebrow">recent findings</p>
         <button class="btn btn-quiet px-2! py-1! text-xs" type="button" onclick={() => store.go('findings')}>
@@ -208,7 +209,7 @@
       {/if}
     </div>
 
-    <div class="panel overflow-hidden">
+    <div class="panel panel-hover overflow-hidden">
       <div class="flex items-center justify-between border-b border-indigo-deep px-5 py-3">
         <p class="eyebrow">recent runs</p>
         <button class="btn btn-quiet px-2! py-1! text-xs" type="button" onclick={() => store.go('runs')}>

@@ -5,6 +5,7 @@
   import { store } from '../state.svelte';
   import Chip from '../ui/Chip.svelte';
   import Confirm from '../ui/Confirm.svelte';
+  import EmptyState from '../ui/EmptyState.svelte';
 
   let pendingDelete = $state<string | null>(null);
 
@@ -36,7 +37,7 @@
   onMount(() => store.refreshRuns());
 </script>
 
-<div class="fade-rise mx-auto flex max-w-[1180px] flex-col gap-5">
+<div class="stagger mx-auto flex max-w-[1180px] flex-col gap-5">
   <section class="flex flex-wrap items-end gap-4">
     <div class="mr-auto">
       <p class="eyebrow">history</p>
@@ -47,13 +48,14 @@
 
   <section class="panel overflow-hidden">
     {#if store.runs.length === 0}
-      <div class="px-6 py-12 text-center">
-        <p class="eyebrow">empty</p>
-        <p class="mt-2 text-sm text-bone-dust">No scans yet. Your run history collects here.</p>
-        <button class="btn btn-acid mt-5" type="button" onclick={() => store.go('new')}>
-          start your first scan
-        </button>
-      </div>
+      <EmptyState
+        eyebrow="empty"
+        title="No scans yet"
+        body="Your run history collects here: every target, when it ran, what it caught, and a rerun button for the next pass."
+        action="start your first scan"
+        onAction={() => store.go('new')}
+        hint="> reports are also written to your results folder"
+      />
     {:else}
       <div class="overflow-x-auto">
         <table class="w-full min-w-[720px] border-collapse text-left">

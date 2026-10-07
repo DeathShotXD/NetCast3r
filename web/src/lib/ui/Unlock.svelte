@@ -1,4 +1,6 @@
 <script lang="ts">
+  import Mark from './Mark.svelte';
+
   let token = $state('');
   let hint = $state(false);
   let error = $state('');
@@ -31,10 +33,15 @@
 </script>
 
 <div class="grid min-h-full place-items-center px-5 py-10">
-  <div class="panel-raised grid-noise relative w-full max-w-[440px] overflow-hidden p-7">
-    <p class="eyebrow">session</p>
-    <h1 class="mt-2 font-mono text-xl tracking-[0.14em] text-acid">NETCAST3R</h1>
-    <p class="mt-3 text-sm leading-relaxed text-bone-dust">
+  <div class="panel-raised panel-hud relative w-full max-w-[440px] overflow-hidden p-7">
+    <div class="mb-4 flex items-center gap-3">
+      <Mark class="h-11 w-11 shrink-0" />
+      <div class="leading-tight">
+        <p class="eyebrow">session</p>
+        <h1 class="font-mono text-xl tracking-[0.14em] text-acid">NETCAST3R</h1>
+      </div>
+    </div>
+    <p class="text-sm leading-relaxed text-bone-dust">
       This dashboard is locked with a per-session token so nothing on your machine can reach it
       from another tab or another process.
     </p>
