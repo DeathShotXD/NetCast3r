@@ -34,4 +34,4 @@ package-dir = { "" = "src" }
 where = ["src"]
 
 [tool.setuptools.package-data]
-netcast3r = ["*.toml", "dashboard/*.html", "dashboard/*.webp"]
+netcast3r = ["*.toml", "dashboard/*.html", "dashboard/*.webp", "web/*.html"]

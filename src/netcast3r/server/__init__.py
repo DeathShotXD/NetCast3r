@@ -7,6 +7,8 @@ is available as a pure ``Server.route`` call, so it is tested without a socket.
 
 from __future__ import annotations
 
+import base64
+import hashlib
 import json
 import re
 import secrets
@@ -25,10 +27,35 @@ from .keys import KeyStore, mask
 
 API_VERSION = "v1"
 ALLOWED_HOSTS = {"127.0.0.1", "localhost", "::1", "[::1]"}
+TOKEN_COOKIE = "netcast3r_token"
+APP_DIR = Path(__file__).resolve().parent.parent / "web"
 
 CSP = ("default-src 'self'; img-src 'self' data:; connect-src 'self'; "
        "style-src 'self' 'unsafe-inline'; script-src 'self'; base-uri 'none'; "
        "form-action 'self'; frame-ancestors 'none'")
+
+
+def _script_hashes(html: str) -> list[str]:
+    """Hashes for every inline script, so the bundle needs no 'unsafe-inline'."""
+    hashes = []
+    for body in re.findall(r"<script\b[^>]*>(.*?)</script>", html, flags=re.S | re.I):
+        if not body.strip():
+            continue
+        digest = hashlib.sha256(body.encode("utf-8")).digest()
+        hashes.append("'sha256-" + base64.b64encode(digest).decode("ascii") + "'")
+    return hashes
+
+
+def _app_csp(html: str) -> str:
+    hashes = _script_hashes(html)
+    script_src = "script-src 'self' " + " ".join(hashes) if hashes else "script-src 'self'"
+    return ("default-src 'self'; img-src 'self' data:; connect-src 'self'; "
+            f"style-src 'self' 'unsafe-inline'; {script_src}; base-uri 'none'; "
+            "form-action 'self'; frame-ancestors 'none'; object-src 'none'")
+
+
+def _set_cookie(token: str) -> str:
+    return f"{TOKEN_COOKIE}={token}; HttpOnly; SameSite=Strict; Path=/"
 
 
 @dataclass
@@ -90,6 +117,9 @@ class Server:
         self.auth_required = auth_required
         self.static_dir = Path(static_dir) if static_dir else None
         self.started = threading.Event()
+        self._app_loaded = False
+        self._app_cache: str | None = None
+        self._csp = CSP
         self._routes = self._build_routes()
 
     # -- routing ----------------------------------------------------------
@@ -122,6 +152,10 @@ class Server:
             except Exception:
                 ready = False
             return _json({"ready": ready}, 200 if ready else 503)
+
+        @add("GET", r"/api/v1/summary")
+        def summary(ctx):
+            return _json(self.index.totals())
 
         @add("GET", r"/api/v1/metrics")
         def metrics(ctx):
@@ -272,12 +306,47 @@ class Server:
 
         @add("GET", r"/")
         def index_page(ctx):
-            if self.static_dir and (self.static_dir / "index.html").exists():
-                return Response(body=(self.static_dir / "index.html").read_bytes(),
+            app = self._app()
+            if app is None:
+                return Response(body=PLACEHOLDER.encode("utf-8"),
                                 content_type="text/html; charset=utf-8")
-            return Response(body=PLACEHOLDER.encode("utf-8"), content_type="text/html; charset=utf-8")
+            headers = {"Content-Security-Policy": self._csp}
+            token = str(ctx.query.get("token", ""))
+            if self.auth_required and self._matches(token, self.token):
+                headers["Set-Cookie"] = _set_cookie(self.token)
+            return Response(body=app.encode("utf-8"), content_type="text/html; charset=utf-8",
+                            headers=headers)
+
+        @add("POST", r"/api/v1/session")
+        def session(ctx):
+            supplied = str(ctx.json().get("token") or "")
+            if not self._matches(supplied, self.token):
+                return _problem(401, "bad token", "that session token was not accepted")
+            return Response(body=json.dumps({"ok": True}).encode(),
+                            headers={"Set-Cookie": _set_cookie(self.token)})
 
         return routes
+
+    # -- static app -------------------------------------------------------
+    def _app(self) -> str | None:
+        """The built dashboard, loaded once. None when it has not been built."""
+        if not self._app_loaded:
+            text = None
+            if self.static_dir and (self.static_dir / "index.html").exists():
+                text = (self.static_dir / "index.html").read_text("utf-8")
+            elif (APP_DIR / "index.html").exists():
+                text = (APP_DIR / "index.html").read_text("utf-8")
+            self._app_cache = text
+            self._csp = _app_csp(text) if text else CSP
+            self._app_loaded = True
+        return self._app_cache
+
+    @staticmethod
+    def _matches(supplied: str, expected: str) -> bool:
+        try:
+            return bool(supplied) and secrets.compare_digest(supplied, expected)
+        except (TypeError, ValueError):
+            return False
 
     # -- helpers ----------------------------------------------------------
     def _event_frames(self, run_id: str | None, last_event_id: int | None):
@@ -332,7 +401,10 @@ class Server:
         if not self._origin_ok(method, headers):
             return _problem(403, "bad origin", "cross-origin request refused")
         if self.auth_required and not self._token_ok(query, headers):
-            return _problem(401, "unauthorized", "missing or bad session token")
+            # The shell and the unlock screen are served unauthenticated; they
+            # carry no data. Every API route still demands a session token.
+            if path not in ("/", "/api/v1/session"):
+                return _problem(401, "unauthorized", "missing or bad session token")
         for route_method, regex, func in self._routes:
             match = regex.match(path)
             if not match:
@@ -361,7 +433,13 @@ class Server:
 
     def _token_ok(self, query: dict, headers: dict) -> bool:
         supplied = headers.get("x-netcast3r-token", "") or query.get("token", "")
-        return secrets.compare_digest(supplied, self.token) if supplied else False
+        if not supplied:
+            for part in headers.get("cookie", "").split(";"):
+                name, _, value = part.strip().partition("=")
+                if name == TOKEN_COOKIE:
+                    supplied = value
+                    break
+        return self._matches(supplied, self.token)
 
 
 @dataclass
@@ -452,7 +530,8 @@ class _Handler(BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(result.body)))
         self.send_header("X-Content-Type-Options", "nosniff")
         self.send_header("Referrer-Policy", "no-referrer")
-        self.send_header("Content-Security-Policy", CSP)
+        if "Content-Security-Policy" not in result.headers:
+            self.send_header("Content-Security-Policy", CSP)
         for key, value in result.headers.items():
             self.send_header(key, value)
         self.end_headers()

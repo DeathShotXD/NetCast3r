@@ -17,3 +17,7 @@ BLUEPRINT.md
 assets/BANNER-NOTES.md
 assets/make_webp.py
 assets/NetCast3r-*.png
+
+# Frontend build tree (the built index.html is committed under src/)
+web/node_modules/
+web/dist/

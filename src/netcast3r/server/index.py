@@ -328,6 +328,31 @@ class Index:
             "triage": {row["triage_status"]: row["n"] for row in triage},
         }
 
+    # -- index counters ---------------------------------------------------
+    def totals(self) -> dict:
+        """Whole-index counters for the dashboard home screen."""
+        with self._lock:
+            runs = self.conn.execute("SELECT COUNT(*) FROM runs").fetchone()[0]
+            active = self.conn.execute(
+                "SELECT COUNT(*) FROM runs WHERE status IN ('queued', 'running')"
+            ).fetchone()[0]
+            findings = self.conn.execute("SELECT COUNT(*) FROM findings").fetchone()[0]
+            triage = {
+                row["k"]: row["n"] for row in self.conn.execute(
+                    "SELECT triage_status AS k, COUNT(*) AS n FROM findings GROUP BY triage_status"
+                )
+            }
+            severity = {
+                row["k"]: row["n"] for row in self.conn.execute(
+                    "SELECT COALESCE(severity_override, severity) AS k, COUNT(*) AS n "
+                    "FROM findings GROUP BY k"
+                )
+            }
+        recent, _ = self.list_runs(limit=1)
+        return {"runs": runs, "active_runs": active, "findings": findings,
+                "triage": triage, "severity": severity,
+                "last_run": recent[0] if recent else None}
+
     # -- providers --------------------------------------------------------
     def add_provider(self, name: str, kind: str = "openai", base_url: str = "",
                      model: str = "", key_name: str = "") -> dict:

@@ -10,6 +10,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Callable
 
+from ..theme import strip as strip_ansi
 from .events import Event
 from .keys import mask
 
@@ -41,6 +42,12 @@ class EventConsole:
     def line(self, agent: str, text: str) -> None:
         self.events.append({"kind": "line", "agent": agent, "text": text})
         self.emit(Event(type="log", run_id=self.run_id, agent=agent, payload={"text": text}))
+
+    def _emit(self, text: str) -> None:
+        """Raw console output (progress bars, box rules). Always a plain log line."""
+        text = strip_ansi(text or "").strip()
+        if text:
+            self.line("run", text)
 
     def reasoning(self, agent: str, text: str) -> None:
         for piece in (text or "").splitlines():

@@ -31,6 +31,13 @@ Notable changes to NetCast3r, newest first.
   keyring when one is usable, masked on every read, and never written to the
   index or a log line. The server binds loopback by default, validates the Host
   and Origin headers, and requires a per-session token.
+- The dashboard itself, served by `netcast3r ui` at `/`. One self-contained
+  page carries a rail, a command bar, and screens for the overview, starting a
+  scan, a live run, findings and their triage, run history, providers and keys,
+  and help. A live run shows its stage rail, counters, credentials and the
+  agent log as they happen, with stop and rerun on hand. Screens are deep
+  linkable (`#/live/run_123`), so a refresh keeps your place, and the session
+  token arrives as an `HttpOnly` cookie alongside the existing query form.
 - A classifier agent that names candidates the patterns did not recognise,
   rates its confidence, and re-types the candidate so the right recipe runs.
   Classifications are remembered in `~/.netcast3r/classifications.json`.
