@@ -4,9 +4,8 @@ One source of truth for the NetCast3r palette, stages, states, and glyphs.
 The terminal console, the HTML dashboard template, and the report writers all
 read from here so a colour can never drift between surfaces.
 
-Every hex value was measured out of assets/NetCast3r-Logo.png and
-assets/NetCast3r-Banner.png. See docs/DESIGN.md for the rules on when each
-one is allowed to appear.
+Every hex value was measured out of the source banner artwork. See
+docs/DESIGN.md for the rules on when each one is allowed to appear.
 """
 
 from __future__ import annotations

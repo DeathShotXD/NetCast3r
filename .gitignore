@@ -10,3 +10,10 @@ build/
 results/
 *.log
 scope.txt
+
+# Internal planning docs and source artwork, kept local only
+PLAN.md
+BLUEPRINT.md
+assets/BANNER-NOTES.md
+assets/make_webp.py
+assets/NetCast3r-*.png

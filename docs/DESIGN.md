@@ -5,8 +5,7 @@ dashboard, README art, badges, and any future screenshots. Written the way DEF
 CON writes its yearly Theme and Style Guide: one narrative, a named palette,
 named type, and a rule for when each colour is allowed to appear.
 
-Numbers below were measured out of `assets/NetCast3r-Logo.png` and
-`assets/NetCast3r-Banner.png`, not guessed.
+Numbers below were measured out of the source banner artwork, not guessed.
 
 ---
 
