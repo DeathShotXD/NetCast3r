@@ -101,9 +101,25 @@ Notable changes to NetCast3r, newest first.
 - Model-generated validation checks are limited to safe public `https`
   endpoints, never loopback, private, link-local, or metadata addresses, and
   follow the run tier.
+- The visual pass went further: each of the six stages draws its own icon (a
+  spider for crawl, braces for read js, a lens for hunt, a shield for
+  validate, stairs for escalate, a seal for report) on the stage rail and in
+  the help list, and the home hero carries a full banner collage -- cast net
+  with a weighted hem, live terminal block, NC3R seal, barcode, and
+  credential cards tethered into the mesh -- with a left fade so the copy
+  stays readable. The mark breathes while a scan runs, and the backdrop adds
+  rising sparks and CRT scanlines.
+- Live runs render in batches: log and reasoning events are applied in one
+  animation frame instead of one update per line, reasoning pieces fuse into
+  per-agent blocks with a fragment count, the log and the stream cap what
+  they keep on screen, and the server coalesces reasoning pieces before
+  publishing and persisting them, so a noisy run stays smooth.
 
 ### Fixed
 
+- The drifting mesh no longer shows a seam where it loops: it advances by
+  background position instead of a translate, and the scan sweep fades at
+  both edges instead of ending on a hard line.
 - The dashboard escapes every HTML-significant character in the run data, so a
   finding value can no longer close the JSON script block or inject markup.
 - The over-broad gitleaks `generic-api-key` rule is dropped in favour of the

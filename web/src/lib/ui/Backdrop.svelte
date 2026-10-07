@@ -4,6 +4,15 @@
 
   const noise =
     "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)' opacity='0.4'/%3E%3C/svg%3E\")";
+
+  // A handful of sparks rising off the water -- transform/opacity only.
+  const embers = Array.from({ length: 16 }, (_, i) => ({
+    left: (i * 6.4 + ((i * 37) % 9)).toFixed(1),
+    size: i % 4 === 0 ? 4 : 3,
+    violet: i % 3 === 0,
+    dur: 14 + ((i * 13) % 17),
+    delay: (i * 2.3) % 21
+  }));
 </script>
 
 <!-- Ambient stage: glows, grid, a drifting net lattice, a slow scan sweep, grain. -->
@@ -37,11 +46,27 @@
 
   <div
     class="absolute inset-x-0 top-0 h-[46vh]"
-    style="background:linear-gradient(180deg, transparent 0%, rgba(200,248,26,0.05) 62%, rgba(200,248,26,0.14) 100%);
+    style="background:linear-gradient(180deg, transparent 0%, rgba(200,248,26,0.035) 38%, rgba(200,248,26,0.11) 56%, rgba(200,248,26,0.035) 76%, transparent 100%);
       animation:scan-down 15s linear infinite;"
   ></div>
 
   <div class="absolute inset-0 opacity-40" style="background-image:{noise}; mix-blend-mode:soft-light;"></div>
+
+  <!-- rising sparks -->
+  <div class="absolute inset-0 overflow-hidden">
+    {#each embers as e (e.left + ':' + e.delay)}
+      <span
+        class="ember {e.violet ? 'e-violet' : ''}"
+        style="left:{e.left}%; width:{e.size}px; height:{e.size}px;
+               background:{e.violet ? 'var(--nc-violet)' : 'var(--nc-acid)'};
+               box-shadow:0 0 {e.size * 2}px {e.violet ? 'rgba(159,35,221,0.55)' : 'rgba(200,248,26,0.5)'};
+               animation-duration:{e.dur}s; animation-delay:-{e.delay}s;"
+      ></span>
+    {/each}
+  </div>
+
+  <!-- the CRT the whole product lives inside -->
+  <div class="scanlines absolute inset-0" aria-hidden="true"></div>
 
   <div class="absolute inset-y-6 right-4 hidden flex-col justify-between 2xl:flex">
     <span

@@ -17,7 +17,7 @@
   let run = $state<Run | null>(null);
   let events = $state<RunEvent[]>([]);
   let counts = $state<Record<string, number>>({});
-  let landed = $state<{ status: string; secret_type: string; value: string; detail: string }[]>([]);
+  let landed = $state<{ id: number; status: string; secret_type: string; value: string; detail: string }[]>([]);
   let currentStage = $state('');
   let elapsed = $state(0);
   let follow = $state(true);
@@ -26,11 +26,18 @@
   let logBox: HTMLDivElement | undefined = $state();
   let thinkBox: HTMLDivElement | undefined = $state();
   let thinkFollow = $state(true);
-  let thinking = $state<{ seq: number; ts: number; agent: string; text: string }[]>([]);
+  // reasoning arrives token-by-token; consecutive pieces from one agent are
+  // fused into a single block so the stream renders dozens of nodes, not thousands
+  let thinking = $state<{
+    id: number; ts: number; agent: string; text: string; parts: number;
+  }[]>([]);
   let calls = $state<{
     seq: number; ts: number; agent: string; provider: string; model: string;
     pending: boolean; ok: boolean; ms: number; error: string;
   }[]>([]);
+
+  const LOG_RENDER_CAP = 400;
+  const THINK_BLOCK_CAP = 120;
 
   const lines = $derived(
     events
@@ -43,30 +50,62 @@
         bad: event.type === 'error'
       }))
   );
+  const visibleLines = $derived(lines.length > LOG_RENDER_CAP ? lines.slice(-LOG_RENDER_CAP) : lines);
+  const thinkFragments = $derived(thinking.reduce((n, block) => n + block.parts, 0));
   const finished = $derived(!!run && TERMINAL.includes(run.status));
   const running = $derived(!!run && (run.status === 'running' || run.status === 'queued'));
   const pendingCalls = $derived(calls.filter((row) => row.pending).length);
   const usedEndpoints = $derived(new Set(calls.map((row) => row.provider)).size);
 
   const seen = new Set<number>();
+  let queue: RunEvent[] = [];
+  let flushScheduled = false;
 
   function push(event: RunEvent) {
     if (seen.has(event.id)) return;
     seen.add(event.id);
-    events = [...events, event].slice(-1500);
+    queue.push(event);
+    if (!flushScheduled) {
+      flushScheduled = true;
+      requestAnimationFrame(() => void flushQueue());
+      window.setTimeout(() => void flushQueue(), 400); // rAF pauses in a background tab
+    }
+  }
+
+  /** Apply every queued event in one reactive update, then scroll once. */
+  async function flushQueue() {
+    flushScheduled = false;
+    const batch = queue;
+    queue = [];
+    if (batch.length === 0) return;
+    events = [...events, ...batch].slice(-1500);
+    for (const event of batch) applyEvent(event);
+    await tick();
+    if (follow && logBox) logBox.scrollTop = logBox.scrollHeight;
+    if (thinkFollow && thinkBox) thinkBox.scrollTop = thinkBox.scrollHeight;
+  }
+
+  function applyEvent(event: RunEvent) {
     if (event.progress) counts = { ...counts, ...event.progress };
     if (event.type === 'finding.created' && event.payload) {
       landed = [
-        { status: event.payload.status, secret_type: event.payload.secret_type, value: event.payload.value, detail: event.payload.detail },
+        { id: event.seq, status: event.payload.status, secret_type: event.payload.secret_type, value: event.payload.value, detail: event.payload.detail },
         ...landed
-      ];
+      ].slice(0, 80);
     }
     if (event.type === 'reasoning' && event.payload?.text) {
-      thinking = [
-        ...thinking,
-        { seq: event.seq, ts: event.ts, agent: event.agent || 'model', text: String(event.payload.text) }
-      ].slice(-400);
-      if (thinkFollow) void scrollThinking();
+      const text = String(event.payload.text);
+      const agent = event.agent || 'model';
+      const last = thinking[thinking.length - 1];
+      if (last && last.agent === agent && event.ts - last.ts < 5000) {
+        last.text += '\n' + text;
+        last.ts = event.ts;
+        last.parts += 1;
+      } else if (thinking.length < THINK_BLOCK_CAP) {
+        thinking = [...thinking, { id: event.seq, ts: event.ts, agent, text, parts: 1 }];
+      } else {
+        thinking = [...thinking.slice(1), { id: event.seq, ts: event.ts, agent, text, parts: 1 }];
+      }
     }
     if (event.type === 'model' && event.payload) {
       const payload = event.payload;
@@ -98,7 +137,6 @@
     if (event.type === 'run.state' && event.payload?.status && !TERMINAL.includes(run?.status ?? '')) {
       run = run ? { ...run, status: event.payload.status } : run;
     }
-    if (follow) void scrollToLatest();
   }
 
   async function scrollToLatest() {
@@ -134,10 +172,12 @@
     if (run) {
       const page = await api.runEvents(run.id);
       for (const event of page.items) push(event);
+      await flushQueue();
       counts = { ...counts, ...(run.counts ?? {}) };
       if (finished) currentStage = '';
     }
     await scrollToLatest();
+    await scrollThinking();
   }
 
   function connect() {
@@ -326,14 +366,15 @@
         <div
           class="mono flex-1 overflow-y-auto px-4 py-3 text-[13px] leading-relaxed"
           data-log="1"
+          class:is-live={running}
           bind:this={logBox}
           onscroll={onLogScroll}
         >
-          {#if lines.length === 0}
+          {#if visibleLines.length === 0}
             <p class="text-slate">waiting for the first line...</p>
           {/if}
-          {#each lines as line (line.seq)}
-            <p class="fade-rise flex gap-2" class:text-violet={line.bad}>
+          {#each visibleLines as line (line.seq)}
+            <p class="stream-line flex gap-2" class:text-violet={line.bad}>
               <span class="shrink-0 text-slate">{clock(line.ts)}</span>
               <span class="w-[92px] shrink-0 truncate" style="color:{(AGENT_COLORS as Record<string, string>)[line.agent] ?? 'var(--nc-bone-dust)'}">
                 {line.agent}
@@ -357,9 +398,9 @@
                 : 'Candidates land here the moment one is validated.'}
             </p>
           {:else}
-            <ul class="max-h-[300px] overflow-y-auto">
-              {#each landed as item, i (i)}
-                <li class="flex items-center gap-3 border-b border-indigo-deep/60 px-4 py-2.5 last:border-0">
+            <ul class="max-h-[300px] overflow-y-auto" data-landed="1">
+              {#each landed as item (item.id)}
+                <li class="shard-in flex items-center gap-3 border-b border-indigo-deep/60 px-4 py-2.5 last:border-0">
                   <Chip label={item.status} color={sevColor(item.status)} shape={sevShape(item.status)} />
                   <span class="min-w-0 flex-1">
                     <span class="mono block truncate text-sm text-bone">{item.secret_type}</span>
@@ -405,7 +446,7 @@
           {/if}
         </div>
         <span class="mono text-xs text-ash">
-          {calls.length} calls / {usedEndpoints} endpoints / {thinking.length} reasoning lines
+          {calls.length} calls / {usedEndpoints} endpoints / {thinkFragments} reasoning lines
         </span>
       </div>
       <div class="grid md:grid-cols-2">
@@ -424,29 +465,31 @@
             </button>
           </div>
           <div
-            class="mono h-[300px] overflow-y-auto px-4 pb-3 text-xs leading-relaxed"
+            class="think-stream h-[300px] overflow-y-auto px-4 pb-3"
             data-reasoning="1"
             bind:this={thinkBox}
             onscroll={onThinkScroll}
           >
             {#if thinking.length === 0}
-              <p class="text-slate">
+              <p class="mono text-xs text-slate">
                 {finished
                   ? 'No model reasoning on this run.'
                   : 'Waiting for the first reasoning line...'}
               </p>
             {/if}
-            {#each thinking as line (line.seq)}
-              <p class="fade-rise flex gap-2">
-                <span class="shrink-0 text-slate">{clock(line.ts)}</span>
-                <span
-                  class="w-[92px] shrink-0 truncate"
-                  style="color:{(AGENT_COLORS as Record<string, string>)[line.agent] ?? 'var(--nc-bone-dust)'}"
-                >
-                  {line.agent}
-                </span>
-                <span class="min-w-0 break-words text-bone-dust">{line.text}</span>
-              </p>
+            {#each thinking as block (block.id)}
+              {@const agentColor = (AGENT_COLORS as Record<string, string>)[block.agent] ?? 'var(--nc-bone-dust)'}
+              <div class="think-block" style="--agent:{agentColor}">
+                <div class="think-meta mono">
+                  <span class="think-dot" aria-hidden="true"></span>
+                  <span class="text-slate">{clock(block.ts)}</span>
+                  <span style="color:{agentColor}">{block.agent}</span>
+                  {#if block.parts > 1}
+                    <span class="think-parts">{block.parts} fragments</span>
+                  {/if}
+                </div>
+                <p class="think-text">{block.text}</p>
+              </div>
             {/each}
           </div>
         </div>
@@ -466,7 +509,7 @@
             {#each calls as row (row.seq)}
               <li class="flex items-center gap-3 border-b border-indigo-deep/60 px-4 py-2 last:border-0">
                 <span
-                  class="h-2 w-2 shrink-0 rounded-full"
+                  class="h-2 w-2 shrink-0 rounded-full transition-colors duration-300"
                   class:bg-acid={!row.pending && row.ok}
                   class:bg-violet={!row.pending && !row.ok}
                   class:bg-slate={row.pending}

@@ -507,6 +507,199 @@
     transform-origin: left;
     animation: rule-draw 520ms var(--ease-enter) both;
   }
+
+  /* ---- live streams: cheap rendering under event floods ------------------ */
+
+  /* log rows: skip layout/style for offscreen lines, animate only the newest */
+  .stream-line {
+    content-visibility: auto;
+    contain-intrinsic-size: auto 22px;
+  }
+
+  .stream-line:last-child {
+    animation: line-arrive 180ms linear both;
+  }
+
+  .is-live .stream-line:last-child::after {
+    content: '\258C';
+    margin-left: 2px;
+    color: var(--nc-acid);
+    animation: blink 1.05s steps(2, start) infinite;
+  }
+
+  /* reasoning arrives as fused blocks instead of token rows */
+  .think-stream {
+    font-family: var(--mono);
+    font-size: var(--text-xs);
+  }
+
+  .think-block {
+    position: relative;
+    margin-top: 8px;
+    padding: 7px 10px 8px 12px;
+    border-left: 2px solid var(--agent, var(--nc-slate));
+    border-radius: 2px;
+    background: linear-gradient(90deg, rgba(23, 15, 63, 0.55) 0%, rgba(1, 1, 1, 0) 82%);
+    content-visibility: auto;
+    contain-intrinsic-size: auto 52px;
+    animation: block-arrive 240ms var(--ease-enter) both;
+  }
+
+  .think-meta {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 10px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    line-height: 1;
+  }
+
+  .think-dot {
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    background: var(--agent, var(--nc-slate));
+    box-shadow: 0 0 6px var(--agent, transparent);
+    flex: none;
+  }
+
+  .think-parts {
+    margin-left: auto;
+    color: var(--nc-slate);
+    letter-spacing: 0.08em;
+  }
+
+  .think-text {
+    margin: 5px 0 0;
+    color: var(--nc-bone_dust);
+    line-height: 1.55;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+
+  .think-block:last-child {
+    background: linear-gradient(90deg, rgba(40, 21, 80, 0.7) 0%, rgba(1, 1, 1, 0) 86%);
+  }
+
+  /* a finding lands: small violet shard burst, then settle */
+  .shard-in {
+    animation: shard-in 260ms var(--ease-enter) both;
+  }
+
+  /* ---- secret badges (NetMotif) ---------------------------------------- */
+
+  .secret-badge {
+    transform-box: fill-box;
+    transform-origin: center;
+    animation: badge-in 460ms var(--ease-enter) both;
+  }
+
+  .badge-float {
+    transform-box: fill-box;
+    transform-origin: center;
+    animation: badge-drift 8s ease-in-out infinite alternate;
+  }
+
+  .badge-float.f-b {
+    animation-duration: 9.4s;
+    animation-delay: -3.2s;
+  }
+
+  .badge-float.f-c {
+    animation-duration: 7.2s;
+    animation-delay: -5.1s;
+  }
+
+  .badge-shine {
+    animation: badge-shine 5.4s ease-in-out infinite;
+    animation-delay: 1.4s;
+  }
+
+  /* ---- flame ring (Mark) ------------------------------------------------ */
+
+  .flame-shard {
+    transform-box: fill-box;
+    transform-origin: center;
+    animation: flame-flicker 1.7s ease-in-out infinite alternate;
+  }
+
+  .mark-live .flame-shard {
+    animation-duration: 0.95s;
+    opacity: 1;
+  }
+
+  /* SVG knots: opacity pulse only -- box-shadow is invisible on SVG shapes
+     and feGaussianBlur on animated groups forces a full re-raster per frame */
+  .knot-pulse {
+    animation: knot-pulse 2.4s ease-in-out infinite;
+  }
+
+  .mark-spin {
+    transform-box: view-box;
+    transform-origin: 60px 60px;
+    animation: nc-spin 46s linear infinite;
+  }
+
+  /* ---- backdrop embers -------------------------------------------------- */
+
+  .ember {
+    position: absolute;
+    bottom: -12px;
+    width: 3px;
+    height: 3px;
+    border-radius: 50%;
+    opacity: 0;
+    animation: ember-rise linear infinite;
+    pointer-events: none;
+  }
+
+  .ember.e-violet {
+    width: 2px;
+    height: 2px;
+  }
+
+  .scanlines {
+    background-image: repeating-linear-gradient(
+      0deg,
+      rgba(245, 233, 220, 0.035) 0 1px,
+      transparent 1px 2px
+    );
+  }
+
+  /* ---- hero collage (HeroArt) ------------------------------------------ */
+
+  .radar-sweep {
+    transform-box: view-box;
+    transform-origin: 540px 228px;
+    animation: nc-spin 6s linear infinite;
+  }
+
+  .seal-orbit {
+    transform-box: view-box;
+    transform-origin: 230px 74px;
+    animation: nc-spin 11s linear infinite;
+  }
+
+  .hero-sweep {
+    animation: hero-sweep 7s linear infinite;
+  }
+
+  .term-cursor {
+    animation: cursor-blink 1.1s step-end infinite;
+  }
+
+  .led-blink {
+    animation: blink 1.7s ease-in-out infinite;
+  }
+
+  .twinkle {
+    animation: twinkle 2.6s ease-in-out infinite;
+  }
+
+  .ants {
+    animation: ants 0.9s linear infinite;
+  }
 }
 
 @keyframes drawer-in {
@@ -623,10 +816,10 @@
 
 @keyframes drift-x {
   from {
-    transform: translateX(0);
+    background-position: 0 0;
   }
   to {
-    transform: translateX(-50%);
+    background-position: -420px 0;
   }
 }
 
@@ -644,6 +837,183 @@
   to {
     transform: translateY(110vh);
     opacity: 0;
+  }
+}
+
+@keyframes line-arrive {
+  from {
+    transform: translateY(8px);
+    opacity: 0;
+  }
+  to {
+    transform: none;
+    opacity: 1;
+  }
+}
+
+@keyframes blink {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0;
+  }
+}
+
+@keyframes block-arrive {
+  from {
+    transform: translateY(5px);
+    opacity: 0;
+    border-left-color: var(--nc-acid);
+  }
+  to {
+    transform: none;
+    opacity: 1;
+  }
+}
+
+@keyframes shard-in {
+  0% {
+    transform: translateX(-10px) scale(0.98);
+    opacity: 0;
+    box-shadow: inset 2px 0 0 var(--nc-violet);
+  }
+  60% {
+    box-shadow: inset 2px 0 0 var(--nc-violet);
+  }
+  100% {
+    transform: none;
+    opacity: 1;
+    box-shadow: inset 0 0 0 transparent;
+  }
+}
+
+@keyframes badge-in {
+  from {
+    transform: scale(0.9) translateY(6px);
+    opacity: 0;
+    filter: blur(2px);
+  }
+  to {
+    transform: none;
+    opacity: 1;
+    filter: blur(0);
+  }
+}
+
+@keyframes badge-drift {
+  0% {
+    transform: translateY(-3px) rotate(-1.1deg);
+  }
+  100% {
+    transform: translateY(4px) rotate(1.3deg);
+  }
+}
+
+@keyframes badge-shine {
+  0%,
+  62% {
+    transform: translateX(-150%);
+    opacity: 0;
+  }
+  70% {
+    opacity: 0.5;
+  }
+  88% {
+    transform: translateX(150%);
+    opacity: 0;
+  }
+  100% {
+    transform: translateX(150%);
+    opacity: 0;
+  }
+}
+
+@keyframes flame-flicker {
+  0% {
+    transform: scale(1, 1);
+    opacity: 0.78;
+  }
+  38% {
+    transform: scale(1.05, 1.1);
+    opacity: 1;
+  }
+  61% {
+    transform: scale(0.97, 1.03);
+    opacity: 0.86;
+  }
+  100% {
+    transform: scale(1.04, 1.09);
+    opacity: 1;
+  }
+}
+
+@keyframes ember-rise {
+  0% {
+    transform: translateY(0) translateX(0);
+    opacity: 0;
+  }
+  8% {
+    opacity: 0.7;
+  }
+  70% {
+    opacity: 0.5;
+  }
+  100% {
+    transform: translateY(-104vh) translateX(18px);
+    opacity: 0;
+  }
+}
+
+@keyframes nc-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes knot-pulse {
+  0%,
+  100% {
+    opacity: 0.95;
+  }
+  50% {
+    opacity: 0.32;
+  }
+}
+
+@keyframes hero-sweep {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(820px);
+  }
+}
+
+@keyframes ants {
+  to {
+    stroke-dashoffset: -14px;
+  }
+}
+
+@keyframes cursor-blink {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0;
+  }
+}
+
+@keyframes twinkle {
+  0%,
+  100% {
+    opacity: 0.12;
+  }
+  50% {
+    opacity: 0.85;
   }
 }
 

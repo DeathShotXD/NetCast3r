@@ -5,7 +5,7 @@
   import { store } from '../state.svelte';
   import { STAGES } from '../../tokens';
   import { countup } from '../actions';
-  import NetMotif from '../ui/NetMotif.svelte';
+  import HeroArt from '../ui/HeroArt.svelte';
   import StageRail from '../ui/StageRail.svelte';
   import Chip from '../ui/Chip.svelte';
 
@@ -118,7 +118,7 @@
 <div class="stagger mx-auto flex max-w-[1180px] flex-col gap-6">
   <!-- Hero -->
   <section class="panel-raised panel-hud relative overflow-hidden p-6 sm:p-8">
-    <NetMotif class="pointer-events-none absolute -right-6 -top-4 h-[240px] w-[500px] opacity-90" chips />
+    <HeroArt class="pointer-events-none absolute inset-0 h-full w-full opacity-50 sm:opacity-95" />
     <div class="relative max-w-[620px]">
       <p class="eyebrow" style="color:{hero.color}">{hero.eyebrow}</p>
       <h1 class="mt-2 text-2xl font-semibold leading-tight text-bone sm:text-[31px]">

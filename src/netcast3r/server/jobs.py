@@ -14,6 +14,47 @@ from typing import Callable
 from .events import Event, EventBus
 
 
+class _ReasonCoalescer:
+    """Fold streaming reasoning pieces into one event per agent per window.
+
+    Providers stream reasoning token-by-token; the orchestrator forwards every
+    piece, and publishing plus persisting each one individually floods the
+    event bus, the SSE pipe, and SQLite (one write per token). Pieces are
+    buffered briefly and flushed as a single reasoning event instead.
+    """
+
+    FLUSH_DELAY = 0.4
+
+    def __init__(self, emit: Callable[[Event], None]):
+        self._emit = emit
+        self._lock = threading.Lock()
+        self._pending: dict[str, list[str]] = {}
+        self._timer: threading.Timer | None = None
+
+    def add(self, event: Event) -> None:
+        text = str((event.payload or {}).get("text") or "")
+        if not text.strip():
+            return
+        with self._lock:
+            self._pending.setdefault(event.agent, []).append(text)
+            if self._timer is None:
+                timer = threading.Timer(self.FLUSH_DELAY, self.flush)
+                timer.daemon = True
+                self._timer = timer
+                timer.start()
+
+    def flush(self) -> None:
+        with self._lock:
+            timer, self._timer = self._timer, None
+            pending, self._pending = self._pending, {}
+        if timer is not None:
+            timer.cancel()
+        for agent, pieces in pending.items():
+            text = "\n".join(piece.strip() for piece in pieces if piece.strip())
+            if text:
+                self._emit(Event(type="reasoning", agent=agent, payload={"text": text}))
+
+
 class JobManager:
     def __init__(self, index, bus: EventBus, runner: Callable, workers: int = 2):
         self.index = index
@@ -24,13 +65,23 @@ class JobManager:
         self._lock = threading.Lock()
 
     def _emit(self, run_id: str) -> Callable[[Event], None]:
-        def emit(event: Event) -> None:
+        def publish(event: Event) -> None:
             event.run_id = event.run_id or run_id
             self.bus.publish(event)
             try:
                 self.index.add_event(run_id, event.to_dict())
             except Exception:
                 pass
+
+        coalescer = _ReasonCoalescer(publish)
+
+        def emit(event: Event) -> None:
+            if event.type == "reasoning":
+                coalescer.add(event)
+                return
+            coalescer.flush()      # keep buffered reasoning ahead of newer events
+            publish(event)
+
         return emit
 
     def submit(self, run_id: str, target: str, options: dict | None = None) -> dict:

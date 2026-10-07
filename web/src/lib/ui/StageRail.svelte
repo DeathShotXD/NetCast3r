@@ -1,5 +1,6 @@
 <script lang="ts">
   import { STAGES } from '../../tokens';
+  import StageGlyph from './StageGlyph.svelte';
 
   let {
     current = '',
@@ -7,7 +8,7 @@
     dense = false
   }: { current?: string; finished?: string[]; dense?: boolean } = $props();
 
-  const stages = STAGES as unknown as { key: string; label: string; detail: string; glyph: string }[];
+  const stages = STAGES as unknown as { key: string; label: string; detail: string }[];
   const index = (key: string) => stages.findIndex((stage) => stage.key === key);
   const currentAt = $derived(index(current));
 
@@ -37,14 +38,15 @@
       >
         <div class="flex items-center gap-2">
           <span
-            class="mono grid h-5 w-5 place-items-center rounded border text-[10px]"
+            class="grid h-5 w-5 place-items-center rounded border"
             class:border-acid={active}
             class:text-acid={active}
             class:border-violet-deep={done && !active}
-            class:text-bone-dust={!active && !done}
+            class:text-violet={done && !active}
             class:border-indigo={!active && !done}
+            class:text-bone-dust={!active && !done}
           >
-            {#if done && !active}<span aria-hidden="true">&#10003;</span>{:else}{stage.glyph}{/if}
+            <StageGlyph stage={stage.key} class="h-3.5 w-3.5" />
           </span>
           <span class="eyebrow" class:text-acid={active}>{stage.label}</span>
           {#if active}

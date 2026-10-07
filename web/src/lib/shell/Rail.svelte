@@ -47,7 +47,7 @@
     : '-translate-x-full'}"
 >
   <div class="flex items-center gap-3 px-2">
-    <Mark class="h-9 w-9 shrink-0" />
+    <Mark class="h-9 w-9 shrink-0" live={!!running} />
     <div class="leading-tight">
       <p class="font-mono text-sm tracking-[0.2em] text-bone">NETCAST3R</p>
       <p class="eyebrow tracking-[0.24em]!">dashboard</p>

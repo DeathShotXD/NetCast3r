@@ -2,6 +2,7 @@
   import { AGENT_STAGE, SEVERITIES, STAGES, STATES } from '../../tokens';
   import { sevColor, sevShape, stateColor } from '../format';
   import Chip from '../ui/Chip.svelte';
+  import StageGlyph from '../ui/StageGlyph.svelte';
   import StageRail from '../ui/StageRail.svelte';
 
   const stages = STAGES as unknown as { key: string; label: string; detail: string; agent: string }[];
@@ -51,7 +52,10 @@
         <li class="flex gap-3">
           <span class="num w-6 shrink-0 text-xs text-slate">{String(i + 1).padStart(2, '0')}</span>
           <span>
-            <span class="mono text-sm text-bone">{stage.label}</span>
+            <span class="flex items-center gap-1.5">
+              <StageGlyph stage={stage.key} class="h-4 w-4 shrink-0 text-violet" />
+              <span class="mono text-sm text-bone">{stage.label}</span>
+            </span>
             <span class="block text-xs leading-relaxed text-bone-dust">{stage.detail}</span>
             <span class="mono block text-[11px] text-slate">
               agent: {stage.agent} -&gt; {(AGENT_STAGE as Record<string, string>)[stage.agent]}
