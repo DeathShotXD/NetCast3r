@@ -150,6 +150,13 @@ Notable changes to NetCast3r, newest first.
   banner's corrections apply -- ESCALATE, Evidence, and AUTONOMOUS, no AI
   wording -- and the scene adds a breathing moon, glowing eyes, blinking
   windows, travelling rail chevrons, and ticks that draw themselves.
+- The banner figure is replaced by a spider caster perched at the net hub:
+  eight curved legs grip the ribs, acid eyes and stripes catch the light,
+  silk tethers run from the spinnerets to the hanging credentials, and a
+  dark hub clearing keeps the body readable against the mesh. The four
+  credential cards spread into their own zones down the banner instead of
+  stacking, each on its own elliptical drift that swaps on rotation without
+  resetting, and the moon and city sit clear behind them.
 
 ### Fixed
 

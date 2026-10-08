@@ -604,22 +604,35 @@
   .badge-float {
     transform-box: fill-box;
     transform-origin: center;
-    animation: badge-drift 8s ease-in-out infinite alternate;
+    animation: drift-a 11s ease-in-out infinite;
   }
 
   .badge-float.f-b {
-    animation-duration: 9.4s;
-    animation-delay: -3.2s;
+    animation-name: drift-b;
+    animation-duration: 14s;
+    animation-delay: -4.5s;
   }
 
   .badge-float.f-c {
-    animation-duration: 7.2s;
-    animation-delay: -5.1s;
+    animation-name: drift-c;
+    animation-duration: 9s;
+    animation-delay: -7s;
+  }
+
+  .badge-float.f-d {
+    animation-name: drift-d;
+    animation-duration: 6.8s;
+    animation-delay: 0s;
   }
 
   .badge-shine {
+    transform-box: fill-box;
     animation: badge-shine 5.4s ease-in-out infinite;
     animation-delay: 1.4s;
+  }
+
+  .rot-in {
+    animation: rot-in 420ms var(--ease-enter) both;
   }
 
   /* ---- flame ring (Mark) ------------------------------------------------ */
@@ -645,6 +658,12 @@
     transform-box: view-box;
     transform-origin: 60px 60px;
     animation: nc-spin 46s linear infinite;
+  }
+
+  .caster-bob {
+    transform-box: fill-box;
+    transform-origin: center;
+    animation: caster-bob 7s ease-in-out infinite;
   }
 
   /* ---- backdrop embers -------------------------------------------------- */
@@ -1078,12 +1097,94 @@
   }
 }
 
-@keyframes badge-drift {
+/* card drift: each key follows its own slow ellipse so the banner never
+   falls into one shared bob. translation only -- a rotate here would make
+   the fill-box origin (which the shine sweep moves) shove the card around */
+@keyframes drift-a {
   0% {
-    transform: translateY(-3px) rotate(-1.1deg);
+    transform: translate(0, -5px);
+  }
+  25% {
+    transform: translate(6px, 0);
+  }
+  50% {
+    transform: translate(0, 5px);
+  }
+  75% {
+    transform: translate(-6px, 0);
   }
   100% {
-    transform: translateY(4px) rotate(1.3deg);
+    transform: translate(0, -5px);
+  }
+}
+
+@keyframes drift-b {
+  0% {
+    transform: translate(5px, -3px);
+  }
+  25% {
+    transform: translate(4px, 4px);
+  }
+  50% {
+    transform: translate(-5px, 3px);
+  }
+  75% {
+    transform: translate(-4px, -4px);
+  }
+  100% {
+    transform: translate(5px, -3px);
+  }
+}
+
+@keyframes drift-c {
+  0% {
+    transform: translate(0, 4px);
+  }
+  25% {
+    transform: translate(-5px, 0);
+  }
+  50% {
+    transform: translate(0, -4px);
+  }
+  75% {
+    transform: translate(5px, 0);
+  }
+  100% {
+    transform: translate(0, 4px);
+  }
+}
+
+@keyframes drift-d {
+  0% {
+    transform: translate(-5px, -4px);
+  }
+  25% {
+    transform: translate(5px, -4px);
+  }
+  50% {
+    transform: translate(5px, 4px);
+  }
+  75% {
+    transform: translate(-5px, 4px);
+  }
+  100% {
+    transform: translate(-5px, -4px);
+  }
+}
+
+@keyframes caster-bob {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-3px);
+  }
+}
+
+@keyframes rot-in {
+  from {
+    opacity: 0;
   }
 }
 

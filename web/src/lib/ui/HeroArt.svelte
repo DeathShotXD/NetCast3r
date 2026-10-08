@@ -57,13 +57,36 @@
     .map((b) => ({ x: b.x + b.w / 2, y: GROUND - b.h }))
     .filter((s) => s.x > 20 && s.x < W - 20);
 
+  // ---- the caster: a spider at the hub of the net ------------------------
+  // eight legs radiate from the origin, each anchored by a glowing silk tip
+  const LEGS = [
+    'M846 139 Q824 128 810 108 Q804 99 796 94',
+    'M845 144 Q818 143 800 140 Q792 139 784 137',
+    'M847 150 Q824 158 810 174 Q803 183 798 194',
+    'M851 153 Q842 172 836 190 Q833 200 832 212',
+    'M862 139 Q884 126 898 108 Q905 99 912 94',
+    'M863 144 Q892 142 910 138 Q920 136 928 133',
+    'M861 150 Q886 159 900 176 Q907 186 912 198',
+    'M857 154 Q866 174 870 192 Q872 202 872 214'
+  ];
+  const LEG_TIPS = [
+    { x: 796, y: 94 },
+    { x: 784, y: 137 },
+    { x: 798, y: 194 },
+    { x: 832, y: 212 },
+    { x: 912, y: 94 },
+    { x: 928, y: 133 },
+    { x: 912, y: 198 },
+    { x: 872, y: 214 }
+  ];
+
   // ---- the moon ---------------------------------------------------------
   const MOON = { cx: 686, cy: 150, r: 106 };
   const maria = [
-    { cx: 648, cy: 118, rx: 26, ry: 15, o: 0.18, rot: -18 },
-    { cx: 722, cy: 176, rx: 22, ry: 13, o: 0.16, rot: 24 },
-    { cx: 674, cy: 208, rx: 30, ry: 12, o: 0.15, rot: -6 },
-    { cx: 736, cy: 120, rx: 13, ry: 9, o: 0.17, rot: 0 }
+    { cx: 648, cy: 118, rx: 26, ry: 15, o: 0.26, rot: -18 },
+    { cx: 722, cy: 176, rx: 22, ry: 13, o: 0.24, rot: 24 },
+    { cx: 674, cy: 208, rx: 30, ry: 12, o: 0.22, rot: -6 },
+    { cx: 736, cy: 120, rx: 13, ry: 9, o: 0.25, rot: 0 }
   ];
 
   const stars = Array.from({ length: 12 }, () => ({
@@ -114,39 +137,38 @@
     .map((i) => ({ i, ...along(i, 1) }))
     .filter((t) => t.x < 1174 && t.y < 352);
 
-  // ---- the caught: four credential cards floating in the mesh -----------
+  // ---- the caught: four credential cards floating in the banner ---------
   const CARD_W = 176;
   const CARD_H = 38;
 
   type Item = { icon: string; label: string; value: string; accent: string };
-  type Slot = { x: number; y: number; rot: number; fl: string; delay: number; item?: Item; rotator?: boolean };
+  type Slot = { x: number; y: number; rot: number; fl: string; item?: Item; rotator?: boolean };
 
+  // each key sits in its own zone of the banner: top right, mid right,
+  // across the moon, and over the city below it
   const SLOTS: Slot[] = [
     {
-      x: 796,
-      y: 42,
-      rot: -4,
+      x: 884,
+      y: 30,
+      rot: -2,
       fl: 'f-a',
-      delay: 0,
       item: { icon: 'key', label: 'AWS_SECRET_ACCESS_KEY', value: 'wJalrXUtnFEMI********', accent: 'var(--nc-acid)' }
     },
     {
-      x: 852,
-      y: 84,
-      rot: -2,
+      x: 966,
+      y: 124,
+      rot: 2,
       fl: 'f-b',
-      delay: -2100,
       item: { icon: 'db', label: 'DATABASE_URL', value: 'postgres://user:pass@***', accent: 'var(--nc-acid)' }
     },
     {
-      x: 890,
-      y: 126,
-      rot: 3,
+      x: 596,
+      y: 172,
+      rot: -1.5,
       fl: 'f-c',
-      delay: -3600,
       item: { icon: 'cloud', label: 'API_KEY', value: 'sk_live_********', accent: 'var(--nc-acid)' }
     },
-    { x: 864, y: 168, rot: -3, fl: 'f-a', delay: -1400, rotator: true }
+    { x: 636, y: 254, rot: 2.5, fl: 'f-d', rotator: true }
   ];
 
   const ROT: Item[] = [
@@ -156,10 +178,8 @@
   ];
 
   const TETHERS = [
-    { ax: 974, ay: 64, i: 2, d: 0.46 },
-    { ax: 1030, ay: 108, i: 3, d: 0.42 },
-    { ax: 1064, ay: 150, i: 4, d: 0.6 },
-    { ax: 1042, ay: 196, i: 6, d: 0.62 }
+    { ax: 890, ay: 72, i: 3, d: 0.348 },
+    { ax: 966, ay: 142, i: 5, d: 0.5 }
   ];
 
   // ---- the report panel and the validation ladder ------------------------
@@ -202,10 +222,11 @@
   });
 </script>
 
-<!-- The caster: a hooded figure throws the net over the city. Recreated
-     from assets/NetCast3r-Banner.png -- moon and skyline behind, the
-     six-stage rail and validation ladder along the edges, credentials
-     snagged in the mesh. Dynamic copy overlays the left column. -->
+<!-- The caster: a spider throws the net over the city. Recreated from
+     assets/NetCast3r-Banner.png -- moon and skyline behind, the six-stage
+     rail and validation ladder along the edges, credentials caught in the
+     mesh and scattered across the banner. Dynamic copy overlays the left
+     column. -->
 <svg
   viewBox="0 0 {W} {H}"
   class={klass}
@@ -250,12 +271,6 @@
       <stop offset="1" stop-color="var(--nc-acid)" stop-opacity="0.38" />
     </radialGradient>
 
-    <linearGradient id="{id}-cloak" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="var(--nc-void_soft)" />
-      <stop offset="0.5" stop-color="var(--nc-violet_abyss)" stop-opacity="0.92" />
-      <stop offset="1" stop-color="var(--nc-void_soft)" />
-    </linearGradient>
-
     <linearGradient id="{id}-shine" x1="0" y1="0" x2="1" y2="0">
       <stop offset="0" stop-color="white" stop-opacity="0" />
       <stop offset="0.5" stop-color="white" stop-opacity="0.85" />
@@ -267,6 +282,12 @@
       <stop offset="0.5" stop-color="var(--nc-acid)" stop-opacity="0.13" />
       <stop offset="1" stop-color="var(--nc-acid)" stop-opacity="0" />
     </linearGradient>
+
+    <radialGradient id="{id}-hub" gradientUnits="userSpaceOnUse" cx={O.x} cy={O.y} r="34">
+      <stop offset="0" stop-color="var(--nc-void)" stop-opacity="0.78" />
+      <stop offset="0.62" stop-color="var(--nc-void)" stop-opacity="0.6" />
+      <stop offset="1" stop-color="var(--nc-void)" stop-opacity="0" />
+    </radialGradient>
 
     <clipPath id="{id}-clip" clipPathUnits="userSpaceOnUse">
       <rect width={CARD_W} height={CARD_H} rx="2" />
@@ -371,75 +392,49 @@
       {/each}
     </g>
 
-    <!-- the caster -->
+    <!-- the caster: a spider at the hub, legs braced across the mesh -->
     <g>
-      <!-- cloak + hood silhouette: shoulders flare, the brim notches in, the cowl points up -->
-      <path
-        d="M586 {GROUND} C588 274 596 240 614 216 C626 204 644 198 656 196 C640 186 628 166 630 138 C636 100 662 72 692 66 C722 72 748 100 754 138 C756 166 744 186 728 196 C740 198 758 204 770 216 C788 240 796 274 798 {GROUND} Z"
-        fill="url(#{id}-cloak)"
-      />
-      <!-- casting arm -->
-      <path
-        d="M756 208 C788 186 822 158 848 133 L858 141 C860 147 856 153 848 154 C822 172 796 196 774 220 C766 216 758 212 756 208 Z"
-        fill="url(#{id}-cloak)"
-      />
-      <!-- sleeve drape -->
-      <path
-        d="M834 164 C830 190 822 214 806 234 C816 208 820 184 822 164 Z"
-        fill="var(--nc-violet_abyss)"
-        opacity="0.85"
-      />
-      <!-- rim light: violet on the copy side, acid toward the net -->
-      <path
-        d="M586 {GROUND} C588 274 596 240 614 216 C626 204 644 198 656 196 C640 186 628 166 630 138 C636 100 662 72 692 66"
-        stroke="var(--nc-violet)"
-        stroke-width="1.4"
-        opacity="0.85"
-      />
-      <path
-        d="M692 66 C722 72 748 100 754 138 C756 166 744 186 728 196 C740 198 758 204 770 216 C788 240 796 274 798 {GROUND}"
-        stroke="var(--nc-acid)"
-        stroke-width="1.5"
-        opacity="0.9"
-      />
-      <path
-        d="M756 208 C788 186 822 158 848 133"
-        stroke="var(--nc-acid)"
-        stroke-width="1.5"
-        opacity="0.85"
-      />
-      <!-- brim hem under the chin -->
-      <path
-        d="M656 196 C676 205 710 205 728 196"
-        stroke="var(--nc-acid)"
-        stroke-width="1.3"
-        opacity="0.7"
-      />
-      <!-- face void + glowing eyes -->
-      <path
-        d="M662 120 C660 144 672 168 692 176 C712 168 724 144 722 120 C708 110 676 110 662 120 Z"
-        fill="var(--nc-void)"
-      />
-      <g class="eye-glow">
-        <ellipse cx="678" cy="143" rx="10" ry="6.5" fill="var(--nc-acid)" opacity="0.16" />
-        <ellipse cx="706" cy="143" rx="10" ry="6.5" fill="var(--nc-acid)" opacity="0.16" />
-        <path d="M670 147 L687 137 L688.5 143 L671.5 151 Z" fill="var(--nc-acid)" />
-        <path d="M697 137 L714 147 L712.5 151 L695.5 143 Z" fill="var(--nc-acid)" />
+      <!-- the web clears where the spider sits -->
+      <circle cx={O.x} cy={O.y} r="34" fill="url(#{id}-hub)" />
+      {#each LEGS as leg, i (i)}
+        <path d={leg} stroke="var(--nc-violet)" stroke-width="2.4" stroke-linecap="round" fill="none" opacity="0.95" />
+        <path
+          d={leg}
+          stroke="var(--nc-acid)"
+          stroke-width="1.1"
+          stroke-linecap="round"
+          fill="none"
+          opacity="0.6"
+          class="knot-pulse"
+          style="animation-delay:{i * 420}ms"
+        />
+      {/each}
+      {#each LEG_TIPS as tip, i (i)}
+        <circle cx={tip.x} cy={tip.y} r="3.2" fill="var(--nc-acid)" opacity="0.16" />
+        <circle cx={tip.x} cy={tip.y} r="1.6" fill="var(--nc-acid)" class="twinkle" style="animation-delay:{i * 340}ms" />
+      {/each}
+
+      <!-- body: breathes inside the standing legs -->
+      <g class="caster-bob">
+        <circle cx={O.x} cy={O.y} r="17" fill="var(--nc-acid)" opacity="0.13" class="knot-pulse" />
+        <!-- pedipalps -->
+        <path d="M847 141 Q841 137 837 134" stroke="var(--nc-violet)" stroke-width="1.7" stroke-linecap="round" fill="none" />
+        <path d="M847 148 Q841 152 837 155" stroke="var(--nc-violet)" stroke-width="1.7" stroke-linecap="round" fill="none" />
+        <!-- abdomen -->
+        <ellipse cx="878" cy="154" rx="17.5" ry="14" transform="rotate(24 878 154)" fill="var(--nc-void_soft)" stroke="var(--nc-violet)" stroke-width="1.3" />
+        <path d="M869 148 Q878 152 887 148.5" stroke="var(--nc-acid)" stroke-width="1.2" fill="none" opacity="0.8" />
+        <path d="M870 155 Q878 158.5 886 155" stroke="var(--nc-acid)" stroke-width="1" fill="none" opacity="0.55" />
+        <!-- cephalothorax -->
+        <ellipse cx={O.x} cy={O.y} rx="14" ry="11.5" fill="var(--nc-void)" stroke="var(--nc-violet)" stroke-width="1.3" />
+        <path d="M845 139 Q854 135.5 863 139" stroke="var(--nc-acid)" stroke-width="1.2" fill="none" opacity="0.7" />
+        <!-- eyes, facing the moon -->
+        <g class="eye-glow">
+          <circle cx="845.5" cy="141.5" r="1.3" fill="var(--nc-acid)" />
+          <circle cx="845.5" cy="145.5" r="1.3" fill="var(--nc-acid)" />
+          <circle cx="849" cy="139.5" r="1.15" fill="var(--nc-acid)" />
+          <circle cx="849" cy="143.5" r="1.15" fill="var(--nc-acid)" />
+        </g>
       </g>
-      <!-- chest sigil -->
-      <text
-        x="692"
-        y="242"
-        font-size="28"
-        font-weight="900"
-        text-anchor="middle"
-        fill="var(--nc-acid)"
-        opacity="0.9"
-        font-family={SANS}>N</text
-      >
-      <!-- the palm, where the net begins -->
-      <circle cx="856" cy="145" r="13" fill="var(--nc-acid)" opacity="0.18" class="knot-pulse" />
-      <circle cx="856" cy="145" r="4.2" fill="var(--nc-acid)" />
     </g>
 
     <!-- tethers: cards snagged on live knots -->
@@ -473,52 +468,64 @@
     <rect x="-170" y="0" width="150" height={H} fill="url(#{id}-beam)" class="hero-sweep" />
   </g>
 
-  <!-- the caught: four credential cards -->
-  {#snippet card(item: Item, x: number, y: number, rot: number, fl: string, delay: number)}
+  <!-- the caught: four credential cards. The frame lives and drifts for
+       good; only the credential inside the rotator slot swaps, so the
+       motion never resets when the key rotates. -->
+  {#snippet cardBody(item: Item)}
+    <g clip-path="url(#{id}-clip)">
+      <rect width={CARD_W} height={CARD_H} rx="2" fill="var(--nc-void)" stroke="var(--nc-violet_deep)" />
+      <rect x="0" y="0" width={CARD_W} height="2" fill="url(#{id}-shine)" class="badge-shine" />
+
+      <rect x="7" y="11" width="16" height="16" rx="2" fill="var(--nc-violet_abyss)" stroke="var(--nc-violet_deep)" />
+      <g
+        transform="translate(9.5,13.5)"
+        stroke={item.accent}
+        stroke-width="1.15"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+        fill="none"
+      >
+        {#if item.icon === 'key'}
+          <circle cx="4" cy="4" r="2.5" />
+          <path d="M5.8 5.8 L11.5 11.5 M9.6 9.6 l1.4 -1.4 M11 11 l1.3 1.3" />
+        {:else if item.icon === 'db'}
+          <ellipse cx="7" cy="3.4" rx="4.4" ry="1.9" />
+          <path d="M2.6 3.4 v7.2 c0 1.05 1.97 1.9 4.4 1.9 s4.4 -0.85 4.4 -1.9 V3.4" />
+          <path d="M2.6 7 c0 1.05 1.97 1.9 4.4 1.9 s4.4 -0.85 4.4 -1.9" />
+        {:else if item.icon === 'cloud'}
+          <path d="M4.2 10.6 a2.5 2.5 0 0 1 0.2 -4.95 a3.3 3.3 0 0 1 6.3 0.85 a2.3 2.3 0 0 1 -0.5 4.1 z" />
+        {:else if item.icon === 'card'}
+          <rect x="1.5" y="3" width="11" height="8" rx="1.5" />
+          <path d="M1.5 5.8 h11" />
+          <path d="M3.5 8.4 h3" />
+        {:else if item.icon === 'brackets'}
+          <path d="M5 2.5 L2.4 7 L5 11.5 M9 2.5 L11.6 7 L9 11.5" />
+        {:else}
+          <path d="M7 1.6 L11.8 3.4 v3.9 c0 2.9 -2.3 4.4 -4.8 5.2 c-2.5 -0.8 -4.8 -2.3 -4.8 -5.2 V3.4 z" />
+        {/if}
+      </g>
+
+      <text x="30" y="17" font-size="6.8" letter-spacing="0.05em" fill="var(--nc-bone_dust)" font-family={MONO}
+        >{item.label}</text
+      >
+      <text x="30" y="31" font-size="9.5" fill="var(--nc-acid)" font-family={MONO}>{item.value}</text>
+
+      <circle cx="160" cy="12" r="3.4" fill="var(--nc-acid)" opacity="0.16" />
+      <circle cx="160" cy="12" r="1.8" fill="var(--nc-acid)" class="led-blink" />
+    </g>
+  {/snippet}
+
+  {#snippet card(item: Item, x: number, y: number, rot: number, fl: string, rotating: boolean)}
     <g class="secret-badge">
-      <g class="badge-float {fl}" style="animation-delay:{delay}ms">
+      <g class="badge-float {fl}">
         <g transform="translate({x},{y}) rotate({rot})">
-          <g clip-path="url(#{id}-clip)">
-            <rect width={CARD_W} height={CARD_H} rx="2" fill="var(--nc-void)" stroke="var(--nc-violet_deep)" />
-            <rect x="0" y="0" width={CARD_W} height="2" fill="url(#{id}-shine)" class="badge-shine" />
-
-            <rect x="7" y="11" width="16" height="16" rx="2" fill="var(--nc-violet_abyss)" stroke="var(--nc-violet_deep)" />
-            <g
-              transform="translate(9.5,13.5)"
-              stroke={item.accent}
-              stroke-width="1.15"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-              fill="none"
-            >
-              {#if item.icon === 'key'}
-                <circle cx="4" cy="4" r="2.5" />
-                <path d="M5.8 5.8 L11.5 11.5 M9.6 9.6 l1.4 -1.4 M11 11 l1.3 1.3" />
-              {:else if item.icon === 'db'}
-                <ellipse cx="7" cy="3.4" rx="4.4" ry="1.9" />
-                <path d="M2.6 3.4 v7.2 c0 1.05 1.97 1.9 4.4 1.9 s4.4 -0.85 4.4 -1.9 V3.4" />
-                <path d="M2.6 7 c0 1.05 1.97 1.9 4.4 1.9 s4.4 -0.85 4.4 -1.9" />
-              {:else if item.icon === 'cloud'}
-                <path d="M4.2 10.6 a2.5 2.5 0 0 1 0.2 -4.95 a3.3 3.3 0 0 1 6.3 0.85 a2.3 2.3 0 0 1 -0.5 4.1 z" />
-              {:else if item.icon === 'card'}
-                <rect x="1.5" y="3" width="11" height="8" rx="1.5" />
-                <path d="M1.5 5.8 h11" />
-                <path d="M3.5 8.4 h3" />
-              {:else if item.icon === 'brackets'}
-                <path d="M5 2.5 L2.4 7 L5 11.5 M9 2.5 L11.6 7 L9 11.5" />
-              {:else}
-                <path d="M7 1.6 L11.8 3.4 v3.9 c0 2.9 -2.3 4.4 -4.8 5.2 c-2.5 -0.8 -4.8 -2.3 -4.8 -5.2 V3.4 z" />
-              {/if}
-            </g>
-
-            <text x="30" y="17" font-size="6.8" letter-spacing="0.05em" fill="var(--nc-bone_dust)" font-family={MONO}
-              >{item.label}</text
-            >
-            <text x="30" y="31" font-size="9.5" fill="var(--nc-acid)" font-family={MONO}>{item.value}</text>
-
-            <circle cx="160" cy="12" r="3.4" fill="var(--nc-acid)" opacity="0.16" />
-            <circle cx="160" cy="12" r="1.8" fill="var(--nc-acid)" class="led-blink" />
-          </g>
+          {#if rotating}
+            {#key rIdx}
+              <g class="rot-in">{@render cardBody(ROT[rIdx])}</g>
+            {/key}
+          {:else}
+            {@render cardBody(item)}
+          {/if}
 
           <path d="M0.5 7 v-6 h6" stroke="var(--nc-acid)" stroke-width="1.2" opacity="0.75" />
           <path d="M{CARD_W - 6.5} {CARD_H - 0.5} h6 v-6" stroke="var(--nc-acid)" stroke-width="1.2" opacity="0.75" />
@@ -528,13 +535,7 @@
   {/snippet}
 
   {#each SLOTS as slot, i (i)}
-    {#if slot.rotator}
-      {#key rIdx}
-        {@render card(ROT[rIdx], slot.x, slot.y, slot.rot, slot.fl, slot.delay)}
-      {/key}
-    {:else}
-      {@render card(slot.item!, slot.x, slot.y, slot.rot, slot.fl, slot.delay)}
-    {/if}
+    {@render card(slot.item ?? ROT[rIdx], slot.x, slot.y, slot.rot, slot.fl, slot.rotator ?? false)}
   {/each}
 
   <!-- report panel -->
