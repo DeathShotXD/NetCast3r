@@ -58,26 +58,40 @@
     .filter((s) => s.x > 20 && s.x < W - 20);
 
   // ---- the caster: a spider at the hub of the net ------------------------
-  // eight legs radiate from the origin, each anchored by a glowing silk tip
+  // eight jointed legs braced across the ribs, feet anchored by glowing
+  // silk tips; each leg bends at a raised knee, the stance of a spider
+  // holding the mesh taut
   const LEGS = [
-    'M846 139 Q824 128 810 108 Q804 99 796 94',
-    'M845 144 Q818 143 800 140 Q792 139 784 137',
-    'M847 150 Q824 158 810 174 Q803 183 798 194',
-    'M851 153 Q842 172 836 190 Q833 200 832 212',
-    'M862 139 Q884 126 898 108 Q905 99 912 94',
-    'M863 144 Q892 142 910 138 Q920 136 928 133',
-    'M861 150 Q886 159 900 176 Q907 186 912 198',
-    'M857 154 Q866 174 870 192 Q872 202 872 214'
+    // left side, front to back
+    'M838 135 Q823 119 815 106 Q807 99 796 94',
+    'M834 142 Q808 134 797 128 Q789 130 778 140',
+    'M835 152 Q812 160 801 172 Q794 184 786 196',
+    'M842 159 Q834 181 832 196 Q830 206 828 214',
+    // right side, front to back
+    'M857 135 Q875 117 884 106 Q897 99 912 94',
+    'M862 142 Q890 132 905 127 Q919 127 930 132',
+    'M861 153 Q888 162 900 175 Q908 188 914 200',
+    'M855 159 Q866 181 869 197 Q871 208 874 216'
+  ];
+  const LEG_KNEES = [
+    { x: 815, y: 106 },
+    { x: 797, y: 128 },
+    { x: 801, y: 172 },
+    { x: 832, y: 196 },
+    { x: 884, y: 106 },
+    { x: 905, y: 127 },
+    { x: 900, y: 175 },
+    { x: 869, y: 197 }
   ];
   const LEG_TIPS = [
     { x: 796, y: 94 },
-    { x: 784, y: 137 },
-    { x: 798, y: 194 },
-    { x: 832, y: 212 },
+    { x: 778, y: 140 },
+    { x: 786, y: 196 },
+    { x: 828, y: 214 },
     { x: 912, y: 94 },
-    { x: 928, y: 133 },
-    { x: 912, y: 198 },
-    { x: 872, y: 214 }
+    { x: 930, y: 132 },
+    { x: 914, y: 200 },
+    { x: 874, y: 216 }
   ];
 
   // ---- the moon ---------------------------------------------------------
@@ -144,16 +158,9 @@
   type Item = { icon: string; label: string; value: string; accent: string };
   type Slot = { x: number; y: number; rot: number; fl: string; item?: Item; rotator?: boolean };
 
-  // each key sits in its own zone of the banner: top right, mid right,
-  // across the moon, and over the city below it
+  // each key sits in its own zone: the live database key rides the mesh on
+  // the right, the other two drift low over the sleeping city
   const SLOTS: Slot[] = [
-    {
-      x: 884,
-      y: 30,
-      rot: -2,
-      fl: 'f-a',
-      item: { icon: 'key', label: 'AWS_SECRET_ACCESS_KEY', value: 'wJalrXUtnFEMI********', accent: 'var(--nc-acid)' }
-    },
     {
       x: 966,
       y: 124,
@@ -162,13 +169,13 @@
       item: { icon: 'db', label: 'DATABASE_URL', value: 'postgres://user:pass@***', accent: 'var(--nc-acid)' }
     },
     {
-      x: 596,
-      y: 172,
+      x: 17,
+      y: 270,
       rot: -1.5,
       fl: 'f-c',
       item: { icon: 'cloud', label: 'API_KEY', value: 'sk_live_********', accent: 'var(--nc-acid)' }
     },
-    { x: 636, y: 254, rot: 2.5, fl: 'f-d', rotator: true }
+    { x: 230, y: 272, rot: 2.5, fl: 'f-d', rotator: true }
   ];
 
   const ROT: Item[] = [
@@ -177,10 +184,8 @@
     { icon: 'shield', label: 'JWT_SIGNING_KEY', value: 'eyJhbGciOi*****', accent: 'var(--nc-violet)' }
   ];
 
-  const TETHERS = [
-    { ax: 890, ay: 72, i: 3, d: 0.348 },
-    { ax: 966, ay: 142, i: 5, d: 0.5 }
-  ];
+  // only the key that rides the mesh is tied into it; the low cards drift free
+  const TETHERS = [{ ax: 966, ay: 142, i: 5, d: 0.5 }];
 
   // ---- the report panel and the validation ladder ------------------------
   const REPORT = { x: 830, y: 216, w: 200, h: 100 };
@@ -283,10 +288,32 @@
       <stop offset="1" stop-color="var(--nc-acid)" stop-opacity="0" />
     </linearGradient>
 
-    <radialGradient id="{id}-hub" gradientUnits="userSpaceOnUse" cx={O.x} cy={O.y} r="34">
-      <stop offset="0" stop-color="var(--nc-void)" stop-opacity="0.78" />
-      <stop offset="0.62" stop-color="var(--nc-void)" stop-opacity="0.6" />
+    <radialGradient id="{id}-hub" gradientUnits="userSpaceOnUse" cx={O.x} cy={O.y} r="46">
+      <stop offset="0" stop-color="var(--nc-void)" stop-opacity="0.82" />
+      <stop offset="0.62" stop-color="var(--nc-void)" stop-opacity="0.62" />
       <stop offset="1" stop-color="var(--nc-void)" stop-opacity="0" />
+    </radialGradient>
+
+    <linearGradient id="{id}-chitin" gradientUnits="userSpaceOnUse" x1="828" y1="130" x2="866" y2="160">
+      <stop offset="0" stop-color="var(--nc-violet_deep)" />
+      <stop offset="0.55" stop-color="var(--nc-violet_abyss)" />
+      <stop offset="1" stop-color="var(--nc-void)" />
+    </linearGradient>
+
+    <linearGradient id="{id}-chitinA" gradientUnits="userSpaceOnUse" x1="858" y1="140" x2="910" y2="178">
+      <stop offset="0" stop-color="var(--nc-violet_deep)" />
+      <stop offset="0.5" stop-color="var(--nc-violet_abyss)" />
+      <stop offset="1" stop-color="var(--nc-void)" />
+    </linearGradient>
+
+    <radialGradient id="{id}-cast-shadow" gradientUnits="userSpaceOnUse" cx="866" cy="172" r="44">
+      <stop offset="0" stop-color="var(--nc-void)" stop-opacity="0.66" />
+      <stop offset="1" stop-color="var(--nc-void)" stop-opacity="0" />
+    </radialGradient>
+
+    <radialGradient id="{id}-eye-halo" gradientUnits="userSpaceOnUse" cx="838" cy="144" r="14">
+      <stop offset="0" stop-color="var(--nc-acid)" stop-opacity="0.24" />
+      <stop offset="1" stop-color="var(--nc-acid)" stop-opacity="0" />
     </radialGradient>
 
     <clipPath id="{id}-clip" clipPathUnits="userSpaceOnUse">
@@ -392,47 +419,72 @@
       {/each}
     </g>
 
-    <!-- the caster: a spider at the hub, legs braced across the mesh -->
+    <!-- the caster: a spider at the hub, jointed legs braced across the mesh -->
     <g>
       <!-- the web clears where the spider sits -->
-      <circle cx={O.x} cy={O.y} r="34" fill="url(#{id}-hub)" />
+      <circle cx={O.x} cy={O.y} r="46" fill="url(#{id}-hub)" />
+      <!-- soft cast shadow under the body -->
+      <ellipse cx="866" cy="174" rx="44" ry="17" fill="url(#{id}-cast-shadow)" />
+
+      <!-- legs: chitin base, violet body, acid pulse, jointed knees -->
       {#each LEGS as leg, i (i)}
-        <path d={leg} stroke="var(--nc-violet)" stroke-width="2.4" stroke-linecap="round" fill="none" opacity="0.95" />
+        <path d={leg} stroke="var(--nc-void)" stroke-width="4.8" stroke-linecap="round" fill="none" opacity="0.92" />
+        <path d={leg} stroke="var(--nc-violet_abyss)" stroke-width="3.2" stroke-linecap="round" fill="none" />
+        <path d={leg} stroke="var(--nc-violet)" stroke-width="1.5" stroke-linecap="round" fill="none" opacity="0.95" />
         <path
           d={leg}
           stroke="var(--nc-acid)"
-          stroke-width="1.1"
+          stroke-width="0.8"
           stroke-linecap="round"
           fill="none"
-          opacity="0.6"
+          opacity="0.5"
           class="knot-pulse"
           style="animation-delay:{i * 420}ms"
         />
+        <circle cx={LEG_KNEES[i].x} cy={LEG_KNEES[i].y} r="2.7" fill="var(--nc-violet_abyss)" stroke="var(--nc-violet)" stroke-width="1" />
+        <circle cx={LEG_KNEES[i].x} cy={LEG_KNEES[i].y} r="1" fill="var(--nc-acid)" opacity="0.85" />
       {/each}
       {#each LEG_TIPS as tip, i (i)}
         <circle cx={tip.x} cy={tip.y} r="3.2" fill="var(--nc-acid)" opacity="0.16" />
         <circle cx={tip.x} cy={tip.y} r="1.6" fill="var(--nc-acid)" class="twinkle" style="animation-delay:{i * 340}ms" />
       {/each}
 
-      <!-- body: breathes inside the standing legs -->
+      <!-- body: breathes above the standing legs -->
       <g class="caster-bob">
-        <circle cx={O.x} cy={O.y} r="17" fill="var(--nc-acid)" opacity="0.13" class="knot-pulse" />
-        <!-- pedipalps -->
-        <path d="M847 141 Q841 137 837 134" stroke="var(--nc-violet)" stroke-width="1.7" stroke-linecap="round" fill="none" />
-        <path d="M847 148 Q841 152 837 155" stroke="var(--nc-violet)" stroke-width="1.7" stroke-linecap="round" fill="none" />
-        <!-- abdomen -->
-        <ellipse cx="878" cy="154" rx="17.5" ry="14" transform="rotate(24 878 154)" fill="var(--nc-void_soft)" stroke="var(--nc-violet)" stroke-width="1.3" />
-        <path d="M869 148 Q878 152 887 148.5" stroke="var(--nc-acid)" stroke-width="1.2" fill="none" opacity="0.8" />
-        <path d="M870 155 Q878 158.5 886 155" stroke="var(--nc-acid)" stroke-width="1" fill="none" opacity="0.55" />
+        <!-- pedicel -->
+        <path d="M857 151 Q862 153 867 156" stroke="var(--nc-void)" stroke-width="6" stroke-linecap="round" fill="none" />
+
+        <!-- abdomen, angled down-right toward the spinnerets -->
+        <g transform="rotate(30 884 158)">
+          <ellipse cx="884" cy="158" rx="25" ry="19.5" fill="url(#{id}-chitinA)" stroke="var(--nc-violet)" stroke-width="1.4" />
+          <path d="M866 147 Q884 139 902 149" stroke="var(--nc-bone)" stroke-width="1.6" fill="none" opacity="0.2" stroke-linecap="round" />
+          <path d="M870 154 Q884 160 898 153" stroke="var(--nc-acid)" stroke-width="1.3" fill="none" opacity="0.55" />
+          <path d="M871 162 Q884 168 897 161" stroke="var(--nc-acid)" stroke-width="1.1" fill="none" opacity="0.38" />
+          <path d="M873 170 Q884 175 895 169" stroke="var(--nc-acid)" stroke-width="0.9" fill="none" opacity="0.24" />
+        </g>
+        <!-- spinnerets -->
+        <ellipse cx="907" cy="171" rx="3.6" ry="2.5" fill="var(--nc-void)" stroke="var(--nc-violet)" stroke-width="0.9" transform="rotate(38 907 171)" />
+
         <!-- cephalothorax -->
-        <ellipse cx={O.x} cy={O.y} rx="14" ry="11.5" fill="var(--nc-void)" stroke="var(--nc-violet)" stroke-width="1.3" />
-        <path d="M845 139 Q854 135.5 863 139" stroke="var(--nc-acid)" stroke-width="1.2" fill="none" opacity="0.7" />
-        <!-- eyes, facing the moon -->
+        <ellipse cx="846" cy="145" rx="17" ry="13.5" fill="url(#{id}-chitin)" stroke="var(--nc-violet)" stroke-width="1.4" />
+        <path d="M833 139 Q846 131 860 138" stroke="var(--nc-bone)" stroke-width="1.5" fill="none" opacity="0.22" stroke-linecap="round" />
+        <path d="M834 153 Q846 159 858 153" stroke="var(--nc-violet_deep)" stroke-width="1.4" fill="none" opacity="0.75" stroke-linecap="round" />
+
+        <!-- chelicerae and pedipalps, facing the moon -->
+        <path d="M833 149 Q827 152 826 157" stroke="var(--nc-void)" stroke-width="2.8" stroke-linecap="round" fill="none" />
+        <path d="M826 157 Q825 160 828 162" stroke="var(--nc-violet)" stroke-width="1.6" stroke-linecap="round" fill="none" />
+        <path d="M836 137 Q825 132 819 136 Q816 141 820 146" stroke="var(--nc-violet_abyss)" stroke-width="2.6" stroke-linecap="round" fill="none" />
+        <path d="M835 156 Q824 160 820 165" stroke="var(--nc-violet_abyss)" stroke-width="2.6" stroke-linecap="round" fill="none" />
+
+        <!-- eyes -->
         <g class="eye-glow">
-          <circle cx="845.5" cy="141.5" r="1.3" fill="var(--nc-acid)" />
-          <circle cx="845.5" cy="145.5" r="1.3" fill="var(--nc-acid)" />
-          <circle cx="849" cy="139.5" r="1.15" fill="var(--nc-acid)" />
-          <circle cx="849" cy="143.5" r="1.15" fill="var(--nc-acid)" />
+          <circle cx="838" cy="145" r="14" fill="url(#{id}-eye-halo)" />
+          <circle cx="834.5" cy="143" r="1.6" fill="var(--nc-acid)" />
+          <circle cx="834.5" cy="148.5" r="1.6" fill="var(--nc-acid)" />
+          <circle cx="838.5" cy="140.5" r="1.3" fill="var(--nc-acid)" />
+          <circle cx="838.5" cy="145.5" r="1.3" fill="var(--nc-acid)" />
+          <circle cx="834.5" cy="143" r="0.6" fill="var(--nc-bone)" />
+          <circle cx="834.5" cy="148.5" r="0.6" fill="var(--nc-bone)" />
         </g>
       </g>
     </g>

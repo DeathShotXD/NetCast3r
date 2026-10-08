@@ -3,7 +3,7 @@
   import type { Screen } from '../types';
   import { countup } from '../actions';
   import Mark from '../ui/Mark.svelte';
-  import NetMotif from '../ui/NetMotif.svelte';
+  import NetScope from '../ui/NetScope.svelte';
 
   let {
     open = false,
@@ -85,25 +85,46 @@
 
   <!-- status module: the rail's midsection earns its keep -->
   <div class="mt-auto hidden min-h-0 flex-1 flex-col gap-3 pt-4 [@media(min-height:680px)]:flex">
-    <div class="panel panel-hud relative min-h-[180px] flex-1 overflow-hidden p-4">
-      <NetMotif class="pointer-events-none absolute inset-x-0 bottom-0 h-[130px] w-full opacity-60" animated={false} />
+    <div class="panel panel-hud relative min-h-[200px] flex-1 overflow-hidden p-3">
       <div class="relative z-[1] flex h-full flex-col gap-2">
-        <p class="eyebrow">net status</p>
+        <div class="flex items-center justify-between gap-2">
+          <p class="eyebrow">net status</p>
+          {#if running}
+            <span class="chip" style="color:var(--nc-acid)">
+              <span class="pulse-live h-[7px] w-[7px] rounded-full bg-acid" aria-hidden="true"></span>
+              {running.status === 'queued' ? 'queued' : 'casting'}
+            </span>
+          {:else}
+            <span class="chip" style="color:var(--nc-ash)">standby</span>
+          {/if}
+        </div>
         {#if running}
           <p class="mono truncate text-xs text-acid">{running.target}</p>
-          <span class="chip self-start" style="color:var(--nc-acid)">
-            <span class="pulse-live h-[7px] w-[7px] rounded-full bg-acid" aria-hidden="true"></span>
-            {running.status === 'queued' ? 'queued' : 'casting'}
-          </span>
-        {:else}
-          <p class="mono text-xs leading-relaxed text-bone-dust">idle // no scan running</p>
         {/if}
-        <div class="mt-auto grid grid-cols-2 gap-2 border-t border-indigo-deep pt-2.5">
+
+        <!-- scope: the instrument well -->
+        <div
+          class="relative min-h-[92px] flex-1 overflow-hidden rounded-md border border-indigo-deep bg-void"
+          aria-hidden="true"
+        >
+          <NetScope class="absolute inset-0 h-full w-full" active={!!running} />
+          <div class="pointer-events-none absolute inset-x-0 bottom-1.5 text-center">
+            {#if running}
+              <span class="mono text-[10px] tracking-[0.08em] text-acid">casting // mesh live</span>
+            {:else}
+              <span class="mono text-[10px] tracking-[0.08em] text-slate">idle // no scan running</span>
+              <span class="term-cursor ml-1 inline-block h-[9px] w-[5px] bg-acid align-[-1px]" aria-hidden="true"
+              ></span>
+            {/if}
+          </div>
+        </div>
+
+        <div class="grid grid-cols-2 gap-2 border-t border-indigo-deep pt-2.5">
           <div>
             <p class="eyebrow">runs</p>
             <p class="num mt-0.5 text-sm text-bone" use:countup={store.totals?.runs ?? 0}>0</p>
           </div>
-          <div>
+          <div class="border-l border-indigo-deep pl-2">
             <p class="eyebrow">findings</p>
             <p class="num mt-0.5 text-sm text-acid" use:countup={store.totals?.findings ?? 0}>0</p>
           </div>

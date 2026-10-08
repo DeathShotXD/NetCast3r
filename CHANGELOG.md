@@ -157,6 +157,15 @@ Notable changes to NetCast3r, newest first.
   credential cards spread into their own zones down the banner instead of
   stacking, each on its own elliptical drift that swaps on rotation without
   resetting, and the moon and city sit clear behind them.
+- The banner composition follows the operator's notes: the AWS card is
+  dropped, the API key and the rotating credential move into the empty
+  bottom-left over the city, and the database key stays tethered to the
+  mesh on the right. The spider grows jointed legs with raised knees,
+  chitin gradients, a soft cast shadow, and subtler abdomen markings. The
+  rail's net status module becomes an instrument: a scope well draws the
+  cast net with scan pulses running down every rib, a sonar ring sweeps
+  from the hand, a standby chip and blinking cursor frame the readout, and
+  the runs and findings counts split on a hairline.
 
 ### Fixed
 

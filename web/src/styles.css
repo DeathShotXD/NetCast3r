@@ -635,6 +635,18 @@
     animation: rot-in 420ms var(--ease-enter) both;
   }
 
+  /* ---- sidebar net scope (NetScope) ------------------------------------ */
+
+  .scope-run path {
+    stroke-dasharray: 18 240;
+    stroke-dashoffset: 258;
+    animation: dash-run 2.4s linear infinite;
+  }
+
+  .scope-run.hot path {
+    animation-duration: 1.3s;
+  }
+
   /* ---- flame ring (Mark) ------------------------------------------------ */
 
   .flame-shard {
@@ -1256,6 +1268,12 @@
   }
   50% {
     opacity: 0.32;
+  }
+}
+
+@keyframes dash-run {
+  to {
+    stroke-dashoffset: 0;
   }
 }
 
