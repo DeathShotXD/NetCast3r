@@ -124,6 +124,24 @@ Notable changes to NetCast3r, newest first.
   terminal, credential cards, radar, and glitch bars sit in spaced bays
   down its length instead of piling into one corner, with the copy clear
   behind a left fade.
+- The home banner keeps one focal object now: the net sweeps the full
+  width and a single credential card hangs in the mesh on two tethers,
+  replacing the crowded collage of seal, stamp, terminal, radar, and extra
+  cards. The terminal readout lives on as a stream strip under the last
+  run panel, showing the run's last lines behind a live chip.
+- The overview grew data-ink: each KPI tile carries a share meter that
+  fills on load (triage split, hits per endpoint), recent findings pair a
+  confidence bar with every row, recent runs show their finding count,
+  and the rail's findings item wears a badge that turns acid while
+  candidates wait.
+- Findings gained a confidence column with a per-finding meter, a sticky
+  header over a scroll-bounded table, and a severity accent bar on row
+  hover; the detail drawer draws the same meter next to its percentage.
+  Run history rows pick up the status accent and a breathing chip while a
+  scan runs.
+- A command palette on ctrl+K, with a keycap in the top bar, filters every
+  screen and the live-run actions with arrow-key selection, and the slash
+  key jumps to the findings search from anywhere.
 
 ### Fixed
 

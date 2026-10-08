@@ -110,31 +110,30 @@
         hint={q || severity || triage ? '> tip: leave a filter blank to include everything' : ''}
       />
     {:else}
-      <div class="overflow-x-auto">
-        <table class="w-full min-w-[760px] border-collapse text-left">
+      <div class="max-h-[68vh] overflow-auto">
+        <table class="sticky-head w-full min-w-[860px] border-collapse text-left">
           <thead>
             <tr class="border-b border-indigo-deep">
               <th class="eyebrow px-4 py-3">severity</th>
               <th class="eyebrow px-4 py-3">finding</th>
               <th class="eyebrow px-4 py-3">value</th>
+              <th class="eyebrow px-4 py-3">confidence</th>
               <th class="eyebrow px-4 py-3">state</th>
               <th class="eyebrow px-4 py-3">seen</th>
             </tr>
           </thead>
           <tbody>
             {#each items as finding (finding.id)}
+              {@const sev = finding.severity_override || finding.severity}
               <tr
                 class="row-link cursor-pointer border-b border-indigo-deep/60 last:border-0"
+                style="--row-accent:{sevColor(sev)}"
                 onclick={() => open(finding)}
                 onkeydown={(event) => event.key === 'Enter' && open(finding)}
                 tabindex="0"
               >
                 <td class="px-4 py-3">
-                  <Chip
-                    label={finding.severity_override || finding.severity}
-                    color={sevColor(finding.severity_override || finding.severity)}
-                    shape={sevShape(finding.severity_override || finding.severity)}
-                  />
+                  <Chip label={sev} color={sevColor(sev)} shape={sevShape(sev)} />
                 </td>
                 <td class="max-w-[320px] px-4 py-3">
                   <span class="block truncate text-sm text-bone">{finding.title}</span>
@@ -142,6 +141,16 @@
                 </td>
                 <td class="mono max-w-[220px] truncate px-4 py-3 text-xs text-bone-dust">
                   {finding.value}
+                </td>
+                <td class="px-4 py-3">
+                  <span class="flex items-center gap-2">
+                    <span class="num text-xs text-bone">{Math.round((finding.confidence ?? 0) * 100)}%</span>
+                    <span
+                      class="meter conf"
+                      style="--m:{Math.min(1, finding.confidence ?? 0)};--m-color:{sevColor(sev)}"
+                      aria-hidden="true"><i></i
+                    ></span>
+                  </span>
                 </td>
                 <td class="px-4 py-3 text-xs text-bone-dust">{triageLabel(finding.triage_status)}</td>
                 <td class="mono whitespace-nowrap px-4 py-3 text-xs text-ash">{ago(finding.created_at)}</td>
@@ -194,7 +203,14 @@
         </div>
         <div class="panel px-3 py-2">
           <dt class="eyebrow">confidence</dt>
-          <dd class="num mt-1 text-sm text-bone">{Math.round((selected.confidence ?? 0) * 100)}%</dd>
+          <dd class="mt-1 flex items-center gap-2">
+            <span class="num text-sm text-bone">{Math.round((selected.confidence ?? 0) * 100)}%</span>
+            <span
+              class="meter flex-1"
+              style="--m:{Math.min(1, selected.confidence ?? 0)};--m-color:{sevColor(selected.severity_override || selected.severity)}"
+              aria-hidden="true"><i></i
+            ></span>
+          </dd>
         </div>
         <div class="panel col-span-2 px-3 py-2">
           <dt class="eyebrow">value (masked)</dt>

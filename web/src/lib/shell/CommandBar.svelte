@@ -7,6 +7,7 @@
   }: { onMenu?: () => void } = $props();
 
   let search = $state('');
+  let searchFocused = $state(false);
 
   const labels: Record<string, string> = {
     home: 'home',
@@ -37,7 +38,7 @@
   class:run-line={scanActive}
 >
   <button class="btn btn-quiet px-2! lg:hidden" type="button" onclick={onMenu} aria-label="open navigation">
-    <span aria-hidden="true">≡</span>
+    <span aria-hidden="true">=</span>
   </button>
 
   <p class="mono flex min-w-0 items-center gap-2 truncate text-sm text-bone-dust">
@@ -59,15 +60,35 @@
   </span>
 
   <form class="ml-auto flex items-center gap-2" onsubmit={submit} role="search">
-    <input
-      class="field w-[clamp(120px,26vw,260px)]! py-1.5! text-sm!"
-      type="search"
-      placeholder="search findings"
-      aria-label="search findings"
-      bind:value={search}
-    />
+    <span class="relative inline-flex">
+      <input
+        class="field w-[clamp(120px,26vw,260px)]! py-1.5! text-sm!"
+        type="search"
+        placeholder="search findings"
+        aria-label="search findings"
+        data-search
+        bind:value={search}
+        onfocus={() => (searchFocused = true)}
+        onblur={() => (searchFocused = false)}
+      />
+      {#if !search && !searchFocused}
+        <span class="kbd pointer-events-none absolute right-2 top-1/2 -translate-y-1/2" aria-hidden="true"
+          >/</span
+        >
+      {/if}
+    </span>
     <button class="btn px-3! py-1.5!" type="submit" aria-label="search">go</button>
   </form>
+
+  <button
+    class="kbd hidden cursor-pointer transition-colors hover:border-violet-deep hover:text-bone sm:inline-flex"
+    type="button"
+    onclick={() => (store.palette = true)}
+    title="open the command palette"
+    aria-label="open command palette"
+  >
+    ctrl k
+  </button>
 
   <button
     class="btn btn-acid py-1.5!"

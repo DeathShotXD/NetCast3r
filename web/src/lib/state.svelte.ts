@@ -12,6 +12,7 @@ class Store {
   locked = $state(false);
   ready = $state(false);
   busy = $state('');
+  palette = $state(false);
   query = $state('');
   toasts = $state<Toast[]>([]);
   toastSeq = 0;

@@ -11,6 +11,7 @@
   import NewScan from './lib/screens/NewScan.svelte';
   import Runs from './lib/screens/Runs.svelte';
   import Backdrop from './lib/ui/Backdrop.svelte';
+  import Palette from './lib/ui/Palette.svelte';
   import ToastHost from './lib/ui/ToastHost.svelte';
   import Unlock from './lib/ui/Unlock.svelte';
 
@@ -18,6 +19,29 @@
 
   onMount(() => {
     void store.boot();
+
+    const onKey = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null;
+      const typing =
+        !!target &&
+        (target.tagName === 'INPUT' ||
+          target.tagName === 'TEXTAREA' ||
+          target.tagName === 'SELECT' ||
+          target.isContentEditable);
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') {
+        event.preventDefault();
+        store.palette = !store.palette;
+        return;
+      }
+      if (store.palette) return;
+      if (event.key === '/' && !typing) {
+        event.preventDefault();
+        document.querySelector<HTMLInputElement>('header [data-search]')?.focus();
+      }
+    };
+
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
   });
 </script>
 
@@ -62,4 +86,5 @@
   </div>
 
   <ToastHost />
+  <Palette />
 {/if}

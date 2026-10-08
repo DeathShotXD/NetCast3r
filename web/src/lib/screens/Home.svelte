@@ -11,6 +11,7 @@
 
   let stage = $state<{ current: string; finished: string[] }>({ current: '', finished: [] });
   let recent = $state<Awaited<ReturnType<typeof api.findings>>['items']>([]);
+  let tail = $state<{ seq: number; text: string; error: boolean }[]>([]);
   const stages = STAGES as unknown as { key: string }[];
 
   const totals = $derived(store.totals);
@@ -19,6 +20,14 @@
   const openFindings = $derived(count('new') + count('in_progress'));
   const confirmed = $derived(count('confirmed'));
   const escalated = $derived(count('escalated'));
+
+  const triageTotal = $derived(
+    Object.values(totals?.triage ?? {}).reduce((sum, n) => sum + n, 0)
+  );
+  const share = (n: number) => (triageTotal > 0 ? Math.min(1, n / triageTotal) : 0);
+  const endpointsRead = $derived(
+    (lastRun?.counts?.endpoints ?? 0) + (lastRun?.counts?.js_files ?? 0)
+  );
 
   const hero = $derived.by(() => {
     if (store.runs.some((run) => run.status === 'running')) {
@@ -74,14 +83,21 @@
   });
 
   const kpis = $derived([
-    { label: 'confirmed', value: confirmed, note: 'validated access', color: sevColor('critical') },
-    { label: 'needs review', value: openFindings, note: 'candidates waiting', color: 'var(--nc-gold)' },
-    { label: 'escalate-ready', value: escalated, note: 'highest proven impact', color: 'var(--nc-violet)' },
+    { label: 'confirmed', value: confirmed, note: 'validated access', color: sevColor('critical'), meter: share(confirmed) },
+    { label: 'needs review', value: openFindings, note: 'candidates waiting', color: 'var(--nc-gold)', meter: share(openFindings) },
+    {
+      label: 'escalate-ready',
+      value: escalated,
+      note: 'highest proven impact',
+      color: 'var(--nc-violet)',
+      meter: share(escalated)
+    },
     {
       label: 'coverage',
       value: totals?.findings ?? 0,
-      note: `${(lastRun?.counts?.endpoints ?? 0) + (lastRun?.counts?.js_files ?? 0)} endpoints read`,
-      color: 'var(--nc-bone)'
+      note: `${endpointsRead} endpoints read`,
+      color: 'var(--nc-bone)',
+      meter: endpointsRead > 0 ? Math.min(1, (totals?.findings ?? 0) / endpointsRead) : 0
     }
   ]);
 
@@ -100,17 +116,29 @@
       recent = (await api.findings('?size=5')).items;
       const run = store.totals?.last_run;
       if (!run) return;
+      const events = await api.runEvents(run.id);
       if (['done', 'failed', 'stopped'].includes(run.status)) {
         stage = { current: '', finished: stages.map((s) => s.key) };
-        return;
+      } else {
+        let current = '';
+        for (const event of events.items) {
+          const key = stageForAgent(event.agent) || event.stage;
+          if (key) current = key;
+        }
+        stage = { current, finished: finishedThrough(current) };
       }
-      const events = await api.runEvents(run.id);
-      let current = '';
-      for (const event of events.items) {
-        const key = stageForAgent(event.agent) || event.stage;
-        if (key) current = key;
-      }
-      stage = { current, finished: finishedThrough(current) };
+      tail = events.items
+        .filter(
+          (event) =>
+            (event.type === 'log' || event.type === 'error') &&
+            (event.payload?.text || event.payload?.error)
+        )
+        .slice(-4)
+        .map((event) => ({
+          seq: event.seq,
+          text: String(event.payload?.text ?? event.payload?.error ?? ''),
+          error: event.type === 'error'
+        }));
     })();
   });
 </script>
@@ -136,11 +164,14 @@
 
   <!-- KPIs -->
   <section class="grid grid-cols-2 gap-3 lg:grid-cols-4" aria-label="summary">
-    {#each kpis as kpi (kpi.label)}
+    {#each kpis as kpi, i (kpi.label)}
       <div class="panel kpi flex flex-col gap-1 p-4">
         <p class="eyebrow">{kpi.label}</p>
         <p class="num text-[31px] leading-none" style="color:{kpi.color}" use:countup={kpi.value}>0</p>
         <p class="text-xs text-bone-dust">{kpi.note}</p>
+        <span class="meter mt-1" style="--m:{kpi.meter};--m-color:{kpi.color}" aria-hidden="true"
+          ><i style="animation-delay:{i * 90}ms"></i
+        ></span>
       </div>
     {/each}
   </section>
@@ -174,6 +205,34 @@
           </div>
         {/each}
       </div>
+      {#if tail.length > 0}
+        <div
+          class="mono mt-4 max-h-[124px] overflow-hidden rounded-lg border border-indigo-deep bg-void px-3 py-2 text-xs leading-relaxed"
+          aria-label="last lines from the run"
+        >
+          <div class="flex items-center gap-2 pb-1">
+            <p class="eyebrow">stream</p>
+            {#if lastRun.status === 'running'}
+              <span class="chip ml-auto" style="color:var(--nc-acid)">
+                <span class="pulse-live h-[7px] w-[7px] rounded-full bg-acid" aria-hidden="true"></span>
+                live
+              </span>
+            {/if}
+          </div>
+          {#each tail as line (line.seq)}
+            <p class="stream-line truncate" class:text-violet={line.error} class:text-bone-dust={!line.error}>
+              <span class="text-acid" aria-hidden="true">&gt;</span>
+              {line.text}
+            </p>
+          {/each}
+          {#if lastRun.status === 'running'}
+            <p class="text-bone-dust" aria-hidden="true">
+              <span class="text-acid">&gt;</span>
+              <span class="term-cursor ml-1 inline-block h-[10px] w-[6px] bg-acid align-[-1px]"></span>
+            </p>
+          {/if}
+        </div>
+      {/if}
     </section>
   {/if}
 
@@ -193,14 +252,22 @@
       {:else}
         <ul>
           {#each recent as finding (finding.id)}
-            <li class="row-link flex items-center gap-3 border-b border-indigo-deep/60 px-5 py-3 last:border-0">
-              <Chip
-                label={finding.severity_override || finding.severity}
-                color={sevColor(finding.severity_override || finding.severity)}
-                shape={sevShape(finding.severity_override || finding.severity)}
-              />
+            {@const sev = finding.severity_override || finding.severity}
+            <li
+              class="row-link flex items-center gap-3 border-b border-indigo-deep/60 px-5 py-3 last:border-0"
+              style="--row-accent:{sevColor(sev)}"
+            >
+              <Chip label={sev} color={sevColor(sev)} shape={sevShape(sev)} />
               <span class="min-w-0 flex-1 truncate text-sm text-bone">{finding.title}</span>
-              <span class="mono hidden shrink-0 text-xs text-ash sm:inline"
+              <span
+                class="meter conf hidden sm:block"
+                style="--m:{Math.min(1, finding.confidence ?? 0)};--m-color:{sevColor(sev)}"
+                aria-hidden="true"><i></i
+              ></span>
+              <span class="num hidden shrink-0 text-xs text-ash sm:inline"
+                >{Math.round((finding.confidence ?? 0) * 100)}%</span
+              >
+              <span class="mono hidden shrink-0 text-xs text-ash md:inline"
                 >{triageLabel(finding.triage_status)}</span
               >
             </li>
@@ -233,6 +300,11 @@
                   aria-hidden="true"
                 ></span>
                 <span class="min-w-0 flex-1 truncate text-sm text-bone">{run.target}</span>
+                <span
+                  class="num shrink-0 text-xs"
+                  style="color:{(run.counts?.findings ?? 0) > 0 ? 'var(--nc-acid)' : 'var(--nc-ash)'}"
+                  >{run.counts?.findings ?? 0} fnd</span
+                >
                 <span class="mono shrink-0 text-xs text-ash">{ago(run.created_at)}</span>
               </button>
             </li>

@@ -285,11 +285,17 @@
   }
 
   .row-link {
-    transition: background var(--t-hover) var(--ease-enter);
+    transition:
+      background var(--t-hover) var(--ease-enter),
+      box-shadow var(--t-hover) var(--ease-enter);
   }
 
   .row-link:hover {
     background: rgba(44, 44, 74, 0.4);
+  }
+
+  .row-link:hover > td:first-child {
+    box-shadow: inset 2px 0 0 var(--row-accent, var(--nc-violet));
   }
 
   .nav-item {
@@ -667,19 +673,7 @@
     );
   }
 
-  /* ---- hero collage (HeroArt) ------------------------------------------ */
-
-  .radar-sweep {
-    transform-box: view-box;
-    transform-origin: 1122px 248px;
-    animation: nc-spin 6s linear infinite;
-  }
-
-  .seal-orbit {
-    transform-box: view-box;
-    transform-origin: 744px 68px;
-    animation: nc-spin 11s linear infinite;
-  }
+  /* ---- hero (HeroArt) --------------------------------------------------- */
 
   .hero-draw {
     stroke-dasharray: 2400;
@@ -724,6 +718,140 @@
     );
     background-size: 1px 15px;
     animation: ladder-flow 1.4s linear infinite;
+  }
+
+  /* ---- micro meters (KPI shares, confidence) ---------------------------- */
+
+  .meter {
+    position: relative;
+    display: block;
+    height: 3px;
+    border-radius: 999px;
+    background: var(--nc-indigo_deep);
+    overflow: hidden;
+  }
+
+  .meter > i {
+    position: absolute;
+    inset: 0;
+    display: block;
+    border-radius: inherit;
+    background: linear-gradient(
+      90deg,
+      color-mix(in srgb, var(--m-color, var(--nc-acid)) 45%, transparent),
+      var(--m-color, var(--nc-acid))
+    );
+    transform: scaleX(var(--m, 0));
+    transform-origin: left;
+    transition: transform 600ms var(--ease-enter);
+    animation: meter-fill 900ms var(--ease-enter) both;
+  }
+
+  .meter.conf {
+    width: 56px;
+    height: 2px;
+  }
+
+  /* ---- key caps (search hint, palette) ---------------------------------- */
+
+  .kbd {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 18px;
+    padding: 1px 5px;
+    border: 1px solid var(--nc-indigo);
+    border-bottom-width: 2px;
+    border-radius: 4px;
+    background: var(--nc-indigo_deep);
+    color: var(--nc-ash);
+    font-family: var(--mono);
+    font-size: 10px;
+    line-height: 1.4;
+    letter-spacing: 0.06em;
+  }
+
+  /* ---- rail badge ------------------------------------------------------- */
+
+  .nav-badge {
+    margin-left: auto;
+    min-width: 20px;
+    padding: 1px 6px;
+    border: 1px solid var(--nc-indigo);
+    border-radius: 999px;
+    background: var(--nc-indigo_deep);
+    color: var(--nc-bone_dust);
+    font-family: var(--mono);
+    font-size: 10px;
+    text-align: center;
+    line-height: 1.5;
+  }
+
+  .nav-badge.hot {
+    border-color: rgba(200, 248, 26, 0.4);
+    background: rgba(200, 248, 26, 0.1);
+    color: var(--nc-acid);
+  }
+
+  /* ---- sticky table head ------------------------------------------------ */
+
+  .sticky-head thead th {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    background: var(--nc-void_soft);
+  }
+
+  /* ---- command palette --------------------------------------------------- */
+
+  .palette-veil {
+    position: fixed;
+    inset: 0;
+    z-index: 50;
+    background: rgba(0, 0, 0, 0.6);
+    backdrop-filter: blur(2px);
+    animation: palette-in 160ms linear both;
+  }
+
+  .palette-panel {
+    animation: palette-pop 180ms var(--ease-enter) both;
+  }
+
+  .palette-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    width: 100%;
+    padding: 9px 12px;
+    border: 1px solid transparent;
+    border-radius: 8px;
+    color: var(--nc-bone_dust);
+    font-family: var(--mono);
+    font-size: var(--text-sm);
+    letter-spacing: 0.04em;
+    text-align: left;
+    cursor: pointer;
+    transition:
+      background var(--t-hover) var(--ease-enter),
+      border-color var(--t-hover) var(--ease-enter),
+      color var(--t-hover) var(--ease-enter);
+  }
+
+  .palette-item.on {
+    background: var(--nc-indigo_deep);
+    border-color: var(--nc-violet_deep);
+    color: var(--nc-bone);
+  }
+
+  .palette-item.on .palette-glyph {
+    color: var(--nc-acid);
+  }
+
+  .palette-glyph {
+    width: 22px;
+    color: var(--nc-slate);
+    text-align: center;
+    flex: none;
   }
 }
 
@@ -1019,6 +1147,25 @@
 @keyframes ladder-flow {
   to {
     background-position: 0 15px;
+  }
+}
+
+@keyframes meter-fill {
+  from {
+    transform: scaleX(0);
+  }
+}
+
+@keyframes palette-in {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes palette-pop {
+  from {
+    opacity: 0;
+    transform: translateY(-8px) scale(0.985);
   }
 }
 

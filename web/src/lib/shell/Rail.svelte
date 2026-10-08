@@ -27,6 +27,11 @@
     store.runs.find((run) => run.status === 'running') ?? store.liveRun ?? null
   );
 
+  const openCount = $derived(
+    (store.totals?.triage?.new ?? 0) + (store.totals?.triage?.in_progress ?? 0)
+  );
+  const findingCount = $derived(store.totals?.findings ?? 0);
+
   function go(id: Screen) {
     store.go(id);
     onNavigate();
@@ -66,6 +71,11 @@
       >
         <span class="nav-glyph" aria-hidden="true">{item.glyph}</span>
         <span>{item.label}</span>
+        {#if item.id === 'findings' && findingCount > 0}
+          <span class="nav-badge" class:hot={openCount > 0} title="{findingCount} findings"
+            >{findingCount}</span
+          >
+        {/if}
         {#if item.id === 'live' && store.runs.some((run) => run.status === 'running')}
           <span class="pulse-live ml-auto h-1.5 w-1.5 rounded-full bg-acid" aria-hidden="true"></span>
         {/if}

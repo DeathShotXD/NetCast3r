@@ -70,9 +70,18 @@
           </thead>
           <tbody>
             {#each store.runs as run (run.id)}
-              <tr class="row-link border-b border-indigo-deep/60 last:border-0">
+              <tr
+                class="row-link border-b border-indigo-deep/60 last:border-0"
+                style="--row-accent:{statusColor(run.status)}"
+              >
                 <td class="px-4 py-3">
-                  <Chip label={statusLabel(run.status)} color={statusColor(run.status)} shape="dot" />
+                  {#if run.status === 'running'}
+                    <span class="pulse-live inline-flex">
+                      <Chip label={statusLabel(run.status)} color={statusColor(run.status)} shape="dot" />
+                    </span>
+                  {:else}
+                    <Chip label={statusLabel(run.status)} color={statusColor(run.status)} shape="dot" />
+                  {/if}
                 </td>
                 <td class="max-w-[300px] px-4 py-3">
                   <button
@@ -83,8 +92,12 @@
                     {run.target}
                   </button>
                 </td>
-                <td class="num px-4 py-3 text-xs text-bone-dust">
-                  {run.counts?.findings ?? 0} findings / {run.counts?.endpoints ?? 0} endpoints
+                <td class="num px-4 py-3 text-xs">
+                  <span style="color:{(run.counts?.findings ?? 0) > 0 ? 'var(--nc-acid)' : 'var(--nc-ash)'}"
+                    >{run.counts?.findings ?? 0}</span
+                  >
+                  <span class="text-ash"> findings / </span>
+                  <span class="text-bone-dust">{run.counts?.endpoints ?? 0} endpoints</span>
                 </td>
                 <td class="mono whitespace-nowrap px-4 py-3 text-xs text-ash">{ago(run.created_at)}</td>
                 <td class="px-4 py-3">
