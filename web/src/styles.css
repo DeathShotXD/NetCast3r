@@ -701,6 +701,29 @@
     animation: ants 0.9s linear infinite;
   }
 
+  /* caster scene (HeroArt v4) */
+  .moon-breath {
+    animation: moon-breath 7s ease-in-out infinite;
+  }
+
+  .eye-glow {
+    animation: eye-glow 2.8s ease-in-out infinite;
+  }
+
+  .rail-chev {
+    animation: rail-chev 1.6s ease-in-out infinite;
+  }
+
+  .win-blink {
+    animation: blink 4.6s ease-in-out infinite;
+  }
+
+  .hero-ck {
+    stroke-dasharray: 26;
+    stroke-dashoffset: 26px;
+    animation: draw 0.55s var(--ease-enter) forwards;
+  }
+
   /* ---- pipeline ladder (PipelineLadder) --------------------------------- */
 
   .ladder-line {
@@ -1192,6 +1215,42 @@
   }
   50% {
     opacity: 0.85;
+  }
+}
+
+@keyframes moon-breath {
+  0%,
+  100% {
+    opacity: 0.88;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+@keyframes eye-glow {
+  0%,
+  100% {
+    opacity: 0.9;
+  }
+  44% {
+    opacity: 1;
+  }
+  56% {
+    opacity: 0.5;
+  }
+  70% {
+    opacity: 1;
+  }
+}
+
+@keyframes rail-chev {
+  0%,
+  100% {
+    opacity: 0.32;
+  }
+  50% {
+    opacity: 1;
   }
 }
 

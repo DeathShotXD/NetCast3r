@@ -145,9 +145,9 @@
 
 <div class="stagger mx-auto flex max-w-[1180px] flex-col gap-6">
   <!-- Hero -->
-  <section class="panel-raised panel-hud relative overflow-hidden p-6 sm:p-8">
+  <section class="panel-raised panel-hud relative min-h-[340px] overflow-hidden p-6 sm:min-h-[360px] sm:p-8">
     <HeroArt class="pointer-events-none absolute inset-0 h-full w-full opacity-50 sm:opacity-95" />
-    <div class="relative max-w-[620px]">
+    <div class="relative max-w-[520px]">
       <p class="eyebrow" style="color:{hero.color}">{hero.eyebrow}</p>
       <h1 class="mt-2 text-2xl font-semibold leading-tight text-bone sm:text-[31px]">
         {hero.title}

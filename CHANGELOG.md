@@ -142,6 +142,14 @@ Notable changes to NetCast3r, newest first.
 - A command palette on ctrl+K, with a keycap in the top bar, filters every
   screen and the live-run actions with arrow-key selection, and the slash
   key jumps to the findings search from anywhere.
+- The home banner is recreated from the project's own banner art: a hooded
+  caster throws a luminous weighted net across a moonlit city skyline, four
+  credential cards fan into the mesh and tether into a live report panel
+  with its validation checks, confidence chips stack at the edge, and a
+  six-stage rail, the lockup, and the source block anchor the foot. The
+  banner's corrections apply -- ESCALATE, Evidence, and AUTONOMOUS, no AI
+  wording -- and the scene adds a breathing moon, glowing eyes, blinking
+  windows, travelling rail chevrons, and ticks that draw themselves.
 
 ### Fixed
 
