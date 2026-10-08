@@ -166,12 +166,23 @@ Notable changes to NetCast3r, newest first.
   cast net with scan pulses running down every rib, a sonar ring sweeps
   from the hand, a standby chip and blinking cursor frame the readout, and
   the runs and findings counts split on a hairline.
+- The caster is redrawn to read hard instead of cartoon: every leg becomes
+  a tapered chitin wedge, thick at the femur and fine at the tarsal point,
+  with a violet rim, an acid pulse down the center, and a node at each
+  knee; the abdomen carries an upright widow hourglass, the eyes gather
+  into one cluster, the fang tips bead with venom, and one stray foot
+  steps off the moon. The backdrop drops the drifting scan sweep, which
+  read as a stray line across the empty gutters, and the vertical
+  AUTHORIZED TESTING ONLY edge mark.
 
 ### Fixed
 
 - The drifting mesh no longer shows a seam where it loops: it advances by
   background position instead of a translate, and the scan sweep fades at
   both edges instead of ending on a hard line.
+- A rate-limited provider cools down on a 403 or a 429 with escalating
+  backoff, so the next call rotates away instead of burning the same limit
+  again on every call in the run.
 - The dashboard escapes every HTML-significant character in the run data, so a
   finding value can no longer close the JSON script block or inject markup.
 - The over-broad gitleaks `generic-api-key` rule is dropped in favour of the

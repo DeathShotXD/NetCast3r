@@ -15,7 +15,7 @@
   }));
 </script>
 
-<!-- Ambient stage: glows, grid, a drifting net lattice, a slow scan sweep, grain. -->
+<!-- Ambient stage: glows, grid, a drifting net lattice, grain. -->
 <div class="pointer-events-none fixed inset-0 -z-10 overflow-hidden" aria-hidden="true">
   <div
     class="absolute inset-0"
@@ -44,12 +44,6 @@
     style="background-image:{lattice}; background-size:210px 210px; animation:drift-x 180s linear infinite reverse;"
   ></div>
 
-  <div
-    class="absolute inset-x-0 top-0 h-[46vh]"
-    style="background:linear-gradient(180deg, transparent 0%, rgba(200,248,26,0.035) 38%, rgba(200,248,26,0.11) 56%, rgba(200,248,26,0.035) 76%, transparent 100%);
-      animation:scan-down 15s linear infinite;"
-  ></div>
-
   <div class="absolute inset-0 opacity-40" style="background-image:{noise}; mix-blend-mode:soft-light;"></div>
 
   <!-- rising sparks -->
@@ -68,13 +62,10 @@
   <!-- the CRT the whole product lives inside -->
   <div class="scanlines absolute inset-0" aria-hidden="true"></div>
 
-  <div class="absolute inset-y-6 right-4 hidden flex-col justify-between 2xl:flex">
+  <div class="absolute inset-y-6 right-4 hidden flex-col 2xl:flex">
     <span
       class="mono text-[10px] tracking-[0.4em] text-slate"
       style="writing-mode:vertical-rl">NETCAST3R // BUG BOUNTY AUTOMATION</span
-    >
-    <span class="mono text-[10px] tracking-[0.4em] text-slate" style="writing-mode:vertical-rl"
-      >AUTHORIZED TESTING ONLY</span
     >
   </div>
 </div>

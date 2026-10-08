@@ -59,23 +59,24 @@
 
   // ---- the caster: a spider at the hub of the net ------------------------
   // eight jointed legs braced across the ribs, feet anchored by glowing
-  // silk tips; each leg bends at a raised knee, the stance of a spider
-  // holding the mesh taut
+  // silk tips; each leg bends at a raised knee and tapers from a thick
+  // femur to a fine tarsal point, drawn as a filled chitin wedge so the
+  // stance reads hard and menacing instead of tubed
   const LEGS = [
     // left side, front to back
     'M838 135 Q823 119 815 106 Q807 99 796 94',
-    'M834 142 Q808 134 797 128 Q789 130 778 140',
-    'M835 152 Q812 160 801 172 Q794 184 786 196',
-    'M842 159 Q834 181 832 196 Q830 206 828 214',
+    'M834 142 Q812 134 802 130 Q797 135 794 146',
+    'M837 150 Q812 160 801 172 Q794 184 786 196',
+    'M847 155 Q836 178 832 196 Q830 206 828 214',
     // right side, front to back
-    'M857 135 Q875 117 884 106 Q897 99 912 94',
-    'M862 142 Q890 132 905 127 Q919 127 930 132',
-    'M861 153 Q888 162 900 175 Q908 188 914 200',
-    'M855 159 Q866 181 869 197 Q871 208 874 216'
+    'M856 137 Q875 117 884 106 Q897 99 912 94',
+    'M860 143 Q890 132 905 127 Q919 127 930 132',
+    'M858 151 Q888 162 900 175 Q908 188 914 200',
+    'M851 155 Q864 180 869 197 Q871 208 874 216'
   ];
   const LEG_KNEES = [
     { x: 815, y: 106 },
-    { x: 797, y: 128 },
+    { x: 802, y: 130 },
     { x: 801, y: 172 },
     { x: 832, y: 196 },
     { x: 884, y: 106 },
@@ -85,7 +86,7 @@
   ];
   const LEG_TIPS = [
     { x: 796, y: 94 },
-    { x: 778, y: 140 },
+    { x: 794, y: 146 },
     { x: 786, y: 196 },
     { x: 828, y: 214 },
     { x: 912, y: 94 },
@@ -93,6 +94,68 @@
     { x: 914, y: 200 },
     { x: 874, y: 216 }
   ];
+
+  // sample the quadratic centerlines, then swell them into tapered wedges
+  type Pt = { x: number; y: number };
+  const sampleLeg = (d: string, perSeg = 4): Pt[] => {
+    const n = (d.match(/-?\d+(?:\.\d+)?/g) ?? []).map(Number);
+    const pts: Pt[] = [{ x: n[0], y: n[1] }];
+    let cur = pts[0];
+    for (let i = 2; i + 3 < n.length; i += 4) {
+      const c = { x: n[i], y: n[i + 1] };
+      const e = { x: n[i + 2], y: n[i + 3] };
+      for (let k = 1; k <= perSeg; k++) {
+        const t = k / perSeg;
+        const u = 1 - t;
+        pts.push({
+          x: u * u * cur.x + 2 * u * t * c.x + t * t * e.x,
+          y: u * u * cur.y + 2 * u * t * c.y + t * t * e.y
+        });
+      }
+      cur = e;
+    }
+    return pts;
+  };
+
+  const legWidth = (f: number) => {
+    const BASE = 5.6;
+    const KNEE = 4.1;
+    const TIP = 0.9;
+    return f < 0.45
+      ? BASE + (KNEE - BASE) * (f / 0.45)
+      : KNEE + (TIP - KNEE) * ((f - 0.45) / 0.55);
+  };
+
+  const taper = (pts: Pt[], widths: number[]): string => {
+    const left: Pt[] = [];
+    const right: Pt[] = [];
+    for (let i = 0; i < pts.length; i++) {
+      const prev = pts[Math.max(i - 1, 0)];
+      const next = pts[Math.min(i + 1, pts.length - 1)];
+      const dx = next.x - prev.x;
+      const dy = next.y - prev.y;
+      const len = Math.hypot(dx, dy) || 1;
+      const nx = (-dy / len) * widths[i];
+      const ny = (dx / len) * widths[i];
+      left.push({ x: pts[i].x + nx, y: pts[i].y + ny });
+      right.push({ x: pts[i].x - nx, y: pts[i].y - ny });
+    }
+    const f = (p: Pt) => `${p.x.toFixed(1)} ${p.y.toFixed(1)}`;
+    const tip = pts[pts.length - 1];
+    let d = `M${f(left[0])}`;
+    for (let i = 1; i < left.length; i++) d += `L${f(left[i])}`;
+    d += `Q${f(tip)} ${f(right[right.length - 1])}`;
+    for (let i = right.length - 2; i >= 0; i--) d += `L${f(right[i])}`;
+    return d + 'Z';
+  };
+
+  const LEG_SHAPES = LEGS.map((d) => {
+    const pts = sampleLeg(d);
+    return taper(
+      pts,
+      pts.map((_, i) => legWidth(i / (pts.length - 1)))
+    );
+  });
 
   // ---- the moon ---------------------------------------------------------
   const MOON = { cx: 686, cy: 150, r: 106 };
@@ -306,12 +369,18 @@
       <stop offset="1" stop-color="var(--nc-void)" />
     </linearGradient>
 
+    <linearGradient id="{id}-chitinLeg" gradientUnits="userSpaceOnUse" x1="770" y1="90" x2="930" y2="220">
+      <stop offset="0" stop-color="var(--nc-violet_deep)" />
+      <stop offset="0.45" stop-color="var(--nc-violet_abyss)" />
+      <stop offset="1" stop-color="var(--nc-void)" />
+    </linearGradient>
+
     <radialGradient id="{id}-cast-shadow" gradientUnits="userSpaceOnUse" cx="866" cy="172" r="44">
       <stop offset="0" stop-color="var(--nc-void)" stop-opacity="0.66" />
       <stop offset="1" stop-color="var(--nc-void)" stop-opacity="0" />
     </radialGradient>
 
-    <radialGradient id="{id}-eye-halo" gradientUnits="userSpaceOnUse" cx="838" cy="144" r="14">
+    <radialGradient id="{id}-eye-halo" gradientUnits="userSpaceOnUse" cx="836" cy="144" r="16">
       <stop offset="0" stop-color="var(--nc-acid)" stop-opacity="0.24" />
       <stop offset="1" stop-color="var(--nc-acid)" stop-opacity="0" />
     </radialGradient>
@@ -426,23 +495,29 @@
       <!-- soft cast shadow under the body -->
       <ellipse cx="866" cy="174" rx="44" ry="17" fill="url(#{id}-cast-shadow)" />
 
-      <!-- legs: chitin base, violet body, acid pulse, jointed knees -->
-      {#each LEGS as leg, i (i)}
-        <path d={leg} stroke="var(--nc-void)" stroke-width="4.8" stroke-linecap="round" fill="none" opacity="0.92" />
-        <path d={leg} stroke="var(--nc-violet_abyss)" stroke-width="3.2" stroke-linecap="round" fill="none" />
-        <path d={leg} stroke="var(--nc-violet)" stroke-width="1.5" stroke-linecap="round" fill="none" opacity="0.95" />
+      <!-- legs: dark chitin wedges with a violet rim, an acid pulse down
+           the center, a node at each knee -->
+      {#each LEG_SHAPES as shape, i (i)}
         <path
-          d={leg}
+          d={shape}
+          fill="url(#{id}-chitinLeg)"
+          stroke="var(--nc-violet)"
+          stroke-width="1"
+          stroke-opacity="0.55"
+          stroke-linejoin="round"
+        />
+        <path
+          d={LEGS[i]}
           stroke="var(--nc-acid)"
-          stroke-width="0.8"
+          stroke-width="0.7"
           stroke-linecap="round"
           fill="none"
           opacity="0.5"
           class="knot-pulse"
           style="animation-delay:{i * 420}ms"
         />
-        <circle cx={LEG_KNEES[i].x} cy={LEG_KNEES[i].y} r="2.7" fill="var(--nc-violet_abyss)" stroke="var(--nc-violet)" stroke-width="1" />
-        <circle cx={LEG_KNEES[i].x} cy={LEG_KNEES[i].y} r="1" fill="var(--nc-acid)" opacity="0.85" />
+        <circle cx={LEG_KNEES[i].x} cy={LEG_KNEES[i].y} r="1.9" fill="var(--nc-violet_abyss)" stroke="var(--nc-violet)" stroke-width="0.8" />
+        <circle cx={LEG_KNEES[i].x} cy={LEG_KNEES[i].y} r="0.9" fill="var(--nc-acid)" opacity="0.9" />
       {/each}
       {#each LEG_TIPS as tip, i (i)}
         <circle cx={tip.x} cy={tip.y} r="3.2" fill="var(--nc-acid)" opacity="0.16" />
@@ -456,11 +531,13 @@
 
         <!-- abdomen, angled down-right toward the spinnerets -->
         <g transform="rotate(30 884 158)">
-          <ellipse cx="884" cy="158" rx="25" ry="19.5" fill="url(#{id}-chitinA)" stroke="var(--nc-violet)" stroke-width="1.4" />
-          <path d="M866 147 Q884 139 902 149" stroke="var(--nc-bone)" stroke-width="1.6" fill="none" opacity="0.2" stroke-linecap="round" />
-          <path d="M870 154 Q884 160 898 153" stroke="var(--nc-acid)" stroke-width="1.3" fill="none" opacity="0.55" />
-          <path d="M871 162 Q884 168 897 161" stroke="var(--nc-acid)" stroke-width="1.1" fill="none" opacity="0.38" />
-          <path d="M873 170 Q884 175 895 169" stroke="var(--nc-acid)" stroke-width="0.9" fill="none" opacity="0.24" />
+          <ellipse cx="884" cy="158" rx="26" ry="20" fill="url(#{id}-chitinA)" stroke="var(--nc-violet)" stroke-width="1.4" />
+          <path d="M866 146 Q884 138 902 148" stroke="var(--nc-bone)" stroke-width="1.6" fill="none" opacity="0.2" stroke-linecap="round" />
+        </g>
+        <!-- widow hourglass, upright on the dorsum -->
+        <g transform="rotate(14 884 158)">
+          <path d="M879.5 150.5 L888.5 150.5 L884 158.5 Z" fill="var(--nc-acid)" opacity="0.92" />
+          <path d="M879.5 166.5 L888.5 166.5 L884 158.5 Z" fill="var(--nc-acid)" opacity="0.92" />
         </g>
         <!-- spinnerets -->
         <ellipse cx="907" cy="171" rx="3.6" ry="2.5" fill="var(--nc-void)" stroke="var(--nc-violet)" stroke-width="0.9" transform="rotate(38 907 171)" />
@@ -473,18 +550,20 @@
         <!-- chelicerae and pedipalps, facing the moon -->
         <path d="M833 149 Q827 152 826 157" stroke="var(--nc-void)" stroke-width="2.8" stroke-linecap="round" fill="none" />
         <path d="M826 157 Q825 160 828 162" stroke="var(--nc-violet)" stroke-width="1.6" stroke-linecap="round" fill="none" />
+        <circle cx="828" cy="162" r="0.9" fill="var(--nc-acid)" opacity="0.95" />
         <path d="M836 137 Q825 132 819 136 Q816 141 820 146" stroke="var(--nc-violet_abyss)" stroke-width="2.6" stroke-linecap="round" fill="none" />
         <path d="M835 156 Q824 160 820 165" stroke="var(--nc-violet_abyss)" stroke-width="2.6" stroke-linecap="round" fill="none" />
+        <circle cx="820" cy="165" r="0.9" fill="var(--nc-acid)" opacity="0.95" />
 
         <!-- eyes -->
         <g class="eye-glow">
-          <circle cx="838" cy="145" r="14" fill="url(#{id}-eye-halo)" />
-          <circle cx="834.5" cy="143" r="1.6" fill="var(--nc-acid)" />
-          <circle cx="834.5" cy="148.5" r="1.6" fill="var(--nc-acid)" />
-          <circle cx="838.5" cy="140.5" r="1.3" fill="var(--nc-acid)" />
-          <circle cx="838.5" cy="145.5" r="1.3" fill="var(--nc-acid)" />
-          <circle cx="834.5" cy="143" r="0.6" fill="var(--nc-bone)" />
-          <circle cx="834.5" cy="148.5" r="0.6" fill="var(--nc-bone)" />
+          <circle cx="836" cy="144" r="16" fill="url(#{id}-eye-halo)" />
+          <circle cx="838" cy="140" r="1.9" fill="var(--nc-acid)" />
+          <circle cx="839" cy="146" r="1.9" fill="var(--nc-acid)" />
+          <circle cx="833" cy="142.5" r="1.15" fill="var(--nc-acid)" />
+          <circle cx="833.5" cy="148" r="1.15" fill="var(--nc-acid)" />
+          <circle cx="837.4" cy="139.4" r="0.7" fill="var(--nc-bone)" />
+          <circle cx="838.4" cy="145.4" r="0.7" fill="var(--nc-bone)" />
         </g>
       </g>
     </g>

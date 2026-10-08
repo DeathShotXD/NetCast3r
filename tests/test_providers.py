@@ -83,6 +83,28 @@ class ProviderBusTests(unittest.TestCase):
         self.assertEqual(seen[3]["provider"], "ollama")
         self.assertGreaterEqual(seen[3]["ms"], 0)
 
+    def test_rate_limited_provider_cools_down(self):
+        seen = []
+        bus = ProviderBus(self._config(), observer=seen.append)
+        bus.chat_stream("scribe", [{"role": "user", "content": "hi"}])
+        bus.chat_stream("scribe", [{"role": "user", "content": "hi"}])
+        calls = [row["provider"] for row in seen if row["kind"] == "call"]
+        self.assertEqual(calls, ["openrouter", "ollama", "ollama"])
+
+    def test_cooldown_escalates_and_clears(self):
+        import time as _time
+
+        bus = ProviderBus(self._config())
+        bus._penalize("openrouter")
+        first = bus._cooldown["openrouter"][0] - _time.monotonic()
+        self.assertAlmostEqual(first, bus.COOLDOWN_BASE, delta=2)
+        bus._penalize("openrouter")
+        second = bus._cooldown["openrouter"][0] - _time.monotonic()
+        self.assertAlmostEqual(second, bus.COOLDOWN_BASE * 2, delta=2)
+        self.assertTrue(bus._cooling("openrouter"))
+        bus._settle("openrouter")
+        self.assertFalse(bus._cooling("openrouter"))
+
 
 if __name__ == "__main__":
     unittest.main()

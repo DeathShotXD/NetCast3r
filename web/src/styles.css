@@ -1030,23 +1030,6 @@
   }
 }
 
-@keyframes scan-down {
-  from {
-    transform: translateY(-30vh);
-    opacity: 0;
-  }
-  12% {
-    opacity: 1;
-  }
-  88% {
-    opacity: 1;
-  }
-  to {
-    transform: translateY(110vh);
-    opacity: 0;
-  }
-}
-
 @keyframes line-arrive {
   from {
     transform: translateY(8px);

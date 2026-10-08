@@ -2,8 +2,8 @@
 
 One OpenAI-compatible client serves every provider. The model routes decide
 which provider and model an agent uses. Providers are tried in priority order,
-and on a rate limit the bus rotates the egress proxy and moves to the next
-model or provider so a run keeps going.
+and on a rate limit the bus rotates the egress proxy, cools the provider down
+and moves to the next model or provider so a run keeps going.
 """
 
 from __future__ import annotations
@@ -37,6 +37,25 @@ class ProviderBus:
         self.egress = egress
         self.timeout = timeout
         self.observer = observer
+        # provider name -> (cooldown_until, strikes): a 429 cools the provider
+        # down so the next call rotates away instead of burning the same
+        # rate limit over and over
+        self._cooldown: dict[str, tuple[float, int]] = {}
+
+    COOLDOWN_BASE = 30.0
+    COOLDOWN_MAX = 300.0
+
+    def _penalize(self, name: str) -> None:
+        strikes = self._cooldown.get(name, (0.0, 0))[1] + 1
+        delay = min(self.COOLDOWN_BASE * (2 ** (strikes - 1)), self.COOLDOWN_MAX)
+        self._cooldown[name] = (time.monotonic() + delay, strikes)
+
+    def _cooling(self, name: str) -> bool:
+        record = self._cooldown.get(name)
+        return bool(record) and time.monotonic() < record[0]
+
+    def _settle(self, name: str) -> None:
+        self._cooldown.pop(name, None)
 
     def _observe(self, data: dict) -> None:
         """Tell the dashboard what the bus is doing, without ever failing a call."""
@@ -54,7 +73,11 @@ class ProviderBus:
             preferred = [p for p in ordered if p.name == route.provider]
             rest = [p for p in ordered if p.name != route.provider]
             ordered = preferred + rest
-        for provider in ordered:
+        fresh = [p for p in ordered if not self._cooling(p.name)]
+        if not fresh:
+            # everything is cooling down -- better to try than to stall
+            fresh = ordered
+        for provider in fresh:
             key = provider.resolve_key()
             if not key and provider.name != "ollama":
                 continue
@@ -98,6 +121,7 @@ class ProviderBus:
                         if response.status_code in (403, 429):
                             if self.egress and proxy:
                                 self.egress.mark_failed(proxy)
+                            self._penalize(provider.name)
                             last_error = f"{provider.name} returned {response.status_code}"
                             self._observe({"kind": "done", "agent": agent,
                                            "provider": provider.name, "model": model,
@@ -146,6 +170,7 @@ class ProviderBus:
                                            "ok": False, "ms": _ms(attempt),
                                            "error": "no content"})
                             continue
+                        self._settle(provider.name)
                         self._observe({"kind": "done", "agent": agent,
                                        "provider": provider.name, "model": model,
                                        "ok": True, "ms": _ms(attempt)})
