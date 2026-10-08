@@ -1,8 +1,7 @@
 <script lang="ts">
   import { api } from '../api';
   import { store } from '../state.svelte';
-  import { STAGES } from '../../tokens';
-  import StageRail from '../ui/StageRail.svelte';
+  import PipelineLadder from '../ui/PipelineLadder.svelte';
   import Confirm from '../ui/Confirm.svelte';
 
   const presets = [
@@ -25,8 +24,6 @@
       options: { depth: 4, tier: 'read' }
     }
   ];
-
-  const stages = STAGES as unknown as { detail: string; label: string }[];
 
   let target = $state('');
   let preset = $state('standard');
@@ -191,18 +188,9 @@
       <p class="eyebrow">what will happen</p>
       <h2 class="mt-1 text-lg text-bone">Six stages, in order</h2>
     </div>
-    <StageRail dense />
-    <ol class="flex flex-col gap-3 border-t border-indigo-deep pt-4">
-      {#each stages as stage, i (stage.label)}
-        <li class="flex gap-3">
-          <span class="num w-6 shrink-0 text-xs text-slate">{String(i + 1).padStart(2, '0')}</span>
-          <span>
-            <span class="mono text-sm text-bone">{stage.label}</span>
-            <span class="block text-xs leading-relaxed text-bone-dust">{stage.detail}</span>
-          </span>
-        </li>
-      {/each}
-    </ol>
+    <div class="mt-1">
+      <PipelineLadder />
+    </div>
     <p class="mt-auto border-t border-indigo-deep pt-4 text-xs leading-relaxed text-ash">
       Results are written to your own results folder as markdown, JSON, SARIF, and an HTML
       dashboard. Nothing is uploaded anywhere.

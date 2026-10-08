@@ -1,11 +1,8 @@
 <script lang="ts">
-  import { AGENT_STAGE, SEVERITIES, STAGES, STATES } from '../../tokens';
+  import { SEVERITIES, STATES } from '../../tokens';
   import { sevColor, sevShape, stateColor } from '../format';
   import Chip from '../ui/Chip.svelte';
-  import StageGlyph from '../ui/StageGlyph.svelte';
-  import StageRail from '../ui/StageRail.svelte';
-
-  const stages = STAGES as unknown as { key: string; label: string; detail: string; agent: string }[];
+  import PipelineLadder from '../ui/PipelineLadder.svelte';
 
   const ladder: { key: string; text: string }[] = [
     { key: 'confirmed', text: 'A real API call proved this credential works right now. Treat it as live access.' },
@@ -46,24 +43,7 @@
   <section class="panel p-5">
     <p class="eyebrow">the pipeline</p>
     <h2 class="mt-1 text-lg text-bone">Six stages, in order</h2>
-    <div class="mt-4"><StageRail dense /></div>
-    <ul class="mt-4 grid gap-3 border-t border-indigo-deep pt-4 sm:grid-cols-2">
-      {#each stages as stage, i (stage.key)}
-        <li class="flex gap-3">
-          <span class="num w-6 shrink-0 text-xs text-slate">{String(i + 1).padStart(2, '0')}</span>
-          <span>
-            <span class="flex items-center gap-1.5">
-              <StageGlyph stage={stage.key} class="h-4 w-4 shrink-0 text-violet" />
-              <span class="mono text-sm text-bone">{stage.label}</span>
-            </span>
-            <span class="block text-xs leading-relaxed text-bone-dust">{stage.detail}</span>
-            <span class="mono block text-[11px] text-slate">
-              agent: {stage.agent} -&gt; {(AGENT_STAGE as Record<string, string>)[stage.agent]}
-            </span>
-          </span>
-        </li>
-      {/each}
-    </ul>
+    <div class="mt-5"><PipelineLadder showAgent /></div>
   </section>
 
   <section class="panel p-5">

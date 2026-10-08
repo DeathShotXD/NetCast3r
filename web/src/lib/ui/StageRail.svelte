@@ -4,9 +4,8 @@
 
   let {
     current = '',
-    finished = [],
-    dense = false
-  }: { current?: string; finished?: string[]; dense?: boolean } = $props();
+    finished = []
+  }: { current?: string; finished?: string[] } = $props();
 
   const stages = STAGES as unknown as { key: string; label: string; detail: string }[];
   const index = (key: string) => stages.findIndex((stage) => stage.key === key);
@@ -53,9 +52,7 @@
             <span class="pulse-live ml-auto h-1.5 w-1.5 rounded-full bg-acid" aria-hidden="true"></span>
           {/if}
         </div>
-        {#if !dense}
-          <p class="text-xs leading-snug text-bone-dust">{stage.detail}</p>
-        {/if}
+        <p class="text-xs leading-snug text-bone-dust">{stage.detail}</p>
         <span class="sr-only">{active ? 'in progress' : done ? 'complete' : 'pending'}</span>
       </li>
     {/each}

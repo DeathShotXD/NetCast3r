@@ -114,6 +114,16 @@ Notable changes to NetCast3r, newest first.
   per-agent blocks with a fragment count, the log and the stream cap what
   they keep on screen, and the server coalesces reasoning pieces before
   publishing and persisting them, so a noisy run stays smooth.
+- The stage explanation is one component now: a ladder of glyph nodes joined
+  by a connector with a travelling pulse, each step carrying its number,
+  name, detail, and (in help) the agents behind it. The new scan screen and
+  the help page use it in place of the stage chips, which crushed labels
+  into a cramped row, and the plain numbered list.
+- The home hero is rebuilt as a full-width composition: the cast net fans
+  from the top corner across the whole banner, and the seal, stamp,
+  terminal, credential cards, radar, and glitch bars sit in spaced bays
+  down its length instead of piling into one corner, with the copy clear
+  behind a left fade.
 
 ### Fixed
 
