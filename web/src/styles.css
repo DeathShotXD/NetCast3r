@@ -754,11 +754,6 @@
     opacity: 0;
   }
 
-  /* a live run wakes the sky: acid wash breathes over the whole scene */
-  .is-live .zap {
-    animation: zap 3.2s ease-in-out infinite;
-  }
-
   /* cards lean into the cursor and pause their drift while held */
   .card-slot {
     pointer-events: visiblePainted;
@@ -766,6 +761,8 @@
   }
 
   .card-lift {
+    transform-box: fill-box;
+    transform-origin: center;
     transition: transform var(--t-toggle) var(--ease-enter);
   }
 
@@ -784,10 +781,6 @@
 
   .card-tick {
     transition: opacity var(--t-toggle) var(--ease-enter);
-  }
-
-  .hero-sweep {
-    animation: hero-sweep 7s linear infinite;
   }
 
   .term-cursor {
@@ -1334,15 +1327,6 @@
   }
 }
 
-@keyframes hero-sweep {
-  from {
-    transform: translateX(0);
-  }
-  to {
-    transform: translateX(1400px);
-  }
-}
-
 @keyframes comet {
   0% {
     transform: translate(-120px, 26px);
@@ -1358,16 +1342,6 @@
   100% {
     transform: translate(430px, -22px);
     opacity: 0;
-  }
-}
-
-@keyframes zap {
-  0%,
-  100% {
-    opacity: 0;
-  }
-  50% {
-    opacity: 0.045;
   }
 }
 

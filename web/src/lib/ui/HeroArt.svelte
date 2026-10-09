@@ -416,12 +416,6 @@
       <stop offset="1" stop-color="white" stop-opacity="0" />
     </linearGradient>
 
-    <linearGradient id="{id}-beam" x1="0" y1="0" x2="1" y2="0">
-      <stop offset="0" stop-color="var(--nc-acid)" stop-opacity="0" />
-      <stop offset="0.5" stop-color="var(--nc-acid)" stop-opacity="0.13" />
-      <stop offset="1" stop-color="var(--nc-acid)" stop-opacity="0" />
-    </linearGradient>
-
     <radialGradient id="{id}-hub" gradientUnits="userSpaceOnUse" cx={O.x} cy={O.y} r="46">
       <stop offset="0" stop-color="var(--nc-void)" stop-opacity="0.82" />
       <stop offset="0.62" stop-color="var(--nc-void)" stop-opacity="0.62" />
@@ -526,15 +520,6 @@
         <circle cx="30" cy="40" r="1.8" fill="var(--nc-bone)" />
       </g>
     {/if}
-
-    <!-- casting mood: the sky's acid wash wakes with a live run -->
-    <rect
-      width={W}
-      height={H}
-      class="zap"
-      fill="var(--nc-acid)"
-      opacity="0"
-    />
 
     <!-- the net, cast from the palm -->
     <g stroke="var(--nc-violet)" stroke-width="1" opacity="0.62">
@@ -684,9 +669,6 @@
     {#each stars as star, i (i)}
       <circle cx={star.x} cy={star.y} r={star.r} fill={star.c} class="twinkle" style="animation-delay:{star.d}ms" />
     {/each}
-
-    <!-- beam sweep -->
-    <rect x="-170" y="0" width="150" height={H} fill="url(#{id}-beam)" class="hero-sweep" />
   </g>
 
   <!-- the caught: four credential cards. The frame lives and drifts for
@@ -739,17 +721,22 @@
   {#snippet card(item: Item, x: number, y: number, rot: number, fl: string, rotating: boolean, i: number)}
     <g class="secret-badge card-slot" class:hot={hot === i}>
       <g class="badge-float {fl}">
-        <g class="card-lift" transform="translate({x},{y}) rotate({rot})">
-          {#if rotating}
-            {#key rIdx}
-              <g class="rot-in">{@render cardBody(ROT[rIdx])}</g>
-            {/key}
-          {:else}
-            {@render cardBody(item)}
-          {/if}
+        <!-- position lives on this attribute transform; the hover lift must
+             live on a separate group, since a CSS transform here would
+             replace the attribute and throw the card to the svg origin -->
+        <g transform="translate({x},{y}) rotate({rot})">
+          <g class="card-lift">
+            {#if rotating}
+              {#key rIdx}
+                <g class="rot-in">{@render cardBody(ROT[rIdx])}</g>
+              {/key}
+            {:else}
+              {@render cardBody(item)}
+            {/if}
 
-          <path class="card-tick" d="M0.5 7 v-6 h6" stroke="var(--nc-acid)" stroke-width="1.2" opacity="0.75" />
-          <path class="card-tick" d="M{CARD_W - 6.5} {CARD_H - 0.5} h6 v-6" stroke="var(--nc-acid)" stroke-width="1.2" opacity="0.75" />
+            <path class="card-tick" d="M0.5 7 v-6 h6" stroke="var(--nc-acid)" stroke-width="1.2" opacity="0.75" />
+            <path class="card-tick" d="M{CARD_W - 6.5} {CARD_H - 0.5} h6 v-6" stroke="var(--nc-acid)" stroke-width="1.2" opacity="0.75" />
+          </g>
         </g>
       </g>
     </g>
@@ -915,16 +902,4 @@
     <tspan fill="var(--nc-acid)">&gt;_</tspan>
     <tspan fill="var(--nc-bone_dust)"> AUTOMATED WEB RECON / JS ANALYSIS / SECRET HUNTING / VALIDATION / REPORTING</tspan>
   </text>
-
-  <!-- graffiti -->
-  <g transform="rotate(-7 660 48)" font-family={SANS} font-style="italic" font-weight="800" font-size="15" fill="var(--nc-violet)" text-anchor="end">
-    <text x="706" y="30">MORE</text>
-    <text x="706" y="48">THAN JUST</text>
-    <text x="706" y="66">A CRAWLER</text>
-  </g>
-  <g transform="rotate(-8 1120 52)" font-family={SANS} font-style="italic" font-weight="800" font-size="15" fill="var(--nc-acid)" text-anchor="end">
-    <text x="1164" y="34">FIND</text>
-    <text x="1164" y="52">VALIDATE</text>
-    <text x="1164" y="70">ESCALATE</text>
-  </g>
 </svg>

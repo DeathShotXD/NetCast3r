@@ -190,6 +190,13 @@ Notable changes to NetCast3r, newest first.
   a scrolled-away section, the parallax engine sleeps while the banner is
   offscreen or the tab is hidden, and the reduced-motion kill-switch
   overrides all of it.
+- Hovering a credential card no longer teleports it across the banner: a
+  CSS transform on the positioned group replaced its SVG transform
+  attribute, so the lift now lives on its own inner group with a fill-box
+  origin and composes with the position instead of clobbering it. The
+  graffiti word art, the sweeping beam, and the acid wash are gone -- the
+  scene keeps the moon, the city, the net, the spider, and the keys, and
+  nothing that could not be made premium survives.
 
 ### Fixed
 
