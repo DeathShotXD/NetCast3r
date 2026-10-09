@@ -1,6 +1,7 @@
 <script lang="ts">
   import { api } from '../api';
   import { store } from '../state.svelte';
+  import { spotlight } from '../actions';
   import PipelineLadder from '../ui/PipelineLadder.svelte';
   import Confirm from '../ui/Confirm.svelte';
 
@@ -75,7 +76,7 @@
 </script>
 
 <div class="stagger mx-auto grid max-w-[1180px] gap-5 lg:grid-cols-[1.15fr_1fr]">
-  <section class="panel p-6">
+  <section class="panel p-6" use:spotlight>
     <p class="eyebrow">new scan</p>
     <h1 class="mt-1 text-xl text-bone">Where should we look?</h1>
 

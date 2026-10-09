@@ -36,6 +36,21 @@
     store.go(id);
     onNavigate();
   }
+
+  let prevFindings = $state<number | null>(null);
+  let pop = $state(false);
+  $effect(() => {
+    if (prevFindings === null) {
+      prevFindings = findingCount;
+      return;
+    }
+    if (findingCount !== prevFindings) {
+      prevFindings = findingCount;
+      pop = false;
+      requestAnimationFrame(() => (pop = true));
+      window.setTimeout(() => (pop = false), 500);
+    }
+  });
 </script>
 
 {#if open}
@@ -72,7 +87,7 @@
         <span class="nav-glyph" aria-hidden="true">{item.glyph}</span>
         <span>{item.label}</span>
         {#if item.id === 'findings' && findingCount > 0}
-          <span class="nav-badge" class:hot={openCount > 0} title="{findingCount} findings"
+          <span class="nav-badge" class:hot={openCount > 0} class:badge-pop={pop} title="{findingCount} findings"
             >{findingCount}</span
           >
         {/if}
@@ -104,7 +119,9 @@
 
         <!-- scope: the instrument well -->
         <div
-          class="relative min-h-[92px] flex-1 overflow-hidden rounded-md border border-indigo-deep bg-void"
+          class="scope-well relative min-h-[92px] flex-1 overflow-hidden rounded-md border bg-void transition-colors duration-300"
+          class:border-acid={!!running}
+          class:border-indigo-deep={!running}
           aria-hidden="true"
         >
           <NetScope class="absolute inset-0 h-full w-full" active={!!running} />

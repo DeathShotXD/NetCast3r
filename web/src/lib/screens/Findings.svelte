@@ -3,6 +3,7 @@
   import { api } from '../api';
   import { ago, sevColor, sevShape, triageLabel } from '../format';
   import { store } from '../state.svelte';
+  import { pauseOffscreen } from '../actions';
   import type { Finding } from '../types';
   import Chip from '../ui/Chip.svelte';
   import EmptyState from '../ui/EmptyState.svelte';
@@ -97,7 +98,7 @@
     </div>
   </section>
 
-  <section class="panel overflow-hidden">
+  <section class="panel overflow-hidden" use:pauseOffscreen>
     {#if items.length === 0}
       <EmptyState
         eyebrow="empty"

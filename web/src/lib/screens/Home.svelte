@@ -4,7 +4,7 @@
   import { ago, finishedThrough, sevColor, sevShape, stageForAgent, statusColor, statusLabel, triageLabel } from '../format';
   import { store } from '../state.svelte';
   import { STAGES } from '../../tokens';
-  import { countup } from '../actions';
+  import { countup, pauseOffscreen, spotlight } from '../actions';
   import HeroArt from '../ui/HeroArt.svelte';
   import StageRail from '../ui/StageRail.svelte';
   import Chip from '../ui/Chip.svelte';
@@ -145,9 +145,15 @@
 
 <div class="stagger mx-auto flex max-w-[1180px] flex-col gap-6">
   <!-- Hero -->
-  <section class="panel-raised panel-hud relative min-h-[340px] overflow-hidden p-6 sm:min-h-[360px] sm:p-8">
-    <HeroArt class="pointer-events-none absolute inset-0 h-full w-full opacity-50 sm:opacity-95" />
-    <div class="relative max-w-[520px]">
+  <section
+    class="panel-raised panel-hud relative min-h-[340px] overflow-hidden p-6 sm:min-h-[360px] sm:p-8"
+    use:pauseOffscreen
+  >
+    <HeroArt
+      class="caster-layer pointer-events-none absolute inset-0 h-full w-full opacity-50 sm:opacity-95"
+      live={store.runs.some((run) => run.status === 'running')}
+    />
+    <div class="relative z-[2] max-w-[520px]">
       <p class="eyebrow" style="color:{hero.color}">{hero.eyebrow}</p>
       <h1 class="mt-2 text-2xl font-semibold leading-tight text-bone sm:text-[31px]">
         {hero.title}
@@ -165,11 +171,11 @@
   <!-- KPIs -->
   <section class="grid grid-cols-2 gap-3 lg:grid-cols-4" aria-label="summary">
     {#each kpis as kpi, i (kpi.label)}
-      <div class="panel kpi flex flex-col gap-1 p-4">
+      <div class="panel kpi flex flex-col gap-1 p-4" use:spotlight>
         <p class="eyebrow">{kpi.label}</p>
-        <p class="num text-[31px] leading-none" style="color:{kpi.color}" use:countup={kpi.value}>0</p>
-        <p class="text-xs text-bone-dust">{kpi.note}</p>
-        <span class="meter mt-1" style="--m:{kpi.meter};--m-color:{kpi.color}" aria-hidden="true"
+        <p class="num relative z-[1] text-[31px] leading-none" style="color:{kpi.color}" use:countup={kpi.value}>0</p>
+        <p class="relative z-[1] text-xs text-bone-dust">{kpi.note}</p>
+        <span class="meter relative z-[1] mt-1" style="--m:{kpi.meter};--m-color:{kpi.color}" aria-hidden="true"
           ><i style="animation-delay:{i * 90}ms"></i
         ></span>
       </div>
@@ -178,7 +184,7 @@
 
   <!-- Last run -->
   {#if lastRun}
-    <section class="panel panel-hud p-5">
+    <section class="panel panel-hud p-5" use:pauseOffscreen>
       <div class="mb-4 flex flex-wrap items-center gap-3">
         <p class="eyebrow">last run</p>
         <button

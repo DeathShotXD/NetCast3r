@@ -704,12 +704,86 @@
     );
   }
 
+  /* aurora curtain: two violet-acid ribbons breathing behind the grid.
+     pure opacity/transform, GPU-cheap, masked so it never hits the floor */
+  .aurora {
+    background:
+      radial-gradient(52rem 20rem at 18% -6%, rgba(159, 35, 221, 0.09), transparent 64%),
+      radial-gradient(44rem 16rem at 78% -2%, rgba(200, 248, 26, 0.05), transparent 62%);
+    mask-image: linear-gradient(180deg, black 0%, transparent 52%);
+    animation: aurora 21s ease-in-out infinite alternate;
+  }
+
   /* ---- hero (HeroArt) --------------------------------------------------- */
 
   .hero-draw {
     stroke-dasharray: 2400;
     stroke-dashoffset: 2400px;
     animation: draw 1.8s var(--ease-enter) forwards;
+  }
+
+  /* the scene listens: pointer parallax on --hx/--hy (-1..1), damped in JS.
+     each depth layer moves on its own factor; only transforms animate */
+  .px-sky {
+    transform: translate(calc(var(--hx, 0) * -5px), calc(var(--hy, 0) * -3.5px));
+  }
+
+  .px-far {
+    transform: translate(calc(var(--hx, 0) * -8px), calc(var(--hy, 0) * -5px));
+  }
+
+  .px-near {
+    transform: translate(calc(var(--hx, 0) * -13px), calc(var(--hy, 0) * -8px));
+  }
+
+  .px-net {
+    transform: translate(calc(var(--hx, 0) * 9px), calc(var(--hy, 0) * 6px));
+  }
+
+  .eye-track {
+    transform: translate(calc(var(--hx, 0) * 2.2px), calc(var(--hy, 0) * 1.6px));
+  }
+
+  .hub-shadow {
+    transform: translate(calc(var(--hx, 0) * -3px), calc(var(--hy, 0) * -2px));
+  }
+
+  .comet {
+    animation: comet 17s linear infinite;
+    animation-delay: 5s;
+    opacity: 0;
+  }
+
+  /* a live run wakes the sky: acid wash breathes over the whole scene */
+  .is-live .zap {
+    animation: zap 3.2s ease-in-out infinite;
+  }
+
+  /* cards lean into the cursor and pause their drift while held */
+  .card-slot {
+    pointer-events: visiblePainted;
+    cursor: default;
+  }
+
+  .card-lift {
+    transition: transform var(--t-toggle) var(--ease-enter);
+  }
+
+  .card-slot.hot .card-lift {
+    transform: translateY(-7px) scale(1.035);
+  }
+
+  .card-slot.hot .badge-shine {
+    animation-duration: 1.6s;
+    animation-delay: 0s;
+  }
+
+  .card-slot.hot .card-tick {
+    opacity: 1;
+  }
+
+  .card-tick {
+    transition: opacity var(--t-toggle) var(--ease-enter);
   }
 
   .hero-sweep {
@@ -1269,6 +1343,45 @@
   }
 }
 
+@keyframes comet {
+  0% {
+    transform: translate(-120px, 26px);
+    opacity: 0;
+  }
+  3% {
+    opacity: 0.85;
+  }
+  7% {
+    transform: translate(430px, -22px);
+    opacity: 0;
+  }
+  100% {
+    transform: translate(430px, -22px);
+    opacity: 0;
+  }
+}
+
+@keyframes zap {
+  0%,
+  100% {
+    opacity: 0;
+  }
+  50% {
+    opacity: 0.045;
+  }
+}
+
+@keyframes aurora {
+  0% {
+    transform: translateX(-2%) scaleX(1);
+    opacity: 0.75;
+  }
+  100% {
+    transform: translateX(2.5%) scaleX(1.06);
+    opacity: 1;
+  }
+}
+
 @keyframes ladder-flow {
   to {
     background-position: 0 15px;
@@ -1278,6 +1391,47 @@
 @keyframes meter-fill {
   from {
     transform: scaleX(0);
+  }
+}
+
+@keyframes bump {
+  0% {
+    transform: scale(1);
+  }
+  35% {
+    transform: scale(1.14);
+    text-shadow: 0 0 18px currentColor;
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+@keyframes toast-ttl {
+  from {
+    transform: scaleX(1);
+  }
+  to {
+    transform: scaleX(0);
+  }
+}
+
+@keyframes toast-out {
+  to {
+    transform: translateX(24px);
+    opacity: 0;
+  }
+}
+
+@keyframes badge-pop {
+  0% {
+    transform: scale(1);
+  }
+  40% {
+    transform: scale(1.35);
+  }
+  100% {
+    transform: scale(1);
   }
 }
 
@@ -1356,9 +1510,80 @@
   }
 }
 
-.finish-glow {
-  animation: finish-glow 900ms var(--ease-enter) 1;
-}
+  .finish-glow {
+    animation: finish-glow 900ms var(--ease-enter) 1;
+  }
+
+  /* ---- reactive layer ---------------------------------------------------- */
+
+  /* number landed on its new value */
+  .bump {
+    animation: bump 420ms var(--ease-enter);
+  }
+
+  /* pointer light on a panel face (use:spotlight) */
+  .spot {
+    position: absolute;
+    inset: 0;
+    z-index: 0;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 340ms var(--ease-enter);
+    background: radial-gradient(
+      220px circle at var(--sx, 50%) var(--sy, 50%),
+      rgba(200, 248, 26, 0.055),
+      rgba(159, 35, 221, 0.04) 42%,
+      transparent 68%
+    );
+  }
+
+  .spot.on {
+    opacity: 1;
+  }
+
+  /* every animation under the sun parks when its section scrolls away */
+  .parked,
+  .parked *,
+  .parked *::before,
+  .parked *::after {
+    animation-play-state: paused !important;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .parked,
+    .parked *,
+    .parked *::before,
+    .parked *::after {
+      animation-play-state: running !important;
+    }
+  }
+
+  /* toasts: HUD envelope with a draining time bar */
+  .toast {
+    position: relative;
+    overflow: hidden;
+  }
+
+  .toast::after {
+    content: '';
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    height: 2px;
+    background: linear-gradient(90deg, transparent, currentColor 45%, transparent);
+    transform-origin: left;
+    animation: toast-ttl 4200ms linear forwards;
+  }
+
+  .toast.leaving {
+    animation: toast-out 220ms var(--ease-enter) both;
+  }
+
+  /* nav badge pops when its number changes */
+  .badge-pop {
+    animation: badge-pop 460ms var(--ease-enter);
+  }
 
 @media (prefers-reduced-motion: reduce) {
   *,

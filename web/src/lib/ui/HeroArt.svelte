@@ -3,7 +3,10 @@
 </script>
 
 <script lang="ts">
-  let { class: klass = '' }: { class?: string } = $props();
+  let {
+    class: klass = '',
+    live = false
+  }: { class?: string; live?: boolean } = $props();
 
   const id = `ha${++seq}`;
   const W = 1180;
@@ -274,6 +277,8 @@
 
   let rIdx = $state(0);
   let rotator = 0;
+  let hot = $state(-1); // hovered card slot, -1 when the cursor is elsewhere
+  let svgEl = $state<SVGSVGElement | null>(null);
 
   const reduced =
     typeof window !== 'undefined' &&
@@ -288,6 +293,70 @@
     }, 6800);
     return () => window.clearInterval(timer);
   });
+
+  // ---- the scene listens back --------------------------------------------
+  // pointer sweeps bend every depth layer on its own parallax factor and the
+  // spider's eyes follow the cursor; everything eases on a damped lerp and
+  // the whole engine sleeps while the banner is scrolled away or the tab is
+  // hidden. Card hover is hit-tested here in SVG space -- the copy column
+  // stacks above the scene, so DOM hit-testing could never see the cards.
+  $effect(() => {
+    if (reduced) return;
+    const root = document.documentElement;
+    const svg = svgEl;
+    if (!svg) return;
+    let tx = 0;
+    let ty = 0;
+    let px = 0;
+    let py = 0;
+    let raf = 0;
+    let visible = true;
+    const io = new IntersectionObserver(
+      (entries) => {
+        visible = entries[0]?.isIntersecting ?? true;
+      },
+      { rootMargin: '60px' }
+    );
+    io.observe(svg);
+    const onMove = (event: PointerEvent) => {
+      tx = (event.clientX / window.innerWidth) * 2 - 1;
+      ty = (event.clientY / window.innerHeight) * 2 - 1;
+      const ctm = svg.getScreenCTM();
+      if (ctm) {
+        const p = new DOMPoint(event.clientX, event.clientY).matrixTransform(ctm.inverse());
+        let found = -1;
+        for (let i = 0; i < SLOTS.length; i++) {
+          const s = SLOTS[i];
+          const dx = p.x - s.x;
+          const dy = p.y - s.y;
+          const a = (-s.rot * Math.PI) / 180;
+          const lx = dx * Math.cos(a) - dy * Math.sin(a);
+          const ly = dx * Math.sin(a) + dy * Math.cos(a);
+          if (lx >= -8 && lx <= CARD_W + 8 && ly >= -8 && ly <= CARD_H + 8) {
+            found = i;
+            break;
+          }
+        }
+        if (found !== hot) hot = found;
+      }
+    };
+    const step = () => {
+      px += (tx - px) * 0.05;
+      py += (ty - py) * 0.05;
+      if (visible && !document.hidden) {
+        root.style.setProperty('--hx', px.toFixed(4));
+        root.style.setProperty('--hy', py.toFixed(4));
+      }
+      raf = requestAnimationFrame(step);
+    };
+    window.addEventListener('pointermove', onMove, { passive: true });
+    raf = requestAnimationFrame(step);
+    return () => {
+      io.disconnect();
+      window.removeEventListener('pointermove', onMove);
+      cancelAnimationFrame(raf);
+    };
+  });
 </script>
 
 <!-- The caster: a spider throws the net over the city. Recreated from
@@ -297,9 +366,11 @@
      column. -->
 <svg
   viewBox="0 0 {W} {H}"
-  class={klass}
+  class="caster-scene {klass}"
+  class:is-live={live}
   fill="none"
   aria-hidden="true"
+  bind:this={svgEl}
   preserveAspectRatio="xMidYMid slice"
 >
   <defs>
@@ -396,7 +467,7 @@
     <circle cx={MOON.cx} cy={MOON.cy} r="240" fill="url(#{id}-atmos)" />
 
     <!-- the moon -->
-    <g class="moon-breath">
+    <g class="moon-breath px-sky">
       <circle cx={MOON.cx} cy={MOON.cy} r="150" fill="url(#{id}-halo)" />
       <circle cx={MOON.cx} cy={MOON.cy} r={MOON.r} fill="url(#{id}-moon)" />
       {#each maria as m, i (i)}
@@ -420,31 +491,50 @@
       />
     </g>
 
-    <!-- far skyline -->
-    <g fill="var(--nc-violet_abyss)" opacity="0.85">
-      {#each far as b, i (i)}
-        <rect x={b.x} y={GROUND - b.h} width={b.w} height={b.h} />
+    <!-- far + near skyline, drifting on their own depths -->
+    <g class="px-far" opacity="0.9">
+      <g fill="var(--nc-violet_abyss)" opacity="0.85">
+        {#each far as b, i (i)}
+          <rect x={b.x} y={GROUND - b.h} width={b.w} height={b.h} />
+        {/each}
+      </g>
+      {#each spires as s, i (i)}
+        <path d="M{s.x} {s.y} V{s.y - 26}" stroke="var(--nc-violet_abyss)" stroke-width="2" />
+        <circle cx={s.x} cy={s.y - 28} r="2" fill="var(--nc-acid)" class="twinkle" style="animation-delay:{i * 900 + 400}ms" />
       {/each}
     </g>
-    {#each spires as s, i (i)}
-      <path d="M{s.x} {s.y} V{s.y - 26}" stroke="var(--nc-violet_abyss)" stroke-width="2" />
-      <circle cx={s.x} cy={s.y - 28} r="2" fill="var(--nc-acid)" class="twinkle" style="animation-delay:{i * 900 + 400}ms" />
-    {/each}
-
-    <!-- near skyline with lit windows -->
-    <g fill="var(--nc-indigo_deep)" opacity="0.92">
-      {#each near as b, i (i)}
-        <rect x={b.x} y={GROUND - b.h} width={b.w} height={b.h} />
-      {/each}
-    </g>
-    <g>
-      {#each wins as w, i (i)}
-        <rect x={w.x} y={w.y} width="3.4" height="4.6" fill={w.c} opacity="0.55" class="win-blink" style="animation-delay:{w.d}ms" />
-      {/each}
+    <g class="px-near">
+      <g fill="var(--nc-indigo_deep)" opacity="0.92">
+        {#each near as b, i (i)}
+          <rect x={b.x} y={GROUND - b.h} width={b.w} height={b.h} />
+        {/each}
+      </g>
+      <g>
+        {#each wins as w, i (i)}
+          <rect x={w.x} y={w.y} width="3.4" height="4.6" fill={w.c} opacity="0.55" class="win-blink" style="animation-delay:{w.d}ms" />
+        {/each}
+      </g>
     </g>
 
     <!-- ground -->
     <rect x="0" y={GROUND} width={W} height={H - GROUND} fill="var(--nc-void)" opacity="0.92" />
+
+    <!-- a signal crosses the sky now and then -->
+    {#if !reduced}
+      <g class="comet" opacity="0.85">
+        <line x1="-80" y1="52" x2="30" y2="40" stroke="var(--nc-bone)" stroke-width="1.1" stroke-linecap="round" opacity="0.7" />
+        <circle cx="30" cy="40" r="1.8" fill="var(--nc-bone)" />
+      </g>
+    {/if}
+
+    <!-- casting mood: the sky's acid wash wakes with a live run -->
+    <rect
+      width={W}
+      height={H}
+      class="zap"
+      fill="var(--nc-acid)"
+      opacity="0"
+    />
 
     <!-- the net, cast from the palm -->
     <g stroke="var(--nc-violet)" stroke-width="1" opacity="0.62">
@@ -489,9 +579,9 @@
     </g>
 
     <!-- the caster: a spider at the hub, jointed legs braced across the mesh -->
-    <g>
+    <g class="px-net">
       <!-- the web clears where the spider sits -->
-      <circle cx={O.x} cy={O.y} r="46" fill="url(#{id}-hub)" />
+      <circle class="hub-shadow" cx={O.x} cy={O.y} r="46" fill="url(#{id}-hub)" />
       <!-- soft cast shadow under the body -->
       <ellipse cx="866" cy="174" rx="44" ry="17" fill="url(#{id}-cast-shadow)" />
 
@@ -555,8 +645,8 @@
         <path d="M835 156 Q824 160 820 165" stroke="var(--nc-violet_abyss)" stroke-width="2.6" stroke-linecap="round" fill="none" />
         <circle cx="820" cy="165" r="0.9" fill="var(--nc-acid)" opacity="0.95" />
 
-        <!-- eyes -->
-        <g class="eye-glow">
+        <!-- eyes: they follow your cursor across the page -->
+        <g class="eye-glow eye-track">
           <circle cx="836" cy="144" r="16" fill="url(#{id}-eye-halo)" />
           <circle cx="838" cy="140" r="1.9" fill="var(--nc-acid)" />
           <circle cx="839" cy="146" r="1.9" fill="var(--nc-acid)" />
@@ -646,10 +736,10 @@
     </g>
   {/snippet}
 
-  {#snippet card(item: Item, x: number, y: number, rot: number, fl: string, rotating: boolean)}
-    <g class="secret-badge">
+  {#snippet card(item: Item, x: number, y: number, rot: number, fl: string, rotating: boolean, i: number)}
+    <g class="secret-badge card-slot" class:hot={hot === i}>
       <g class="badge-float {fl}">
-        <g transform="translate({x},{y}) rotate({rot})">
+        <g class="card-lift" transform="translate({x},{y}) rotate({rot})">
           {#if rotating}
             {#key rIdx}
               <g class="rot-in">{@render cardBody(ROT[rIdx])}</g>
@@ -658,15 +748,15 @@
             {@render cardBody(item)}
           {/if}
 
-          <path d="M0.5 7 v-6 h6" stroke="var(--nc-acid)" stroke-width="1.2" opacity="0.75" />
-          <path d="M{CARD_W - 6.5} {CARD_H - 0.5} h6 v-6" stroke="var(--nc-acid)" stroke-width="1.2" opacity="0.75" />
+          <path class="card-tick" d="M0.5 7 v-6 h6" stroke="var(--nc-acid)" stroke-width="1.2" opacity="0.75" />
+          <path class="card-tick" d="M{CARD_W - 6.5} {CARD_H - 0.5} h6 v-6" stroke="var(--nc-acid)" stroke-width="1.2" opacity="0.75" />
         </g>
       </g>
     </g>
   {/snippet}
 
   {#each SLOTS as slot, i (i)}
-    {@render card(slot.item ?? ROT[rIdx], slot.x, slot.y, slot.rot, slot.fl, slot.rotator ?? false)}
+    {@render card(slot.item ?? ROT[rIdx], slot.x, slot.y, slot.rot, slot.fl, slot.rotator ?? false, i)}
   {/each}
 
   <!-- report panel -->

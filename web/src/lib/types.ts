@@ -105,4 +105,5 @@ export interface Toast {
   id: number;
   kind: 'ok' | 'warn' | 'error';
   text: string;
+  leaving?: boolean;
 }

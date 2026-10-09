@@ -9,7 +9,7 @@
   import Confirm from '../ui/Confirm.svelte';
   import EmptyState from '../ui/EmptyState.svelte';
   import StageRail from '../ui/StageRail.svelte';
-  import { countup } from '../actions';
+  import { countup, pauseOffscreen, spotlight } from '../actions';
 
   const stages = STAGES as unknown as { key: string; label: string }[];
   const TERMINAL = ['done', 'failed', 'stopped', 'interrupted'];
@@ -312,7 +312,7 @@
   </div>
 {:else if run}
   <div class="stagger mx-auto flex max-w-[1180px] flex-col gap-5">
-    <section class="panel panel-hud p-5" class:finish-glow={finished}>
+    <section class="panel panel-hud p-5" class:finish-glow={finished} use:spotlight>
       <div class="flex flex-wrap items-center gap-3">
         <div class="min-w-0">
           <p class="eyebrow">run {run.id.slice(-6)}</p>
@@ -434,7 +434,7 @@
       </div>
     </section>
 
-    <section class="panel overflow-hidden" data-thinking="1">
+    <section class="panel overflow-hidden" data-thinking="1" use:pauseOffscreen>
       <div class="flex flex-wrap items-center justify-between gap-3 border-b border-indigo-deep px-4 py-2.5">
         <div class="flex items-center gap-3">
           <p class="eyebrow">model activity</p>

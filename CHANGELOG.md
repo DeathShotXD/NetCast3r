@@ -174,6 +174,22 @@ Notable changes to NetCast3r, newest first.
   steps off the moon. The backdrop drops the drifting scan sweep, which
   read as a stray line across the empty gutters, and the vertical
   AUTHORIZED TESTING ONLY edge mark.
+- The banner scene listens back now: pointer sweeps bend the moon, both
+  skylines, the net and the spider on four parallax depths on a damped
+  lerp, the spider's eyes follow your cursor across the page, a comet
+  crosses the sky on a long loop, and a signal comet streaks. Credential
+  cards lean into the cursor with a lift and glow while held -- hit-tested
+  in SVG space, since the copy column stacks over the scene -- and a live
+  run wakes the whole sky with a slow acid wash. An aurora curtain breathes
+  behind the backdrop grid, toasts drain on a time bar and exit on their
+  own, countup tiles bump when a number lands, the findings badge pops on
+  change, the scope well tints acid while casting, and a spotlight follows
+  the pointer across KPI and form panels.
+- Everything animated parks when it leaves the viewport: a
+  pause-offscreen observer stamps a class that suspends every animation in
+  a scrolled-away section, the parallax engine sleeps while the banner is
+  offscreen or the tab is hidden, and the reduced-motion kill-switch
+  overrides all of it.
 
 ### Fixed
 

@@ -122,6 +122,11 @@ class Store {
     const id = ++this.toastSeq;
     this.toasts = [...this.toasts, { id, kind, text }];
     window.setTimeout(() => {
+      this.toasts = this.toasts.map((toast) =>
+        toast.id === id ? { ...toast, leaving: true } : toast
+      );
+    }, 3980);
+    window.setTimeout(() => {
       this.toasts = this.toasts.filter((toast) => toast.id !== id);
     }, 4200);
   }

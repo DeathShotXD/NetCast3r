@@ -59,6 +59,9 @@
     {/each}
   </div>
 
+  <!-- an aurora curtain, breathing behind the grid -->
+  <div class="aurora absolute inset-0" aria-hidden="true"></div>
+
   <!-- the CRT the whole product lives inside -->
   <div class="scanlines absolute inset-0" aria-hidden="true"></div>
 
