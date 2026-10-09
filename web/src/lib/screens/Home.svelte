@@ -146,7 +146,7 @@
 <div class="stagger mx-auto flex max-w-[1180px] flex-col gap-6">
   <!-- Hero -->
   <section
-    class="panel-raised panel-hud relative min-h-[340px] overflow-hidden p-6 sm:min-h-[360px] sm:p-8"
+    class="caster-vignette panel-raised panel-hud relative min-h-[340px] overflow-hidden p-6 sm:min-h-[360px] sm:p-8"
     use:pauseOffscreen
   >
     <HeroArt

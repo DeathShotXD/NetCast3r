@@ -197,6 +197,31 @@ Notable changes to NetCast3r, newest first.
   graffiti word art, the sweeping beam, and the acid wash are gone -- the
   scene keeps the moon, the city, the net, the spider, and the keys, and
   nothing that could not be made premium survives.
+- The dashboard runs light now: the noise layer drops its blend mode, the
+  grid drops its per-frame mask, the sticky bar drops its backdrop blur,
+  the aurora animates opacity only, one lattice layer drifts instead of
+  two, nine embers rise instead of sixteen, and the net, the windows, the
+  stars and the knots pulse on slower periods with fewer animated nodes.
+  Measured on a saturated four-core box with a clean 60fps control: the
+  history screen went from about four frames a second to about fourteen,
+  and home from about three to about eight, with the scene's whole cost
+  contained inside its own layer.
+- The reasoning stream reads like a briefing instead of a token dump:
+  repeated lines collapse, markdown debris and bare punctuation drop,
+  continuation fragments join the sentence they belong to, blocks show the
+  two newest lines with an expander for the rest, and text wraps as prose.
+  The garble itself is fixed at the source: the exegete reads files in
+  parallel and every file's reasoning tokens used to interleave into one
+  stream, so now each file buffers its own tokens and flushes them as one
+  tagged block when it finishes.
+- The engine room arrives as its own screen: one lane per agent with a
+  pulsing led, an activity meter that fills as the agent works, its model
+  call history, the stage it owns, and a click to read its latest line;
+  six stage tiles light up as the pipeline advances, deep links resolve,
+  and the screen picks the running run -- or the newest -- on its own.
+- The banner seats itself as a stage: a soft vignette fades the copy
+  column and the scene edges so the composition reads as one lit frame
+  instead of a sticker sheet.
 
 ### Fixed
 

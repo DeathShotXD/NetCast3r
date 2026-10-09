@@ -30,6 +30,7 @@
   // fused into a single block so the stream renders dozens of nodes, not thousands
   let thinking = $state<{
     id: number; ts: number; agent: string; text: string; parts: number;
+    sentences: string[]; expanded?: boolean;
   }[]>([]);
   let calls = $state<{
     seq: number; ts: number; agent: string; provider: string; model: string;
@@ -85,6 +86,33 @@
     if (thinkFollow && thinkBox) thinkBox.scrollTop = thinkBox.scrollHeight;
   }
 
+  /** Reasoning arrives as repeated template lines and token fragments; keep it
+   *  brief: drop markdown debris, collapse exact repeats, split into readable
+   *  sentences, and keep the tail short until the reader opens the block. */
+  function absorbReasoning(block: { text: string; parts: number; sentences: string[] }, text: string) {
+    block.parts += 1;
+    let line = text.trim();
+    if (!line) return;
+    // token debris: bare markdown punctuation, lone bullets, stray separators
+    if (!/[a-zA-Z0-9]/.test(line)) return;
+    line = line.replace(/^[\s*#>|-]+/, '').replace(/[\s*]+$/, '').trim();
+    if (!line || !/[a-zA-Z0-9]/.test(line)) return;
+    // a line that only continues the last sentence gets appended, not split
+    const continues = block.sentences.length > 0 && !/[.!?:]$/.test(block.sentences[block.sentences.length - 1]);
+    if (continues && !block.sentences.some((s) => s.toLowerCase() === line.toLowerCase())) {
+      block.sentences[block.sentences.length - 1] = `${block.sentences[block.sentences.length - 1]} ${line}`.replace(/\s+/g, ' ');
+    } else {
+      if (block.sentences.some((s) => s.toLowerCase() === line.toLowerCase())) return;
+      for (const part of line.split(/(?<=[.!?:])\s+/).map((s) => s.trim()).filter(Boolean)) {
+        if (!block.sentences.some((prev) => prev.toLowerCase() === part.toLowerCase())) {
+          block.sentences.push(part);
+        }
+      }
+    }
+    if (block.sentences.length > 24) block.sentences.splice(0, block.sentences.length - 24);
+    block.text = block.sentences.join(' ');
+  }
+
   function applyEvent(event: RunEvent) {
     if (event.progress) counts = { ...counts, ...event.progress };
     if (event.type === 'finding.created' && event.payload) {
@@ -98,13 +126,17 @@
       const agent = event.agent || 'model';
       const last = thinking[thinking.length - 1];
       if (last && last.agent === agent && event.ts - last.ts < 5000) {
-        last.text += '\n' + text;
+        absorbReasoning(last, text);
         last.ts = event.ts;
-        last.parts += 1;
+        thinking = [...thinking];
       } else if (thinking.length < THINK_BLOCK_CAP) {
-        thinking = [...thinking, { id: event.seq, ts: event.ts, agent, text, parts: 1 }];
+        const block = { id: event.seq, ts: event.ts, agent, text: '', parts: 0, sentences: [] as string[] };
+        absorbReasoning(block, text);
+        thinking = [...thinking, block];
       } else {
-        thinking = [...thinking.slice(1), { id: event.seq, ts: event.ts, agent, text, parts: 1 }];
+        const block = { id: event.seq, ts: event.ts, agent, text: '', parts: 0, sentences: [] as string[] };
+        absorbReasoning(block, text);
+        thinking = [...thinking.slice(1), block];
       }
     }
     if (event.type === 'model' && event.payload) {
@@ -479,6 +511,7 @@
             {/if}
             {#each thinking as block (block.id)}
               {@const agentColor = (AGENT_COLORS as Record<string, string>)[block.agent] ?? 'var(--nc-bone-dust)'}
+              {@const shown = block.expanded ? block.sentences : block.sentences.slice(-2)}
               <div class="think-block" style="--agent:{agentColor}">
                 <div class="think-meta mono">
                   <span class="think-dot" aria-hidden="true"></span>
@@ -488,7 +521,20 @@
                     <span class="think-parts">{block.parts} fragments</span>
                   {/if}
                 </div>
-                <p class="think-text">{block.text}</p>
+                <p class="think-text">
+                  {#if shown.length > 1}{#each shown as sentence, si (si)}{si > 0 ? ' ' : ''}{sentence}{/each}{:else}{shown[0] ?? ''}{/if}
+                </p>
+                {#if block.sentences.length > shown.length}
+                  <button
+                    class="think-more mono"
+                    type="button"
+                    onclick={() => (block.expanded = !block.expanded)}
+                  >
+                    {block.expanded
+                      ? 'collapse'
+                      : `+ ${block.sentences.length - shown.length} earlier ${block.sentences.length - shown.length === 1 ? 'line' : 'lines'}`}
+                  </button>
+                {/if}
               </div>
             {/each}
           </div>

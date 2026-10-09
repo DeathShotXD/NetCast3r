@@ -8,6 +8,7 @@
     { id: 'home', label: 'Home', glyph: '#', hint: 'overview, what to do next' },
     { id: 'new', label: 'New scan', glyph: '>', hint: 'point the tool at a target' },
     { id: 'live', label: 'Live runs', glyph: '[*]', hint: 'watch a scan as it works' },
+    { id: 'engine', label: 'Engine room', glyph: '{i}', hint: 'agent lanes, thinking live' },
     { id: 'findings', label: 'Findings', glyph: '*', hint: 'triage what came back' },
     { id: 'runs', label: 'Runs', glyph: '//', hint: 'history, rerun, delete' },
     { id: 'keys', label: 'Providers', glyph: '^', hint: 'keys, models, health' },

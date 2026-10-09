@@ -13,6 +13,7 @@
     home: 'home',
     new: 'new scan',
     live: 'live run',
+    engine: 'engine room',
     findings: 'findings',
     runs: 'runs',
     keys: 'providers and keys',
@@ -34,7 +35,7 @@
 </script>
 
 <header
-  class="sticky top-0 z-20 flex items-center gap-3 border-b border-indigo-deep bg-void/85 px-4 py-3 backdrop-blur-sm sm:px-6"
+  class="sticky top-0 z-20 flex items-center gap-3 border-b border-indigo-deep bg-void/95 px-4 py-3 sm:px-6"
   class:run-line={scanActive}
 >
   <button class="btn btn-quiet px-2! lg:hidden" type="button" onclick={onMenu} aria-label="open navigation">

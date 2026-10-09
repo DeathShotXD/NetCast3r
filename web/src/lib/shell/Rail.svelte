@@ -14,6 +14,7 @@
     { id: 'home', label: 'Home', glyph: '#', hint: 'what we found, what to do' },
     { id: 'new', label: 'New scan', glyph: '>', hint: 'point the tool at a target' },
     { id: 'live', label: 'Live runs', glyph: '[*]', hint: 'watch a scan as it works' },
+    { id: 'engine', label: 'Engine', glyph: '{i}', hint: 'the agents, thinking live' },
     { id: 'findings', label: 'Findings', glyph: '*', hint: 'triage what came back' },
     { id: 'runs', label: 'Runs', glyph: '//', hint: 'history, rerun, delete' },
     { id: 'keys', label: 'Providers', glyph: '^', hint: 'paste a key, test a provider' },

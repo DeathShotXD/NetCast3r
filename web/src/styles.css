@@ -580,8 +580,26 @@
     margin: 5px 0 0;
     color: var(--nc-bone_dust);
     line-height: 1.55;
-    white-space: pre-wrap;
+    white-space: normal;
     overflow-wrap: anywhere;
+  }
+
+  .think-more {
+    margin-top: 5px;
+    border: 0;
+    padding: 0;
+    background: none;
+    cursor: pointer;
+    font-size: 10px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--nc-acid);
+    opacity: 0.75;
+    transition: opacity var(--t-hover) var(--ease-enter);
+  }
+
+  .think-more:hover {
+    opacity: 1;
   }
 
   .think-block:last-child {
@@ -652,7 +670,7 @@
   .flame-shard {
     transform-box: fill-box;
     transform-origin: center;
-    animation: flame-flicker 1.7s ease-in-out infinite alternate;
+    animation: flame-flicker 3.4s ease-in-out infinite alternate;
   }
 
   .mark-live .flame-shard {
@@ -663,7 +681,7 @@
   /* SVG knots: opacity pulse only -- box-shadow is invisible on SVG shapes
      and feGaussianBlur on animated groups forces a full re-raster per frame */
   .knot-pulse {
-    animation: knot-pulse 2.4s ease-in-out infinite;
+    animation: knot-pulse 4.6s ease-in-out infinite;
   }
 
   .mark-spin {
@@ -704,8 +722,16 @@
     );
   }
 
+  /* edge fade over the grid: a static painted gradient replaces the grid's
+     mask-image, which forced the whole layer to repaint every frame */
+  .grid-fade {
+    background: linear-gradient(180deg, transparent 0%, transparent 30%, var(--nc-void) 88%);
+    opacity: 0.85;
+  }
+
   /* aurora curtain: two violet-acid ribbons breathing behind the grid.
-     pure opacity/transform, GPU-cheap, masked so it never hits the floor */
+     opacity only -- a transform in the loop kept the layer on the main
+     thread, and will-change pinned a full-screen repaint surface */
   .aurora {
     background:
       radial-gradient(52rem 20rem at 18% -6%, rgba(159, 35, 221, 0.09), transparent 64%),
@@ -716,6 +742,19 @@
 
   /* ---- hero (HeroArt) --------------------------------------------------- */
 
+  /* the banner seats itself: the hero section paints a soft vignette so the
+     scene reads as a stage, not a sticker sheet */
+  .caster-vignette::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    z-index: 1;
+    pointer-events: none;
+    background:
+      linear-gradient(90deg, rgba(1, 1, 1, 0.72) 0%, transparent 30%),
+      radial-gradient(120% 130% at 72% 40%, transparent 62%, rgba(1, 1, 1, 0.5) 100%);
+  }
+
   .hero-draw {
     stroke-dasharray: 2400;
     stroke-dashoffset: 2400px;
@@ -723,7 +762,12 @@
   }
 
   /* the scene listens: pointer parallax on --hx/--hy (-1..1), damped in JS.
-     each depth layer moves on its own factor; only transforms animate */
+     each depth layer moves on its own factor; only transforms animate.
+     contain isolates the svg's internal repaints from the rest of the page */
+  .caster-scene {
+    contain: strict;
+  }
+
   .px-sky {
     transform: translate(calc(var(--hx, 0) * -5px), calc(var(--hy, 0) * -3.5px));
   }
@@ -792,7 +836,7 @@
   }
 
   .twinkle {
-    animation: twinkle 2.6s ease-in-out infinite;
+    animation: twinkle 5.2s ease-in-out infinite;
   }
 
   .ants {
@@ -813,7 +857,7 @@
   }
 
   .win-blink {
-    animation: blink 4.6s ease-in-out infinite;
+    animation: blink 9s ease-in-out infinite;
   }
 
   .hero-ck {
@@ -839,6 +883,56 @@
     );
     background-size: 1px 15px;
     animation: ladder-flow 1.4s linear infinite;
+  }
+
+  /* ---- engine room lanes ------------------------------------------------- */
+
+  .lane {
+    cursor: pointer;
+    transition: border-color var(--t-hover) var(--ease-enter),
+      box-shadow var(--t-toggle) var(--ease-enter);
+  }
+
+  .lane:hover {
+    border-color: var(--nc-violet_deep);
+  }
+
+  .lane-hot {
+    border-color: color-mix(in srgb, var(--agent, var(--nc-acid)) 55%, transparent);
+    box-shadow: 0 0 18px -8px var(--agent, transparent);
+  }
+
+  .lane-led {
+    width: 8px;
+    height: 8px;
+    flex: none;
+    border-radius: 50%;
+    background: var(--agent, var(--nc-slate));
+    box-shadow: 0 0 8px var(--agent, transparent);
+    animation: lane-pulse 2.8s ease-in-out infinite;
+  }
+
+  .lane-meter {
+    position: relative;
+    flex: 1;
+    min-width: 60px;
+    height: 3px;
+    border-radius: 999px;
+    background: var(--nc-indigo_deep);
+    overflow: hidden;
+  }
+
+  .lane-meter > i {
+    position: absolute;
+    inset: 0;
+    display: block;
+    border-radius: inherit;
+    background: linear-gradient(
+      90deg,
+      color-mix(in srgb, var(--agent, var(--nc-acid)) 35%, transparent),
+      var(--agent, var(--nc-acid))
+    );
+    transition: width 500ms var(--ease-enter);
   }
 
   /* ---- micro meters (KPI shares, confidence) ---------------------------- */
@@ -1347,11 +1441,9 @@
 
 @keyframes aurora {
   0% {
-    transform: translateX(-2%) scaleX(1);
-    opacity: 0.75;
+    opacity: 0.55;
   }
   100% {
-    transform: translateX(2.5%) scaleX(1.06);
     opacity: 1;
   }
 }
@@ -1406,6 +1498,16 @@
   }
   100% {
     transform: scale(1);
+  }
+}
+
+@keyframes lane-pulse {
+  0%,
+  100% {
+    opacity: 0.9;
+  }
+  50% {
+    opacity: 0.4;
   }
 }
 

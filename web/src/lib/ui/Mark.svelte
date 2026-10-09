@@ -17,8 +17,8 @@
   const R_DISC = 40;
   const R_RING = 46;
 
-  const shards = Array.from({ length: 14 }, (_, i) => {
-    const angle = (i / 14) * 360 + 9;
+  const shards = Array.from({ length: 9 }, (_, i) => {
+    const angle = (i / 9) * 360 + 12;
     const acid = i % 2 === 0;
     const len = 12 + ((i * 7) % 3) * 4.2;
     const w = 5.4 + (i % 2) * 2;
@@ -34,8 +34,8 @@
     return { angle, acid, path, delay: (i * 173) % 1700 };
   });
 
-  const nodes = Array.from({ length: 6 }, (_, i) => {
-    const a = ((i / 6) * 360 + 30) * (Math.PI / 180);
+  const nodes = Array.from({ length: 4 }, (_, i) => {
+    const a = ((i / 4) * 360 + 45) * (Math.PI / 180);
     return {
       x: (60 + Math.cos(a) * 52).toFixed(1),
       y: (60 + Math.sin(a) * 52).toFixed(1),

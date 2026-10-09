@@ -43,7 +43,7 @@
     const rows = Math.floor((b.h - 10) / 11);
     for (let c = 0; c < cols; c++) {
       for (let r = 0; r < rows; r++) {
-        if (rnd() > 0.55 && wins.length < 88) {
+        if (rnd() > 0.55 && wins.length < 40) {
           wins.push({
             x: +(b.x + 5 + c * 9).toFixed(1),
             y: +(GROUND - b.h + 7 + r * 11).toFixed(1),
@@ -169,7 +169,7 @@
     { cx: 736, cy: 120, rx: 13, ry: 9, o: 0.25, rot: 0 }
   ];
 
-  const stars = Array.from({ length: 12 }, () => ({
+  const stars = Array.from({ length: 7 }, () => ({
     x: +(560 + rnd() * 600).toFixed(1),
     y: +(10 + rnd() * 72).toFixed(1),
     r: +(0.9 + rnd() * 0.8).toFixed(1),
@@ -193,7 +193,7 @@
     return { i, path: `M${O.x} ${O.y} L${e.x.toFixed(1)} ${e.y.toFixed(1)}` };
   });
 
-  const DEPTHS = [0.24, 0.4, 0.56, 0.72, 0.88];
+  const DEPTHS = [0.24, 0.4, 0.56, 0.72];
   const chords = DEPTHS.map((d) => {
     const pts = ANG.map((_, i) => along(i, d));
     let path = `M${pts[0].x.toFixed(1)} ${pts[0].y.toFixed(1)}`;
@@ -209,7 +209,7 @@
 
   const nodes = DEPTHS.flatMap((d, di) =>
     ANG.map((_, i) => ({ i, di, ...along(i, d) })).filter(
-      (n) => n.x > 4 && n.x < 1176 && n.y > 4 && n.y < 354 && n.i % 2 === di % 2
+      (n) => n.x > 4 && n.x < 1176 && n.y > 4 && n.y < 354 && n.i % 3 === di % 3
     )
   );
 
@@ -505,7 +505,17 @@
       </g>
       <g>
         {#each wins as w, i (i)}
-          <rect x={w.x} y={w.y} width="3.4" height="4.6" fill={w.c} opacity="0.55" class="win-blink" style="animation-delay:{w.d}ms" />
+          {@const blink = i % 3 === 0}
+          <rect
+            x={w.x}
+            y={w.y}
+            width="3.4"
+            height="4.6"
+            fill={w.c}
+            opacity={blink ? 0.55 : 0.34}
+            class={blink ? 'win-blink' : ''}
+            style={blink ? 'animation-delay:{w.d}ms' : ''}
+          />
         {/each}
       </g>
     </g>
@@ -538,14 +548,15 @@
       {#each nodes as node (node.i * 10 + node.di)}
         {@const r = node.di === DEPTHS.length - 1 ? 2.5 : 1.7}
         {@const color = node.di === DEPTHS.length - 1 ? 'var(--nc-acid)' : 'var(--nc-violet)'}
+        {@const pulse = (node.i + node.di) % 2 === 0}
         <circle cx={node.x.toFixed(1)} cy={node.y.toFixed(1)} r={r + 3.4} fill={color} opacity="0.16" />
         <circle
           cx={node.x.toFixed(1)}
           cy={node.y.toFixed(1)}
           r={r}
           fill={color}
-          class="knot-pulse"
-          style="animation-delay:{(node.i * 170 + node.di * 320) % 2400}ms"
+          class={pulse ? 'knot-pulse' : ''}
+          style={pulse ? 'animation-delay:{(node.i * 170 + node.di * 320) % 2400}ms' : ''}
         />
       {/each}
     </g>

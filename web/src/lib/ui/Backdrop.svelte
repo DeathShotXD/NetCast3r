@@ -5,9 +5,11 @@
   const noise =
     "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)' opacity='0.4'/%3E%3C/svg%3E\")";
 
-  // A handful of sparks rising off the water -- transform/opacity only.
-  const embers = Array.from({ length: 16 }, (_, i) => ({
-    left: (i * 6.4 + ((i * 37) % 9)).toFixed(1),
+  // A few sparks rising off the water -- transform/opacity only. Nine, not
+  // sixteen: each spark is a full-viewport animation track, and the mood
+  // survives the cut.
+  const embers = Array.from({ length: 9 }, (_, i) => ({
+    left: (i * 11.1 + ((i * 37) % 9)).toFixed(1),
     size: i % 4 === 0 ? 4 : 3,
     violet: i % 3 === 0,
     dur: 14 + ((i * 13) % 17),
@@ -26,25 +28,20 @@
   ></div>
 
   <div
-    class="absolute inset-0 opacity-60"
+    class="absolute inset-0 opacity-35"
     style="background-image:
       linear-gradient(rgba(40, 21, 80, 0.4) 1px, transparent 1px),
       linear-gradient(90deg, rgba(40, 21, 80, 0.4) 1px, transparent 1px);
       background-size: 46px 46px;
-      mask-image: radial-gradient(130% 110% at 50% 0%, black 34%, transparent 92%);"
+      will-change: transform;"
   ></div>
 
   <div
     class="absolute -inset-x-1/4 inset-y-[-12%] opacity-[0.05]"
-    style="background-image:{lattice}; background-size:140px 140px; animation:drift-x 120s linear infinite;"
+    style="background-image:{lattice}; background-size:140px 140px; animation:drift-x 240s linear infinite;"
   ></div>
 
-  <div
-    class="absolute -inset-y-1/4 inset-x-[-14%] opacity-[0.04]"
-    style="background-image:{lattice}; background-size:210px 210px; animation:drift-x 180s linear infinite reverse;"
-  ></div>
-
-  <div class="absolute inset-0 opacity-40" style="background-image:{noise}; mix-blend-mode:soft-light;"></div>
+  <div class="absolute inset-0 opacity-[0.16]" style="background-image:{noise};"></div>
 
   <!-- rising sparks -->
   <div class="absolute inset-0 overflow-hidden">
@@ -61,6 +58,9 @@
 
   <!-- an aurora curtain, breathing behind the grid -->
   <div class="aurora absolute inset-0" aria-hidden="true"></div>
+
+  <!-- edge fade over the grid, so the mask never has to paint -->
+  <div class="grid-fade absolute inset-0" aria-hidden="true"></div>
 
   <!-- the CRT the whole product lives inside -->
   <div class="scanlines absolute inset-0" aria-hidden="true"></div>

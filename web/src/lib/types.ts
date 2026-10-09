@@ -96,6 +96,7 @@ export type Screen =
   | 'home'
   | 'new'
   | 'live'
+  | 'engine'
   | 'findings'
   | 'runs'
   | 'keys'

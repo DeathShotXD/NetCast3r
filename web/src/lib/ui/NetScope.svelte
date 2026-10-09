@@ -113,14 +113,15 @@
       {#each nodes as node (node.i * 10 + node.di)}
         {@const r = node.di === DEPTHS.length - 1 ? 2.2 : 1.5}
         {@const color = node.di === DEPTHS.length - 1 ? 'var(--nc-acid)' : 'var(--nc-violet)'}
+        {@const pulse = (node.i + node.di) % 2 === 0}
         <circle cx={node.x.toFixed(1)} cy={node.y.toFixed(1)} r={r + 3} fill={color} opacity="0.16" />
         <circle
           cx={node.x.toFixed(1)}
           cy={node.y.toFixed(1)}
           r={r}
           fill={color}
-          class="knot-pulse"
-          style="animation-delay:{(node.i * 170 + node.di * 320) % 2400}ms"
+          class={pulse ? 'knot-pulse' : ''}
+          style={pulse ? 'animation-delay:{(node.i * 170 + node.di * 320) % 2400}ms' : ''}
         />
       {/each}
     </g>

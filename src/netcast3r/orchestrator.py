@@ -315,14 +315,37 @@ class Orchestrator:
             return {}
         self.console.line("exegete", f"reading {len(js_text)} files")
         notes: dict = {}
+        # every file streams its own reasoning tokens; into one sink they
+        # interleave into noise, so each file buffers and flushes in order,
+        # tagged with the path it is thinking about
+        from threading import Lock
+
+        lock = Lock()
+        buffers: dict[str, list[str]] = {}
+
+        def sink(url: str):
+            def absorb(text: str) -> None:
+                with lock:
+                    buffers.setdefault(url, []).append(text)
+            return absorb
+
+        def flush(url: str) -> None:
+            text = " ".join(buffers.pop(url, [])).strip()
+            if not text:
+                return
+            head = url.rsplit("/", 1)[-1][:40]
+            self.console.reasoning("exegete", f"[{head}] {text[:400]}")
+
         with ThreadPoolExecutor(max_workers=min(8, len(js_text))) as pool:
             futures = {pool.submit(self.roster.exegete.analyze, url, text,
-                                   self._reason("exegete")): url
+                                   sink(url)): url
                        for url, text in js_text.items()}
             for future in as_completed(futures):
+                url = futures[future]
                 result = future.result()
+                flush(url)
                 if result.data:
-                    notes[futures[future]] = result.data
+                    notes[url] = result.data
         return notes
 
     def _assay(self, candidates: list[Secret]) -> list[dict]:

@@ -8,6 +8,7 @@
   import Home from './lib/screens/Home.svelte';
   import Keys from './lib/screens/Keys.svelte';
   import LiveScan from './lib/screens/LiveScan.svelte';
+  import Engine from './lib/screens/Engine.svelte';
   import NewScan from './lib/screens/NewScan.svelte';
   import Runs from './lib/screens/Runs.svelte';
   import Backdrop from './lib/ui/Backdrop.svelte';
@@ -68,6 +69,8 @@
             <NewScan />
           {:else if store.screen === 'live'}
             <LiveScan />
+          {:else if store.screen === 'engine'}
+            <Engine />
           {:else if store.screen === 'findings'}
             <Findings />
           {:else if store.screen === 'runs'}
