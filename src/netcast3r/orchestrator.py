@@ -120,6 +120,8 @@ class Orchestrator:
         sink = getattr(self.console, "fetch", None)
         feed = sink if callable(sink) else None
         recon = Recon(self.scope, self.config, session=self.session, on_fetch=feed)
+        originals = list(seeds)
+        seeds = self._map_subdomains(recon, seeds)
         result = recon.crawl(seeds)
         discovered = recon.discover_apis(seeds)
         discovered += recon.discover_wellknown(seeds)
@@ -127,7 +129,7 @@ class Orchestrator:
             result.endpoints = sorted(set(result.endpoints) | set(discovered))
         self._out_of_scope = result.out_of_scope
         if self.config.run.wayback:
-            self._augment_wayback(recon, seeds, result)
+            self._augment_wayback(recon, originals, result)
         self.console.line("recon", f"{len(result.pages)} pages, {len(result.js_urls)} js files, "
                                    f"{len(result.endpoints)} endpoints, "
                                    f"{len(result.out_of_scope)} skipped out of scope")
@@ -184,6 +186,12 @@ class Orchestrator:
             "confidence": confidence,
         }
         return summary, findings
+
+    def _map_subdomains(self, recon: Recon, seeds: list[str]) -> list[str]:
+        added = recon.expand_seeds(seeds)
+        if added:
+            self.console.line("recon", f"{len(added)} subdomains mapped, crawling each one")
+        return seeds + added
 
     def _seed_domains(self, seeds: list[str]) -> list[str]:
         domains: list[str] = []

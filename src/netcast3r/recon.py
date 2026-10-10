@@ -16,6 +16,7 @@ from dataclasses import dataclass, field
 from urllib.parse import unquote, urljoin, urlsplit
 
 from .http import Session
+from .subdomains import SubdomainFinder
 
 LINK_RE = re.compile(r"""(?:href|src|action)\s*=\s*["']([^"'#]+)["']""", re.I)
 JS_REF_RE = re.compile(r"""(?:src|href)\s*=\s*["']([^"']+\.js(?:\?[^"']*)?)["']""", re.I)
@@ -54,7 +55,8 @@ def _absolute(base: str, link: str) -> str:
 
 
 class Recon:
-    def __init__(self, scope, config, session: Session | None = None, on_fetch=None):
+    def __init__(self, scope, config, session: Session | None = None, on_fetch=None,
+                 resolver=None):
         self.scope = scope
         self.config = config
         self.session = session or Session(config)
@@ -63,6 +65,25 @@ class Recon:
         # on_fetch(kind, url, status): kind is page | js | skip. The dashboard
         # feeds this straight into its live crawler panel.
         self.on_fetch = on_fetch
+        self.resolver = resolver
+
+    def expand_seeds(self, seeds: list[str]) -> list[str]:
+        """Map the subdomains of each seed host and return them as new seeds.
+
+        Returns https roots for every in-scope subdomain, so the crawler walks
+        each one and collects its JavaScript. An empty list means the stage is
+        off or the target is an address with no names to map.
+        """
+        if not getattr(self.config.run, "subdomains", False):
+            return []
+        for seed in seeds:
+            self.scope.add_seed(seed if "://" in seed else "https://" + seed)
+        finder = SubdomainFinder(self.scope, self.config, self.session,
+                                 resolver=self.resolver)
+        hosts = finder.find(seeds)
+        existing = {urlsplit(s if "://" in s else "https://" + s).hostname
+                    for s in seeds}
+        return [f"https://{host}" for host in hosts if host not in existing]
 
     def _fetch(self, url: str):
         response = self.session.get(url)
@@ -193,6 +214,7 @@ class Recon:
 
         seen: set[str] = set()
         tick = 0
+        self.max_pages = max(self.max_pages, len(seeds) * 20)
         while queue and len(seen) < self.max_pages:
             url, depth = queue.pop(0)
             if url in seen:

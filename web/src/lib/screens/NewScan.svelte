@@ -10,19 +10,19 @@
       id: 'quick',
       name: 'Quick look',
       blurb: 'One page and its scripts. The fastest honest pass.',
-      options: { depth: 1, tier: 'read' }
+      options: { depth: 1, tier: 'read', subdomains: false }
     },
     {
       id: 'standard',
       name: 'Standard audit',
       blurb: 'Follow links two hops deep and validate everything it catches.',
-      options: { depth: 2, tier: 'read' }
+      options: { depth: 2, tier: 'read', subdomains: true }
     },
     {
       id: 'deep',
       name: 'Deep hunt',
       blurb: 'Four hops through every endpoint and bundle. Slow, thorough.',
-      options: { depth: 4, tier: 'read' }
+      options: { depth: 4, tier: 'read', subdomains: true }
     }
   ];
 
@@ -38,6 +38,7 @@
   let maxPages = $state('');
   let randomAgent = $state(false);
   let wayback = $state(true);
+  let subdomains = $state(true);
   let busy = $state(false);
   let error = $state('');
   let confirmOpen = $state(false);
@@ -49,6 +50,7 @@
     preset = id;
     const found = presets.find((item) => item.id === id)!;
     depth = Number(found.options.depth);
+    subdomains = Boolean(found.options.subdomains);
   }
 
   async function start() {
@@ -73,6 +75,7 @@
     if (maxPages.trim()) options.max_pages = Number(maxPages.trim());
     options.random_agent = randomAgent;
     options.wayback = wayback;
+    options.subdomains = subdomains;
     try {
       const run = await api.startRun(trimmed, options);
       store.toast('ok', `scan started against ${trimmed}`);
@@ -218,6 +221,16 @@
           </div>
 
           <div class="mt-4 grid gap-2 sm:grid-cols-2">
+            <label class="flex cursor-pointer items-start gap-3 rounded-lg border border-indigo-deep px-4 py-3">
+              <input class="mt-1 accent-[var(--nc-acid)]" type="checkbox" bind:checked={subdomains} />
+              <span>
+                <span class="mono block text-sm text-bone">map subdomains</span>
+                <span class="mt-1 block text-xs leading-relaxed text-bone-dust">
+                  Enumerate the host's subdomains from certificate transparency and DNS, then crawl
+                  each one for JavaScript.
+                </span>
+              </span>
+            </label>
             <label class="flex cursor-pointer items-start gap-3 rounded-lg border border-indigo-deep px-4 py-3">
               <input class="mt-1 accent-[var(--nc-acid)]" type="checkbox" bind:checked={randomAgent} />
               <span>

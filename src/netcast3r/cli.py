@@ -58,6 +58,8 @@ def _apply_options(config, args) -> None:
         run.user_agent = args.user_agent
     if getattr(args, "random_agent", False):
         run.random_user_agent = True
+    if getattr(args, "no_subdomains", False):
+        run.subdomains = False
     if getattr(args, "no_color", False):
         run.color = False
     if getattr(args, "json", False):
@@ -248,6 +250,7 @@ def build_parser() -> argparse.ArgumentParser:
         p.add_argument("--max-response-size", type=int, help="cap on a single response body")
         p.add_argument("--user-agent", help="custom user agent")
         p.add_argument("--random-agent", action="store_true", help="rotate a browser user agent")
+        p.add_argument("--no-subdomains", action="store_true", help="skip subdomain enumeration")
         p.add_argument("--no-color", action="store_true", help="disable colored output")
         p.add_argument("--json", action="store_true", help="also write results.json")
         p.add_argument("--jsonl", action="store_true", help="also write results.jsonl")

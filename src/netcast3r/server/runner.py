@@ -190,6 +190,8 @@ def run_scan(run_id: str, target: str, options: dict, emit: Callable[[Event], No
         run_config.random_user_agent = bool(options["random_agent"])
     if options.get("wayback") is not None:
         run_config.wayback = bool(options["wayback"])
+    if options.get("subdomains") is not None:
+        run_config.subdomains = bool(options["subdomains"])
     if options.get("max_pages"):
         run_config.concurrency = max(1, int(options["max_pages"]) // 25)
 

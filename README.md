@@ -76,8 +76,10 @@ redacted, so the report can go straight into a program.
   <img src="assets/pipeline.svg" alt="Six stages and their agents: crawl with recon, read JavaScript with exegete, hunt with prospector, validate with assayer, escalate with chainer, report with scribe." width="100%">
 </p>
 
-The crawler collects JavaScript inside scope, then pulls historical bundles
-from the Wayback Machine. The exegete reads each file and maps its logic. The
+The crawler maps the target's subdomains from certificate transparency and
+DNS first, then walks each host and collects the JavaScript inside scope, and
+finally pulls historical bundles from the Wayback Machine. The exegete reads
+each file and maps its logic. The
 prospector hunts credentials across 310 patterns. The classifier names any
 candidate the patterns did not recognise, rates its confidence, and remembers
 the answer for later runs. The assayer validates every candidate against its
@@ -181,6 +183,8 @@ netcast3r providers
 ```
 
 `--depth`, `--rate`, `--delay`, `--timeout`, and `--retries` tune the crawl.
+Subdomain mapping runs by default for a domain target; pass `--no-subdomains`
+to stay on the host you named.
 `--tier` selects the action tier, `--resume` reuses earlier validations, and
 `--fail` exits non-zero when findings exist.
 

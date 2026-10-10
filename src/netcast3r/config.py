@@ -94,6 +94,9 @@ class RunConfig:
     wayback: bool = True
     wayback_limit: int = 2000
     wayback_js_max: int = 25
+    subdomains: bool = True
+    subdomain_wordlist: str = ""
+    subdomain_limit: int = 300
 
 
 @dataclass

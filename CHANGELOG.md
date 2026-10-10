@@ -6,6 +6,11 @@ Notable changes to NetCast3r, newest first.
 
 ### Added
 
+- Subdomain mapping. A run against a domain now enumerates its subdomains
+  from certificate transparency logs and passive DNS, brute-forces a built-in
+  wordlist after checking for a wildcard DNS answer, keeps only names in
+  scope, and crawls every one for JavaScript. On by default for a domain
+  target; `--no-subdomains` or the map subdomains toggle turns it off.
 - An HTML dashboard, written with `--html` on `run` and `recon` or with the
   `dashboard` command. One self-contained file carries the run: stage rail,
   counters, coverage, validation ladder, severity split, caught credentials,
