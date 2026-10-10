@@ -117,7 +117,9 @@ class Orchestrator:
                           report=str(report_path))
 
     def _pipeline(self, seeds: list[str]):
-        recon = Recon(self.scope, self.config, session=self.session)
+        sink = getattr(self.console, "fetch", None)
+        feed = sink if callable(sink) else None
+        recon = Recon(self.scope, self.config, session=self.session, on_fetch=feed)
         result = recon.crawl(seeds)
         discovered = recon.discover_apis(seeds)
         discovered += recon.discover_wellknown(seeds)

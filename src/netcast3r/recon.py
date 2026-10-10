@@ -54,12 +54,15 @@ def _absolute(base: str, link: str) -> str:
 
 
 class Recon:
-    def __init__(self, scope, config, session: Session | None = None):
+    def __init__(self, scope, config, session: Session | None = None, on_fetch=None):
         self.scope = scope
         self.config = config
         self.session = session or Session(config)
         self.max_depth = config.run.depth
         self.max_pages = max(config.run.concurrency * 25, 100)
+        # on_fetch(kind, url, status): kind is page | js | skip. The dashboard
+        # feeds this straight into its live crawler panel.
+        self.on_fetch = on_fetch
 
     def _fetch(self, url: str):
         response = self.session.get(url)
@@ -189,6 +192,7 @@ class Recon:
             queue.append((url, 0))
 
         seen: set[str] = set()
+        tick = 0
         while queue and len(seen) < self.max_pages:
             url, depth = queue.pop(0)
             if url in seen:
@@ -197,14 +201,22 @@ class Recon:
                 result.out_of_scope.append(url)
                 continue
             seen.add(url)
+            if self.on_fetch:
+                tick += 1
+                if tick % 5 == 0:
+                    self.on_fetch("progress", url, len(result.pages) + len(result.js_urls))
             status, text, content_type = self._fetch(url)
             if status == 0:
+                if self.on_fetch:
+                    self.on_fetch("skip", url, 0)
                 continue
 
             is_js = ".js" in url.split("?")[0].lower() or "javascript" in content_type
             if is_js:
                 result.js_urls.append(url)
                 result.js_text[url] = text
+                if self.on_fetch:
+                    self.on_fetch("js", url, status)
                 recovered = self._source_map(url, text)
                 if recovered is not None and recovered[0] not in result.js_text:
                     map_url, sources = recovered
@@ -221,6 +233,8 @@ class Recon:
             else:
                 result.pages.append(url)
                 result.page_text[url] = text
+                if self.on_fetch:
+                    self.on_fetch("page", url, status)
                 for link in LINK_RE.findall(text):
                     child = _absolute(url, link)
                     if child.endswith(ASSET_EXT):

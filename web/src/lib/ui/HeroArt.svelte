@@ -222,10 +222,10 @@
   const CARD_H = 38;
 
   type Item = { icon: string; label: string; value: string; accent: string };
-  type Slot = { x: number; y: number; rot: number; fl: string; item?: Item; rotator?: boolean };
+  type Slot = { x: number; y: number; rot: number; fl: string; item?: Item };
 
-  // each key sits in its own zone: the live database key rides the mesh on
-  // the right, the other two drift low over the sleeping city
+  // one key caught in the mesh, the way the reference draws it: the net is
+  // the spectacle, the catch is the proof. no drifting cards over the city.
   const SLOTS: Slot[] = [
     {
       x: 966,
@@ -233,24 +233,10 @@
       rot: 2,
       fl: 'f-b',
       item: { icon: 'db', label: 'DATABASE_URL', value: 'postgres://user:pass@***', accent: 'var(--nc-acid)' }
-    },
-    {
-      x: 17,
-      y: 270,
-      rot: -1.5,
-      fl: 'f-c',
-      item: { icon: 'cloud', label: 'API_KEY', value: 'sk_live_********', accent: 'var(--nc-acid)' }
-    },
-    { x: 230, y: 272, rot: 2.5, fl: 'f-d', rotator: true }
+    }
   ];
 
-  const ROT: Item[] = [
-    { icon: 'card', label: 'CLIENT_SECRET', value: '************', accent: 'var(--nc-violet)' },
-    { icon: 'brackets', label: 'GITHUB_TOKEN', value: 'ghp_4XK2**********', accent: 'var(--nc-acid)' },
-    { icon: 'shield', label: 'JWT_SIGNING_KEY', value: 'eyJhbGciOi*****', accent: 'var(--nc-violet)' }
-  ];
-
-  // only the key that rides the mesh is tied into it; the low cards drift free
+  // only the key that rides the mesh is tied into it
   const TETHERS = [{ ax: 966, ay: 142, i: 5, d: 0.5 }];
 
   // ---- the report panel and the validation ladder ------------------------
@@ -275,24 +261,12 @@
   ];
   const cellLeft = (i: number) => 190 + i * 140;
 
-  let rIdx = $state(0);
-  let rotator = 0;
   let hot = $state(-1); // hovered card slot, -1 when the cursor is elsewhere
   let svgEl = $state<SVGSVGElement | null>(null);
 
   const reduced =
     typeof window !== 'undefined' &&
     window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-
-  $effect(() => {
-    if (reduced) return;
-    const timer = window.setInterval(() => {
-      if (document.hidden) return;
-      rotator += 1;
-      rIdx = rotator % ROT.length;
-    }, 6800);
-    return () => window.clearInterval(timer);
-  });
 
   // ---- the scene listens back --------------------------------------------
   // pointer sweeps bend every depth layer on its own parallax factor and the
@@ -682,9 +656,8 @@
     {/each}
   </g>
 
-  <!-- the caught: four credential cards. The frame lives and drifts for
-       good; only the credential inside the rotator slot swaps, so the
-       motion never resets when the key rotates. -->
+  <!-- the caught: one credential card. The frame lives and drifts for
+       good; the hover lift composes with the position transform. -->
   {#snippet cardBody(item: Item)}
     <g clip-path="url(#{id}-clip)">
       <rect width={CARD_W} height={CARD_H} rx="2" fill="var(--nc-void)" stroke="var(--nc-violet_deep)" />
@@ -724,12 +697,12 @@
       >
       <text x="30" y="31" font-size="9.5" fill="var(--nc-acid)" font-family={MONO}>{item.value}</text>
 
-      <circle cx="160" cy="12" r="3.4" fill="var(--nc-acid)" opacity="0.16" />
-      <circle cx="160" cy="12" r="1.8" fill="var(--nc-acid)" class="led-blink" />
+      <circle cx="160" cy="12" r="4.6" fill="var(--nc-acid)" class="card-beacon" opacity="0.2" />
+      <circle cx="160" cy="12" r="2" fill="var(--nc-acid)" class="led-blink" />
     </g>
   {/snippet}
 
-  {#snippet card(item: Item, x: number, y: number, rot: number, fl: string, rotating: boolean, i: number)}
+  {#snippet card(item: Item, x: number, y: number, rot: number, fl: string, i: number)}
     <g class="secret-badge card-slot" class:hot={hot === i}>
       <g class="badge-float {fl}">
         <!-- position lives on this attribute transform; the hover lift must
@@ -737,13 +710,7 @@
              replace the attribute and throw the card to the svg origin -->
         <g transform="translate({x},{y}) rotate({rot})">
           <g class="card-lift">
-            {#if rotating}
-              {#key rIdx}
-                <g class="rot-in">{@render cardBody(ROT[rIdx])}</g>
-              {/key}
-            {:else}
-              {@render cardBody(item)}
-            {/if}
+            {@render cardBody(item)}
 
             <path class="card-tick" d="M0.5 7 v-6 h6" stroke="var(--nc-acid)" stroke-width="1.2" opacity="0.75" />
             <path class="card-tick" d="M{CARD_W - 6.5} {CARD_H - 0.5} h6 v-6" stroke="var(--nc-acid)" stroke-width="1.2" opacity="0.75" />
@@ -754,7 +721,7 @@
   {/snippet}
 
   {#each SLOTS as slot, i (i)}
-    {@render card(slot.item ?? ROT[rIdx], slot.x, slot.y, slot.rot, slot.fl, slot.rotator ?? false, i)}
+    {@render card(slot.item!, slot.x, slot.y, slot.rot, slot.fl, i)}
   {/each}
 
   <!-- report panel -->

@@ -25,6 +25,8 @@
   let totalLines = $state(0);
   let pulses = $state<Record<string, number>>({});
   let picked = $state('');
+  let fetches = $state<{ seq: number; kind: string; url: string; status: number }[]>([]);
+  let thinking = $state<{ id: number; agent: string; text: string }[]>([]);
 
   const LANE_AGENTS = ['recon', 'exegete', 'prospector', 'classifier', 'assayer', 'chainer', 'scribe'];
   const CAP = 200;
@@ -85,6 +87,14 @@
           lane.lastText = String(event.payload?.text ?? event.payload?.error ?? '');
           lane.lastTs = event.ts;
         }
+        if (event.type === 'reasoning' && event.payload?.text) {
+          lane.lastText = String(event.payload.text);
+          lane.lastTs = event.ts;
+          thinking = [
+            { id: event.seq, agent, text: String(event.payload.text) },
+            ...thinking
+          ].slice(0, 24);
+        }
         pulses = { ...pulses, [agent]: (pulses[agent] ?? 0) + 1 };
         next[agent] = { ...lane };
       }
@@ -94,6 +104,15 @@
         lane.lastCall = String(event.payload.model ?? '');
         lane.lastCallOk = !!event.payload.ok;
         next[event.agent] = { ...lane };
+      }
+      if (event.type === 'fetch' && event.payload?.url) {
+        const kind = String(event.payload.kind ?? '');
+        if (kind !== 'progress') {
+          fetches = [
+            { seq: event.seq, kind, url: String(event.payload.url), status: Number(event.payload.status ?? 0) },
+            ...fetches
+          ].slice(0, 80);
+        }
       }
       totalLines += 1;
     }
@@ -106,6 +125,8 @@
     lanes = {};
     totalLines = 0;
     seen.clear();
+    fetches = [];
+    thinking = [];
     if (!run) return;
     const page = await api.runEvents(run.id);
     for (const item of page.items.slice(-CAP)) {
@@ -123,8 +144,25 @@
         updated.lastText = String(event.payload?.text ?? event.payload?.error ?? '');
         updated.lastTs = event.ts;
       }
+      if (event.type === 'reasoning' && event.payload?.text) {
+        updated.lastText = String(event.payload.text);
+        updated.lastTs = event.ts;
+        thinking = [
+          { id: event.seq, agent, text: String(event.payload.text) },
+          ...thinking
+        ].slice(0, 24);
+      }
       lanes = { ...lanes, [agent]: updated };
       totalLines += 1;
+    }
+    if (event.type === 'fetch' && event.payload?.url) {
+      const kind = String(event.payload.kind ?? '');
+      if (kind !== 'progress') {
+        fetches = [
+          { seq: event.seq, kind, url: String(event.payload.url), status: Number(event.payload.status ?? 0) },
+          ...fetches
+        ].slice(0, 80);
+      }
     }
   }
 
@@ -201,6 +239,63 @@
           </p>
         </div>
       {/each}
+    </section>
+
+    <section class="grid gap-5 lg:grid-cols-[1.3fr_1fr]">
+      <!-- the crawler: every URL as it lands, split html/js -->
+      <div class="panel flex min-h-[280px] flex-col overflow-hidden">
+        <div class="flex items-center justify-between border-b border-indigo-deep px-4 py-2.5">
+          <p class="eyebrow">crawler feed</p>
+          <span class="mono num text-xs text-ash">{fetches.length} urls</span>
+        </div>
+        <div class="mono flex-1 overflow-y-auto px-4 py-2 text-[12px] leading-relaxed" data-feed="1">
+          {#if fetches.length === 0}
+            <p class="text-slate">
+              {running ? 'waiting for the first response...' : 'The crawler feed fills as the run works.'}
+            </p>
+          {/if}
+          {#each fetches as row (row.seq)}
+            <p class="flex items-center gap-2 py-0.5">
+              <span
+                class="w-[40px] shrink-0 text-[10px] tracking-[0.08em]"
+                style="color:{row.kind === 'js' ? 'var(--nc-violet)' : 'var(--nc-acid)'}"
+              >
+                {row.kind === 'js' ? 'JS' : row.kind === 'page' ? 'HTML' : 'SKIP'}
+              </span>
+              <span
+                class="num w-[28px] shrink-0 text-[10px]"
+                style="color:{row.status >= 400 ? 'var(--nc-violet)' : row.status === 0 ? 'var(--nc-slate)' : 'var(--nc-bone-dust)'}"
+              >
+                {row.status || '--'}
+              </span>
+              <span class="min-w-0 flex-1 truncate text-bone-dust" title={row.url}>{row.url}</span>
+            </p>
+          {/each}
+        </div>
+      </div>
+
+      <!-- what the models are saying right now -->
+      <div class="panel flex min-h-[280px] flex-col overflow-hidden">
+        <div class="flex items-center justify-between border-b border-indigo-deep px-4 py-2.5">
+          <p class="eyebrow">thinking now</p>
+          <span class="mono num text-xs text-ash">{thinking.length} lines</span>
+        </div>
+        <div class="flex-1 overflow-y-auto px-4 py-2" data-think="1">
+          {#if thinking.length === 0}
+            <p class="text-xs text-slate">
+              {running ? 'the agents speak when the model answers...' : 'No model reasoning on this run.'}
+            </p>
+          {/if}
+          {#each thinking as block (block.id)}
+            {@const color = (AGENT_COLORS as Record<string, string>)[block.agent] ?? 'var(--nc-bone-dust)'}
+            <p class="mono border-l-2 py-1 pl-2 text-[11px] leading-relaxed text-bone-dust" style="border-color:{color}">
+              <span style="color:{color}">{block.agent}</span>
+              <span class="text-slate"> // </span>
+              {block.text.slice(0, 200)}
+            </p>
+          {/each}
+        </div>
+      </div>
     </section>
 
     <section class="flex flex-col gap-2.5">

@@ -222,6 +222,25 @@ Notable changes to NetCast3r, newest first.
 - The banner seats itself as a stage: a soft vignette fades the copy
   column and the scene edges so the composition reads as one lit frame
   instead of a sticker sheet.
+- The dead silence during a crawl is gone: recon now reports every fetch
+  as it happens -- a fetch event per URL with its status, tagged html, js
+  or skip -- plus a running crawled count, so the run shows work from its
+  first second instead of one summary line after seven minutes. The live
+  run screen grows a crawler feed panel (every url, split html/js, status
+  codes, pages and js tallies) and the engine room carries the same feed
+  beside a thinking-now stream of the newest reasoning lines.
+- The banner drops the levitating key cards: one credential caught in the
+  mesh remains -- the reference art's catch -- with a slow beacon, and the
+  bottom-left breathes again. The scene keeps its parallax depths, the
+  spider, and the moon; the composition follows the reference's clean
+  left column and center-weighted net.
+- The new scan form gains the operator's dials: requests per second,
+  delay between requests, retries, a max-page ceiling, user-agent
+  rotation, and a wayback toggle, all passed through to the run. Multiple
+  scans already run side by side on the worker pool. The provider pool
+  gains a second OpenRouter key as backup, verified live: the bus walks
+  openrouter, openrouter-backup, ollama, and opencode in order and cools
+  any provider that rate limits.
 
 ### Fixed
 

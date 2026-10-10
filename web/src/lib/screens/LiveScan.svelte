@@ -36,6 +36,8 @@
     seq: number; ts: number; agent: string; provider: string; model: string;
     pending: boolean; ok: boolean; ms: number; error: string;
   }[]>([]);
+  let fetches = $state<{ seq: number; kind: string; url: string; status: number }[]>([]);
+  let crawl = $state({ pages: 0, js: 0, total: 0 });
 
   const LOG_RENDER_CAP = 400;
   const THINK_BLOCK_CAP = 120;
@@ -114,7 +116,21 @@
   }
 
   function applyEvent(event: RunEvent) {
-    if (event.progress) counts = { ...counts, ...event.progress };
+    if (event.progress) {
+      counts = { ...counts, ...event.progress };
+      if (event.progress.crawled !== undefined) crawl.total = event.progress.crawled;
+    }
+    if (event.type === 'fetch' && event.payload?.url) {
+      const kind = String(event.payload.kind ?? '');
+      if (kind === 'page') crawl.pages += 1;
+      if (kind === 'js') crawl.js += 1;
+      if (kind !== 'progress') {
+        fetches = [
+          { seq: event.seq, kind, url: String(event.payload.url), status: Number(event.payload.status ?? 0) },
+          ...fetches
+        ].slice(0, 120);
+      }
+    }
     if (event.type === 'finding.created' && event.payload) {
       landed = [
         { id: event.seq, status: event.payload.status, secret_type: event.payload.secret_type, value: event.payload.value, detail: event.payload.detail },
@@ -199,6 +215,8 @@
     landed = [];
     thinking = [];
     calls = [];
+    fetches = [];
+    crawl = { pages: 0, js: 0, total: 0 };
     counts = run?.counts ?? {};
     currentStage = '';
     if (run) {
@@ -378,6 +396,52 @@
           <p class="num mt-1 text-xl text-bone" use:countup={counts[key] ?? 0}>0</p>
         </div>
       {/each}
+    </section>
+
+    <!-- the crawler feed: every URL as it is fetched, pages and js split -->
+    <section class="panel overflow-hidden" data-crawler="1">
+      <div class="flex flex-wrap items-center justify-between gap-2 border-b border-indigo-deep px-4 py-2.5">
+        <div class="flex items-center gap-3">
+          <p class="eyebrow">crawler feed</p>
+          {#if running}
+            <span class="chip text-acid">
+              <span class="pulse-live h-1.5 w-1.5 rounded-full bg-acid" aria-hidden="true"></span>
+              crawling
+            </span>
+          {/if}
+        </div>
+        <span class="mono num text-xs text-ash">
+          <span class="text-acid">{crawl.pages}</span> pages
+          <span class="text-slate">//</span>
+          <span class="text-violet">{crawl.js}</span> js
+          <span class="text-slate">//</span>
+          {crawl.total} touched
+        </span>
+      </div>
+      <div class="grid max-h-[240px] overflow-y-auto md:grid-cols-2">
+        {#if fetches.length === 0}
+          <p class="px-4 py-4 text-xs text-slate">
+            {running ? 'waiting for the first response...' : 'The crawler feed fills as the run works.'}
+          </p>
+        {/if}
+        {#each fetches as row (row.seq)}
+          <p class="flex items-center gap-2 border-b border-indigo-deep/40 px-4 py-1.5 text-[12px] last:border-0">
+            <span
+              class="mono w-[44px] shrink-0 text-[10px] tracking-[0.08em]"
+              style="color:{row.kind === 'js' ? 'var(--nc-violet)' : 'var(--nc-acid)'}"
+            >
+              {row.kind === 'js' ? 'JS' : row.kind === 'page' ? 'HTML' : 'SKIP'}
+            </span>
+            <span
+              class="num w-[30px] shrink-0 text-[10px]"
+              style="color:{row.status >= 400 ? 'var(--nc-violet)' : row.status === 0 ? 'var(--nc-slate)' : 'var(--nc-bone-dust)'}"
+            >
+              {row.status || '--'}
+            </span>
+            <span class="mono min-w-0 flex-1 truncate text-bone-dust" title={row.url}>{row.url}</span>
+          </p>
+        {/each}
+      </div>
     </section>
 
     <section class="grid gap-5 lg:grid-cols-[1.4fr_1fr]">

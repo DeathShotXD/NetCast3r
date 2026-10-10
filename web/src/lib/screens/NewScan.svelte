@@ -32,6 +32,12 @@
   let depth = $state(2);
   let timeout = $state('');
   let writeTier = $state(false);
+  let rate = $state('');
+  let delay = $state('');
+  let retries = $state('');
+  let maxPages = $state('');
+  let randomAgent = $state(false);
+  let wayback = $state(true);
   let busy = $state(false);
   let error = $state('');
   let confirmOpen = $state(false);
@@ -61,6 +67,12 @@
     const found = presets.find((item) => item.id === preset)!;
     const options: Record<string, unknown> = { depth, tier: writeTier ? 'write' : found.options.tier };
     if (timeout.trim()) options.timeout = Number(timeout.trim());
+    if (rate.trim()) options.rate = Number(rate.trim());
+    if (delay.trim()) options.delay = Number(delay.trim());
+    if (retries.trim()) options.retries = Number(retries.trim());
+    if (maxPages.trim()) options.max_pages = Number(maxPages.trim());
+    options.random_agent = randomAgent;
+    options.wayback = wayback;
     try {
       const run = await api.startRun(trimmed, options);
       store.toast('ok', `scan started against ${trimmed}`);
@@ -153,6 +165,77 @@
                 bind:value={timeout}
               />
             </div>
+            <div>
+              <label class="eyebrow" for="rate">requests per second</label>
+              <input
+                id="rate"
+                class="field mt-2"
+                type="number"
+                min="0"
+                max="50"
+                step="0.5"
+                placeholder="0 = unlimited"
+                bind:value={rate}
+              />
+            </div>
+            <div>
+              <label class="eyebrow" for="delay">delay between requests (s)</label>
+              <input
+                id="delay"
+                class="field mt-2"
+                type="number"
+                min="0"
+                max="10"
+                step="0.1"
+                placeholder="default 0"
+                bind:value={delay}
+              />
+            </div>
+            <div>
+              <label class="eyebrow" for="retries">retries per request</label>
+              <input
+                id="retries"
+                class="field mt-2"
+                type="number"
+                min="0"
+                max="6"
+                placeholder="default 2"
+                bind:value={retries}
+              />
+            </div>
+            <div>
+              <label class="eyebrow" for="maxpages">max pages</label>
+              <input
+                id="maxpages"
+                class="field mt-2"
+                type="number"
+                min="25"
+                max="2000"
+                placeholder="default 100"
+                bind:value={maxPages}
+              />
+            </div>
+          </div>
+
+          <div class="mt-4 grid gap-2 sm:grid-cols-2">
+            <label class="flex cursor-pointer items-start gap-3 rounded-lg border border-indigo-deep px-4 py-3">
+              <input class="mt-1 accent-[var(--nc-acid)]" type="checkbox" bind:checked={randomAgent} />
+              <span>
+                <span class="mono block text-sm text-bone">randomize user agent</span>
+                <span class="mt-1 block text-xs leading-relaxed text-bone-dust">
+                  Rotate through a pool of browser identities on every request.
+                </span>
+              </span>
+            </label>
+            <label class="flex cursor-pointer items-start gap-3 rounded-lg border border-indigo-deep px-4 py-3">
+              <input class="mt-1 accent-[var(--nc-acid)]" type="checkbox" bind:checked={wayback} />
+              <span>
+                <span class="mono block text-sm text-bone">mine the wayback machine</span>
+                <span class="mt-1 block text-xs leading-relaxed text-bone-dust">
+                  Pull historic URLs and js bundles from archive snapshots.
+                </span>
+              </span>
+            </label>
           </div>
 
           <label class="mt-4 flex cursor-pointer items-start gap-3 rounded-lg border border-indigo-deep px-4 py-3">

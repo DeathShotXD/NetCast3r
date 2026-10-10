@@ -43,6 +43,15 @@ class EventConsole:
         self.events.append({"kind": "line", "agent": agent, "text": text})
         self.emit(Event(type="log", run_id=self.run_id, agent=agent, payload={"text": text}))
 
+    def fetch(self, kind: str, url: str, status: int) -> None:
+        """One fetched URL, live: the crawler panel eats these as they come."""
+        self.events.append({"kind": "fetch", "agent": "recon", "text": url})
+        self.emit(Event(type="fetch", run_id=self.run_id, agent="recon",
+                        payload={"kind": kind, "url": url, "status": status}))
+        if kind == "progress":
+            self.emit(Event(type="stage.progress", run_id=self.run_id,
+                            progress={"crawled": status}))
+
     def _emit(self, text: str) -> None:
         """Raw console output (progress bars, box rules). Always a plain log line."""
         text = strip_ansi(text or "").strip()
@@ -171,6 +180,18 @@ def run_scan(run_id: str, target: str, options: dict, emit: Callable[[Event], No
         run_config.depth = int(options["depth"])
     if options.get("timeout"):
         run_config.timeout = float(options["timeout"])
+    if options.get("rate"):
+        run_config.requests_per_second = float(options["rate"])
+    if options.get("delay"):
+        run_config.delay = float(options["delay"])
+    if options.get("retries") is not None and options.get("retries") != "":
+        run_config.retries = int(options["retries"])
+    if options.get("random_agent") is not None:
+        run_config.random_user_agent = bool(options["random_agent"])
+    if options.get("wayback") is not None:
+        run_config.wayback = bool(options["wayback"])
+    if options.get("max_pages"):
+        run_config.concurrency = max(1, int(options["max_pages"]) // 25)
 
     results_root = Path(options.get("results_dir") or "results")
     out = results_root / run_id

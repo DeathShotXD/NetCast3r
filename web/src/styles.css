@@ -649,10 +649,6 @@
     animation-delay: 1.4s;
   }
 
-  .rot-in {
-    animation: rot-in 420ms var(--ease-enter) both;
-  }
-
   /* ---- sidebar net scope (NetScope) ------------------------------------ */
 
   .scope-run path {
@@ -811,7 +807,12 @@
   }
 
   .card-slot.hot .card-lift {
-    transform: translateY(-7px) scale(1.035);
+    transform: translateY(-7px) scale(1.05);
+  }
+
+  /* the one caught key is the artifact: give it a slow beacon */
+  .card-slot .card-beacon {
+    animation: knot-pulse 4.6s ease-in-out infinite;
   }
 
   .card-slot.hot .badge-shine {
@@ -1335,12 +1336,6 @@
   }
   50% {
     transform: translateY(-3px);
-  }
-}
-
-@keyframes rot-in {
-  from {
-    opacity: 0;
   }
 }
 

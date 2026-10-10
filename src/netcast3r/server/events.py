@@ -73,7 +73,7 @@ class EventBus:
         """Drop the oldest log line or reasoning piece, or collapse progress."""
         try:
             dropped = sub.get_nowait()
-            while dropped.type in ("log", "reasoning") and not sub.empty():
+            while dropped.type in ("log", "reasoning", "fetch") and not sub.empty():
                 dropped = sub.get_nowait()
             kept = dropped.to_dict()
             kept["type"] = "lagged"
