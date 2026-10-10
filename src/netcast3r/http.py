@@ -113,7 +113,8 @@ class Session:
         if self.stats.timeouts > self.stats.requests * 0.95:
             raise StopRun("more than 95 percent of requests timed out")
 
-    def request(self, method: str, url: str, headers: dict | None = None, **kw) -> Response | None:
+    def request(self, method: str, url: str, headers: dict | None = None,
+                follow_redirects: bool | None = None, **kw) -> Response | None:
         attempt = 0
         while True:
             attempt += 1
@@ -123,6 +124,8 @@ class Session:
             if headers:
                 merged.update(headers)
             client = self._client or self._client_for(proxy)
+            if follow_redirects is not None:
+                kw = {**kw, "follow_redirects": follow_redirects}
             try:
                 with client.stream(method, url, headers=merged, **kw) as response:
                     chunks: list[bytes] = []

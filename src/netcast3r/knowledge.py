@@ -7,6 +7,7 @@ Nothing here touches a target; it only reads public references and local notes.
 
 from __future__ import annotations
 
+import hashlib
 import json
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -110,11 +111,16 @@ class Knowledge:
             pass
 
     def classification(self, value: str) -> dict | None:
-        return self.classifications.get(value)
+        return self.classifications.get(self._key(value))
 
     def remember_classification(self, value: str, data: dict) -> None:
-        self.classifications[value] = data
+        self.classifications[self._key(value)] = data
         self._save()
+
+    @staticmethod
+    def _key(value: str) -> str:
+        """Key the cache by a hash so a raw credential never lands on disk."""
+        return hashlib.sha256((value or "").encode("utf-8", "ignore")).hexdigest()
 
     def hint(self, secret_type: str) -> str:
         return VALIDATION_HINTS.get(secret_type, "")

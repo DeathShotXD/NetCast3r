@@ -56,7 +56,7 @@ class RouteConfig:
 @dataclass
 class EgressConfig:
     user_proxies: list[str] = field(default_factory=list)
-    use_public: bool = True
+    use_public: bool = False
     public_sources: list[str] = field(default_factory=list)
     health_url: str = "https://api.ipify.org"
     rotate_on: list[int] = field(default_factory=lambda: [403, 429, 500, 502, 503])
@@ -81,6 +81,7 @@ class RunConfig:
     delay: float = 0.0
     retries: int = 2
     max_response_size: int = 5_000_000
+    max_scan_bytes: int = 1_000_000
     stop_on_rate_limit: bool = True
     random_user_agent: bool = False
     user_agents: list[str] = field(default_factory=list)
@@ -89,7 +90,7 @@ class RunConfig:
     output_format: str = "markdown"
     write_json: bool = False
     write_jsonl: bool = False
-    allow_model_checks: bool = True
+    allow_model_checks: bool = False
     max_call_seconds: int = 90
     wayback: bool = True
     wayback_limit: int = 2000

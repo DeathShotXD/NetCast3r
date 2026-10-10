@@ -17,13 +17,55 @@ from .providers import Chunk, ProviderBus
 
 
 def _first_json(text: str):
-    match = re.search(r"(\{.*\}|\[.*\])", text, re.DOTALL)
-    if not match:
+    """Pull the first JSON value out of a model reply.
+
+    Models wrap JSON in prose or a fenced block, so try the fenced body, then
+    the whole string, then the first balanced ``{...}`` or ``[...]``. A greedy
+    regex would span two objects and fail; a balanced scan returns the first
+    complete value.
+    """
+    if not text:
         return None
+    stripped = text.strip()
+    fence = re.search(r"```(?:json)?\s*(.+?)```", stripped, re.DOTALL | re.IGNORECASE)
+    if fence:
+        try:
+            return json.loads(fence.group(1).strip())
+        except json.JSONDecodeError:
+            pass
     try:
-        return json.loads(match.group(1))
+        return json.loads(stripped)
     except json.JSONDecodeError:
-        return None
+        pass
+    for opener, closer in (("{", "}"), ("[", "]")):
+        start = stripped.find(opener)
+        while start != -1:
+            depth = 0
+            in_string = False
+            escaped = False
+            for index in range(start, len(stripped)):
+                char = stripped[index]
+                if in_string:
+                    if escaped:
+                        escaped = False
+                    elif char == "\\":
+                        escaped = True
+                    elif char == '"':
+                        in_string = False
+                    continue
+                if char == '"':
+                    in_string = True
+                elif char == opener:
+                    depth += 1
+                elif char == closer:
+                    depth -= 1
+                    if depth == 0:
+                        try:
+                            return json.loads(stripped[start:index + 1])
+                        except json.JSONDecodeError:
+                            break
+            start = stripped.find(opener, start + 1)
+    return None
 
 
 @dataclass

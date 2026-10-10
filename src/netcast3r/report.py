@@ -47,9 +47,6 @@ def render(target: str, summary: dict, findings: list[dict],
         if finding.get("confidence"):
             lines.append(f"- confidence: {finding.get('confidence')}")
         lines.append("")
-        if finding.get("narrative"):
-            lines.append(str(finding["narrative"]).strip())
-            lines.append("")
         lines.append("Impact")
         lines.append("")
         lines.append(f"{finding.get('impact', '')}")
@@ -67,6 +64,20 @@ def render(target: str, summary: dict, findings: list[dict],
             lines.append(step)
         lines.append("```")
         lines.append("")
+        model_notes: list[str] = []
+        if finding.get("model_severity"):
+            model_notes.append(f"- model severity (unconfirmed): {finding['model_severity']}")
+        if finding.get("model_impact"):
+            model_notes.append(f"- {finding['model_impact']}")
+        for step in finding.get("model_steps", []) or []:
+            model_notes.append(f"- {step}")
+        if finding.get("narrative"):
+            model_notes.append(str(finding["narrative"]).strip())
+        if model_notes:
+            lines.append("Analyst narrative (model generated, not independently verified)")
+            lines.append("")
+            lines.extend(model_notes)
+            lines.append("")
         lines.append("Remediation")
         lines.append("")
         lines.append("Rotate the credential, remove it from client code, and move "

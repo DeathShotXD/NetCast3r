@@ -45,8 +45,8 @@
       const n = confirmed + escalated;
       return {
         eyebrow: 'attention',
-        title: `${n} ${n === 1 ? 'secret is' : 'secrets are'} confirmed`,
-        body: 'These were validated against the real provider API. They are ready for you to confirm, escalate, or reject.',
+        title: `${n} ${n === 1 ? 'finding is' : 'findings are'} marked confirmed`,
+        body: 'You marked these as real during triage. Reopen them to escalate or reject, or start a new scan.',
         action: 'review findings',
         go: () => store.go('findings'),
         color: 'var(--nc-gold)'
@@ -113,32 +113,36 @@
     store.refreshTotals();
     store.refreshRuns();
     void (async () => {
-      recent = (await api.findings('?size=5')).items;
-      const run = store.totals?.last_run;
-      if (!run) return;
-      const events = await api.runEvents(run.id);
-      if (['done', 'failed', 'stopped'].includes(run.status)) {
-        stage = { current: '', finished: stages.map((s) => s.key) };
-      } else {
-        let current = '';
-        for (const event of events.items) {
-          const key = stageForAgent(event.agent) || event.stage;
-          if (key) current = key;
+      try {
+        recent = (await api.findings('?size=5')).items;
+        const run = store.totals?.last_run;
+        if (!run) return;
+        const events = await api.runEvents(run.id);
+        if (['done', 'failed', 'stopped'].includes(run.status)) {
+          stage = { current: '', finished: stages.map((s) => s.key) };
+        } else {
+          let current = '';
+          for (const event of events.items) {
+            const key = stageForAgent(event.agent) || event.stage;
+            if (key) current = key;
+          }
+          stage = { current, finished: finishedThrough(current) };
         }
-        stage = { current, finished: finishedThrough(current) };
+        tail = events.items
+          .filter(
+            (event) =>
+              (event.type === 'log' || event.type === 'error') &&
+              (event.payload?.text || event.payload?.error)
+          )
+          .slice(-4)
+          .map((event) => ({
+            seq: event.seq,
+            text: String(event.payload?.text ?? event.payload?.error ?? ''),
+            error: event.type === 'error'
+          }));
+      } catch {
+        /* the home cards simply stay empty when a fetch fails */
       }
-      tail = events.items
-        .filter(
-          (event) =>
-            (event.type === 'log' || event.type === 'error') &&
-            (event.payload?.text || event.payload?.error)
-        )
-        .slice(-4)
-        .map((event) => ({
-          seq: event.seq,
-          text: String(event.payload?.text ?? event.payload?.error ?? ''),
-          error: event.type === 'error'
-        }));
     })();
   });
 </script>

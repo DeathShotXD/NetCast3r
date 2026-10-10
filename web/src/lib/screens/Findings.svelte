@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onDestroy, onMount } from 'svelte';
   import { api } from '../api';
   import { ago, sevColor, sevShape, triageLabel } from '../format';
   import { store } from '../state.svelte';
@@ -16,21 +16,47 @@
   let selected = $state<Finding | null>(null);
   let notes = $state('');
   let busy = $state(false);
+  let error = $state('');
+  let seq = 0;
+  let searchTimer: number | undefined;
 
   async function load() {
+    const mine = ++seq;
     const params = new URLSearchParams({ size: '100' });
     if (q.trim()) params.set('q', q.trim());
     if (severity) params.set('severity', severity);
     if (triage) params.set('status', triage);
     try {
       const page = await api.findings('?' + params.toString());
+      if (mine !== seq) return;
       items = page.items;
       total = page.total;
+      error = '';
       store.query = q;
-    } catch {
+    } catch (exc) {
+      if (mine !== seq) return;
       items = [];
+      total = 0;
+      error = exc instanceof Error ? exc.message : 'could not load findings';
     }
   }
+
+  function debouncedLoad() {
+    if (searchTimer) window.clearTimeout(searchTimer);
+    searchTimer = window.setTimeout(() => void load(), 250);
+  }
+
+  $effect(() => {
+    const incoming = store.query;
+    if (incoming !== q) {
+      q = incoming;
+      void load();
+    }
+  });
+
+  onDestroy(() => {
+    if (searchTimer) window.clearTimeout(searchTimer);
+  });
 
   function open(finding: Finding) {
     selected = finding;
@@ -58,7 +84,9 @@
     }
   }
 
-  onMount(load);
+  onMount(() => {
+    void load();
+  });
 </script>
 
 <div class="stagger mx-auto flex max-w-[1180px] flex-col gap-5">
@@ -72,7 +100,7 @@
     <div class="flex flex-wrap items-end gap-3">
       <label class="block">
         <span class="eyebrow">search</span>
-        <input class="field mt-1 w-[220px]! py-1.5! text-sm!" type="search" bind:value={q} oninput={load} />
+        <input class="field mt-1 w-[220px]! py-1.5! text-sm!" type="search" bind:value={q} oninput={debouncedLoad} />
       </label>
       <label class="block">
         <span class="eyebrow">severity</span>
@@ -99,6 +127,9 @@
   </section>
 
   <section class="panel overflow-hidden" use:pauseOffscreen>
+    {#if error}
+      <p class="border-b border-violet-deep bg-violet-abyss px-4 py-3 text-sm text-bone">{error}</p>
+    {/if}
     {#if items.length === 0}
       <EmptyState
         eyebrow="empty"

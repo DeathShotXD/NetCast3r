@@ -114,7 +114,8 @@ class Validator:
 
         try:
             if self.session is not None:
-                response = self.session.request(recipe.method, url, headers=headers, content=body)
+                response = self.session.request(recipe.method, url, headers=headers,
+                                                content=body, follow_redirects=False)
             elif self.client is not None:
                 response = self.client.request(recipe.method, url, headers=headers, content=body)
             else:

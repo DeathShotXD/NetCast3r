@@ -194,7 +194,7 @@
         models,
         savedId: saved.id
       };
-      chosen = defaultModels(preset, models);
+      chosen = models.length ? defaultModels(preset, models) : [];
       store.toast(result.ok ? 'ok' : 'warn',
         result.ok ? `${preset.label} is reachable` : `${preset.label} is not reachable yet`);
       await load();
@@ -226,6 +226,16 @@
     }
   }
 
+  function keepProvider() {
+    selected = '';
+    stepName = '';
+    stepKeyName = '';
+    stepUrl = '';
+    stepKey = '';
+    connectResult = null;
+    chosen = [];
+  }
+
   function toggleChosen(model: string) {
     chosen = chosen.includes(model)
       ? chosen.filter((item) => item !== model)
@@ -250,6 +260,8 @@
       await api.deleteKey(name);
       store.toast('ok', `removed the ${name} key`);
       await load();
+    } catch (exc) {
+      store.fail(exc instanceof Error ? exc.message : 'the key could not be removed');
     } finally {
       deletingKey = '';
     }
@@ -362,12 +374,16 @@
       await api.deleteProvider(id);
       store.toast('ok', 'provider removed');
       await load();
+    } catch (exc) {
+      store.fail(exc instanceof Error ? exc.message : 'the provider could not be removed');
     } finally {
       deletingProvider = '';
     }
   }
 
-  onMount(load);
+  onMount(() => {
+    void load();
+  });
 </script>
 
 <div class="stagger mx-auto flex max-w-[1180px] flex-col gap-5">
@@ -513,7 +529,7 @@
             </div>
           {:else if connectResult.ok}
             <div class="mt-3 flex items-center gap-3">
-              <button class="btn btn-acid" type="button" disabled={connectBusy} onclick={() => void saveModels()}>
+              <button class="btn btn-acid" type="button" disabled={connectBusy} onclick={keepProvider}>
                 keep this provider
               </button>
               <span class="mono text-xs text-ash">the endpoint listed no models; add one by hand below</span>

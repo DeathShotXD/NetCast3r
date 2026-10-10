@@ -11,8 +11,19 @@ from __future__ import annotations
 import json
 import time
 from dataclasses import dataclass
+from urllib.parse import urlsplit
 
 import httpx
+
+LOCAL_HOSTS = {"127.0.0.1", "localhost", "::1", "0.0.0.0"}
+
+
+def _local_endpoint(base_url: str) -> bool:
+    """A loopback endpoint needs no key, the way a local ollama does."""
+    try:
+        return (urlsplit(base_url).hostname or "").lower() in LOCAL_HOSTS
+    except ValueError:
+        return False
 
 
 @dataclass
@@ -79,7 +90,7 @@ class ProviderBus:
             fresh = ordered
         for provider in fresh:
             key = provider.resolve_key()
-            if not key and provider.name != "ollama":
+            if not key and provider.name != "ollama" and not _local_endpoint(provider.base_url):
                 continue
             models = list(provider.models)
             if route.model:

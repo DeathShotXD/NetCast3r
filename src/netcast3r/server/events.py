@@ -70,17 +70,33 @@ class EventBus:
         return event
 
     def _shed(self, sub: queue.Queue) -> None:
-        """Drop the oldest log line or reasoning piece, or collapse progress."""
-        try:
-            dropped = sub.get_nowait()
-            while dropped.type in ("log", "reasoning", "fetch") and not sub.empty():
+        """Free room by dropping the oldest log/reasoning/fetch lines only.
+
+        A finding or a stage change must survive backpressure, so the drain
+        stops at the first event that is not chatter. If the queue holds only
+        chatter-free events, the oldest is still dropped so a stalled reader
+        does not wedge the run, and one lagged marker records the gap.
+        """
+        dropped = None
+        while True:
+            try:
+                head = sub.queue[0]
+            except IndexError:
+                return
+            if head.type in ("log", "reasoning", "fetch"):
+                try:
+                    dropped = sub.get_nowait()
+                except queue.Empty:
+                    return
+                continue
+            break
+        if dropped is None:
+            try:
                 dropped = sub.get_nowait()
-            kept = dropped.to_dict()
-            kept["type"] = "lagged"
-            kept["payload"] = {"dropped_from": dropped.seq}
-            sub.put_nowait(kept)
-        except queue.Empty:
-            pass
+            except queue.Empty:
+                return
+        try:
+            sub.put_nowait(Event(type="lagged", payload={"dropped_from": dropped.seq}))
         except queue.Full:
             pass
 

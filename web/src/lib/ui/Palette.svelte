@@ -96,7 +96,7 @@
       aria-label="command palette"
       tabindex="-1"
       onclick={(event) => event.stopPropagation()}
-      onkeydown={onkey}
+      onkeydown={(event) => event.stopPropagation()}
     >
       <div class="palette-panel panel overflow-hidden">
         <div class="flex items-center gap-3 border-b border-indigo-deep px-4">

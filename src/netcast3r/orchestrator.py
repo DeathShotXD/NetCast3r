@@ -13,6 +13,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 import ipaddress
 from pathlib import Path
+import socket
 from urllib.parse import urlsplit
 
 from .agents import Roster
@@ -42,6 +43,8 @@ SEVERITY_BY_TYPE = {
     "jwt": "medium",
     "generic": "medium",
 }
+
+VALID_SEVERITIES = {"critical", "high", "medium", "low", "info"}
 
 
 @dataclass
@@ -80,7 +83,8 @@ class Orchestrator:
                                                 tier=config.run.action_tier,
                                                 timeout=config.run.timeout,
                                                 session=self.session)
-        self.extractor = extractor or Extractor(patterns=patterns)
+        self.extractor = extractor or Extractor(patterns=patterns,
+                                                max_scan=config.run.max_scan_bytes)
         self._out_of_scope: list[str] = []
         self._classified = 0
         self.seed_bodies = seed_bodies or {}
@@ -308,7 +312,7 @@ class Orchestrator:
         payload = [{"type": s.type, "value": s.value[:24], "confidence": s.confidence,
                     "context": s.context[:80], "source": s.source} for s in candidates]
         result = self.roster.prospector.triage(payload, on_reasoning=self._reason("prospector"))
-        data = result.data or {}
+        data = result.data if isinstance(result.data, dict) else {}
         order = {}
         for item in data.get("items", []):
             if isinstance(item, dict) and item.get("value"):
@@ -408,7 +412,7 @@ class Orchestrator:
                 and self.roster.assayer.available()):
             return
         result = self.roster.assayer.plan(secret_type, "", on_reasoning=self._reason("assayer"))
-        data = result.data or {}
+        data = result.data if isinstance(result.data, dict) else {}
         url = str(data.get("url") or "")
         method = str(data.get("method") or "GET").upper()
         if method not in ("GET", "POST"):
@@ -448,6 +452,21 @@ class Orchestrator:
                 return False
         except ValueError:
             pass
+        # A name that resolves to a private address is still an SSRF target,
+        # so resolve before trusting it. An unresolvable name is allowed here:
+        # the request itself will fail.
+        try:
+            infos = socket.getaddrinfo(host, None)
+        except OSError:
+            return True
+        for info in infos:
+            try:
+                ip = ipaddress.ip_address(info[4][0])
+            except ValueError:
+                continue
+            if (ip.is_private or ip.is_loopback or ip.is_link_local
+                    or ip.is_reserved or ip.is_multicast or ip.is_unspecified):
+                return False
         return True
 
     def _finding(self, secret: Secret, validation) -> dict:
@@ -473,15 +492,17 @@ class Orchestrator:
         if self.use_agents and self.roster.chainer.available():
             result = self.roster.chainer.escalate(finding["secret_type"], finding["status"],
                                                   on_reasoning=self._reason("chainer"))
-            data = result.data or {}
+            data = result.data if isinstance(result.data, dict) else {}
             ai_steps = [str(step.get("command")) for step in data.get("steps", [])
                         if isinstance(step, dict) and step.get("command")]
             if ai_steps:
-                steps = ai_steps + steps
-            if data.get("impact"):
-                finding["impact"] = str(data["impact"])
-            if data.get("severity"):
-                finding["severity"] = str(data["severity"]).lower()
+                finding["model_steps"] = ai_steps
+            severity = str(data.get("severity") or "").strip().lower()
+            if severity in VALID_SEVERITIES:
+                finding["model_severity"] = severity
+            impact = str(data.get("impact") or "").strip()
+            if impact:
+                finding["model_impact"] = impact
             narrative = str(data.get("notes") or "")
         if not steps:
             steps = ["Repeat the proof request to confirm the credential is still live."]

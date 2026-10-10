@@ -4,6 +4,33 @@ Notable changes to NetCast3r, newest first.
 
 ## Unreleased
 
+### Security
+
+- Five credential patterns no longer backtrack catastrophically. A hostile or
+  heavily minified script that mentioned a provider name could hang the
+  scanner; the nested bounded repeats are flattened and a keyword rule now
+  reads only the windows around each keyword. A body larger than
+  `max_scan_bytes` (1 MB) is scanned at its head and tail.
+- A model-planned validation check can no longer send a credential to an
+  arbitrary host by default: `allow_model_checks` now defaults to off, and a
+  planned check must pass an SSRF guard that also resolves the host and
+  rejects any name pointing at a private address.
+- Validation requests no longer follow redirects, so a provider cannot bounce
+  a request that carries the value to another origin.
+- The classification cache is keyed by a hash of the value, so a raw
+  credential never lands in `~/.netcast3r/classifications.json`.
+
+### Changed
+
+- Public proxy lists are off by default (`egress.use_public = false`); the
+  pool fetched them and then never handed one out. Set it on to opt in.
+- The chainer's model-authored severity, impact, and steps are recorded as
+  advisory analyst notes on the finding, not as the finding's claim. The
+  severity and impact a report states stay the ones the validator produced,
+  and the report labels model prose as not independently verified.
+- A model reply that is not a JSON object no longer aborts a run: triage,
+  escalation, and recipe planning fall back to the deterministic path.
+
 ### Added
 
 - Subdomain mapping. A run against a domain now enumerates its subdomains
@@ -296,6 +323,15 @@ Notable changes to NetCast3r, newest first.
   nowhere to scroll.
 - Provider and key rows wrap their action buttons instead of compressing
   them until the `remove` label clipped its own letters.
+- The engine room reloads when the selected run changes, and a failed load
+  now shows an error instead of a blank "no run" state.
+- Removing a key or a provider reports a failure instead of closing the
+  dialog as if it worked.
+- The command palette runs a command once, not twice, per keypress.
+- The findings search cannot show stale results from an earlier keystroke,
+  and a backend error is shown instead of an empty "nothing caught" state.
+- The provider wizard no longer saves invented model names when an endpoint
+  reports none; "keep this provider" keeps it with no models.
 
 ## 0.1.0
 

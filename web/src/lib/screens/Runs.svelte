@@ -34,7 +34,9 @@
     }
   }
 
-  onMount(() => store.refreshRuns());
+  onMount(() => {
+    void store.refreshRuns();
+  });
 </script>
 
 <div class="stagger mx-auto flex max-w-[1180px] flex-col gap-5">

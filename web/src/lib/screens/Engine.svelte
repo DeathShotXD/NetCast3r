@@ -123,18 +123,32 @@
 
   async function load() {
     if (!store.activeRunId) return;
-    run = await api.run(store.activeRunId);
-    lanes = {};
-    totalLines = 0;
-    seen.clear();
-    fetches = [];
-    thinking = [];
-    if (!run) return;
-    const page = await api.runEvents(run.id);
-    for (const item of page.items.slice(-CAP)) {
-      seen.add(item.id);
-      apply(item);
+    try {
+      run = await api.run(store.activeRunId);
+      lanes = {};
+      totalLines = 0;
+      seen.clear();
+      fetches = [];
+      thinking = [];
+      if (!run) return;
+      const page = await api.runEvents(run.id);
+      for (const item of page.items.slice(-CAP)) {
+        seen.add(item.id);
+        apply(item);
+      }
+    } catch (exc) {
+      run = null;
+      store.fail(exc instanceof Error ? exc.message : 'could not load the run');
     }
+  }
+
+  let loadedId = $state('');
+
+  async function start() {
+    source?.close();
+    source = undefined;
+    await load();
+    connect();
   }
 
   function apply(event: RunEvent) {
@@ -202,11 +216,16 @@
     return () => window.removeEventListener('keydown', onKey);
   });
 
+  $effect(() => {
+    const id = store.activeRunId;
+    if (id === loadedId) return;
+    loadedId = id;
+    void start();
+  });
+
   onMount(async () => {
     if (store.runs.length === 0) await store.refreshRuns();
     pickDefault();
-    await load();
-    connect();
   });
 
   onDestroy(() => {
