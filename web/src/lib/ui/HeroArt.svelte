@@ -240,7 +240,9 @@
   const TETHERS = [{ ax: 966, ay: 142, i: 5, d: 0.5 }];
 
   // ---- the report panel and the validation ladder ------------------------
-  const REPORT = { x: 830, y: 216, w: 200, h: 100 };
+  // the report rides the moon as a HUD pane; the ladder stacks down the
+  // clean right-edge sky, clear of the net's hem and the credential card
+  const REPORT = { x: 596, y: 52, w: 180, h: 96 };
   const CHECKS = ['PoC', 'Evidence', 'Steps to Reproduce', 'Submission Ready'];
 
   const CHIPS = [
@@ -740,7 +742,7 @@
     <text x={REPORT.x + 10} y={REPORT.y + 18} font-size="10.5" font-weight="700" letter-spacing="0.12em" fill="var(--nc-bone)" font-family={MONO}
       >REPORT</text
     >
-    <g transform="translate({REPORT.x + 174},{REPORT.y + 6}) scale(0.5)" stroke="var(--nc-acid)" stroke-width="2.4" fill="none" stroke-linecap="round">
+    <g transform="translate({REPORT.x + 154},{REPORT.y + 6}) scale(0.5)" stroke="var(--nc-acid)" stroke-width="2.4" fill="none" stroke-linecap="round">
       <path d="M6 4.5 A1.5 1.5 0 0 1 7.5 3 H14 L18.5 7.5 V19.5 A1.5 1.5 0 0 1 17 21 H7.5 A1.5 1.5 0 0 1 6 19.5 Z" />
       <path d="M14 3 V7.5 H18.5" />
       <path d="M8.7 10.6 H15.8 M8.7 13.2 H14.2 M8.7 15.8 H11.6" />
@@ -773,9 +775,9 @@
   <!-- validation ladder -->
   {#each CHIPS as chip, i (i)}
     <rect
-      x="1046"
-      y={218 + i * 26}
-      width="114"
+      x="1062"
+      y={20 + i * 26}
+      width="108"
       height="20"
       rx="4"
       fill="var(--nc-void)"
@@ -784,8 +786,8 @@
       opacity="0.96"
     />
     <text
-      x="1056"
-      y={232 + i * 26}
+      x="1072"
+      y={34 + i * 26}
       font-size="7.5"
       font-weight="700"
       letter-spacing="0.1em"
@@ -795,7 +797,7 @@
   {/each}
 
   <!-- six-stage rail -->
-  <rect x="170" y="318" width="858" height="40" rx="8" fill="var(--nc-void)" opacity="0.55" stroke="var(--nc-indigo_deep)" />
+  <rect x="170" y="318" width="820" height="40" rx="8" fill="var(--nc-void)" opacity="0.55" stroke="var(--nc-indigo_deep)" />
   {#each RAIL as cell, i (cell.key)}
     {@const left = cellLeft(i)}
     <svg x={left} y="327" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--nc-acid)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
@@ -870,9 +872,9 @@
 
   <!-- source block -->
   <g font-size="7.5" letter-spacing="0.08em" fill="var(--nc-acid)" opacity="0.85" font-family={MONO} text-anchor="end">
-    <text x="1160" y="332">OPEN SOURCE</text>
-    <text x="1160" y="344">AUTONOMOUS</text>
-    <text x="1160" y="356">FOR SECURITY RESEARCH</text>
+    <text x="1172" y="332">OPEN SOURCE</text>
+    <text x="1172" y="344">AUTONOMOUS</text>
+    <text x="1172" y="356">FOR SECURITY RESEARCH</text>
   </g>
 
   <!-- micro header -->

@@ -25,11 +25,13 @@
   let totalLines = $state(0);
   let pulses = $state<Record<string, number>>({});
   let picked = $state('');
+  let spotlightAgent = $state('');
   let fetches = $state<{ seq: number; kind: string; url: string; status: number }[]>([]);
   let thinking = $state<{ id: number; agent: string; text: string }[]>([]);
 
   const LANE_AGENTS = ['recon', 'exegete', 'prospector', 'classifier', 'assayer', 'chainer', 'scribe'];
   const CAP = 200;
+  const THINK_CAP = 220;
 
   const running = $derived(!!run && (run.status === 'running' || run.status === 'queued'));
   const laneList = $derived(
@@ -93,7 +95,7 @@
           thinking = [
             { id: event.seq, agent, text: String(event.payload.text) },
             ...thinking
-          ].slice(0, 24);
+          ].slice(0, THINK_CAP);
         }
         pulses = { ...pulses, [agent]: (pulses[agent] ?? 0) + 1 };
         next[agent] = { ...lane };
@@ -150,7 +152,7 @@
         thinking = [
           { id: event.seq, agent, text: String(event.payload.text) },
           ...thinking
-        ].slice(0, 24);
+        ].slice(0, THINK_CAP);
       }
       lanes = { ...lanes, [agent]: updated };
       totalLines += 1;
@@ -187,6 +189,18 @@
     const pick = running ?? latest;
     if (pick) store.activeRunId = pick.id;
   }
+
+  const spotlightLines = $derived(thinking.filter((t) => t.agent === spotlightAgent));
+  const spotlightLane = $derived(lanes[spotlightAgent] ?? null);
+
+  $effect(() => {
+    if (!spotlightAgent) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') spotlightAgent = '';
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  });
 
   onMount(async () => {
     if (store.runs.length === 0) await store.refreshRuns();
@@ -322,7 +336,27 @@
                 {lane.lastCall}
               </span>
             {/if}
-            <span class="mono ml-auto hidden shrink-0 text-xs text-slate md:block">{clock(lane.lastTs)}</span>
+            {#if LANE_AGENTS.includes(lane.agent)}
+              <span
+                class="ml-auto shrink-0 text-[10px] tracking-[0.12em] text-acid opacity-70 transition-opacity hover:opacity-100"
+                role="button"
+                tabindex="0"
+                onclick={(event) => {
+                  event.stopPropagation();
+                  spotlightAgent = lane.agent;
+                }}
+                onkeydown={(event) => {
+                  if (event.key === 'Enter') {
+                    event.stopPropagation();
+                    spotlightAgent = lane.agent;
+                  }
+                }}
+              >
+                WATCH &gt;
+              </span>
+            {:else}
+              <span class="mono ml-auto hidden shrink-0 text-xs text-slate md:block">{clock(lane.lastTs)}</span>
+            {/if}
           </div>
           {#if lane.lastText && picked === lane.agent}
             <p class="mono border-t border-indigo-deep/70 px-4 py-2.5 text-xs leading-relaxed text-bone-dust">
@@ -333,5 +367,67 @@
         </button>
       {/each}
     </section>
+  </div>
+{/if}
+
+{#if spotlightAgent}
+  {@const color = (AGENT_COLORS as Record<string, string>)[spotlightAgent] ?? 'var(--nc-acid)'}
+  <div
+    class="palette-veil"
+    role="presentation"
+    onclick={() => (spotlightAgent = '')}
+  >
+    <div
+      class="palette-panel panel-raised panel-hud mx-auto mt-[7vh] flex w-[min(880px,94vw)] flex-col overflow-hidden"
+      style="max-height:80vh"
+      role="dialog"
+      aria-label="{spotlightAgent} live thinking"
+      tabindex="-1"
+      onclick={(event) => event.stopPropagation()}
+      onkeydown={() => {}}
+    >
+      <header class="flex items-center gap-3 border-b border-indigo-deep px-5 py-3">
+        <span class="lane-led" style="--agent:{color}" aria-hidden="true"></span>
+        <div class="min-w-0">
+          <p class="eyebrow">live model spotlight</p>
+          <h2 class="font-mono text-lg" style="color:{color}">{spotlightAgent}</h2>
+        </div>
+        <div class="ml-auto flex items-center gap-3">
+          {#if spotlightLane}
+            <span class="num text-xs text-ash">{spotlightLane.lines} lines</span>
+            {#if spotlightLane.lastCall}
+              <span class="mono hidden text-[11px] text-ash sm:block">{spotlightLane.lastCall}</span>
+            {/if}
+          {/if}
+          <button class="btn btn-quiet px-2! py-1! text-xs" type="button" onclick={() => (spotlightAgent = '')}>
+            close
+          </button>
+        </div>
+      </header>
+      <div
+        class="think-stream flex-1 overflow-y-auto px-5 py-3"
+        data-spotlight="1"
+      >
+        {#if spotlightLines.length === 0}
+          <p class="mono text-xs text-slate">
+            {running
+              ? `waiting for ${spotlightAgent} to speak...`
+              : `no reasoning recorded for ${spotlightAgent} on this run`}
+          </p>
+        {/if}
+        {#each spotlightLines as line (line.id)}
+          <p class="think-line mono">
+            <span style="color:{color}">&gt;</span>
+            {line.text}
+          </p>
+        {/each}
+      </div>
+      {#if running}
+        <footer class="flex items-center gap-2 border-t border-indigo-deep px-5 py-2">
+          <span class="pulse-live h-1.5 w-1.5 rounded-full bg-acid" aria-hidden="true"></span>
+          <span class="mono text-[10px] tracking-[0.14em] text-ash">streaming // press esc to close</span>
+        </footer>
+      {/if}
+    </div>
   </div>
 {/if}

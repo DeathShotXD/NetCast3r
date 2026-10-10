@@ -241,6 +241,21 @@ Notable changes to NetCast3r, newest first.
   gains a second OpenRouter key as backup, verified live: the bus walks
   openrouter, openrouter-backup, ollama, and opencode in order and cools
   any provider that rate limits.
+- The backup key turns out to be free.ai's, not OpenRouter's: it now
+  speaks as its own provider at `api.free.ai`, verified live against both
+  a plain call and a stream, so the bus walks openrouter, freeai, ollama,
+  and opencode.
+- Every thinking lane grows a watch link: click it and the agent's mind
+  opens in a large spotlight pane that streams its reasoning live, with
+  its line count and last model call in the header, esc to close, and the
+  veil click to dismiss.
+- The banner breathes again: the validation ladder stacks down the clean
+  right-edge sky instead of colliding with the net's hem weights, the
+  report panel rides the moon as a HUD pane instead of sitting on the
+  mesh, the six-stage rail shortens clear of the source block, and a
+  pairwise-overlap audit of every HUD element now reports zero collisions.
+  The net status scope well thins from nine ribs and five chords to five
+  ribs and three -- at instrument size, restraint reads as precision.
 
 ### Fixed
 

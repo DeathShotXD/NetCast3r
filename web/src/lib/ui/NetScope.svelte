@@ -10,17 +10,18 @@
 
   const id = `ns${++seq}`;
 
-  // The net, seen as an instrument: ribs fan from the hand at the corner,
-  // chords tie the mesh, knots glow where they cross, and a scan pulse
-  // runs down every rib while a sonar ring sweeps out of the hand.
+  // The net, seen as an instrument: five ribs fan from the hand at the corner,
+  // three chords tie the mesh, a scan pulse runs down every rib while a sonar
+  // ring sweeps out of the hand. Fewer strokes than the banner: at this size
+  // restraint reads as precision.
   const O = { x: 184, y: 8 };
-  const RIBS = 9;
-  const DEPTHS = [0.3, 0.5, 0.7, 0.9, 1.02];
+  const RIBS = 5;
+  const DEPTHS = [0.38, 0.62, 0.9];
 
   const ribSpec = (i: number) => {
     const t = i / (RIBS - 1);
     const angle = ((104 + t * 74) * Math.PI) / 180;
-    const len = 176 + Math.sin(i * 1.9) * 12;
+    const len = 176 + Math.sin(i * 1.9) * 8;
     return { angle, len };
   };
 
@@ -53,7 +54,7 @@
 
   const nodes = DEPTHS.flatMap((d, di) =>
     Array.from({ length: RIBS }, (_, i) => ({ i, di, ...along(i, d) })).filter(
-      (n, k) => k % 2 === di % 2 && n.x > 4 && n.x < 192 && n.y > 4 && n.y < 108
+      (n) => n.x > 4 && n.x < 192 && n.y > 4 && n.y < 108 && n.i % 2 === di % 2
     )
   );
 

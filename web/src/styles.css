@@ -936,6 +936,15 @@
     transition: width 500ms var(--ease-enter);
   }
 
+  /* model spotlight: the big read of one agent's mind */
+  .think-line {
+    margin: 0 0 4px;
+    font-size: 12.5px;
+    line-height: 1.6;
+    color: var(--nc-bone);
+    animation: line-arrive 200ms var(--ease-enter) both;
+  }
+
   /* ---- micro meters (KPI shares, confidence) ---------------------------- */
 
   .meter {
