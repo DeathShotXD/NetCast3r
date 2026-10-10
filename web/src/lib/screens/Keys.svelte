@@ -557,7 +557,7 @@
               <span class="mono min-w-0 flex-1 truncate text-xs text-bone-dust">{item.base_url || '-'}</span>
               <span class="mono text-xs text-ash">{item.masked || 'no key'}</span>
               <span class="mono text-[11px] text-ash">p{item.priority}</span>
-              <span class="flex items-center gap-1">
+              <span class="flex shrink-0 items-center gap-1">
                 <button class="btn btn-quiet px-2! py-0.5! text-xs" type="button" disabled={i === 0} onclick={() => void move(i, -1)} aria-label="move up">^</button>
                 <button class="btn btn-quiet px-2! py-0.5! text-xs" type="button" disabled={i === providers.length - 1} onclick={() => void move(i, 1)} aria-label="move down">v</button>
                 <button
@@ -574,7 +574,7 @@
                   {testing === item.id ? 'testing...' : 'test'}
                 </button>
                 <button
-                  class="btn btn-quiet btn-danger px-2! py-0.5! text-xs"
+                  class="btn btn-quiet btn-danger shrink-0 px-2! py-0.5! text-xs"
                   type="button"
                   onclick={() => (deletingProvider = item.id)}
                 >
@@ -665,12 +665,12 @@
         {:else}
           <ul class="mt-2 flex flex-col gap-1">
             {#each keys as key (key.name)}
-              <li class="flex items-center gap-3 rounded-lg border border-indigo-deep px-3 py-2">
+              <li class="flex flex-wrap items-center gap-3 rounded-lg border border-indigo-deep px-3 py-2">
                 <span class="mono text-sm text-bone">{key.name}</span>
                 <span class="mono text-xs text-acid-dim">{key.masked}</span>
                 <span class="mono ml-auto text-[11px] text-ash">{key.source}</span>
                 <button
-                  class="btn btn-quiet btn-danger px-2! py-0.5! text-xs"
+                  class="btn btn-quiet btn-danger shrink-0 px-2! py-0.5! text-xs"
                   type="button"
                   onclick={() => (deletingKey = key.name)}
                 >

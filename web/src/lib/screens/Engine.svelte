@@ -325,7 +325,7 @@
         >
           <div class="flex items-center gap-3 px-4 py-2.5">
             <span class="lane-led" aria-hidden="true"></span>
-            <span class="mono w-[104px] shrink-0 text-sm" style="color:{color}">{lane.agent}</span>
+            <span class="mono w-[104px] min-w-0 shrink truncate text-sm" style="color:{color}">{lane.agent}</span>
             <span class="lane-meter" aria-hidden="true"><i style="width:{Math.min(100, lane.lines * 4)}%"></i></span>
             <span class="num shrink-0 text-xs text-ash">{lane.lines} lines</span>
             {#if lane.lastCall}

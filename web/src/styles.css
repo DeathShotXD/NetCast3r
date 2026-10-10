@@ -402,7 +402,7 @@
 
   /* keyed screen swap */
   .screen-in {
-    animation: screen-in 300ms var(--ease-enter) both;
+    animation: screen-in 300ms var(--ease-enter) backwards;
   }
 
   /* slow bob for floating HUD chips */
@@ -1149,8 +1149,8 @@
   }
   to {
     opacity: 1;
-    transform: translateY(0);
-    filter: blur(0);
+    transform: none;
+    filter: none;
   }
 }
 

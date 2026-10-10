@@ -276,6 +276,21 @@ Notable changes to NetCast3r, newest first.
 - The generic assignment and Telegram patterns no longer match identifier
   strings and Cloudflare challenge tokens.
 - The Telegram recipe treats an unauthorized response as dead.
+- The screen swap no longer traps fixed layers after it ends: the entrance
+  animation drops its forwards fill, which used to leave an identity matrix
+  and a zero blur on the wrapper, making it the containing block for the
+  engine spotlight and the finding drawer -- both parked at the top of the
+  document once the page was scrolled.
+- The top bar stops squeezing its controls into clipped text on a narrow
+  screen: buttons hold their width, the brand prefix and the go key step
+  aside below the small breakpoint, and the search field narrows its floor
+  so the breadcrumb keeps space.
+- The engine lane row fits a 360px viewport: the agent name is the part
+  that yields now, so the meter floor and the line counters can no longer
+  push the WATCH trigger past the right edge where it was cut off with
+  nowhere to scroll.
+- Provider and key rows wrap their action buttons instead of compressing
+  them until the `remove` label clipped its own letters.
 
 ## 0.1.0
 
