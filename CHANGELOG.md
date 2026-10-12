@@ -48,6 +48,10 @@ Notable changes to NetCast3r, newest first.
   manual steps, the high and critical candidates that were not confirmed with
   manual reproduction, and the code review of endpoints and weak points the
   JavaScript pass produced.
+- The provider bus retires a model after it fails twice (a 400, 404, 5xx,
+  timeout, or an empty stream), so a run stops walking a dead catalogue on
+  every call. A provider whose free tier refuses external use no longer
+  floods the timeline with 403s on each file.
 
 ### Added
 
@@ -369,6 +373,10 @@ Notable changes to NetCast3r, newest first.
   when the selected run changes; the live scan and findings screens surface
   load failures instead of a blank or empty state, and the number-input
   advanced options no longer throw before a scan can start.
+- A JSON file is no longer read as JavaScript: the extension check matched
+  `.json` because it contains the substring `.js`.
+- The exegete tells the model that the file is untrusted data, so a page
+  cannot smuggle instructions into the analysis prompt.
 
 ## 0.1.0
 

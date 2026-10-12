@@ -20,7 +20,7 @@ from .subdomains import SubdomainFinder
 
 LINK_RE = re.compile(r"""(?:href|src|action)\s*=\s*["']([^"'#]+)["']""", re.I)
 JS_REF_RE = re.compile(r"""(?:src|href)\s*=\s*["']([^"']+\.js(?:\?[^"']*)?)["']""", re.I)
-JS_IMPORT_RE = re.compile(r"""(?:import\s*\(\s*|from\s*|require\(\s*)["']([^"']+\.js[^"']*)["']""")
+JS_IMPORT_RE = re.compile(r"""(?:import\s*\(\s*|from\s*|require\(\s*)["']([^"']+\.js)(?:\?[^"']*)?["']""")
 ENDPOINT_RE = re.compile(r"""["'](/[A-Za-z0-9_\-./]{2,}(?:\?[A-Za-z0-9_\-=&%]*)?)["']""")
 SOURCE_MAP_RE = re.compile(r"""//[#@]\s*sourceMappingURL=(\S+)""")
 MAX_SOURCE_MAP = 8_000_000
@@ -237,7 +237,7 @@ class Recon:
                     self.on_fetch("skip", url, 0)
                 continue
 
-            is_js = ".js" in url.split("?")[0].lower() or "javascript" in content_type
+            is_js = url.split("?")[0].lower().endswith(".js") or "javascript" in content_type
             if is_js:
                 result.js_urls.append(url)
                 result.js_text[url] = text
@@ -263,10 +263,10 @@ class Recon:
                     self.on_fetch("page", url, status)
                 for link in LINK_RE.findall(text):
                     child = _absolute(url, link)
-                    if child.endswith(ASSET_EXT):
+                    if child.split("?")[0].lower().endswith(ASSET_EXT):
                         continue
                     if self.scope.is_in_scope(child):
-                        if ".js" in child.split("?")[0].lower():
+                        if child.split("?")[0].lower().endswith(".js"):
                             if child not in result.js_urls:
                                 queue.append((child, depth))
                         elif depth < self.max_depth:
@@ -274,7 +274,7 @@ class Recon:
                     elif self.scope.is_out_of_scope(child):
                         result.out_of_scope.append(child)
                 for absolute in re.findall(r"""https?://[^\s"'<>)\\]+""", text):
-                    if ".js" in absolute.split("?")[0].lower() and self.scope.is_in_scope(absolute):
+                    if absolute.split("?")[0].lower().endswith(".js") and self.scope.is_in_scope(absolute):
                         queue.append((absolute, depth))
         result.js_urls = sorted(set(result.js_urls))
         result.endpoints = sorted(set(result.endpoints))

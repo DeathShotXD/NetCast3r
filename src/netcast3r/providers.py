@@ -52,9 +52,28 @@ class ProviderBus:
         # down so the next call rotates away instead of burning the same
         # rate limit over and over
         self._cooldown: dict[str, tuple[float, int]] = {}
+        # (provider, model) -> cooldown_until: a model that 400s, 404s, 502s or
+        # answers with nothing is retired for a while so a run stops walking a
+        # dead catalogue on every call
+        self._dead: dict[tuple[str, str], float] = {}
+        self._strikes: dict[tuple[str, str], int] = {}
 
     COOLDOWN_BASE = 30.0
     COOLDOWN_MAX = 300.0
+    DEAD_TTL = 900.0
+
+    def _model_dead(self, provider: str, model: str) -> bool:
+        return time.monotonic() < self._dead.get((provider, model), 0.0)
+
+    def _retire(self, provider: str, model: str) -> None:
+        self._dead[(provider, model)] = time.monotonic() + self.DEAD_TTL
+
+    def _strike(self, provider: str, model: str, fatal: bool = False) -> None:
+        key = (provider, model)
+        count = self._strikes.get(key, 0) + 1
+        self._strikes[key] = count
+        if fatal or count >= 2:
+            self._retire(provider, model)
 
     def _penalize(self, name: str) -> None:
         strikes = self._cooldown.get(name, (0.0, 0))[1] + 1
@@ -100,7 +119,7 @@ class ProviderBus:
             if not models:
                 continue
             for model in models:
-                if model:
+                if model and not self._model_dead(provider.name, model):
                     yield provider, model, key
 
     def chat_stream(self, agent: str, messages: list[dict], on_chunk=None):
@@ -133,6 +152,7 @@ class ProviderBus:
                             if self.egress and proxy:
                                 self.egress.mark_failed(proxy)
                             self._penalize(provider.name)
+                            self._strike(provider.name, model)
                             last_error = f"{provider.name} returned {response.status_code}"
                             self._observe({"kind": "done", "agent": agent,
                                            "provider": provider.name, "model": model,
@@ -140,6 +160,8 @@ class ProviderBus:
                                            "error": f"HTTP {response.status_code}"})
                             continue
                         if response.status_code >= 400:
+                            self._strike(provider.name, model,
+                                         fatal=response.status_code in (400, 404))
                             last_error = f"{provider.name} returned {response.status_code}"
                             self._observe({"kind": "done", "agent": agent,
                                            "provider": provider.name, "model": model,
@@ -185,6 +207,7 @@ class ProviderBus:
                         if not collected:
                             if not stream_error:
                                 last_error = f"{provider.name}/{model} returned no content"
+                            self._strike(provider.name, model)
                             self._observe({"kind": "done", "agent": agent,
                                            "provider": provider.name, "model": model,
                                            "ok": False, "ms": _ms(attempt),
@@ -197,6 +220,7 @@ class ProviderBus:
                         return collected
             except Exception as exc:
                 last_error = _redact(f"{provider.name}: {type(exc).__name__}", key)
+                self._strike(provider.name, model)
                 self._observe({"kind": "done", "agent": agent,
                                "provider": provider.name, "model": model,
                                "ok": False, "ms": _ms(attempt),

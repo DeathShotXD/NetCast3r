@@ -79,6 +79,28 @@ class ProviderCandidateTests(unittest.TestCase):
         names = [provider.name for provider, _, _ in bus._candidates("exegete")]
         self.assertNotIn("remote", names)
 
+    def test_a_dead_model_is_retired_after_two_strikes(self):
+        config = default_config()
+        config.providers = [ProviderConfig(name="p", base_url="https://api.example.com/v1",
+                                           api_key="k", models=["m1", "m2"], priority=1)]
+        bus = ProviderBus(config)
+        bus._strike("p", "m1")
+        models = [model for _, model, _ in bus._candidates("exegete")]
+        self.assertIn("m1", models)
+        bus._strike("p", "m1")
+        models = [model for _, model, _ in bus._candidates("exegete")]
+        self.assertNotIn("m1", models)
+        self.assertIn("m2", models)
+
+    def test_a_404_retires_a_model_at_once(self):
+        config = default_config()
+        config.providers = [ProviderConfig(name="p", base_url="https://api.example.com/v1",
+                                           api_key="k", models=["m1"], priority=1)]
+        bus = ProviderBus(config)
+        bus._strike("p", "m1", fatal=True)
+        models = [model for _, model, _ in bus._candidates("exegete")]
+        self.assertNotIn("m1", models)
+
 
 class EventShedTests(unittest.TestCase):
     def test_a_finding_survives_backpressure(self):

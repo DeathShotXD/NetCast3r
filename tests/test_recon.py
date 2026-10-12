@@ -126,6 +126,14 @@ class SourceMapTests(unittest.TestCase):
         self.assertIn("const HIDDEN='x'",
                       result.js_text["https://app.example.com/app.js.map"])
 
+    def test_a_json_file_is_not_treated_as_javascript(self):
+        scope = ScopeManager(in_scope=["app.example.com"])
+        pages = {"https://app.example.com/data.json": '{"a": 1}'}
+        recon = Recon(scope, default_config(), session=_PageSession(pages))
+        result = recon.crawl(["https://app.example.com/data.json"])
+        self.assertIn("https://app.example.com/data.json", result.pages)
+        self.assertNotIn("https://app.example.com/data.json", result.js_urls)
+
 
 class ApiDiscoveryTests(unittest.TestCase):
     def test_openapi_paths_are_discovered(self):
