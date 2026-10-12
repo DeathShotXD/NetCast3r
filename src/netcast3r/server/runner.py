@@ -157,6 +157,14 @@ def set_dashboard_bridge(bridge: "DashboardBridge | None") -> None:
     _bridge = bridge
 
 
+def _safe_results_dir(value) -> Path:
+    """Keep run output under a relative directory; reject absolute/.. paths."""
+    candidate = Path(str(value or "results"))
+    if candidate.is_absolute() or ".." in candidate.parts:
+        return Path("results")
+    return candidate
+
+
 def run_scan(run_id: str, target: str, options: dict, emit: Callable[[Event], None],
              should_stop: Callable[[], bool]) -> dict:
     from ..config import load_config
@@ -195,7 +203,7 @@ def run_scan(run_id: str, target: str, options: dict, emit: Callable[[Event], No
     if options.get("max_pages"):
         run_config.concurrency = max(1, int(options["max_pages"]) // 25)
 
-    results_root = Path(options.get("results_dir") or "results")
+    results_root = _safe_results_dir(options.get("results_dir"))
     out = results_root / run_id
     out.mkdir(parents=True, exist_ok=True)
     store = Store(out / "netcast3r.db")
@@ -216,6 +224,9 @@ def run_scan(run_id: str, target: str, options: dict, emit: Callable[[Event], No
         "candidates": summary.candidates,
         "verified": summary.verified,
         "findings": summary.findings,
+        "unverified": len(getattr(orchestrator, "_unverified", []) or []),
+        "review_loopholes": len((getattr(orchestrator, "_review", {}) or {}).get("loopholes", [])),
+        "review_endpoints": len((getattr(orchestrator, "_review", {}) or {}).get("endpoints", [])),
         "report": summary.report,
         "results_dir": str(out),
         "findings_list": list(orchestrator.last_findings),

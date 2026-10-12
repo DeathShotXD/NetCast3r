@@ -11,6 +11,7 @@ from netcast3r.config import ProviderConfig, default_config
 from netcast3r.knowledge import Knowledge
 from netcast3r.providers import ProviderBus
 from netcast3r.secrets import Extractor, Pattern, load_patterns
+from netcast3r.scope import ScopeManager
 from netcast3r.server.events import Event, EventBus
 
 
@@ -90,6 +91,34 @@ class EventShedTests(unittest.TestCase):
         bus._shed(sub)
         types = [event.type for event in list(sub.queue)]
         self.assertIn("finding.created", types)
+
+
+class PatternGroupTests(unittest.TestCase):
+    def test_group_defaults_to_the_first_capture(self):
+        workdir = Path(tempfile.mkdtemp())
+        path = workdir / "patterns.toml"
+        path.write_text(
+            "[[pattern]]\n"
+            "id = \"t\"\n"
+            "type = \"t\"\n"
+            "regex = \"KEY=([A-Z0-9]{8})\"\n"
+        )
+        patterns = load_patterns(path)
+        self.assertEqual(patterns[0].group, 1)
+        found = Extractor(patterns=patterns).scan("prefix KEY=ABCD1234 suffix")
+        self.assertEqual([s.value for s in found], ["ABCD1234"])
+
+
+class ScopeTests(unittest.TestCase):
+    def test_a_bang_entry_is_an_exclusion(self):
+        scope = ScopeManager(in_scope=["example.com", "!admin.example.com"])
+        self.assertTrue(scope.is_in_scope("https://www.example.com/"))
+        self.assertFalse(scope.is_in_scope("https://admin.example.com/"))
+
+    def test_url_prefix_blocks_path_traversal(self):
+        scope = ScopeManager(in_scope=["https://example.com/app"])
+        self.assertTrue(scope.is_in_scope("https://example.com/app/x"))
+        self.assertFalse(scope.is_in_scope("https://example.com/app/../../admin"))
 
 
 if __name__ == "__main__":

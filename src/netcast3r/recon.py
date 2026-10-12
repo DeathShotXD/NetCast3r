@@ -89,6 +89,10 @@ class Recon:
         response = self.session.get(url)
         if response is None:
             return 0, "", ""
+        final = getattr(response, "url", "") or url
+        if final != url and not self.scope.is_in_scope(final):
+            # a redirect left scope: refuse the body rather than fetch internal
+            return 0, "", ""
         return response.status_code, response.text, response.headers.get("content-type", "")
 
     def _source_map(self, base_url: str, js_text: str):

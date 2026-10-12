@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import os
+import tempfile
 import threading
 import time
 from pathlib import Path
@@ -35,6 +36,7 @@ class KeyStore:
     def __init__(self, base: Path | None = None):
         self.base = Path(base) if base else Path.home() / ".netcast3r"
         self.path = self.base / "secrets.json"
+        self._lock = threading.RLock()
         self._use_keyring = self._keyring_ready()
 
     def _keyring_ready(self) -> bool:
@@ -66,26 +68,35 @@ class KeyStore:
 
     def _write(self, data: dict) -> None:
         self.base.mkdir(parents=True, exist_ok=True)
-        tmp = self.path.with_suffix(".tmp")
-        tmp.write_text(json.dumps(data, indent=2, default=str))
-        os.chmod(tmp, 0o600)
-        tmp.replace(self.path)
+        fd, tmp_name = tempfile.mkstemp(dir=str(self.base), prefix=".secrets-", suffix=".tmp")
+        try:
+            with os.fdopen(fd, "w") as handle:
+                handle.write(json.dumps(data, indent=2, default=str))
+            os.chmod(tmp_name, 0o600)
+            os.replace(tmp_name, self.path)
+        finally:
+            if os.path.exists(tmp_name):
+                try:
+                    os.remove(tmp_name)
+                except OSError:
+                    pass
 
     # -- api -------------------------------------------------------------
     def set(self, name: str, value: str) -> None:
-        stored = False
-        if self._use_keyring:
-            try:
-                keyring.set_password(SERVICE, name, value)  # type: ignore[union-attr]
-                stored = True
-            except Exception:
-                self._use_keyring = False
-        data = self._read()
-        entry = {"source": "keyring" if stored else "file", "updated_at": time.time()}
-        if not stored:
-            entry["value"] = value
-        data.setdefault("keys", {})[name] = entry
-        self._write(data)
+        with self._lock:
+            stored = False
+            if self._use_keyring:
+                try:
+                    keyring.set_password(SERVICE, name, value)  # type: ignore[union-attr]
+                    stored = True
+                except Exception:
+                    self._use_keyring = False
+            data = self._read()
+            entry = {"source": "keyring" if stored else "file", "updated_at": time.time()}
+            if not stored:
+                entry["value"] = value
+            data.setdefault("keys", {})[name] = entry
+            self._write(data)
 
     def get(self, name: str) -> str:
         if self._use_keyring:
@@ -101,16 +112,17 @@ class KeyStore:
         return ""
 
     def delete(self, name: str) -> bool:
-        if self._use_keyring:
-            try:
-                keyring.delete_password(SERVICE, name)  # type: ignore[union-attr]
-            except Exception:
-                self._use_keyring = False
-        data = self._read()
-        removed = (data.get("keys") or {}).pop(name, None) is not None
-        if removed:
-            self._write(data)
-        return removed
+        with self._lock:
+            if self._use_keyring:
+                try:
+                    keyring.delete_password(SERVICE, name)  # type: ignore[union-attr]
+                except Exception:
+                    self._use_keyring = False
+            data = self._read()
+            removed = (data.get("keys") or {}).pop(name, None) is not None
+            if removed:
+                self._write(data)
+            return removed
 
     def has(self, name: str) -> bool:
         return bool(self.get(name))

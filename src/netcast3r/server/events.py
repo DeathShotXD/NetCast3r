@@ -67,6 +67,10 @@ class EventBus:
                 sub.put_nowait(event)
             except queue.Full:
                 self._shed(sub)
+                try:
+                    sub.put_nowait(event)
+                except queue.Full:
+                    pass
         return event
 
     def _shed(self, sub: queue.Queue) -> None:
@@ -78,25 +82,23 @@ class EventBus:
         does not wedge the run, and one lagged marker records the gap.
         """
         dropped = None
-        while True:
-            try:
-                head = sub.queue[0]
-            except IndexError:
-                return
+        while sub.queue:
+            head = sub.queue[0]
             if head.type in ("log", "reasoning", "fetch"):
                 try:
                     dropped = sub.get_nowait()
                 except queue.Empty:
-                    return
-                continue
-            break
+                    break
+            else:
+                break
         if dropped is None:
             try:
                 dropped = sub.get_nowait()
             except queue.Empty:
                 return
         try:
-            sub.put_nowait(Event(type="lagged", payload={"dropped_from": dropped.seq}))
+            sub.put_nowait(Event(type="lagged", run_id=dropped.run_id,
+                                 payload={"dropped_from": dropped.seq}))
         except queue.Full:
             pass
 
@@ -123,8 +125,12 @@ class EventBus:
             return []
         return [event for event in events if event.seq > since]
 
-    def stream(self, sub: queue.Queue, heartbeat: float = 15.0):
-        """Yield SSE frames for one subscriber until it disconnects."""
+    def stream(self, sub: queue.Queue, heartbeat: float = 15.0, run_id: str | None = None):
+        """Yield SSE frames for one subscriber until it disconnects.
+
+        When ``run_id`` is given, only events for that run are forwarded; the
+        bus is shared, so a per-run screen must not see another run's events.
+        """
         try:
             while True:
                 try:
@@ -132,6 +138,18 @@ class EventBus:
                 except queue.Empty:
                     yield ": keepalive\n\n"
                     continue
+                if run_id is not None:
+                    owner = None
+                    if isinstance(event, dict):
+                        owner = event.get("run_id")
+                    else:
+                        owner = getattr(event, "run_id", None)
+                        if owner is None:
+                            inner = getattr(event, "event", None)
+                            if isinstance(inner, dict):
+                                owner = inner.get("run_id")
+                    if owner != run_id:
+                        continue
                 if isinstance(event, dict):
                     yield "event: message\ndata: " + json.dumps(event, default=str) + "\n\n"
                 else:

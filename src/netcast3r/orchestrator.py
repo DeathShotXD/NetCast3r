@@ -89,6 +89,8 @@ class Orchestrator:
         self._classified = 0
         self.seed_bodies = seed_bodies or {}
         self.last_findings: list[dict] = []
+        self._unverified: list[dict] = []
+        self._review: dict = {"endpoints": [], "loopholes": []}
         self.resume = resume
         self._known = store.validations_map() if resume else {}
         self._existing_findings = store.finding_keys() if resume else set()
@@ -105,9 +107,14 @@ class Orchestrator:
             self.console.line("run", f"stop condition met: {exc}")
         except KeyboardInterrupt:
             self.console.line("run", "interrupted, writing what we have")
+        except Exception as exc:  # noqa: BLE001 - a bad stage must still produce a report
+            self.console.line("run", f"stage error ({type(exc).__name__}: {exc}); "
+                                     f"writing what we have")
 
         self.last_findings = findings
-        report_path = save_report(target, summary, findings, self.store.path.parent, self._out_of_scope)
+        report_path = save_report(target, summary, findings, self.store.path.parent,
+                                  self._out_of_scope, unverified=self._unverified,
+                                  review=self._review)
         if self.config.run.write_json or self.config.run.output_format == "json":
             save_json(self.store.path.parent, summary, findings)
         if self.config.run.write_jsonl or self.config.run.output_format == "jsonl":
@@ -158,10 +165,19 @@ class Orchestrator:
         candidates = self._classify(candidates)
         candidates = self._triage(candidates)
 
-        self._exegete(result.js_text)
+        review_notes = self._exegete(result.js_text)
+        self._review = self._review_summary(review_notes)
         unvalidated = len([c for c in candidates if c.type not in self.validator.recipes])
-        findings = self._assay(candidates)
-        confidence = (round(sum(float(f.get("confidence", 0)) for f in findings) / len(findings), 2)
+        findings, unverified = self._assay(candidates)
+        findings = self._sentinel(findings)
+        self._unverified = unverified
+        for item in unverified:
+            self.store.add_candidate(item["type"], item["value"], item["source"],
+                                     item["severity"], item["detail"], item["steps"])
+        for source, kind, detail, severity in self._review_rows():
+            self.store.add_review(source, kind, detail, severity)
+        confidence = (round(sum(self._as_float(f.get("confidence", 0)) for f in findings)
+                            / len(findings), 2)
                       if findings else 0.0)
 
         for finding in findings:
@@ -175,7 +191,6 @@ class Orchestrator:
             if narrative:
                 finding.setdefault("notes", narrative)
             self._scribe(finding)
-        findings = self._sentinel(findings)
         self.console.counts(verified=len(findings), findings=len(findings))
 
         summary = {
@@ -244,6 +259,20 @@ class Orchestrator:
             words.save(self.store.path.parent / "wordlist.txt")
             self.console.line("recon", f"{len(words.words())} words saved to wordlist.txt")
 
+    @staticmethod
+    def _as_float(value, default: float = 0.0) -> float:
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return default
+
+    @staticmethod
+    def _as_int(value, default: int = 0) -> int:
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            return default
+
     def _prospect(self, js_text: dict) -> list[Secret]:
         candidates: list[Secret] = []
         seen: set[tuple[str, str]] = set()
@@ -266,16 +295,18 @@ class Orchestrator:
             if known and known.get("type"):
                 if known["type"] in self.validator.recipes:
                     secret.type = known["type"]
-                secret.confidence = max(secret.confidence, float(known.get("confidence", 0) or 0))
-                continue
+                    secret.confidence = max(secret.confidence,
+                                            self._as_float(known.get("confidence")))
+                    continue
             if secret.type == "generic" or secret.type not in self.validator.recipes:
                 unknown.append(secret)
         if not unknown:
             return candidates
         payload = [{"value": s.value[:64], "context": s.context[:120]} for s in unknown[:40]]
         result = self.roster.classifier.classify(payload, on_reasoning=self._reason("classifier"))
-        data = result.data or {}
-        items = data.get("items", []) if isinstance(data, dict) else []
+        data = result.data if isinstance(result.data, dict) else {}
+        items = data.get("items")
+        items = items if isinstance(items, list) else []
         by_value = {}
         for item in items:
             if isinstance(item, dict) and item.get("value"):
@@ -287,10 +318,11 @@ class Orchestrator:
                 continue
             new_type = str(item.get("type", "")).strip().lower().replace(" ", "_")
             provider = str(item.get("provider", "")).strip().lower().replace(" ", "_")
+            confidence = self._as_float(item.get("confidence"))
             self.knowledge.remember_classification(secret.value, {
                 "type": new_type or provider,
                 "provider": provider,
-                "confidence": item.get("confidence", 0),
+                "confidence": confidence,
                 "is_secret": bool(item.get("is_secret", False)),
             })
             if not item.get("is_secret"):
@@ -298,8 +330,7 @@ class Orchestrator:
             resolved = new_type if new_type in self.validator.recipes else provider
             if resolved in self.validator.recipes:
                 secret.type = resolved
-                secret.confidence = max(secret.confidence,
-                                        round(float(item.get("confidence", 0) or 0), 2))
+                secret.confidence = max(secret.confidence, round(confidence, 2))
                 retyped += 1
         if retyped:
             self._classified = retyped
@@ -313,10 +344,12 @@ class Orchestrator:
                     "context": s.context[:80], "source": s.source} for s in candidates]
         result = self.roster.prospector.triage(payload, on_reasoning=self._reason("prospector"))
         data = result.data if isinstance(result.data, dict) else {}
+        items = data.get("items")
+        items = items if isinstance(items, list) else []
         order = {}
-        for item in data.get("items", []):
+        for item in items:
             if isinstance(item, dict) and item.get("value"):
-                order[str(item["value"])[:24]] = int(item.get("priority", 100))
+                order[str(item["value"])[:24]] = self._as_int(item.get("priority"), 100)
         if not order:
             return candidates
         ranked = sorted(candidates, key=lambda s: order.get(s.value[:24], 100))
@@ -362,8 +395,41 @@ class Orchestrator:
                     notes[url] = result.data
         return notes
 
-    def _assay(self, candidates: list[Secret]) -> list[dict]:
+    @staticmethod
+    def _review_summary(notes: dict) -> dict:
+        """Fold the exegete's per-file notes into one review of endpoints and weak points."""
+        endpoints: list[dict] = []
+        loopholes: list[dict] = []
+        if isinstance(notes, dict):
+            for source, data in notes.items():
+                if not isinstance(data, dict):
+                    continue
+                for item in data.get("endpoints", []) or []:
+                    if isinstance(item, dict):
+                        endpoints.append({"source": source, "path": str(item.get("path", "")),
+                                          "method": str(item.get("method", "")),
+                                          "note": str(item.get("note", ""))})
+                for item in data.get("loopholes", []) or []:
+                    if isinstance(item, dict):
+                        loopholes.append({"source": source, "detail": str(item.get("detail", "")),
+                                          "severity": str(item.get("severity", "")),
+                                          "evidence": str(item.get("evidence", ""))})
+        return {"endpoints": endpoints, "loopholes": loopholes}
+
+    def _review_rows(self) -> list[tuple[str, str, str, str]]:
+        rows: list[tuple[str, str, str, str]] = []
+        for item in self._review.get("endpoints", [])[:200]:
+            rows.append((item.get("source", ""), "endpoint",
+                         f"{item.get('method', '').upper()} {item.get('path', '')} "
+                         f"{item.get('note', '')}".strip(), ""))
+        for item in self._review.get("loopholes", [])[:200]:
+            rows.append((item.get("source", ""), "loophole", item.get("detail", ""),
+                         item.get("severity", "")))
+        return rows
+
+    def _assay(self, candidates: list[Secret]) -> tuple[list[dict], list[dict]]:
         findings: list[dict] = []
+        unverified: list[dict] = []
         show_progress = bool(candidates) and not getattr(self.console, "is_dashboard", False)
         progress = Progress(self.console, len(candidates), "validating") if show_progress else None
         by_source: dict[tuple[str, str], str] = {}
@@ -397,13 +463,27 @@ class Orchestrator:
                 self.store.add_validation(secret.type, secret.value, validation.status,
                                           validation.provider, validation.detail, validation.evidence)
                 self.console.finding(validation.status, secret.type, secret.value, validation.detail)
-            if validation.status == "verified" and key not in self._existing_findings:
-                findings.append(self._finding(secret, validation))
+            if validation.status == "verified":
+                if key not in self._existing_findings:
+                    findings.append(self._finding(secret, validation))
+            else:
+                severity = SEVERITY_BY_TYPE.get(secret.type, "medium")
+                if severity in ("critical", "high"):
+                    steps = self.knowledge.escalation(secret.type) or [
+                        "Send the value to the provider's identity endpoint.",
+                        "Confirm the account or resource it controls, then rotate it.",
+                    ]
+                    unverified.append({
+                        "type": secret.type, "value": secret.value,
+                        "source": secret.source, "severity": severity,
+                        "detail": validation.detail or validation.status,
+                        "steps": steps,
+                    })
             if progress:
                 progress.advance()
         if progress:
             progress.close()
-        return findings
+        return findings, unverified
 
     def _ensure_recipe(self, secret_type: str) -> None:
         if secret_type in self.validator.recipes:
@@ -422,12 +502,14 @@ class Orchestrator:
         if not self._safe_check(url):
             self.console.line("assayer", f"rejected an unsafe check for {secret_type}")
             return
+        raw_headers = data.get("headers")
+        raw_headers = raw_headers if isinstance(raw_headers, dict) else {}
         self.validator.recipes[secret_type] = Recipe(
             type=secret_type,
             provider=str(data.get("provider") or secret_type),
             method=method,
             url=url,
-            headers=dict(data.get("headers") or {}),
+            headers={str(k): str(v) for k, v in raw_headers.items()},
             success_match=str(data.get("success_marker") or ""),
             write=(method != "GET"),
         )
@@ -493,7 +575,9 @@ class Orchestrator:
             result = self.roster.chainer.escalate(finding["secret_type"], finding["status"],
                                                   on_reasoning=self._reason("chainer"))
             data = result.data if isinstance(result.data, dict) else {}
-            ai_steps = [str(step.get("command")) for step in data.get("steps", [])
+            raw_steps = data.get("steps")
+            raw_steps = raw_steps if isinstance(raw_steps, list) else []
+            ai_steps = [str(step.get("command")) for step in raw_steps
                         if isinstance(step, dict) and step.get("command")]
             if ai_steps:
                 finding["model_steps"] = ai_steps

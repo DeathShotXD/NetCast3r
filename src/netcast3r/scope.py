@@ -17,10 +17,11 @@ the rules of the engagement.
 from __future__ import annotations
 
 import ipaddress
+import posixpath
 import re
 from dataclasses import dataclass
 from pathlib import Path
-from urllib.parse import urlsplit
+from urllib.parse import unquote, urlsplit
 
 
 @dataclass
@@ -48,7 +49,10 @@ class ScopeRule:
         if self.kind == "regex":
             return bool(self.regex and self.regex.search(host))
         if self.kind == "url_prefix":
-            return host == self.value and path.startswith(self.path)
+            clean = posixpath.normpath("/" + unquote(path).lstrip("/"))
+            base = posixpath.normpath(self.path or "/")
+            return host == self.value and (clean == base
+                                           or clean.startswith(base.rstrip("/") + "/"))
         return False
 
 
@@ -86,8 +90,19 @@ def _split(target: str) -> tuple[str, str]:
 
 class ScopeManager:
     def __init__(self, in_scope=None, out_of_scope=None):
-        self.in_rules: list[ScopeRule] = [r for r in (parse_rule(x) for x in (in_scope or [])) if r]
+        self.in_rules: list[ScopeRule] = []
         self.out_rules: list[ScopeRule] = [r for r in (parse_rule(x) for x in (out_of_scope or [])) if r]
+        # A line that starts with "!" is an exclusion, in either file.
+        for entry in (in_scope or []):
+            text = entry.strip()
+            if text.startswith("!"):
+                rule = parse_rule(text[1:])
+                if rule:
+                    self.out_rules.append(rule)
+            else:
+                rule = parse_rule(text)
+                if rule:
+                    self.in_rules.append(rule)
 
     @classmethod
     def from_files(cls, in_file=None, out_file=None, extra_in=None) -> ScopeManager:

@@ -60,14 +60,19 @@ def load_patterns(path: Path | None = None) -> list[Pattern]:
         data = tomllib.load(handle)
     patterns: list[Pattern] = []
     for row in data.get("pattern", []):
+        regex = re.compile(row["regex"])
+        if "group" in row:
+            group = int(row["group"])
+        else:
+            group = 1 if regex.groups else 0
         patterns.append(
             Pattern(
                 id=row["id"],
                 type=row["type"],
-                regex=re.compile(row["regex"]),
+                regex=regex,
                 description=row.get("description", ""),
                 entropy=float(row.get("entropy", 0.0)),
-                group=int(row.get("group", 0)),
+                group=group,
                 keywords=list(row.get("keywords", [])),
             )
         )
@@ -100,34 +105,33 @@ class Extractor:
             return []
         if self.max_scan and len(text) > self.max_scan:
             half = max(1, self.max_scan // 2)
-            text = text[:half] + "\n\n" + text[-half:]
+            # scan head and tail as separate strings so a value cannot be
+            # fabricated across the join
+            segments = [text[:half], text[-half:]]
+        else:
+            segments = [text]
         found: dict[tuple[str, str], Secret] = {}
-        lower = text.lower()
-        for pattern in self.patterns:
-            if pattern.keywords:
-                # A keyword-prefixed rule is expensive over a long run of word
-                # characters, so only the windows around each keyword are read.
-                for start, end in self._windows(lower, pattern.keywords):
-                    self._match(pattern, text, start, end, source, found)
-            else:
-                self._match(pattern, text, 0, len(text), source, found)
+        for segment in segments:
+            for pattern in self.patterns:
+                if pattern.keywords:
+                    for start, end in self._windows(segment, pattern.keywords):
+                        self._match(pattern, segment, start, end, source, found)
+                else:
+                    self._match(pattern, segment, 0, len(segment), source, found)
         return list(found.values())
 
-    WINDOW_BEFORE = 300
-    WINDOW_AFTER = 300
+    WINDOW_BEFORE = 400
+    WINDOW_AFTER = 8000
 
     @classmethod
-    def _windows(cls, lower: str, keywords: list[str]) -> list[tuple[int, int]]:
+    def _windows(cls, text: str, keywords: list[str]) -> list[tuple[int, int]]:
         spans: list[tuple[int, int]] = []
         for keyword in keywords:
-            needle = keyword.lower()
-            if not needle:
+            if not keyword:
                 continue
-            at = lower.find(needle)
-            while at != -1:
-                spans.append((max(0, at - cls.WINDOW_BEFORE),
-                              at + len(needle) + cls.WINDOW_AFTER))
-                at = lower.find(needle, at + len(needle))
+            for match in re.finditer(re.escape(keyword), text, re.IGNORECASE):
+                spans.append((max(0, match.start() - cls.WINDOW_BEFORE),
+                              match.end() + cls.WINDOW_AFTER))
         if not spans:
             return []
         spans.sort()

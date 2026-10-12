@@ -22,13 +22,17 @@ from .tui import Console, Dashboard
 def _load_seeds(value: str, use_stdin: bool = False) -> list[str]:
     seeds: list[str] = []
     if use_stdin:
-        seeds.extend(line.strip() for line in sys.stdin
-                     if line.strip() and not line.startswith("#"))
+        for line in sys.stdin:
+            stripped = line.strip()
+            if stripped and not stripped.startswith("#"):
+                seeds.append(stripped)
     if value:
         path = Path(value)
         if path.exists() and path.is_file():
-            seeds.extend(line.strip() for line in path.read_text().splitlines()
-                         if line.strip() and not line.startswith("#"))
+            for line in path.read_text(errors="ignore").splitlines():
+                stripped = line.strip()
+                if stripped and not stripped.startswith("#"):
+                    seeds.append(stripped)
         else:
             seeds.append(value)
     return seeds
@@ -36,7 +40,7 @@ def _load_seeds(value: str, use_stdin: bool = False) -> list[str]:
 
 def _apply_options(config, args) -> None:
     run = config.run
-    if getattr(args, "depth", None):
+    if getattr(args, "depth", None) is not None:
         run.depth = args.depth
     if getattr(args, "tier", None):
         run.action_tier = args.tier
@@ -78,7 +82,9 @@ def _prepare(args):
     config = load_config(Path(args.config) if getattr(args, "config", None) else None)
     _apply_options(config, args)
     seeds = _load_seeds(getattr(args, "input", "") or "", getattr(args, "stdin", False))
-    scope = ScopeManager.from_files(args.scope, args.out_of_scope, extra_in=seeds)
+    scope = ScopeManager.from_files(args.scope or config.scope.in_scope,
+                                    args.out_of_scope or config.scope.out_of_scope,
+                                    extra_in=seeds)
     return config, seeds, scope
 
 
@@ -159,7 +165,9 @@ def cmd_run(args) -> int:
         print("no input given")
         return 1
 
-    scope = ScopeManager.from_files(args.scope, args.out_of_scope, extra_in=seeds)
+    scope = ScopeManager.from_files(args.scope or config.scope.in_scope,
+                                    args.out_of_scope or config.scope.out_of_scope,
+                                    extra_in=seeds)
     out = Path(args.out or "results")
     store = Store(out / "netcast3r.db")
 

@@ -62,6 +62,8 @@
   const seen = new Set<number>();
   let queue: RunEvent[] = [];
   let scheduled = false;
+  let rafId = 0;
+  let timerId = 0;
 
   function push(event: RunEvent) {
     if (seen.has(event.id)) return;
@@ -69,8 +71,8 @@
     queue.push(event);
     if (!scheduled) {
       scheduled = true;
-      requestAnimationFrame(() => void flush());
-      window.setTimeout(() => void flush(), 400);
+      rafId = requestAnimationFrame(() => void flush());
+      timerId = window.setTimeout(() => void flush(), 400);
     }
   }
 
@@ -123,6 +125,10 @@
 
   async function load() {
     if (!store.activeRunId) return;
+    cancelAnimationFrame(rafId);
+    window.clearTimeout(timerId);
+    scheduled = false;
+    queue = [];
     try {
       run = await api.run(store.activeRunId);
       lanes = {};
@@ -130,12 +136,12 @@
       seen.clear();
       fetches = [];
       thinking = [];
+      pulses = {};
+      spotlightAgent = '';
       if (!run) return;
       const page = await api.runEvents(run.id);
-      for (const item of page.items.slice(-CAP)) {
-        seen.add(item.id);
-        apply(item);
-      }
+      for (const item of page.items) seen.add(item.id);
+      for (const item of page.items.slice(-CAP)) apply(item);
     } catch (exc) {
       run = null;
       store.fail(exc instanceof Error ? exc.message : 'could not load the run');
@@ -145,9 +151,11 @@
   let loadedId = $state('');
 
   async function start() {
+    const id = store.activeRunId;
     source?.close();
     source = undefined;
     await load();
+    if (id !== store.activeRunId) return;
     connect();
   }
 
@@ -186,10 +194,13 @@
 
   function connect() {
     if (!store.activeRunId || !running) return;
-    source = new EventSource(api.eventsUrl(store.activeRunId));
+    const wanted = store.activeRunId;
+    source = new EventSource(api.eventsUrl(wanted));
     source.onmessage = (message) => {
       try {
-        push(JSON.parse(message.data) as RunEvent);
+        const event = JSON.parse(message.data) as RunEvent;
+        if (event.run_id && event.run_id !== wanted) return;
+        push(event);
       } catch {
         /* ignore a malformed frame */
       }
@@ -201,7 +212,7 @@
     const running = store.runs.find((item) => item.status === 'running');
     const latest = store.runs[0];
     const pick = running ?? latest;
-    if (pick) store.activeRunId = pick.id;
+    if (pick) store.select(pick.id);
   }
 
   const spotlightLines = $derived(thinking.filter((t) => t.agent === spotlightAgent));
@@ -223,6 +234,10 @@
     void start();
   });
 
+  $effect(() => {
+    if (!running) source?.close();
+  });
+
   onMount(async () => {
     if (store.runs.length === 0) await store.refreshRuns();
     pickDefault();
@@ -230,6 +245,8 @@
 
   onDestroy(() => {
     source?.close();
+    cancelAnimationFrame(rafId);
+    window.clearTimeout(timerId);
   });
 </script>
 
@@ -245,6 +262,21 @@
       <button class="btn btn-acid mt-5" type="button" onclick={() => store.go('new')}>
         start a scan
       </button>
+      {#if store.runs.length > 0}
+        <div class="mx-auto mt-6 w-full max-w-[420px] border-t border-indigo-deep pt-4 text-left">
+          <p class="eyebrow mb-2">or open a run</p>
+          {#each store.runs.slice(0, 6) as item (item.id)}
+            <button
+              class="row-link flex w-full items-center gap-3 rounded px-3 py-2 text-left"
+              type="button"
+              onclick={() => store.select(item.id)}
+            >
+              <span class="min-w-0 flex-1 truncate text-sm text-bone">{item.target}</span>
+              <span class="mono text-xs text-ash">{item.status}</span>
+            </button>
+          {/each}
+        </div>
+      {/if}
     </section>
   </div>
 {:else}
@@ -255,6 +287,20 @@
         <h1 class="truncate font-mono text-lg text-bone">{run.target}</h1>
       </div>
       <span class="num ml-auto text-sm text-ash">{totalLines} events</span>
+      {#if store.runs.length > 1}
+        <label class="flex items-center gap-2">
+          <span class="eyebrow">scan</span>
+          <select
+            class="field py-1! text-xs"
+            value={store.activeRunId}
+            onchange={(event) => store.select((event.currentTarget as HTMLSelectElement).value)}
+          >
+            {#each store.runs as item (item.id)}
+              <option value={item.id}>{item.target} / {item.status}</option>
+            {/each}
+          </select>
+        </label>
+      {/if}
     </section>
 
     <section class="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">

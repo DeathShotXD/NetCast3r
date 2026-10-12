@@ -126,5 +126,32 @@ class ValidatorTests(unittest.TestCase):
         self.assertIn("/user", CALLS)
 
 
+class FalsePositiveTests(unittest.TestCase):
+    def _validator(self, recipe, text, code):
+        def handler(request):
+            return httpx.Response(code, text=text)
+        return Validator(recipes={recipe.type: recipe}, tier="read",
+                         client=httpx.Client(transport=httpx.MockTransport(handler)))
+
+    def test_a_success_marker_on_a_failure_status_is_not_verified(self):
+        recipe = Recipe(type="x", provider="X", method="GET", url="https://x.test/",
+                        success_match="error", success_codes=[200], fail_codes=[401])
+        result = self._validator(recipe, '{"error":"unauthorized"}', 401).validate("x", "v")
+        self.assertNotEqual(result.status, "verified")
+
+    def test_a_4xx_in_success_codes_never_verifies(self):
+        recipe = Recipe(type="y", provider="Y", method="GET", url="https://y.test/",
+                        success_codes=[200, 404])
+        result = self._validator(recipe, "not found", 404).validate("y", "v")
+        self.assertNotEqual(result.status, "verified")
+
+    def test_a_control_character_value_is_refused(self):
+        recipe = Recipe(type="z", provider="Z", method="GET", url="https://z.test/?k={value}",
+                        success_match="ok", success_codes=[200])
+        result = self._validator(recipe, "ok", 200).validate("z", "a\r\nX-Injected: 1")
+        self.assertEqual(result.status, "unknown")
+        self.assertIn("control", result.detail)
+
+
 if __name__ == "__main__":
     unittest.main()

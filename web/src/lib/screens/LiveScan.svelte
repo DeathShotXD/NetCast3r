@@ -209,7 +209,12 @@
 
   async function load() {
     if (!store.activeRunId) return;
-    run = await api.run(store.activeRunId);
+    try {
+      run = await api.run(store.activeRunId);
+    } catch (exc) {
+      store.fail(exc instanceof Error ? exc.message : 'could not load the run');
+      return;
+    }
     events = [];
     seen.clear();
     landed = [];
@@ -220,9 +225,13 @@
     counts = run?.counts ?? {};
     currentStage = '';
     if (run) {
-      const page = await api.runEvents(run.id);
-      for (const event of page.items) push(event);
-      await flushQueue();
+      try {
+        const page = await api.runEvents(run.id);
+        for (const event of page.items) push(event);
+        await flushQueue();
+      } catch {
+        /* show the run we have; events will resume over the stream */
+      }
       counts = { ...counts, ...(run.counts ?? {}) };
       if (finished) currentStage = '';
     }
@@ -248,7 +257,12 @@
 
   async function poll() {
     if (!store.activeRunId || finished) return;
-    const fresh = await api.run(store.activeRunId);
+    let fresh: Run | null = null;
+    try {
+      fresh = await api.run(store.activeRunId);
+    } catch {
+      return;
+    }
     if (!fresh) return;
     run = fresh;
     if (TERMINAL.includes(fresh.status)) {
@@ -389,8 +403,8 @@
       </div>
     </section>
 
-    <section class="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6" aria-label="counters">
-      {#each [['pages', 'pages'], ['js files', 'js_files'], ['endpoints', 'endpoints'], ['candidates', 'candidates'], ['verified', 'verified'], ['findings', 'findings']] as [label, key] (key)}
+    <section class="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4" aria-label="counters">
+      {#each [['pages', 'pages'], ['js files', 'js_files'], ['endpoints', 'endpoints'], ['candidates', 'candidates'], ['verified', 'verified'], ['findings', 'findings'], ['not confirmed', 'unverified'], ['weak points', 'review_loopholes']] as [label, key] (key)}
         <div class="panel kpi px-4 py-3">
           <p class="eyebrow">{label}</p>
           <p class="num mt-1 text-xl text-bone" use:countup={counts[key] ?? 0}>0</p>

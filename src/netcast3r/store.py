@@ -7,6 +7,7 @@ between runs, and cited in the report.
 from __future__ import annotations
 
 import hashlib
+import json
 import sqlite3
 import time
 from pathlib import Path
@@ -60,6 +61,24 @@ CREATE TABLE IF NOT EXISTS findings (
     impact TEXT,
     evidence TEXT,
     created_at REAL
+);
+CREATE TABLE IF NOT EXISTS reviews (
+    id INTEGER PRIMARY KEY,
+    source TEXT,
+    kind TEXT,
+    detail TEXT,
+    severity TEXT,
+    seen_at REAL
+);
+CREATE TABLE IF NOT EXISTS candidates (
+    id INTEGER PRIMARY KEY,
+    type TEXT,
+    value TEXT,
+    source TEXT,
+    severity TEXT,
+    detail TEXT,
+    steps TEXT,
+    seen_at REAL
 );
 """
 
@@ -119,6 +138,23 @@ class Store:
             "INSERT INTO findings (title, severity, secret_type, value, impact, evidence, created_at) "
             "VALUES (?, ?, ?, ?, ?, ?, ?)",
             (title, severity, secret_type, value, impact, evidence, time.time()),
+        )
+        self.conn.commit()
+
+    def add_review(self, source: str, kind: str, detail: str, severity: str = "") -> None:
+        self.conn.execute(
+            "INSERT INTO reviews (source, kind, detail, severity, seen_at) VALUES (?, ?, ?, ?, ?)",
+            (source, kind, detail, severity, time.time()),
+        )
+        self.conn.commit()
+
+    def add_candidate(self, secret_type: str, value: str, source: str, severity: str,
+                      detail: str, steps: list | None = None) -> None:
+        self.conn.execute(
+            "INSERT INTO candidates (type, value, source, severity, detail, steps, seen_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (secret_type, value, source, severity, detail,
+             json.dumps(steps or []), time.time()),
         )
         self.conn.commit()
 

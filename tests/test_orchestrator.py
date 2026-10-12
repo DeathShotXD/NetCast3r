@@ -90,7 +90,7 @@ class OrchestratorTests(unittest.TestCase):
         self.assertEqual(summary.verified, 1)
         self.assertTrue(Path(summary.report).exists())
         text = Path(summary.report).read_text().lower()
-        self.assertIn("## findings", text)
+        self.assertIn("## confirmed findings", text)
         self.assertIn("reproduction", text)
         store.close()
 

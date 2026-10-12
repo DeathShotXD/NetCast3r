@@ -188,7 +188,8 @@ class Server:
             target = (ctx.json().get("target") or "").strip()
             if not target:
                 return _problem(400, "target required")
-            options = ctx.json().get("options") or {}
+            options = ctx.json().get("options")
+            options = options if isinstance(options, dict) else {}
             if self.config is not None:
                 options.setdefault("results_dir", str(getattr(self.config, "results_dir", "results")))
             run = self.index.create_run(target, options)
@@ -226,7 +227,7 @@ class Server:
 
         @add("GET", r"/api/v1/runs/(?P<id>[A-Za-z0-9_]+)/events")
         def run_events(ctx):
-            since = int(ctx.query.get("since", "0") or 0)
+            since = _int_or(ctx.query.get("since"), 0)
             return _json({"items": self.index.list_events(ctx.params["id"], since=since)})
 
         @add("GET", r"/api/v1/runs/(?P<id>[A-Za-z0-9_]+)/events/stream")
@@ -281,7 +282,9 @@ class Server:
 
         @add("PATCH", r"/api/v1/settings")
         def patch_settings(ctx):
-            for key, value in (ctx.json() or {}).items():
+            body = ctx.json()
+            body = body if isinstance(body, dict) else {}
+            for key, value in body.items():
                 self.index.set_setting(str(key), value)
             return _json({"items": self.index.list_settings()})
 
@@ -395,7 +398,7 @@ class Server:
                     sub.put_nowait(_Replay(event))
                 except Exception:
                     break
-        return self.bus.stream(sub)
+        return self.bus.stream(sub, run_id=run_id)
 
     def _test_provider(self, provider: dict) -> dict:
         import time as _time
@@ -409,6 +412,13 @@ class Server:
             return {"ok": False, "reason": "no key", "detail": "paste a key first"}
         if not base_url:
             return {"ok": False, "reason": "no base_url", "detail": "set a base url"}
+        if not base_url.startswith(("http://", "https://")):
+            return {"ok": False, "reason": "bad base_url",
+                    "detail": "must start with http:// or https://"}
+        host = (urlparse(base_url).hostname or "").lower()
+        if host in ("169.254.169.254", "100.100.100.200", "metadata.google.internal"):
+            return {"ok": False, "reason": "blocked host",
+                    "detail": "metadata endpoints cannot be tested"}
         started = _time.time()
         try:
             with httpx.Client(timeout=10.0, follow_redirects=False) as client:
@@ -500,10 +510,10 @@ class _Context:
         self.body = body
         self.params = params
         self.server = server
-        self.page = max(1, int(query.get("page", "1") or 1))
-        self.limit = min(500, max(1, int(query.get("size", "50") or 50)))
+        self.page = max(1, _int_or(query.get("page"), 1))
+        self.limit = min(500, max(1, _int_or(query.get("size"), 50)))
         self.offset = (self.page - 1) * self.limit
-        self.last_event_id = int(query.get("last_event_id", "0") or 0) or None
+        self.last_event_id = _int_or(query.get("last_event_id"), 0) or None
 
     def json(self) -> dict:
         if not self.body:

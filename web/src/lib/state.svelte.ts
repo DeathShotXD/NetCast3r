@@ -81,6 +81,12 @@ class Store {
     this.syncHash();
   }
 
+  /** Select a run without changing screens (used by the engine room). */
+  select(runId: string): void {
+    this.activeRunId = runId;
+    this.syncHash();
+  }
+
   async refreshTotals(): Promise<void> {
     try {
       this.totals = await api.totals();

@@ -148,6 +148,7 @@ class ProviderBus:
                             continue
                         collected = ""
                         started = time.monotonic()
+                        stream_error = False
                         for line in response.iter_lines():
                             if time.monotonic() - started > budget:
                                 break
@@ -160,26 +161,34 @@ class ProviderBus:
                                 parsed = json.loads(data)
                             except json.JSONDecodeError:
                                 continue
-                            delta = parsed.get("choices", [{}])[0].get("delta", {})
+                            if isinstance(parsed, dict) and parsed.get("error"):
+                                last_error = f"{provider.name}: {str(parsed['error'])[:140]}"
+                                stream_error = True
+                                break
+                            choices = parsed.get("choices") if isinstance(parsed, dict) else None
+                            if not choices:
+                                continue
+                            delta = choices[0].get("delta") or {}
                             reasoning = delta.get("reasoning") or delta.get("reasoning_content")
-                            if reasoning:
-                                chunk = Chunk("reasoning", reasoning)
-                                if on_chunk:
-                                    on_chunk(chunk)
+                            if reasoning and on_chunk:
+                                on_chunk(Chunk("reasoning", reasoning))
                             content = delta.get("content")
+                            if isinstance(content, list):
+                                content = "".join(str(part.get("text", "")) for part in content
+                                                  if isinstance(part, dict))
                             if content:
                                 collected += content
-                                chunk = Chunk("content", content)
                                 if on_chunk:
-                                    on_chunk(chunk)
+                                    on_chunk(Chunk("content", content))
                         if on_chunk:
                             on_chunk(Chunk("done", provider.name))
                         if not collected:
-                            last_error = f"{provider.name}/{model} returned no content"
+                            if not stream_error:
+                                last_error = f"{provider.name}/{model} returned no content"
                             self._observe({"kind": "done", "agent": agent,
                                            "provider": provider.name, "model": model,
                                            "ok": False, "ms": _ms(attempt),
-                                           "error": "no content"})
+                                           "error": last_error[:140]})
                             continue
                         self._settle(provider.name)
                         self._observe({"kind": "done", "agent": agent,

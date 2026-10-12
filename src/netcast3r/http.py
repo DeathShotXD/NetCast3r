@@ -139,7 +139,7 @@ class Session:
                     if len(body) > self.max_size:
                         body = body[:self.max_size]
                 result = Response(status_code=response.status_code, headers=dict(response.headers),
-                                  text=body.decode("utf-8", "ignore"), url=url)
+                                  text=body.decode("utf-8", "ignore"), url=str(response.url))
             except httpx.TimeoutException:
                 with self._lock:
                     self.stats.timeouts += 1

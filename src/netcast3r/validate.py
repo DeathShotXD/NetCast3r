@@ -110,6 +110,10 @@ class Validator:
         url = _render(recipe.url, value, value2)
         headers = {key: _render(val, value, value2) for key, val in recipe.headers.items()}
         body = _render(recipe.body, value, value2) or None
+        if any(ch in url for ch in ("\r", "\n", "\x00")) or \
+                any(ch in header for header in headers.values() for ch in ("\r", "\n", "\x00")):
+            return Validation(secret_type, value, "unknown", provider=recipe.provider,
+                              detail="value carries control characters; request not sent")
         proxy = self.egress.get() if self.egress else None
 
         try:
@@ -135,20 +139,25 @@ class Validator:
         status = response.status_code
         evidence = text[:400].replace("\n", " ")
 
-        if recipe.success_match and recipe.success_match in text:
-            return Validation(secret_type, value, "verified", provider=recipe.provider,
-                              detail=f"HTTP {status}", evidence=evidence)
+        # A failure signal always wins, then a success needs a positive marker
+        # that agrees with the status. A 4xx is never treated as success, and a
+        # bare 200 only verifies when the recipe opted into status-codes and
+        # defined no body marker to check.
         if recipe.fail_match and recipe.fail_match in text:
             return Validation(secret_type, value, "unverified", provider=recipe.provider,
                               detail=f"HTTP {status}", evidence=evidence)
-        if recipe.success_codes and status in recipe.success_codes:
-            if recipe.success_match:
-                return Validation(secret_type, value, "unknown", provider=recipe.provider,
-                                  detail=f"HTTP {status} without expected marker", evidence=evidence)
-            return Validation(secret_type, value, "verified", provider=recipe.provider,
-                              detail=f"HTTP {status}", evidence=evidence)
         if recipe.fail_codes and status in recipe.fail_codes:
             return Validation(secret_type, value, "unverified", provider=recipe.provider,
+                              detail=f"HTTP {status}", evidence=evidence)
+        status_ok = status < 400 and (not recipe.success_codes or status in recipe.success_codes)
+        if recipe.success_match:
+            if recipe.success_match in text and status_ok:
+                return Validation(secret_type, value, "verified", provider=recipe.provider,
+                                  detail=f"HTTP {status}", evidence=evidence)
+            return Validation(secret_type, value, "unknown", provider=recipe.provider,
+                              detail=f"HTTP {status} without a confirming marker", evidence=evidence)
+        if recipe.success_codes and status in recipe.success_codes and status < 400:
+            return Validation(secret_type, value, "verified", provider=recipe.provider,
                               detail=f"HTTP {status}", evidence=evidence)
         return Validation(secret_type, value, "unknown", provider=recipe.provider,
                           detail=f"HTTP {status}", evidence=evidence)

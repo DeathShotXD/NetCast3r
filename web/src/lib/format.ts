@@ -67,9 +67,9 @@ export function isoMs(iso: string): number {
 }
 
 export function ago(iso: string): string {
-  if (!iso) return 'now';
-  const then = new Date(iso.endsWith('Z') || iso.includes('+') ? iso : iso + 'Z');
-  const seconds = Math.max(0, (Date.now() - then.getTime()) / 1000);
+  const then = isoMs(iso);
+  if (!Number.isFinite(then)) return 'now';
+  const seconds = Math.max(0, (Date.now() - then) / 1000);
   if (seconds < 45) return 'just now';
   if (seconds < 90) return 'a minute ago';
   const minutes = seconds / 60;

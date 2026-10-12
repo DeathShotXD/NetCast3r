@@ -19,6 +19,14 @@ Notable changes to NetCast3r, newest first.
   a request that carries the value to another origin.
 - The classification cache is keyed by a hash of the value, so a raw
   credential never lands in `~/.netcast3r/classifications.json`.
+- Run output can no longer be written outside the results folder: a
+  client-supplied `results_dir` with `..` or an absolute path is refused, and
+  the dashboard's provider test refuses cloud metadata hosts.
+- A validation value carrying a carriage return or newline is refused before
+  the request is sent, so a scanned page cannot inject a header.
+- The report scrubs the secret out of the proof and evidence, redacts short
+  values, and picks a code fence longer than any backtick run, so a provider
+  echo cannot leak the value or break out of the block.
 
 ### Changed
 
@@ -30,6 +38,16 @@ Notable changes to NetCast3r, newest first.
   and the report labels model prose as not independently verified.
 - A model reply that is not a JSON object no longer aborts a run: triage,
   escalation, and recipe planning fall back to the deterministic path.
+- A credential is only called confirmed when a positive marker agrees with
+  the HTTP status: a success marker seen on a 401/500 body no longer
+  verifies, and a 4xx listed in `success_codes` is never treated as success.
+- The engine room shows only the selected run. The live stream is filtered by
+  run on the server and in the browser, and a run selector lets you switch
+  between parallel scans and see that domain alone.
+- The report now carries three sections: the confirmed findings with proof and
+  manual steps, the high and critical candidates that were not confirmed with
+  manual reproduction, and the code review of endpoints and weak points the
+  JavaScript pass produced.
 
 ### Added
 
@@ -332,6 +350,25 @@ Notable changes to NetCast3r, newest first.
   and a backend error is shown instead of an empty "nothing caught" state.
 - The provider wizard no longer saves invented model names when an endpoint
   reports none; "keep this provider" keeps it with no models.
+- A model reply shaped unexpectedly (`"items": null`, a bare array, a string
+  `priority`/`confidence`, non-dict `headers` or `steps`) no longer aborts a
+  run with no report; the stage is skipped and the report is still written.
+- A pattern whose regular expression has a capture group now reports the
+  group, not the whole match, so a value no longer carries its key prefix and
+  quotes, and dedupe and redaction see the real token.
+- Corrupt JSON in the run index (options, counts, tags, settings, event
+  payloads) no longer turns a read into a 500.
+- Under backpressure the event bus retries the triggering event after shedding
+  chatter, the lag marker carries its run id, and a fully drained queue still
+  emits a marker, so a subscriber is never silently starved.
+- Scope entries beginning with `!` are exclusions, and a scheme/path prefix
+  normalizes the path, so `/app/../../admin` no longer matches `/app`.
+- `netcast3r` now reads the in-scope and out-of-scope files from `[scope]` in
+  the config, and `--depth 0` and the other zero-valued flags are honored.
+- The engine room cancels its pending flush timers and resets per-run state
+  when the selected run changes; the live scan and findings screens surface
+  load failures instead of a blank or empty state, and the number-input
+  advanced options no longer throw before a scan can start.
 
 ## 0.1.0
 

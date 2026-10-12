@@ -101,6 +101,13 @@ def _new_id(prefix: str) -> str:
     return f"{prefix}_{secrets.token_hex(6)}"
 
 
+def _loads(text, default):
+    try:
+        return json.loads(text or "")
+    except (ValueError, TypeError):
+        return default
+
+
 class Index:
     def __init__(self, path: str | Path):
         self.path = Path(path)
@@ -193,8 +200,8 @@ class Index:
     @staticmethod
     def _run_row(row: sqlite3.Row) -> dict:
         run = dict(row)
-        run["options"] = json.loads(run.pop("options_json") or "{}")
-        run["counts"] = json.loads(run.pop("counts_json") or "{}")
+        run["options"] = _loads(run.pop("options_json"), {})
+        run["counts"] = _loads(run.pop("counts_json"), {})
         return run
 
     # -- events -----------------------------------------------------------
@@ -220,7 +227,7 @@ class Index:
             events.append({
                 "id": row["seq"], "seq": row["seq"], "ts": row["ts"], "run_id": row["run_id"],
                 "type": row["type"], "level": row["level"], "stage": row["stage"],
-                "agent": row["agent"], "payload": json.loads(row["payload_json"] or "{}"),
+                "agent": row["agent"], "payload": _loads(row["payload_json"], {}),
             })
         return events
 
@@ -325,7 +332,7 @@ class Index:
     @staticmethod
     def _finding_row(row: sqlite3.Row) -> dict:
         item = dict(row)
-        item["tags"] = json.loads(item.pop("tags_json") or "[]")
+        item["tags"] = _loads(item.pop("tags_json"), [])
         return item
 
     def summary(self, run_id: str) -> dict:
@@ -419,9 +426,8 @@ class Index:
                 rows = [str(item) for item in (value or []) if str(item).strip()]
                 sets.append("models_json = ?")
                 values.append(json.dumps(rows))
-                if rows and not fields.get("model"):
-                    sets.append("model = ?")
-                    values.append(rows[0])
+                sets.append("model = ?")
+                values.append(rows[0] if rows else "")
             elif key in allowed:
                 sets.append(f"{key} = ?")
                 values.append(int(value) if key in {"priority", "enabled", "healthy"} else value)
@@ -442,7 +448,7 @@ class Index:
     def get_setting(self, key: str, default=None):
         with self._lock:
             row = self.conn.execute("SELECT value_json FROM settings WHERE key = ?", (key,)).fetchone()
-        return json.loads(row["value_json"]) if row else default
+        return _loads(row["value_json"], default) if row else default
 
     def set_setting(self, key: str, value, is_secret: bool = False) -> None:
         with self._lock:
@@ -456,4 +462,4 @@ class Index:
     def list_settings(self) -> dict:
         with self._lock:
             rows = self.conn.execute("SELECT key, value_json, is_secret FROM settings").fetchall()
-        return {row["key"]: json.loads(row["value_json"]) for row in rows}
+        return {row["key"]: _loads(row["value_json"], None) for row in rows}
