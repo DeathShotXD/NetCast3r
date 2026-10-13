@@ -66,16 +66,26 @@ def parse_rule(entry: str) -> ScopeRule | None:
         return None
     if raw.startswith("re:"):
         pattern = raw[3:]
-        return ScopeRule(raw=raw, kind="regex", value=pattern, regex=re.compile(pattern))
+        try:
+            return ScopeRule(raw=raw, kind="regex", value=pattern, regex=re.compile(pattern))
+        except re.error:
+            return None
     if raw.startswith(("http://", "https://")):
-        parts = urlsplit(raw)
+        try:
+            parts = urlsplit(raw)
+        except ValueError:
+            return None
         return ScopeRule(raw=raw, kind="url_prefix", value=parts.hostname or "", path=parts.path or "/")
     if "/" in raw:
         try:
             net = ipaddress.ip_network(raw, strict=False)
             return ScopeRule(raw=raw, kind="net", value=raw, net=net)
         except ValueError:
-            pass
+            host, _, path = raw.partition("/")
+            host = host.lower().rstrip(".")
+            if not host:
+                return None
+            return ScopeRule(raw=raw, kind="url_prefix", value=host, path="/" + path.lstrip("/"))
     if raw.startswith("*."):
         return ScopeRule(raw=raw, kind="wildcard", value=raw[2:].lower().rstrip("."))
     return ScopeRule(raw=raw, kind="suffix", value=raw.lower().rstrip("."))
@@ -121,10 +131,13 @@ class ScopeManager:
         raw = seed.strip()
         if not raw:
             return
-        if "://" in raw:
-            host = urlsplit(raw).hostname or ""
-        else:
-            host = raw.split("/", 1)[0]
+        try:
+            if "://" in raw:
+                host = urlsplit(raw).hostname or ""
+            else:
+                host = raw.split("/", 1)[0]
+        except ValueError:
+            return
         host = host.lower().rstrip(".")
         if not host:
             return

@@ -165,15 +165,21 @@ def default_config() -> Config:
 
 
 def _build(cls, data: dict):
+    if not isinstance(data, dict):
+        data = {}
     fields = {f.name for f in dataclasses.fields(cls)}
     return cls(**{key: value for key, value in data.items() if key in fields})
 
 
 def _apply(config: Config, data: dict) -> None:
-    if "providers" in data:
-        config.providers = [_build(ProviderConfig, row) for row in data["providers"]]
-    if "routes" in data:
-        config.routes = [_build(RouteConfig, row) for row in data["routes"]]
+    if not isinstance(data, dict):
+        return
+    if "providers" in data and isinstance(data["providers"], list):
+        config.providers = [_build(ProviderConfig, row) for row in data["providers"]
+                            if isinstance(row, dict)]
+    if "routes" in data and isinstance(data["routes"], list):
+        config.routes = [_build(RouteConfig, row) for row in data["routes"]
+                         if isinstance(row, dict)]
     if "egress" in data:
         config.egress = _build(EgressConfig, data["egress"])
     if "scope" in data:
@@ -187,7 +193,10 @@ def load_config(path: Path | None = None) -> Config:
     target = path or CONFIG_FILE
     if not target.exists():
         return config
-    with open(target, "rb") as handle:
-        data = tomllib.load(handle)
+    try:
+        with open(target, "rb") as handle:
+            data = tomllib.load(handle)
+    except (OSError, tomllib.TOMLDecodeError):
+        return config
     _apply(config, data)
     return config

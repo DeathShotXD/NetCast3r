@@ -173,5 +173,6 @@ class Session:
             self._stop_check()
             return result
 
-    def get(self, url: str, headers: dict | None = None) -> Response | None:
-        return self.request("GET", url, headers=headers)
+    def get(self, url: str, headers: dict | None = None,
+            follow_redirects: bool | None = None) -> Response | None:
+        return self.request("GET", url, headers=headers, follow_redirects=follow_redirects)

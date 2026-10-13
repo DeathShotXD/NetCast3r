@@ -319,6 +319,7 @@
 
   let timer: number | undefined;
   let poller: number | undefined;
+  let destroyed = false;
 
   $effect(() => {
     if (finished) {
@@ -329,6 +330,7 @@
 
   onMount(async () => {
     await load();
+    if (destroyed) return;
     if (!finished) connect();
     timer = window.setInterval(() => {
       if (running) elapsed += 1;
@@ -339,6 +341,7 @@
   });
 
   onDestroy(() => {
+    destroyed = true;
     stop();
     if (timer) window.clearInterval(timer);
     if (poller) window.clearInterval(poller);

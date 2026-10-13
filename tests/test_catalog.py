@@ -12,7 +12,7 @@ INTERNAL = {"mock"}
 class CatalogTests(unittest.TestCase):
     def test_patterns_load_and_compile(self):
         patterns = load_patterns()
-        self.assertGreaterEqual(len(patterns), 300)
+        self.assertEqual(len(patterns), 310)
         ids = [p.id for p in patterns]
         self.assertEqual(len(ids), len(set(ids)), "pattern ids must be unique")
         for pattern in patterns:
@@ -20,7 +20,7 @@ class CatalogTests(unittest.TestCase):
 
     def test_recipes_load_and_are_well_formed(self):
         recipes = load_recipes()
-        self.assertGreaterEqual(len(recipes), 130)
+        self.assertEqual(len(recipes), 135)
         for name, recipe in recipes.items():
             self.assertEqual(name, recipe.type)
             self.assertTrue(recipe.url, f"{name} has no url")

@@ -56,13 +56,19 @@ class Store {
         this.screen = 'live';
       }
     })();
+    let failed = false;
     const settled = work.then(
       () => false,
-      () => false
+      () => {
+        failed = true;
+        return false;
+      }
     );
     const timedOut = new Promise<boolean>((resolve) => window.setTimeout(() => resolve(true), 8000));
     if (await Promise.race([settled, timedOut])) {
       this.toast('warn', 'the server is slow to answer; showing what has loaded so far');
+    } else if (failed) {
+      this.toast('error', 'the dashboard server did not answer; start it with netcast3r ui');
     }
     this.ready = true;
     this.syncHash();

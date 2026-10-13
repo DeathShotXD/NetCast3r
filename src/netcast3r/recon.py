@@ -119,7 +119,7 @@ class Recon:
             map_url = _absolute(base_url, ref)
             if not self.scope.is_in_scope(map_url):
                 return None
-            response = self.session.get(map_url)
+            response = self.session.get(map_url, follow_redirects=False)
             if response is None or not response.text:
                 return None
             raw = response.text
@@ -137,14 +137,17 @@ class Recon:
         roots = []
         for seed in seeds:
             url = seed if "://" in seed else "https://" + seed
-            parts = urlsplit(url)
+            try:
+                parts = urlsplit(url)
+            except ValueError:
+                continue
             if parts.scheme and parts.netloc:
                 roots.append(parts.scheme + "://" + parts.netloc)
         return sorted(set(roots))
 
     def _spec_paths(self, url: str) -> list[str]:
         """Read an OpenAPI document and return the paths it declares."""
-        response = self.session.get(url)
+        response = self.session.get(url, follow_redirects=False)
         if response is None or response.status_code != 200 or not response.text:
             return []
         try:
@@ -158,7 +161,7 @@ class Recon:
 
     def _graphql_open(self, url: str) -> bool:
         """True when the endpoint answers an introspection query."""
-        response = self.session.request("POST", url, json=GRAPHQL_QUERY)
+        response = self.session.request("POST", url, json=GRAPHQL_QUERY, follow_redirects=False)
         if response is None or not response.text:
             return False
         return "__schema" in response.text or "queryType" in response.text
@@ -194,7 +197,7 @@ class Recon:
                 url = root + path
                 if not self.scope.is_in_scope(url):
                     continue
-                response = self.session.get(url)
+                response = self.session.get(url, follow_redirects=False)
                 if response is None or response.status_code != 200 or not response.text:
                     continue
                 text = response.text
@@ -291,9 +294,11 @@ class Recon:
             rows = json.loads(response.text)
         except json.JSONDecodeError:
             return []
+        if not isinstance(rows, list):
+            return []
         urls = []
         for row in rows[1:]:
-            if row:
+            if isinstance(row, list) and row and isinstance(row[0], str):
                 urls.append(row[0])
         return urls
 
@@ -310,7 +315,7 @@ class Recon:
             except Exception:
                 continue
             for url in rows:
-                if ".js" not in url.split("?")[0].lower():
+                if not url.split("?")[0].lower().endswith(".js"):
                     continue
                 if url in seen or not self.scope.is_in_scope(url):
                     continue

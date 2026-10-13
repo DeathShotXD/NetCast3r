@@ -98,7 +98,9 @@ class Knowledge:
     def _load(self) -> None:
         try:
             if self.store_path and self.store_path.exists():
-                self.classifications = json.loads(self.store_path.read_text())
+                data = json.loads(self.store_path.read_text())
+                if isinstance(data, dict):
+                    self.classifications = data
         except Exception:
             self.classifications = {}
 

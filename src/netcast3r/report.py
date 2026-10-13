@@ -44,6 +44,21 @@ def _fence(body, value: str = "") -> list[str]:
     return [ticks, body.strip(), ticks]
 
 
+def public_finding(finding: dict) -> dict:
+    """A copy of a finding safe to write to a shared artifact: no raw secret."""
+    out = dict(finding)
+    value = str(out.get("value", ""))
+    if value:
+        out["value"] = redact(value)
+        for field in ("proof", "impact", "status", "title", "source", "narrative", "notes"):
+            if field in out and out[field]:
+                out[field] = _scrub(out[field], value)
+        for field in ("reproduction", "model_steps"):
+            if isinstance(out.get(field), list):
+                out[field] = [_scrub(step, value) for step in out[field]]
+    return out
+
+
 def render(target: str, summary: dict, findings: list[dict],
            out_of_scope: list[str] | None = None,
            unverified: list[dict] | None = None,
@@ -185,7 +200,8 @@ def save_json(out_dir: str | Path, summary: dict, findings: list[dict]) -> Path:
     directory = Path(out_dir)
     directory.mkdir(parents=True, exist_ok=True)
     path = directory / "results.json"
-    path.write_text(json.dumps({"summary": summary, "findings": findings}, indent=2, default=str))
+    public = [public_finding(f) for f in findings]
+    path.write_text(json.dumps({"summary": summary, "findings": public}, indent=2, default=str))
     return path
 
 
@@ -195,7 +211,7 @@ def save_jsonl(out_dir: str | Path, findings: list[dict]) -> Path:
     path = directory / "results.jsonl"
     with open(path, "w") as handle:
         for finding in findings:
-            handle.write(json.dumps(finding, default=str) + "\n")
+            handle.write(json.dumps(public_finding(finding), default=str) + "\n")
     return path
 
 
@@ -210,6 +226,7 @@ def save_sarif(out_dir: str | Path, findings: list[dict]) -> Path:
     results: list[dict] = []
     for finding in findings:
         secret_type = finding.get("secret_type", "secret")
+        value = str(finding.get("value", ""))
         rules.setdefault(secret_type, {
             "id": secret_type,
             "name": secret_type,
@@ -219,10 +236,10 @@ def save_sarif(out_dir: str | Path, findings: list[dict]) -> Path:
         results.append({
             "ruleId": secret_type,
             "level": LEVELS.get(str(finding.get("severity", "")).lower(), "warning"),
-            "message": {"text": finding.get("title", "exposed credential")},
+            "message": {"text": _scrub(finding.get("title", "exposed credential"), value)},
             "locations": [{
                 "physicalLocation": {
-                    "artifactLocation": {"uri": finding.get("source", "")}
+                    "artifactLocation": {"uri": _scrub(finding.get("source", ""), value)}
                 }
             }],
         })

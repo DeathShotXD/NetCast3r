@@ -35,7 +35,9 @@ provider = "opencode"
 temperature = 0.0
 
 [egress]
-use_public = true
+# off by default: the public proxy lists are untrusted and would carry
+# provider API keys, so turn this on only on purpose
+use_public = false
 user_proxies = []
 
 [scope]
@@ -47,5 +49,9 @@ depth = 2
 concurrency = 20
 timeout = 15
 action_tier = "read"
+subdomains = true
+subdomain_limit = 300
+# model-planned validation checks are off by default
+allow_model_checks = false
 patterns_file = ""
 recipes_file = ""

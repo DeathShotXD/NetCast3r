@@ -8,6 +8,32 @@
   import HeroArt from '../ui/HeroArt.svelte';
   import StageRail from '../ui/StageRail.svelte';
   import Chip from '../ui/Chip.svelte';
+  import type { ProviderHealth } from '../types';
+
+  let providers = $state<ProviderHealth[]>([]);
+  let testing = $state('');
+
+  async function loadHealth() {
+    try {
+      providers = (await api.providersHealth()).items;
+    } catch {
+      /* offline from the backend */
+    }
+  }
+
+  async function testProvider(provider: ProviderHealth) {
+    testing = provider.id;
+    try {
+      const result = await api.testProvider(provider.id);
+      store.toast(result.ok ? 'ok' : 'warn',
+        result.ok ? `${provider.name} is reachable` : `${provider.name}: ${result.reason}`);
+      await loadHealth();
+    } catch (exc) {
+      store.fail(exc instanceof Error ? exc.message : 'could not test the provider');
+    } finally {
+      testing = '';
+    }
+  }
 
   let stage = $state<{ current: string; finished: string[] }>({ current: '', finished: [] });
   let recent = $state<Awaited<ReturnType<typeof api.findings>>['items']>([]);
@@ -112,6 +138,7 @@
   onMount(() => {
     store.refreshTotals();
     store.refreshRuns();
+    void loadHealth();
     void (async () => {
       try {
         recent = (await api.findings('?size=5')).items;
@@ -322,5 +349,52 @@
         </ul>
       {/if}
     </div>
+  </section>
+
+  <section class="panel panel-hover overflow-hidden">
+    <div class="flex items-center justify-between border-b border-indigo-deep px-5 py-3">
+      <p class="eyebrow">providers</p>
+      <button class="btn btn-quiet px-2! py-1! text-xs" type="button" onclick={() => store.go('keys')}>
+        manage
+      </button>
+    </div>
+    {#if providers.length === 0}
+      <p class="px-5 py-6 text-sm text-bone-dust">
+        No providers configured. Add one on the providers screen to give the agents a model.
+      </p>
+    {:else}
+      <ul>
+        {#each providers as provider (provider.id)}
+          <li class="flex flex-wrap items-center gap-3 border-b border-indigo-deep/60 px-5 py-3 last:border-0">
+            <span
+              class="h-2 w-2 shrink-0 rounded-full"
+              style="background:{provider.healthy ? 'var(--nc-acid)' : 'var(--nc-slate)'}"
+              aria-hidden="true"
+            ></span>
+            <span class="mono text-sm text-bone">{provider.name}</span>
+            <span class="mono hidden text-xs text-ash sm:inline">{provider.models.length} models</span>
+            <span class="mono text-xs {provider.key_set ? 'text-bone-dust' : 'text-violet'}">
+              {provider.key_set ? 'key set' : 'no key'}
+            </span>
+            {#if provider.last_checked}
+              <span class="mono hidden text-xs text-ash md:inline">checked {ago(provider.last_checked)}</span>
+            {/if}
+            <span class="ml-auto flex items-center gap-2">
+              {#if provider.healthy}
+                <Chip label="reachable" color="var(--nc-acid)" shape="dot" />
+              {/if}
+              <button
+                class="btn btn-quiet px-2! py-1! text-xs"
+                type="button"
+                disabled={testing === provider.id || !provider.key_set}
+                onclick={() => testProvider(provider)}
+              >
+                {testing === provider.id ? 'testing...' : 'test'}
+              </button>
+            </span>
+          </li>
+        {/each}
+      </ul>
+    {/if}
   </section>
 </div>

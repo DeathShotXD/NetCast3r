@@ -67,7 +67,8 @@
     busy = true;
     error = '';
     const found = presets.find((item) => item.id === preset)!;
-    const options: Record<string, unknown> = { depth, tier: writeTier ? 'write' : found.options.tier };
+    const safeDepth = Number.isFinite(depth) ? Math.min(8, Math.max(0, Math.trunc(depth))) : 2;
+    const options: Record<string, unknown> = { depth: safeDepth, tier: writeTier ? 'write' : found.options.tier };
     if (timeout != null && !Number.isNaN(timeout)) options.timeout = timeout;
     if (rate != null && !Number.isNaN(rate)) options.rate = rate;
     if (delay != null && !Number.isNaN(delay)) options.delay = delay;

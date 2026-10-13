@@ -80,12 +80,17 @@ class SubdomainFinder:
 
     def _words(self) -> list[str]:
         path = getattr(self.config.run, "subdomain_wordlist", "")
-        if path and Path(path).exists():
-            lines = Path(path).read_text(errors="ignore").splitlines()
-            words = [line.strip().lower() for line in lines
-                     if line.strip() and not line.strip().startswith("#")]
-            if words:
-                return words
+        if path:
+            candidate = Path(path)
+            if candidate.is_file():
+                try:
+                    lines = candidate.read_text(errors="ignore").splitlines()
+                except OSError:
+                    lines = []
+                words = [line.strip().lower() for line in lines
+                         if line.strip() and not line.strip().startswith("#")]
+                if words:
+                    return words
         return list(BUILTIN_WORDS)
 
     def _crt(self, domain: str) -> set[str]:

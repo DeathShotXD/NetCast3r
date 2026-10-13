@@ -6,6 +6,7 @@
   import { pauseOffscreen } from '../actions';
   import type { Finding } from '../types';
   import Chip from '../ui/Chip.svelte';
+  import Confirm from '../ui/Confirm.svelte';
   import EmptyState from '../ui/EmptyState.svelte';
 
   let items = $state<Finding[]>([]);
@@ -17,8 +18,18 @@
   let notes = $state('');
   let busy = $state(false);
   let error = $state('');
+  let pendingReject = $state<Finding | null>(null);
   let seq = 0;
   let searchTimer: number | undefined;
+
+  function onWindowKey(event: KeyboardEvent) {
+    if (event.key !== 'Escape') return;
+    if (pendingReject) {
+      pendingReject = null;
+      return;
+    }
+    if (selected) selected = null;
+  }
 
   async function load() {
     const mine = ++seq;
@@ -279,7 +290,7 @@
             class="btn btn-danger"
             type="button"
             disabled={busy}
-            onclick={() => patch({ status: 'rejected' }, 'rejected')}>reject</button
+            onclick={() => (pendingReject = selected)}>reject</button
           >
         </div>
         <label class="mt-3 block">
@@ -293,3 +304,19 @@
     </div>
   </aside>
 {/if}
+
+{#if pendingReject}
+  <Confirm
+    title="Reject this finding?"
+    body="Rejecting marks it not an issue in the index. The report file is left alone and you can set it back to needs review later."
+    confirmLabel="reject it"
+    danger
+    onConfirm={() => {
+      patch({ status: 'rejected' }, 'rejected');
+      pendingReject = null;
+    }}
+    onCancel={() => (pendingReject = null)}
+  />
+{/if}
+
+<svelte:window onkeydown={onWindowKey} />

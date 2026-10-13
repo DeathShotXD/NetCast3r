@@ -6,7 +6,7 @@
 
 Cast a net over the web. NetCast3r crawls a target, reads the JavaScript it
 serves, hunts 310 secret patterns, and checks every candidate against its
-provider with 135 read-only recipes. It returns a four-state verdict, the
+provider with 135 recipes, read-only by default. It returns a four-state verdict, the
 evidence behind it, and a report you can submit as-is.
 
 <p align="center">

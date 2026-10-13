@@ -95,14 +95,14 @@ class Orchestrator:
         self._known = store.validations_map() if resume else {}
         self._existing_findings = store.finding_keys() if resume else set()
 
-    def run(self, seeds: list[str]) -> RunSummary:
+    def run(self, seeds: list[str], should_stop=None) -> RunSummary:
         target = seeds[0] if seeds else ""
         self.console.header(target)
         summary: dict = {"pages": 0, "js_files": 0, "endpoints": 0, "candidates": 0,
                          "verified": 0, "findings": 0, "files_read": 0}
         findings: list[dict] = []
         try:
-            summary, findings = self._pipeline(seeds)
+            summary, findings = self._pipeline(seeds, should_stop)
         except StopRun as exc:
             self.console.line("run", f"stop condition met: {exc}")
         except KeyboardInterrupt:
@@ -127,13 +127,22 @@ class Orchestrator:
                           verified=summary["verified"], findings=summary["findings"],
                           report=str(report_path))
 
-    def _pipeline(self, seeds: list[str]):
+    @staticmethod
+    def _stop_requested(should_stop) -> bool:
+        try:
+            return bool(should_stop and should_stop())
+        except Exception:
+            return False
+
+    def _pipeline(self, seeds: list[str], should_stop=None):
         sink = getattr(self.console, "fetch", None)
         feed = sink if callable(sink) else None
         recon = Recon(self.scope, self.config, session=self.session, on_fetch=feed)
         originals = list(seeds)
         seeds = self._map_subdomains(recon, seeds)
         result = recon.crawl(seeds)
+        if self._stop_requested(should_stop):
+            raise StopRun("stopped by request")
         discovered = recon.discover_apis(seeds)
         discovered += recon.discover_wellknown(seeds)
         if discovered:
@@ -164,6 +173,8 @@ class Orchestrator:
         self.console.counts(candidates=len(candidates))
         candidates = self._classify(candidates)
         candidates = self._triage(candidates)
+        if self._stop_requested(should_stop):
+            raise StopRun("stopped by request")
 
         review_notes = self._exegete(result.js_text)
         self._review = self._review_summary(review_notes)
@@ -186,6 +197,8 @@ class Orchestrator:
                                    finding["impact"], finding["proof"])
 
         for finding in findings:
+            if self._stop_requested(should_stop):
+                raise StopRun("stopped by request")
             steps, narrative = self._escalate(finding)
             finding["reproduction"] = steps
             if narrative:
@@ -323,9 +336,9 @@ class Orchestrator:
                 "type": new_type or provider,
                 "provider": provider,
                 "confidence": confidence,
-                "is_secret": bool(item.get("is_secret", False)),
+                "is_secret": self._truthy(item.get("is_secret")),
             })
-            if not item.get("is_secret"):
+            if not self._truthy(item.get("is_secret")):
                 continue
             resolved = new_type if new_type in self.validator.recipes else provider
             if resolved in self.validator.recipes:
@@ -389,11 +402,20 @@ class Orchestrator:
                        for url, text in js_text.items()}
             for future in as_completed(futures):
                 url = futures[future]
-                result = future.result()
+                try:
+                    result = future.result()
+                except Exception:  # noqa: BLE001 - one bad file must not lose the rest
+                    continue
                 flush(url)
                 if result.data:
                     notes[url] = result.data
         return notes
+
+    @staticmethod
+    def _truthy(value) -> bool:
+        if isinstance(value, str):
+            return value.strip().lower() in ("1", "true", "yes")
+        return bool(value)
 
     @staticmethod
     def _review_summary(notes: dict) -> dict:

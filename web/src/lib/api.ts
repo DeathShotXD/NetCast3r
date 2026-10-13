@@ -1,4 +1,4 @@
-import type { Finding, KeyEntry, Meta, Paged, Provider, Run, RunEvent, Totals } from './types';
+import type { Finding, KeyEntry, Meta, Paged, Provider, ProviderHealth, Run, RunEvent, Totals } from './types';
 
 const BASE = '/api/v1';
 
@@ -31,11 +31,36 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
   return (await res.json()) as T;
 }
 
+async function requestText(path: string): Promise<string> {
+  let res: Response;
+  try {
+    res = await fetch(BASE + path, { credentials: 'same-origin' });
+  } catch {
+    throw new Error('the dashboard server is not reachable');
+  }
+  if (res.status === 401) {
+    window.dispatchEvent(new Event('nc:locked'));
+    throw new Error('session token required');
+  }
+  if (!res.ok) {
+    let detail = res.statusText;
+    try {
+      const problem = (await res.json()) as { detail?: string };
+      detail = problem.detail || detail;
+    } catch {
+      /* keep status text */
+    }
+    throw new Error(detail);
+  }
+  return await res.text();
+}
+
 export const api = {
   meta: () => request<Meta>('GET', '/meta'),
   totals: () => request<Totals>('GET', '/summary'),
   runs: (q = '') => request<Paged<Run>>('GET', `/runs${q}`),
   run: (id: string) => request<Run>('GET', `/runs/${id}`),
+  runReport: (id: string) => requestText(`/runs/${id}/report`),
   startRun: (target: string, options: Record<string, unknown>) =>
     request<Run>('POST', '/runs', { target, options }),
   stopRun: (id: string) => request<{ stopped: boolean }>('POST', `/runs/${id}/stop`),
@@ -54,6 +79,7 @@ export const api = {
     request<{ name: string; masked: string }>('PUT', `/keys/${name}`, { value }),
   deleteKey: (name: string) => request<{ deleted: boolean }>('DELETE', `/keys/${name}`),
   providers: () => request<{ items: Provider[] }>('GET', '/providers'),
+  providersHealth: () => request<{ items: ProviderHealth[] }>('GET', '/providers/health'),
   addProvider: (body: Record<string, unknown>) => request<Provider>('POST', '/providers', body),
   patchProvider: (id: string, body: Record<string, unknown>) =>
     request<Provider>('PATCH', `/providers/${id}`, body),

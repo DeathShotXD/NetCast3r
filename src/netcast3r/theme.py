@@ -184,7 +184,7 @@ def stage_index(agent: str) -> int:
 
 
 def mask(value: str, keep: int = 6) -> str:
-    """The masked credential shape the artwork uses: sk_live_••••••••."""
+    """The masked credential shape the artwork uses: sk_live_********."""
     text = str(value or "")
     if len(text) <= 12:
         return text[:2] + "*" * max(len(text) - 2, 0)

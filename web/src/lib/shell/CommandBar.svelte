@@ -23,8 +23,9 @@
   const running = $derived(store.runs.find((run) => run.status === 'running') ?? store.liveRun);
   const status = $derived(running?.status ?? '');
   const scanActive = $derived(status === 'running' || status === 'queued');
+  const active = $derived(store.runs.find((run) => run.id === store.activeRunId) ?? store.liveRun ?? null);
   const crumb = $derived(
-    store.screen === 'live' && store.liveRun ? store.liveRun.target : labels[store.screen] ?? ''
+    store.screen === 'live' && active ? active.target : labels[store.screen] ?? ''
   );
 
   function submit(event: SubmitEvent) {

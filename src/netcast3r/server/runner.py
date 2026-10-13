@@ -212,7 +212,7 @@ def run_scan(run_id: str, target: str, options: dict, emit: Callable[[Event], No
     orchestrator = Orchestrator(config, scope, store, console=console,
                                 observer=console.model_call)
     try:
-        summary = orchestrator.run([target])
+        summary = orchestrator.run([target], should_stop=should_stop)
     finally:
         store.close()
 

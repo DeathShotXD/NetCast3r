@@ -50,10 +50,17 @@ class Validation:
 
 def load_recipes(path: Path | None = None) -> dict[str, Recipe]:
     target = path or RECIPES_FILE
-    with open(target, "rb") as handle:
-        data = tomllib.load(handle)
+    try:
+        with open(target, "rb") as handle:
+            data = tomllib.load(handle)
+    except (OSError, tomllib.TOMLDecodeError) as exc:
+        if path:
+            raise ValueError(f"could not read the recipes file {target}: {exc}") from exc
+        return {}
     recipes: dict[str, Recipe] = {}
     for row in data.get("recipe", []):
+        if not isinstance(row, dict) or "type" not in row or "url" not in row:
+            continue
         recipe = Recipe(
             type=row["type"],
             provider=row.get("provider", ""),

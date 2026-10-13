@@ -149,13 +149,14 @@
   }
 
   let loadedId = $state('');
+  let destroyed = false;
 
   async function start() {
     const id = store.activeRunId;
     source?.close();
     source = undefined;
     await load();
-    if (id !== store.activeRunId) return;
+    if (destroyed || id !== store.activeRunId) return;
     connect();
   }
 
@@ -244,6 +245,7 @@
   });
 
   onDestroy(() => {
+    destroyed = true;
     source?.close();
     cancelAnimationFrame(rafId);
     window.clearTimeout(timerId);

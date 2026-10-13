@@ -288,6 +288,42 @@ class Server:
                 self.index.set_setting(str(key), value)
             return _json({"items": self.index.list_settings()})
 
+        @add("GET", r"/api/v1/providers/health")
+        def providers_health(ctx):
+            items = []
+            for provider in self.index.list_providers():
+                key_name = provider.get("key_name") or provider.get("name") or ""
+                items.append({
+                    "id": provider["id"],
+                    "name": provider.get("name", ""),
+                    "base_url": provider.get("base_url", ""),
+                    "models": provider.get("models", []),
+                    "enabled": provider.get("enabled", 1),
+                    "priority": provider.get("priority", 100),
+                    "healthy": provider.get("healthy", 0),
+                    "last_checked": provider.get("last_checked", ""),
+                    "key_set": bool(self.keys.get(key_name)),
+                })
+            return _json({"items": items})
+
+        @add("GET", r"/api/v1/runs/(?P<id>[A-Za-z0-9_]+)/report")
+        def run_report(ctx):
+            run = self.index.get_run(ctx.params["id"])
+            if not run:
+                return _problem(404, "run not found")
+            results_dir = (run.get("counts") or {}).get("results_dir") or run.get("results_dir") or ""
+            if not results_dir:
+                return _problem(404, "no report", "this run has no results directory yet")
+            candidate = Path(str(results_dir)) / "report.md"
+            try:
+                if not candidate.is_file():
+                    return _problem(404, "no report", "the report has not been written yet")
+                text = candidate.read_text("utf-8", "ignore")
+            except OSError:
+                return _problem(404, "no report", "the report could not be read")
+            return Response(body=text.encode("utf-8"),
+                            content_type="text/markdown; charset=utf-8")
+
         @add("GET", r"/api/v1/providers")
         def list_providers(ctx):
             items = self.index.list_providers()
@@ -391,14 +427,43 @@ class Server:
 
     # -- helpers ----------------------------------------------------------
     def _event_frames(self, run_id: str | None, last_event_id: int | None):
+        replay = (self.index.list_events(run_id, since=last_event_id or 0)
+                  if run_id is not None else [])
+        boundary = max((event.get("seq", 0) for event in replay), default=last_event_id or 0)
         sub = self.bus.subscribe()
-        if run_id is not None:
-            for event in self.index.list_events(run_id, since=last_event_id or 0):
-                try:
-                    sub.put_nowait(_Replay(event))
-                except Exception:
-                    break
-        return self.bus.stream(sub, run_id=run_id)
+        for event in replay:
+            try:
+                sub.put_nowait(_Replay(event))
+            except Exception:
+                break
+        return self.bus.stream(sub, run_id=run_id, since=boundary)
+
+    @staticmethod
+    def _reachable_host(host: str) -> bool:
+        """Reject link-local, reserved, and metadata hosts by resolved address.
+
+        Local and private endpoints stay allowed so an operator can still test
+        a local model server; only the addresses that are never a real provider
+        (link-local, reserved, unspecified, multicast) are refused.
+        """
+        import ipaddress
+        import socket
+
+        host = (host or "").strip().strip(".").lower()
+        if not host or host.endswith(".internal"):
+            return False
+        try:
+            infos = socket.getaddrinfo(host, None)
+        except OSError:
+            return True
+        for info in infos:
+            try:
+                ip = ipaddress.ip_address(info[4][0])
+            except ValueError:
+                continue
+            if ip.is_link_local or ip.is_reserved or ip.is_multicast or ip.is_unspecified:
+                return False
+        return True
 
     def _test_provider(self, provider: dict) -> dict:
         import time as _time
@@ -416,9 +481,9 @@ class Server:
             return {"ok": False, "reason": "bad base_url",
                     "detail": "must start with http:// or https://"}
         host = (urlparse(base_url).hostname or "").lower()
-        if host in ("169.254.169.254", "100.100.100.200", "metadata.google.internal"):
+        if not self._reachable_host(host):
             return {"ok": False, "reason": "blocked host",
-                    "detail": "metadata endpoints cannot be tested"}
+                    "detail": "that endpoint is not reachable on the public or local network"}
         started = _time.time()
         try:
             with httpx.Client(timeout=10.0, follow_redirects=False) as client:
@@ -498,7 +563,8 @@ class _Replay:
     ts: float = 0.0
 
     def sse(self) -> str:
-        return "event: message\ndata: " + json.dumps(self.event, default=str) + "\n\n"
+        return (f"id: {self.event.get('seq', 0)}\nevent: message\ndata: "
+                + json.dumps(self.event, default=str) + "\n\n")
 
 
 class _Context:
@@ -513,7 +579,7 @@ class _Context:
         self.page = max(1, _int_or(query.get("page"), 1))
         self.limit = min(500, max(1, _int_or(query.get("size"), 50)))
         self.offset = (self.page - 1) * self.limit
-        self.last_event_id = _int_or(query.get("last_event_id"), 0) or None
+        self.last_event_id = _int_or(query.get("last_event_id") or headers.get("last-event-id"), 0) or None
 
     def json(self) -> dict:
         if not self.body:
@@ -642,7 +708,7 @@ def serve(host: str = "127.0.0.1", port: int = 7857, *, open_browser: bool = Tru
     except KeyboardInterrupt:
         pass
     finally:
-        server.jobs.shutdown(wait=False)
+        server.jobs.shutdown(wait=True)
         server.index.close()
         httpd.server_close()
     return server

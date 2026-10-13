@@ -125,11 +125,14 @@ class EventBus:
             return []
         return [event for event in events if event.seq > since]
 
-    def stream(self, sub: queue.Queue, heartbeat: float = 15.0, run_id: str | None = None):
+    def stream(self, sub: queue.Queue, heartbeat: float = 15.0, run_id: str | None = None,
+               since: int = 0):
         """Yield SSE frames for one subscriber until it disconnects.
 
         When ``run_id`` is given, only events for that run are forwarded; the
         bus is shared, so a per-run screen must not see another run's events.
+        ``since`` drops live events at or below a replay boundary so a
+        reconnecting client never sees the same event twice.
         """
         try:
             while True:
@@ -149,6 +152,11 @@ class EventBus:
                             if isinstance(inner, dict):
                                 owner = inner.get("run_id")
                     if owner != run_id:
+                        continue
+                if since and not (not isinstance(event, dict)
+                                  and getattr(event, "type", "") == "replay"):
+                    seq = event.get("seq") if isinstance(event, dict) else getattr(event, "seq", 0)
+                    if isinstance(seq, int) and 0 < seq <= since:
                         continue
                 if isinstance(event, dict):
                     yield "event: message\ndata: " + json.dumps(event, default=str) + "\n\n"

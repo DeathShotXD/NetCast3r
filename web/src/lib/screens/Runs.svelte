@@ -6,8 +6,10 @@
   import Chip from '../ui/Chip.svelte';
   import Confirm from '../ui/Confirm.svelte';
   import EmptyState from '../ui/EmptyState.svelte';
+  import ReportView from '../ui/ReportView.svelte';
 
   let pendingDelete = $state<string | null>(null);
+  let reportRun = $state<string | null>(null);
 
   async function remove(id: string) {
     try {
@@ -107,6 +109,14 @@
                     <button class="btn btn-quiet px-2! py-1! text-xs" type="button" onclick={() => store.watch(run.id)}>
                       open
                     </button>
+                    <button
+                      class="btn btn-quiet px-2! py-1! text-xs"
+                      type="button"
+                      disabled={(run.counts?.findings ?? 0) === 0 && run.status !== 'done'}
+                      onclick={() => (reportRun = run.id)}
+                    >
+                      report
+                    </button>
                     <button class="btn btn-quiet px-2! py-1! text-xs" type="button" onclick={() => rerun(run.id)}>
                       rerun
                     </button>
@@ -137,4 +147,8 @@
     onConfirm={() => remove(pendingDelete!)}
     onCancel={() => (pendingDelete = null)}
   />
+{/if}
+
+{#if reportRun}
+  <ReportView runId={reportRun} onClose={() => (reportRun = null)} />
 {/if}

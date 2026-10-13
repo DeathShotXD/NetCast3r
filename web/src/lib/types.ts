@@ -85,6 +85,18 @@ export interface Provider {
   masked?: string;
 }
 
+export interface ProviderHealth {
+  id: string;
+  name: string;
+  base_url: string;
+  models: string[];
+  enabled: number;
+  priority: number;
+  healthy: number;
+  last_checked: string;
+  key_set: boolean;
+}
+
 export interface Paged<T> {
   items: T[];
   total: number;

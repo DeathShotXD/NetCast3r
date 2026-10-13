@@ -56,19 +56,29 @@ def shannon_entropy(text: str) -> float:
 
 def load_patterns(path: Path | None = None) -> list[Pattern]:
     target = path or PATTERNS_FILE
-    with open(target, "rb") as handle:
-        data = tomllib.load(handle)
+    try:
+        with open(target, "rb") as handle:
+            data = tomllib.load(handle)
+    except (OSError, tomllib.TOMLDecodeError) as exc:
+        if path:
+            raise ValueError(f"could not read the patterns file {target}: {exc}") from exc
+        return []
     patterns: list[Pattern] = []
     for row in data.get("pattern", []):
-        regex = re.compile(row["regex"])
+        if not isinstance(row, dict) or "regex" not in row:
+            continue
+        try:
+            regex = re.compile(row["regex"])
+        except re.error:
+            continue
         if "group" in row:
             group = int(row["group"])
         else:
             group = 1 if regex.groups else 0
         patterns.append(
             Pattern(
-                id=row["id"],
-                type=row["type"],
+                id=row.get("id", ""),
+                type=row.get("type", ""),
                 regex=regex,
                 description=row.get("description", ""),
                 entropy=float(row.get("entropy", 0.0)),

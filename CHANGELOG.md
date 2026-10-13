@@ -27,8 +27,20 @@ Notable changes to NetCast3r, newest first.
 - The report scrubs the secret out of the proof and evidence, redacts short
   values, and picks a code fence longer than any backtick run, so a provider
   echo cannot leak the value or break out of the block.
+- `results.json`, `results.jsonl`, and the SARIF file now redact the secret
+  too; they were written in the clear while the markdown report was masked.
+- Testing a provider resolves the host and refuses link-local, reserved, and
+  metadata addresses, so the stored key cannot be aimed at a cloud metadata
+  endpoint through a decimal or IPv4-mapped form.
 
 ### Changed
+
+- Live event streams resume from the standard `Last-Event-ID` header and no
+  longer send a replayed event twice; replayed frames carry their id so a
+  reconnect picks up where it left off.
+- Scope paths are normalized before matching, a scheme-less `host/path` entry
+  is treated as a path rule instead of a never-matching host, and a malformed
+  seed URL is skipped rather than aborting the run.
 
 - Public proxy lists are off by default (`egress.use_public = false`); the
   pool fetched them and then never handed one out. Set it on to opt in.
@@ -55,6 +67,14 @@ Notable changes to NetCast3r, newest first.
 
 ### Added
 
+- A providers panel on the home screen backed by `GET /api/v1/providers/health`:
+  each provider shows its model count, whether a key is set, when it was last
+  checked, and a one-click reachability test.
+- A report viewer: `GET /api/v1/runs/{id}/report` serves the written markdown,
+  and the run history has a report button that opens it in a dialog.
+- An `asyncio`-free cooperative stop: a running scan now checks the stop
+  request between stages and writes a partial report instead of running to the
+  end after you press stop.
 - Subdomain mapping. A run against a domain now enumerates its subdomains
   from certificate transparency logs and passive DNS, brute-forces a built-in
   wordlist after checking for a wildcard DNS answer, keeps only names in
@@ -377,6 +397,17 @@ Notable changes to NetCast3r, newest first.
   `.json` because it contains the substring `.js`.
 - The exegete tells the model that the file is untrusted data, so a page
   cannot smuggle instructions into the analysis prompt.
+- A malformed config file, a scope path or seed that is not a URL, a wayback
+  reply that is not a list of rows, a non-dict classification cache, and a
+  subdomain wordlist that is a directory are all handled instead of crashing
+  a run or the CLI.
+- One JavaScript file that fails mid-analysis no longer discards the code
+  review of every other file.
+- The wayback path no longer treats a `.json` URL as JavaScript.
+- On the dashboard, a failed boot shows an error instead of a blank page, the
+  engine and live screens close their stream when the run changes or the
+  screen unmounts, the breadcrumb names the run you selected, rejecting a
+  finding asks first, and the advanced depth is clamped to a range.
 
 ## 0.1.0
 

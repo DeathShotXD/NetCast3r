@@ -4,6 +4,10 @@ on:
   push:
   pull_request:
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -23,7 +27,50 @@ jobs:
         env:
           PYTHONPATH: src
         run: python tools/gen_tokens.py --check
+      - name: Enforce the ascii-only rule
+        run: |
+          python - <<'PY'
+          import subprocess, sys
+          from pathlib import Path
+          exts = {".py", ".ts", ".svelte", ".toml", ".yml", ".yaml"}
+          bad = []
+          for name in subprocess.check_output(["git", "ls-files"]).decode().splitlines():
+              path = Path(name)
+              if path.suffix not in exts or not path.is_file():
+                  continue
+              try:
+                  text = path.read_text("utf-8")
+              except (OSError, UnicodeDecodeError):
+                  continue
+              if any(ord(ch) > 127 for ch in text):
+                  bad.append(name)
+          if bad:
+              print("non-ascii files:", bad)
+              sys.exit(1)
+          print("ascii clean")
+          PY
       - name: Run tests
         env:
           PYTHONPATH: src
         run: python -m unittest discover -s tests
+
+  web:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Install frontend
+        working-directory: web
+        run: npm ci --no-audit --no-fund
+      - name: Type check
+        working-directory: web
+        run: npm run check
+      - name: Build the bundle
+        run: python3 tools/build_web.py
+      - name: The committed bundle must match the source
+        run: git diff --exit-code -- src/netcast3r/web/index.html
+      - name: The bundle must be self contained
+        run: |
+          test "$(grep -c '<script src=' src/netcast3r/web/index.html || true)" = "0"

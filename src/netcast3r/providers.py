@@ -9,6 +9,7 @@ and moves to the next model or provider so a run keeps going.
 from __future__ import annotations
 
 import json
+import threading
 import time
 from dataclasses import dataclass
 from urllib.parse import urlsplit
@@ -57,35 +58,44 @@ class ProviderBus:
         # dead catalogue on every call
         self._dead: dict[tuple[str, str], float] = {}
         self._strikes: dict[tuple[str, str], int] = {}
+        # the exegete fans out over threads and shares this bus, so every
+        # counter below is mutated under one lock
+        self._lock = threading.Lock()
 
     COOLDOWN_BASE = 30.0
     COOLDOWN_MAX = 300.0
     DEAD_TTL = 900.0
 
     def _model_dead(self, provider: str, model: str) -> bool:
-        return time.monotonic() < self._dead.get((provider, model), 0.0)
+        with self._lock:
+            return time.monotonic() < self._dead.get((provider, model), 0.0)
 
     def _retire(self, provider: str, model: str) -> None:
-        self._dead[(provider, model)] = time.monotonic() + self.DEAD_TTL
+        with self._lock:
+            self._dead[(provider, model)] = time.monotonic() + self.DEAD_TTL
 
     def _strike(self, provider: str, model: str, fatal: bool = False) -> None:
-        key = (provider, model)
-        count = self._strikes.get(key, 0) + 1
-        self._strikes[key] = count
-        if fatal or count >= 2:
-            self._retire(provider, model)
+        with self._lock:
+            key = (provider, model)
+            count = self._strikes.get(key, 0) + 1
+            self._strikes[key] = count
+            if fatal or count >= 2:
+                self._dead[key] = time.monotonic() + self.DEAD_TTL
 
     def _penalize(self, name: str) -> None:
-        strikes = self._cooldown.get(name, (0.0, 0))[1] + 1
-        delay = min(self.COOLDOWN_BASE * (2 ** (strikes - 1)), self.COOLDOWN_MAX)
-        self._cooldown[name] = (time.monotonic() + delay, strikes)
+        with self._lock:
+            strikes = self._cooldown.get(name, (0.0, 0))[1] + 1
+            delay = min(self.COOLDOWN_BASE * (2 ** (strikes - 1)), self.COOLDOWN_MAX)
+            self._cooldown[name] = (time.monotonic() + delay, strikes)
 
     def _cooling(self, name: str) -> bool:
-        record = self._cooldown.get(name)
+        with self._lock:
+            record = self._cooldown.get(name)
         return bool(record) and time.monotonic() < record[0]
 
     def _settle(self, name: str) -> None:
-        self._cooldown.pop(name, None)
+        with self._lock:
+            self._cooldown.pop(name, None)
 
     def _observe(self, data: dict) -> None:
         """Tell the dashboard what the bus is doing, without ever failing a call."""
@@ -190,7 +200,8 @@ class ProviderBus:
                             choices = parsed.get("choices") if isinstance(parsed, dict) else None
                             if not choices:
                                 continue
-                            delta = choices[0].get("delta") or {}
+                            first = choices[0] if isinstance(choices[0], dict) else {}
+                            delta = first.get("delta") or {}
                             reasoning = delta.get("reasoning") or delta.get("reasoning_content")
                             if reasoning and on_chunk:
                                 on_chunk(Chunk("reasoning", reasoning))
