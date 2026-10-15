@@ -1,0 +1,108 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="180" viewBox="0 0 960 180" role="img" aria-label="An acid net sweeping across a field of target endpoints: each host, bundle, and config it passes lights up as checked. Cast a net over the web.">
+  <defs>
+    <pattern id="nagrid" width="27" height="27" patternUnits="userSpaceOnUse">
+      <path d="M27 0H0v27" fill="none" stroke="#9F23DD" stroke-width="1" opacity=".11"/>
+    </pattern>
+    <clipPath id="naclip"><rect x="1" y="1" width="958" height="178" rx="6"/></clipPath>
+    <filter id="naglow" x="-40%" y="-40%" width="180%" height="180%">
+      <feGaussianBlur stdDeviation="2.2" result="b"/>
+      <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <style><![CDATA[
+      .m{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace}
+      .net{animation:sweep 9s linear infinite}
+      @keyframes sweep{from{transform:translateX(-380px)}to{transform:translateX(960px)}}
+      .nbob{animation:bob 4s ease-in-out infinite}
+      @keyframes bob{0%,100%{transform:translateY(-2px)}50%{transform:translateY(2px)}}
+      .nc{fill:#0A0614;stroke:#4C2377;stroke-width:1.2;animation:caught 9s linear infinite}
+      @keyframes caught{0%,4%{stroke:#4C2377;fill:#0A0614}8%,11%{stroke:#C8F81A;fill:#160334}15%,100%{stroke:#4C2377;fill:#0A0614}}
+      .nh{fill:none;stroke:#C8F81A;stroke-width:1;opacity:0;animation:halo 9s linear infinite}
+      @keyframes halo{0%,4%{opacity:0}8%{opacity:.9}14%,100%{opacity:0}}
+      @media (prefers-reduced-motion:reduce){.net{animation:none;opacity:0}.nbob{animation:none}.nc{animation:none}.nh{animation:none}}
+    ]]></style>
+  </defs>
+
+  <rect x=".5" y=".5" width="959" height="179" rx="6" fill="#05030A" stroke="#170F3F"/>
+  <g clip-path="url(#naclip)"><rect width="960" height="180" fill="url(#nagrid)" opacity=".5"/></g>
+
+  <g fill="none" stroke="#C8F81A" stroke-width="1.6" stroke-linecap="square">
+    <path d="M9 21V9h12"/>
+    <path d="M951 21V9h-12"/>
+    <path d="M9 159v12h12"/>
+    <path d="M951 159v12h-12"/>
+  </g>
+  <path d="M872 26h62" stroke="#9F23DD" stroke-width="3" stroke-linecap="round" opacity=".9"/>
+
+  <g class="m">
+    <text x="32" y="40" font-size="15" font-weight="700" letter-spacing="1.6" fill="#F5E9DC">CAST THE NET<tspan fill="#C8F81A" font-size="12" letter-spacing=".8">  //  CRAWL - READ - HUNT</tspan></text>
+    <text x="928" y="40" font-size="11.5" letter-spacing=".8" text-anchor="end" fill="#A89591">// FIRST PASS</text>
+    <path d="M32 54H928" stroke="#241640" stroke-width="1"/>
+  </g>
+
+  <g clip-path="url(#naclip)">
+    <g class="m" font-size="9" text-anchor="middle" fill="#A89591" letter-spacing=".3">
+      <text x="124" y="85">bundle.js</text>
+      <text x="252" y="77">config.json</text>
+      <text x="380" y="83">api/v2</text>
+      <text x="508" y="79">.env</text>
+      <text x="634" y="87">auth.js</text>
+      <text x="760" y="81">graphql</text>
+    </g>
+
+    <g class="nc" style="animation-delay:-7.91s"><circle cx="60" cy="112" r="2.6"/></g>
+    <g class="nc" style="animation-delay:-7.48s"><circle cx="124" cy="96" r="2.6"/></g>
+    <g class="nc" style="animation-delay:-7.03s"><circle cx="190" cy="122" r="2.6"/></g>
+    <g class="nc" style="animation-delay:-6.62s"><circle cx="252" cy="88" r="2.6"/></g>
+    <g class="nc" style="animation-delay:-6.17s"><circle cx="318" cy="106" r="2.6"/></g>
+    <g class="nc" style="animation-delay:-5.76s"><circle cx="380" cy="94" r="2.6"/></g>
+    <g class="nc" style="animation-delay:-5.33s"><circle cx="444" cy="118" r="2.6"/></g>
+    <g class="nc" style="animation-delay:-4.90s"><circle cx="508" cy="90" r="2.6"/></g>
+    <g class="nc" style="animation-delay:-4.48s"><circle cx="570" cy="110" r="2.6"/></g>
+    <g class="nc" style="animation-delay:-4.05s"><circle cx="634" cy="98" r="2.6"/></g>
+    <g class="nc" style="animation-delay:-3.62s"><circle cx="698" cy="124" r="2.6"/></g>
+    <g class="nc" style="animation-delay:-3.21s"><circle cx="760" cy="92" r="2.6"/></g>
+    <g class="nc" style="animation-delay:-2.78s"><circle cx="824" cy="108" r="2.6"/></g>
+    <g class="nc" style="animation-delay:-2.36s"><circle cx="886" cy="116" r="2.6"/></g>
+    <g class="nh" style="animation-delay:-7.91s"><circle cx="60" cy="112" r="7"/></g>
+    <g class="nh" style="animation-delay:-7.48s"><circle cx="124" cy="96" r="7"/></g>
+    <g class="nh" style="animation-delay:-7.03s"><circle cx="190" cy="122" r="7"/></g>
+    <g class="nh" style="animation-delay:-6.62s"><circle cx="252" cy="88" r="7"/></g>
+    <g class="nh" style="animation-delay:-6.17s"><circle cx="318" cy="106" r="7"/></g>
+    <g class="nh" style="animation-delay:-5.76s"><circle cx="380" cy="94" r="7"/></g>
+    <g class="nh" style="animation-delay:-5.33s"><circle cx="444" cy="118" r="7"/></g>
+    <g class="nh" style="animation-delay:-4.90s"><circle cx="508" cy="90" r="7"/></g>
+    <g class="nh" style="animation-delay:-4.48s"><circle cx="570" cy="110" r="7"/></g>
+    <g class="nh" style="animation-delay:-4.05s"><circle cx="634" cy="98" r="7"/></g>
+    <g class="nh" style="animation-delay:-3.62s"><circle cx="698" cy="124" r="7"/></g>
+    <g class="nh" style="animation-delay:-3.21s"><circle cx="760" cy="92" r="7"/></g>
+    <g class="nh" style="animation-delay:-2.78s"><circle cx="824" cy="108" r="7"/></g>
+    <g class="nh" style="animation-delay:-2.36s"><circle cx="886" cy="116" r="7"/></g>
+
+    <g class="net" filter="url(#naglow)">
+      <g class="nbob">
+        <g transform="translate(0,54)" fill="none" stroke="#C8F81A">
+          <g stroke-width="1.6" opacity=".85">
+            <path d="M4 10Q170 4 336 10"/>
+            <path d="M8 32Q170 22 332 32"/>
+            <path d="M12 54Q170 40 328 54"/>
+            <path d="M16 76Q170 58 324 76"/>
+          </g>
+          <g stroke-width="1.1" opacity=".5">
+            <path d="M26 10L18 76"/>
+            <path d="M66 8L57 76"/>
+            <path d="M106 7L99 76"/>
+            <path d="M146 6L141 76"/>
+            <path d="M186 6L184 76"/>
+            <path d="M226 7L227 76"/>
+            <path d="M266 8L270 76"/>
+            <path d="M306 9L313 76"/>
+          </g>
+        </g>
+      </g>
+    </g>
+  </g>
+
+  <g class="m">
+    <text x="32" y="162" font-size="11.5" letter-spacing=".4" fill="#A89591">// the net sweeps every endpoint the target serves</text>
+  </g>
+</svg>

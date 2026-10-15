@@ -60,6 +60,10 @@ redacted, so the report can go straight into a program.
 ## What it does
 
 <p align="center">
+  <img src="assets/cast.svg" alt="The net cast across a field of target endpoints: each host, bundle, and config lights up as the net sweeps over it." width="100%">
+</p>
+
+<p align="center">
   <img src="assets/checklist.svg" alt="Run checklist: crawl targets, collect JavaScript files, hunt secrets, validate credentials, escalate and report. More than just a crawler." width="100%">
 </p>
 
@@ -131,6 +135,10 @@ required.
 Recon collects, the exegete reads, the prospector ranks, the assayer puts each
 candidate to its provider, and scribe writes the report and the dashboard.
 With `--dashboard` the same run is mirrored live into the browser.
+
+<p align="center">
+  <img src="assets/stream.svg" alt="Live stream of a run: recon crawls and logs each status, the exegete parses bundles, the prospector surfaces four candidates, the assayer checks a key, an AWS key comes back confirmed, a database URL is corroborated, and the scribe writes the report." width="100%">
+</p>
 
 ## Outputs
 

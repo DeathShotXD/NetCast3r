@@ -12,7 +12,9 @@
       @keyframes bk{0%,50%{opacity:1}51%,100%{opacity:0}}
       .ln{opacity:0;animation:in .38s ease-out forwards}
       @keyframes in{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
-      @media (prefers-reduced-motion:reduce){.type{animation:none}.ln{opacity:1;animation:none;transform:none}.bk{animation:none}}
+      .prog{stroke-dashoffset:1;animation:fill 1.95s ease-out .35s forwards}
+      @keyframes fill{to{stroke-dashoffset:0}}
+      @media (prefers-reduced-motion:reduce){.type{animation:none}.ln{opacity:1;animation:none;transform:none}.bk{animation:none}.prog{animation:none;stroke-dashoffset:0}}
     ]]></style>
   </defs>
 
@@ -32,6 +34,7 @@
     <text x="152" y="40" font-size="12" letter-spacing=".8" fill="#C8F81A">// EXAMPLE RUN</text>
     <text x="928" y="40" font-size="11.5" letter-spacing="1" text-anchor="end" fill="#A89591">shell</text>
     <path d="M32 54H928" stroke="#241640" stroke-width="1"/>
+    <path class="prog" d="M32 54h896" fill="none" stroke="#C8F81A" stroke-width="1.6" pathLength="1" stroke-dasharray="1" stroke-dashoffset="1"/>
   </g>
 
   <text class="m type" x="32" y="82" font-size="13.5" letter-spacing=".2" fill="#F5E9DC"><tspan fill="#C8F81A" font-weight="700">$</tspan> netcast3r run --input target.com --scope scope.txt --html<tspan class="bk" fill="#C8F81A">_</tspan></text>

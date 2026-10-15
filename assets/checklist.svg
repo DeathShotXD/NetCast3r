@@ -1,4 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="960" height="250" viewBox="0 0 960 250" role="img" aria-label="Run checklist: crawl targets, collect JavaScript files, hunt secrets, validate credentials, escalate and report. More than just a crawler.">
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="250" viewBox="0 0 960 250" role="img" aria-label="Run checklist: crawl targets, collect JavaScript files, hunt secrets, validate credentials, escalate and report, each row checked off in turn. More than just a crawler.">
   <defs>
     <pattern id="cgrid" width="27" height="27" patternUnits="userSpaceOnUse">
       <path d="M27 0H0v27" fill="none" stroke="#9F23DD" stroke-width="1" opacity=".11"/>
@@ -11,10 +11,22 @@
     <style><![CDATA[
       .m{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace}
       .d{font-family:"Arial Black","Arial Bold",Arial,"Helvetica Neue",sans-serif;font-weight:900;font-style:italic}
-      .row{opacity:0;animation:in .55s ease-out forwards}
+      .row{opacity:0;animation:in .5s ease-out forwards}
       .r1{animation-delay:.05s}.r2{animation-delay:.15s}.r3{animation-delay:.25s}.r4{animation-delay:.35s}.r5{animation-delay:.45s}
       @keyframes in{from{opacity:0;transform:translateX(-14px)}to{opacity:1;transform:none}}
-      @media (prefers-reduced-motion:reduce){.row{opacity:1;animation:none;transform:none}}
+      .chk{fill:#0A0614;stroke:#4C2377;stroke-width:1.4;animation:lit .3s ease-out forwards}
+      @keyframes lit{to{stroke:#C8F81A}}
+      .ck{fill:none;stroke:#C8F81A;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:17;stroke-dashoffset:17;animation:draw .4s ease-out forwards}
+      @keyframes draw{to{stroke-dashoffset:0}}
+      .k1{animation-delay:.55s}.k2{animation-delay:.65s}.k3{animation-delay:.75s}.k4{animation-delay:.85s}.k5{animation-delay:.95s}
+      .cur{opacity:0;animation:bk 1.05s steps(1,end) 1.4s infinite}
+      @keyframes bk{0%,50%{opacity:1}51%,100%{opacity:0}}
+      @media (prefers-reduced-motion:reduce){
+        .row{opacity:1;animation:none;transform:none}
+        .chk{animation:none;stroke:#C8F81A}
+        .ck{animation:none;stroke-dashoffset:0}
+        .cur{animation:none}
+      }
     ]]></style>
   </defs>
 
@@ -33,11 +45,32 @@
   <path d="M368 40h16v170h-16" fill="none" stroke="#C8F81A" stroke-width="1.8" stroke-linecap="square"/>
 
   <g class="m" font-size="17" letter-spacing=".8">
-    <g class="row r1"><text x="80" y="70" fill="#C8F81A" font-weight="700">//</text><text x="118" y="70" fill="#F5E9DC">CRAWL TARGETS</text></g>
-    <g class="row r2"><text x="80" y="101" fill="#C8F81A" font-weight="700">//</text><text x="118" y="101" fill="#F5E9DC">COLLECT JS FILES</text></g>
-    <g class="row r3"><text x="80" y="132" fill="#C8F81A" font-weight="700">//</text><text x="118" y="132" fill="#F5E9DC">HUNT SECRETS</text></g>
-    <g class="row r4"><text x="80" y="163" fill="#C8F81A" font-weight="700">//</text><text x="118" y="163" fill="#F5E9DC">VALIDATE CREDENTIALS</text></g>
-    <g class="row r5"><text x="80" y="194" fill="#C8F81A" font-weight="700">//</text><text x="118" y="194" fill="#F5E9DC">ESCALATE &amp; REPORT</text></g>
+    <g class="row r1">
+      <rect class="chk k1" x="79" y="55" width="17" height="17" rx="3"/>
+      <path class="ck k1" d="M83.5 63.8l3.2 3.9 7.3-9.5"/>
+      <text x="118" y="70" fill="#F5E9DC">CRAWL TARGETS</text>
+    </g>
+    <g class="row r2">
+      <rect class="chk k2" x="79" y="86" width="17" height="17" rx="3"/>
+      <path class="ck k2" d="M83.5 94.8l3.2 3.9 7.3-9.5"/>
+      <text x="118" y="101" fill="#F5E9DC">COLLECT JS FILES</text>
+    </g>
+    <g class="row r3">
+      <rect class="chk k3" x="79" y="117" width="17" height="17" rx="3"/>
+      <path class="ck k3" d="M83.5 125.8l3.2 3.9 7.3-9.5"/>
+      <text x="118" y="132" fill="#F5E9DC">HUNT SECRETS</text>
+    </g>
+    <g class="row r4">
+      <rect class="chk k4" x="79" y="148" width="17" height="17" rx="3"/>
+      <path class="ck k4" d="M83.5 156.8l3.2 3.9 7.3-9.5"/>
+      <text x="118" y="163" fill="#F5E9DC">VALIDATE CREDENTIALS</text>
+    </g>
+    <g class="row r5">
+      <rect class="chk k5" x="79" y="179" width="17" height="17" rx="3"/>
+      <path class="ck k5" d="M83.5 187.8l3.2 3.9 7.3-9.5"/>
+      <text x="118" y="194" fill="#F5E9DC">ESCALATE &amp; REPORT</text>
+    </g>
+    <text class="cur" x="324" y="194" font-weight="700" fill="#C8F81A">_</text>
   </g>
 
   <text class="m" x="452" y="56" font-size="22" font-weight="700" fill="#C8F81A" letter-spacing="2" transform="rotate(-7 452 56)">////</text>

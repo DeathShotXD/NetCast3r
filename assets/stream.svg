@@ -1,0 +1,82 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="46" viewBox="0 0 960 46" role="img" aria-label="Live run stream: recon crawls endpoints and bundles logging each status, the exegete parses them, the prospector surfaces four candidates, the assayer checks a stripe key, an AWS key is confirmed live, a database URL is corroborated, and the scribe writes the report.">
+  <defs>
+    <pattern id="sgrid" width="27" height="27" patternUnits="userSpaceOnUse">
+      <path d="M27 0H0v27" fill="none" stroke="#9F23DD" stroke-width="1" opacity=".11"/>
+    </pattern>
+    <clipPath id="sclip"><rect x="1" y="1" width="958" height="44" rx="6"/></clipPath>
+    <clipPath id="swin"><rect x="56" y="1" width="810" height="44"/></clipPath>
+    <linearGradient id="sfel" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#05030A"/>
+      <stop offset="1" stop-color="#05030A" stop-opacity="0"/>
+    </linearGradient>
+    <linearGradient id="sfer" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#05030A" stop-opacity="0"/>
+      <stop offset="1" stop-color="#05030A"/>
+    </linearGradient>
+    <style><![CDATA[
+      .m{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace}
+      .tk{animation:tk 141s linear infinite}
+      @keyframes tk{from{transform:translateX(0)}to{transform:translateX(-4510.0px)}}
+      .bk{animation:bk 1.1s steps(1) infinite}
+      @keyframes bk{0%,55%{opacity:1}56%,100%{opacity:0}}
+      .lv{animation:lv 1.6s ease-in-out infinite}
+      @keyframes lv{0%,100%{opacity:1}50%{opacity:.25}}
+      @media (prefers-reduced-motion:reduce){.tk{animation:none}.bk{animation:none}.lv{animation:none;opacity:1}}
+    ]]></style>
+  </defs>
+
+  <rect x=".5" y=".5" width="959" height="45" rx="6" fill="#05030A" stroke="#170F3F"/>
+  <g clip-path="url(#sclip)"><rect width="960" height="46" fill="url(#sgrid)" opacity=".5"/></g>
+
+  <g fill="none" stroke="#C8F81A" stroke-width="1.6" stroke-linecap="square">
+    <path d="M9 17V9h12"/>
+    <path d="M951 17V9h-12"/>
+    <path d="M9 29v8h12"/>
+    <path d="M951 29v8h-12"/>
+  </g>
+
+  <rect x="22" y="11" width="28" height="24" rx="4" fill="#160334" stroke="#C8F81A" stroke-width="1.3"/>
+  <g class="m">
+    <text x="30" y="28" font-size="13" font-weight="700" fill="#C8F81A">&gt;<tspan class="bk">_</tspan></text>
+  </g>
+
+  <g clip-path="url(#swin)">
+    <g class="m" fill="#F5E9DC">
+      <text x="68.0" y="27" font-size="11.5" letter-spacing=".3"><tspan fill="#C8F81A" font-weight="700">recon</tspan><tspan fill="#9F23DD">  //  </tspan><tspan fill="#A89591">crawling </tspan><tspan fill="#F5E9DC">https://target.example</tspan></text>
+      <text x="418.0" y="27" font-size="11.5" letter-spacing=".3"><tspan fill="#C8F81A" font-weight="700">recon</tspan><tspan fill="#9F23DD">  //  </tspan><tspan fill="#A89591">GET </tspan><tspan fill="#F5E9DC">/app.js</tspan><tspan fill="#A89591"> 200</tspan></text>
+      <text x="648.0" y="27" font-size="11.5" letter-spacing=".3"><tspan fill="#C8F81A" font-weight="700">recon</tspan><tspan fill="#9F23DD">  //  </tspan><tspan fill="#A89591">GET </tspan><tspan fill="#F5E9DC">/assets/vendor.7f3a.js</tspan><tspan fill="#A89591"> 200</tspan></text>
+      <text x="988.0" y="27" font-size="11.5" letter-spacing=".3"><tspan fill="#C8F81A" font-weight="700">recon</tspan><tspan fill="#9F23DD">  //  </tspan><tspan fill="#A89591">GET </tspan><tspan fill="#F5E9DC">/api/v2/session</tspan><tspan fill="#A89591"> 304</tspan></text>
+      <text x="1278.0" y="27" font-size="11.5" letter-spacing=".3"><tspan fill="#C8F81A" font-weight="700">recon</tspan><tspan fill="#9F23DD">  //  </tspan><tspan fill="#A89591">GET </tspan><tspan fill="#F5E9DC">/login</tspan><tspan fill="#A89591"> 302</tspan></text>
+      <text x="1498.0" y="27" font-size="11.5" letter-spacing=".3"><tspan fill="#C8F81A" font-weight="700">recon</tspan><tspan fill="#9F23DD">  //  </tspan><tspan fill="#A89591">GET </tspan><tspan fill="#F5E9DC">/tools/report</tspan><tspan fill="#EFE4B1"> 429 - backing off</tspan></text>
+      <text x="1878.0" y="27" font-size="11.5" letter-spacing=".3"><tspan fill="#C8F81A" font-weight="700">recon</tspan><tspan fill="#9F23DD">  //  </tspan><tspan fill="#A89591">wayback: </tspan><tspan fill="#F5E9DC">7 historical bundles</tspan></text>
+      <text x="2208.0" y="27" font-size="11.5" letter-spacing=".3"><tspan fill="#9F23DD" font-weight="700">exegete</tspan><tspan fill="#9F23DD">  //  </tspan><tspan fill="#A89591">parsed </tspan><tspan fill="#F5E9DC">vendor.7f3a.js</tspan><tspan fill="#A89591"> - 184 kb</tspan></text>
+      <text x="2558.0" y="27" font-size="11.5" letter-spacing=".3"><tspan fill="#9F23DD" font-weight="700">exegete</tspan><tspan fill="#9F23DD">  //  </tspan><tspan fill="#A89591">mapped </tspan><tspan fill="#F5E9DC">128 endpoints</tspan></text>
+      <text x="2838.0" y="27" font-size="11.5" letter-spacing=".3"><tspan fill="#C8F81A" font-weight="700">prospector</tspan><tspan fill="#9F23DD">  //  </tspan><tspan fill="#F5E9DC">4 candidates</tspan><tspan fill="#A89591"> from 310 patterns</tspan></text>
+      <text x="3218.0" y="27" font-size="11.5" letter-spacing=".3"><tspan fill="#EFE4B1" font-weight="700">assayer</tspan><tspan fill="#9F23DD">  //  </tspan><tspan fill="#A89591">checking </tspan><tspan fill="#F5E9DC">stripe_secret_key</tspan></text>
+      <text x="3548.0" y="27" font-size="11.5" letter-spacing=".3"><tspan fill="#C8F81A" font-weight="700">confirmed</tspan><tspan fill="#9F23DD">  //  </tspan><tspan fill="#F5E9DC">aws_secret_access_key</tspan><tspan fill="#C8F81A"> - live</tspan></text>
+      <text x="3898.0" y="27" font-size="11.5" letter-spacing=".3"><tspan fill="#EFE4B1" font-weight="700">corroborated</tspan><tspan fill="#9F23DD">  //  </tspan><tspan fill="#F5E9DC">database_url</tspan><tspan fill="#A89591"> - second source</tspan></text>
+      <text x="4278.0" y="27" font-size="11.5" letter-spacing=".3"><tspan fill="#C8F81A" font-weight="700">scribe</tspan><tspan fill="#9F23DD">  //  </tspan><tspan fill="#A89591">wrote </tspan><tspan fill="#F5E9DC">results/report.md</tspan></text>
+      <text x="4578.0" y="27" font-size="11.5" letter-spacing=".3"><tspan fill="#C8F81A" font-weight="700">recon</tspan><tspan fill="#9F23DD">  //  </tspan><tspan fill="#A89591">crawling </tspan><tspan fill="#F5E9DC">https://target.example</tspan></text>
+      <text x="4928.0" y="27" font-size="11.5" letter-spacing=".3"><tspan fill="#C8F81A" font-weight="700">recon</tspan><tspan fill="#9F23DD">  //  </tspan><tspan fill="#A89591">GET </tspan><tspan fill="#F5E9DC">/app.js</tspan><tspan fill="#A89591"> 200</tspan></text>
+      <text x="5158.0" y="27" font-size="11.5" letter-spacing=".3"><tspan fill="#C8F81A" font-weight="700">recon</tspan><tspan fill="#9F23DD">  //  </tspan><tspan fill="#A89591">GET </tspan><tspan fill="#F5E9DC">/assets/vendor.7f3a.js</tspan><tspan fill="#A89591"> 200</tspan></text>
+      <text x="5498.0" y="27" font-size="11.5" letter-spacing=".3"><tspan fill="#C8F81A" font-weight="700">recon</tspan><tspan fill="#9F23DD">  //  </tspan><tspan fill="#A89591">GET </tspan><tspan fill="#F5E9DC">/api/v2/session</tspan><tspan fill="#A89591"> 304</tspan></text>
+      <text x="5788.0" y="27" font-size="11.5" letter-spacing=".3"><tspan fill="#C8F81A" font-weight="700">recon</tspan><tspan fill="#9F23DD">  //  </tspan><tspan fill="#A89591">GET </tspan><tspan fill="#F5E9DC">/login</tspan><tspan fill="#A89591"> 302</tspan></text>
+      <text x="6008.0" y="27" font-size="11.5" letter-spacing=".3"><tspan fill="#C8F81A" font-weight="700">recon</tspan><tspan fill="#9F23DD">  //  </tspan><tspan fill="#A89591">GET </tspan><tspan fill="#F5E9DC">/tools/report</tspan><tspan fill="#EFE4B1"> 429 - backing off</tspan></text>
+      <text x="6388.0" y="27" font-size="11.5" letter-spacing=".3"><tspan fill="#C8F81A" font-weight="700">recon</tspan><tspan fill="#9F23DD">  //  </tspan><tspan fill="#A89591">wayback: </tspan><tspan fill="#F5E9DC">7 historical bundles</tspan></text>
+      <text x="6718.0" y="27" font-size="11.5" letter-spacing=".3"><tspan fill="#9F23DD" font-weight="700">exegete</tspan><tspan fill="#9F23DD">  //  </tspan><tspan fill="#A89591">parsed </tspan><tspan fill="#F5E9DC">vendor.7f3a.js</tspan><tspan fill="#A89591"> - 184 kb</tspan></text>
+      <text x="7068.0" y="27" font-size="11.5" letter-spacing=".3"><tspan fill="#9F23DD" font-weight="700">exegete</tspan><tspan fill="#9F23DD">  //  </tspan><tspan fill="#A89591">mapped </tspan><tspan fill="#F5E9DC">128 endpoints</tspan></text>
+      <text x="7348.0" y="27" font-size="11.5" letter-spacing=".3"><tspan fill="#C8F81A" font-weight="700">prospector</tspan><tspan fill="#9F23DD">  //  </tspan><tspan fill="#F5E9DC">4 candidates</tspan><tspan fill="#A89591"> from 310 patterns</tspan></text>
+      <text x="7728.0" y="27" font-size="11.5" letter-spacing=".3"><tspan fill="#EFE4B1" font-weight="700">assayer</tspan><tspan fill="#9F23DD">  //  </tspan><tspan fill="#A89591">checking </tspan><tspan fill="#F5E9DC">stripe_secret_key</tspan></text>
+      <text x="8058.0" y="27" font-size="11.5" letter-spacing=".3"><tspan fill="#C8F81A" font-weight="700">confirmed</tspan><tspan fill="#9F23DD">  //  </tspan><tspan fill="#F5E9DC">aws_secret_access_key</tspan><tspan fill="#C8F81A"> - live</tspan></text>
+      <text x="8408.0" y="27" font-size="11.5" letter-spacing=".3"><tspan fill="#EFE4B1" font-weight="700">corroborated</tspan><tspan fill="#9F23DD">  //  </tspan><tspan fill="#F5E9DC">database_url</tspan><tspan fill="#A89591"> - second source</tspan></text>
+      <text x="8788.0" y="27" font-size="11.5" letter-spacing=".3"><tspan fill="#C8F81A" font-weight="700">scribe</tspan><tspan fill="#9F23DD">  //  </tspan><tspan fill="#A89591">wrote </tspan><tspan fill="#F5E9DC">results/report.md</tspan></text>
+    </g>
+    <rect x="56" y="1" width="44" height="44" fill="url(#sfel)"/>
+    <rect x="822" y="1" width="44" height="44" fill="url(#sfer)"/>
+  </g>
+
+  <g class="m">
+    <circle class="lv" cx="880" cy="23" r="3" fill="#C8F81A"/>
+    <text x="890" y="27" font-size="10" font-weight="700" letter-spacing="2" fill="#C8F81A">LIVE</text>
+  </g>
+</svg>
