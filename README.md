@@ -60,7 +60,7 @@ redacted, so the report can go straight into a program.
 ## What it does
 
 <p align="center">
-  <img src="assets/cast.svg" alt="The net cast across a field of target endpoints: each host, bundle, and config lights up as the net sweeps over it." width="100%">
+  <img src="assets/cast.svg" alt="A single sweep moving across a field of targets; each artifact locks on as it passes: a host, JavaScript bundles, a config, an API route, a source map, an env file, a key, and the report." width="100%">
 </p>
 
 <p align="center">

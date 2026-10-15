@@ -1,24 +1,43 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="960" height="180" viewBox="0 0 960 180" role="img" aria-label="An acid net sweeping across a field of target endpoints: each host, bundle, and config it passes lights up as checked. Cast a net over the web.">
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="180" viewBox="0 0 960 180" role="img" aria-label="A single sweep moving across a field of targets. As it passes each artifact locks on and lights up: a host, two JavaScript bundles, a config, an API route, a source map, an env file, a stripe key, and the report.">
   <defs>
     <pattern id="nagrid" width="27" height="27" patternUnits="userSpaceOnUse">
       <path d="M27 0H0v27" fill="none" stroke="#9F23DD" stroke-width="1" opacity=".11"/>
     </pattern>
     <clipPath id="naclip"><rect x="1" y="1" width="958" height="178" rx="6"/></clipPath>
-    <filter id="naglow" x="-40%" y="-40%" width="180%" height="180%">
-      <feGaussianBlur stdDeviation="2.2" result="b"/>
+    <linearGradient id="nabcol" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#C8F81A" stop-opacity="0"/>
+      <stop offset=".5" stop-color="#C8F81A" stop-opacity=".12"/>
+      <stop offset="1" stop-color="#C8F81A" stop-opacity="0"/>
+    </linearGradient>
+    <linearGradient id="nabv" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#C8F81A" stop-opacity="0"/>
+      <stop offset=".25" stop-color="#C8F81A" stop-opacity=".9"/>
+      <stop offset=".75" stop-color="#C8F81A" stop-opacity=".9"/>
+      <stop offset="1" stop-color="#C8F81A" stop-opacity="0"/>
+    </linearGradient>
+    <filter id="naglow" x="-60%" y="-30%" width="220%" height="160%">
+      <feGaussianBlur stdDeviation="1.6" result="b"/>
       <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
     </filter>
     <style><![CDATA[
       .m{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace}
-      .net{animation:sweep 9s linear infinite}
-      @keyframes sweep{from{transform:translateX(-380px)}to{transform:translateX(960px)}}
-      .nbob{animation:bob 4s ease-in-out infinite}
-      @keyframes bob{0%,100%{transform:translateY(-2px)}50%{transform:translateY(2px)}}
-      .nc{fill:#0A0614;stroke:#4C2377;stroke-width:1.2;animation:caught 9s linear infinite}
-      @keyframes caught{0%,4%{stroke:#4C2377;fill:#0A0614}8%,11%{stroke:#C8F81A;fill:#160334}15%,100%{stroke:#4C2377;fill:#0A0614}}
-      .nh{fill:none;stroke:#C8F81A;stroke-width:1;opacity:0;animation:halo 9s linear infinite}
-      @keyframes halo{0%,4%{opacity:0}8%{opacity:.9}14%,100%{opacity:0}}
-      @media (prefers-reduced-motion:reduce){.net{animation:none;opacity:0}.nbob{animation:none}.nc{animation:none}.nh{animation:none}}
+      .beam{animation:bm 9.0s linear infinite, bmfade 9.0s linear infinite}
+      @keyframes bm{from{transform:translateX(36px)}to{transform:translateX(924px)}}
+      @keyframes bmfade{0%,2%{opacity:0}4%{opacity:1}96%{opacity:1}98%,100%{opacity:0}}
+      .trail{animation:tl 9.0s linear infinite, tlfade 9.0s linear infinite}
+      @keyframes tl{from{stroke-dashoffset:1}to{stroke-dashoffset:0}}
+      @keyframes tlfade{0%,2%{opacity:0}4%{opacity:.28}96%{opacity:.28}98%,100%{opacity:0}}
+      .nd{animation:ndacq 9.0s linear infinite}
+      @keyframes ndacq{0%,5.5%{stroke:#4C2377;fill:#0A0614}7%,13%{stroke:#C8F81A;fill:#160334}15.5%,100%{stroke:#4C2377;fill:#0A0614}}
+      .bk{animation:bkacq 9.0s linear infinite}
+      @keyframes bkacq{0%,5%{stroke-dashoffset:12;opacity:0}6.5%,13%{stroke-dashoffset:0;opacity:1}13.1%,100%{stroke-dashoffset:12;opacity:0}}
+      .lb{animation:lbacq 9.0s linear infinite}
+      @keyframes lbacq{0%,5.5%{fill:#A89591}7%,13%{fill:#F5E9DC}15.5%,100%{fill:#A89591}}
+      .tg{animation:tgacq 9.0s linear infinite}
+      @keyframes tgacq{0%,5.5%{fill:#A89591;opacity:.45}7%,13%{fill:#C8F81A;opacity:1}15.5%,100%{fill:#A89591;opacity:.45}}
+      .pn{animation:pnacq 9.0s linear infinite}
+      @keyframes pnacq{0%,5.5%{r:3;opacity:0}6.5%{opacity:.85}13%{r:15;opacity:0}100%{r:15;opacity:0}}
+      @media (prefers-reduced-motion:reduce){.beam{animation:none;opacity:0}.trail{animation:none;stroke-dashoffset:0;opacity:.28}.nd{animation:none;stroke:#C8F81A;fill:#160334}.bk{animation:none;stroke-dashoffset:0;opacity:1}.lb{animation:none;fill:#F5E9DC}.tg{animation:none;fill:#C8F81A;opacity:1}.pn{animation:none;opacity:0}}
     ]]></style>
   </defs>
 
@@ -40,69 +59,127 @@
   </g>
 
   <g clip-path="url(#naclip)">
-    <g class="m" font-size="9" text-anchor="middle" fill="#A89591" letter-spacing=".3">
-      <text x="124" y="85">bundle.js</text>
-      <text x="252" y="77">config.json</text>
-      <text x="380" y="83">api/v2</text>
-      <text x="508" y="79">.env</text>
-      <text x="634" y="87">auth.js</text>
-      <text x="760" y="81">graphql</text>
+    <path d="M60 133v3M84 133v3M108 133v3M132 133v3M156 133v3M180 133v3M204 133v3M228 133v3M252 133v3M276 133v3M300 133v3M324 133v3M348 133v3M372 133v3M396 133v3M420 133v3M444 133v3M468 133v3M492 133v3M516 133v3M540 133v3M564 133v3M588 133v3M612 133v3M636 133v3M660 133v3M684 133v3M708 133v3M732 133v3M756 133v3M780 133v3M804 133v3M828 133v3M852 133v3M876 133v3M900 133v3" stroke="#9F23DD" stroke-width="1" opacity=".35"/>
+    <path d="M36 132H924" stroke="#241640" stroke-width="1"/>
+    <path class="trail" d="M36 132H924" fill="none" stroke="#C8F81A" stroke-width="1.2" pathLength="1" stroke-dasharray="1" stroke-dashoffset="1"/>
+
+    <g class="ndg">
+      <text class="lb" x="84" y="110" text-anchor="middle" font-size="10" letter-spacing=".2" fill="#A89591" style="animation-delay:-0.23s">api.target.io</text>
+      <text class="tg" x="84" y="150" text-anchor="middle" font-size="8.5" letter-spacing="1.1" fill="#A89591" style="animation-delay:-0.23s">HOST</text>
+      <circle class="pn" cx="84" cy="132" r="3" fill="none" stroke="#C8F81A" stroke-width="1" style="animation-delay:-0.23s"/>
+      <g class="bk" fill="none" stroke="#C8F81A" stroke-width="1.4" stroke-linecap="square" style="animation-delay:-0.23s">
+        <path pathLength="12" stroke-dasharray="12" d="M74 128V122H80"/>
+        <path pathLength="12" stroke-dasharray="12" d="M88 122H94V128"/>
+        <path pathLength="12" stroke-dasharray="12" d="M94 136V142H88"/>
+        <path pathLength="12" stroke-dasharray="12" d="M80 142H74V136"/>
+      </g>
+      <path class="nd" d="M84 128l4 4-4 4-4-4z" stroke="#4C2377" fill="#0A0614" stroke-width="1.2" style="animation-delay:-0.23s"/>
+    </g>
+    <g class="ndg">
+      <text class="lb" x="180" y="110" text-anchor="middle" font-size="10" letter-spacing=".2" fill="#A89591" style="animation-delay:-8.26s">app.js</text>
+      <text class="tg" x="180" y="150" text-anchor="middle" font-size="8.5" letter-spacing="1.1" fill="#A89591" style="animation-delay:-8.26s">JS</text>
+      <circle class="pn" cx="180" cy="132" r="3" fill="none" stroke="#C8F81A" stroke-width="1" style="animation-delay:-8.26s"/>
+      <g class="bk" fill="none" stroke="#C8F81A" stroke-width="1.4" stroke-linecap="square" style="animation-delay:-8.26s">
+        <path pathLength="12" stroke-dasharray="12" d="M170 128V122H176"/>
+        <path pathLength="12" stroke-dasharray="12" d="M184 122H190V128"/>
+        <path pathLength="12" stroke-dasharray="12" d="M190 136V142H184"/>
+        <path pathLength="12" stroke-dasharray="12" d="M176 142H170V136"/>
+      </g>
+      <path class="nd" d="M180 128l4 4-4 4-4-4z" stroke="#4C2377" fill="#0A0614" stroke-width="1.2" style="animation-delay:-8.26s"/>
+    </g>
+    <g class="ndg">
+      <text class="lb" x="276" y="110" text-anchor="middle" font-size="10" letter-spacing=".2" fill="#A89591" style="animation-delay:-7.29s">vendor.js</text>
+      <text class="tg" x="276" y="150" text-anchor="middle" font-size="8.5" letter-spacing="1.1" fill="#A89591" style="animation-delay:-7.29s">JS</text>
+      <circle class="pn" cx="276" cy="132" r="3" fill="none" stroke="#C8F81A" stroke-width="1" style="animation-delay:-7.29s"/>
+      <g class="bk" fill="none" stroke="#C8F81A" stroke-width="1.4" stroke-linecap="square" style="animation-delay:-7.29s">
+        <path pathLength="12" stroke-dasharray="12" d="M266 128V122H272"/>
+        <path pathLength="12" stroke-dasharray="12" d="M280 122H286V128"/>
+        <path pathLength="12" stroke-dasharray="12" d="M286 136V142H280"/>
+        <path pathLength="12" stroke-dasharray="12" d="M272 142H266V136"/>
+      </g>
+      <path class="nd" d="M276 128l4 4-4 4-4-4z" stroke="#4C2377" fill="#0A0614" stroke-width="1.2" style="animation-delay:-7.29s"/>
+    </g>
+    <g class="ndg">
+      <text class="lb" x="372" y="110" text-anchor="middle" font-size="10" letter-spacing=".2" fill="#A89591" style="animation-delay:-6.31s">config.json</text>
+      <text class="tg" x="372" y="150" text-anchor="middle" font-size="8.5" letter-spacing="1.1" fill="#A89591" style="animation-delay:-6.31s">CFG</text>
+      <circle class="pn" cx="372" cy="132" r="3" fill="none" stroke="#C8F81A" stroke-width="1" style="animation-delay:-6.31s"/>
+      <g class="bk" fill="none" stroke="#C8F81A" stroke-width="1.4" stroke-linecap="square" style="animation-delay:-6.31s">
+        <path pathLength="12" stroke-dasharray="12" d="M362 128V122H368"/>
+        <path pathLength="12" stroke-dasharray="12" d="M376 122H382V128"/>
+        <path pathLength="12" stroke-dasharray="12" d="M382 136V142H376"/>
+        <path pathLength="12" stroke-dasharray="12" d="M368 142H362V136"/>
+      </g>
+      <path class="nd" d="M372 128l4 4-4 4-4-4z" stroke="#4C2377" fill="#0A0614" stroke-width="1.2" style="animation-delay:-6.31s"/>
+    </g>
+    <g class="ndg">
+      <text class="lb" x="468" y="110" text-anchor="middle" font-size="10" letter-spacing=".2" fill="#A89591" style="animation-delay:-5.34s">/api/v2</text>
+      <text class="tg" x="468" y="150" text-anchor="middle" font-size="8.5" letter-spacing="1.1" fill="#A89591" style="animation-delay:-5.34s">API</text>
+      <circle class="pn" cx="468" cy="132" r="3" fill="none" stroke="#C8F81A" stroke-width="1" style="animation-delay:-5.34s"/>
+      <g class="bk" fill="none" stroke="#C8F81A" stroke-width="1.4" stroke-linecap="square" style="animation-delay:-5.34s">
+        <path pathLength="12" stroke-dasharray="12" d="M458 128V122H464"/>
+        <path pathLength="12" stroke-dasharray="12" d="M472 122H478V128"/>
+        <path pathLength="12" stroke-dasharray="12" d="M478 136V142H472"/>
+        <path pathLength="12" stroke-dasharray="12" d="M464 142H458V136"/>
+      </g>
+      <path class="nd" d="M468 128l4 4-4 4-4-4z" stroke="#4C2377" fill="#0A0614" stroke-width="1.2" style="animation-delay:-5.34s"/>
+    </g>
+    <g class="ndg">
+      <text class="lb" x="564" y="110" text-anchor="middle" font-size="10" letter-spacing=".2" fill="#A89591" style="animation-delay:-4.37s">app.js.map</text>
+      <text class="tg" x="564" y="150" text-anchor="middle" font-size="8.5" letter-spacing="1.1" fill="#A89591" style="animation-delay:-4.37s">MAP</text>
+      <circle class="pn" cx="564" cy="132" r="3" fill="none" stroke="#C8F81A" stroke-width="1" style="animation-delay:-4.37s"/>
+      <g class="bk" fill="none" stroke="#C8F81A" stroke-width="1.4" stroke-linecap="square" style="animation-delay:-4.37s">
+        <path pathLength="12" stroke-dasharray="12" d="M554 128V122H560"/>
+        <path pathLength="12" stroke-dasharray="12" d="M568 122H574V128"/>
+        <path pathLength="12" stroke-dasharray="12" d="M574 136V142H568"/>
+        <path pathLength="12" stroke-dasharray="12" d="M560 142H554V136"/>
+      </g>
+      <path class="nd" d="M564 128l4 4-4 4-4-4z" stroke="#4C2377" fill="#0A0614" stroke-width="1.2" style="animation-delay:-4.37s"/>
+    </g>
+    <g class="ndg">
+      <text class="lb" x="660" y="110" text-anchor="middle" font-size="10" letter-spacing=".2" fill="#A89591" style="animation-delay:-3.40s">.env</text>
+      <text class="tg" x="660" y="150" text-anchor="middle" font-size="8.5" letter-spacing="1.1" fill="#A89591" style="animation-delay:-3.40s">ENV</text>
+      <circle class="pn" cx="660" cy="132" r="3" fill="none" stroke="#C8F81A" stroke-width="1" style="animation-delay:-3.40s"/>
+      <g class="bk" fill="none" stroke="#C8F81A" stroke-width="1.4" stroke-linecap="square" style="animation-delay:-3.40s">
+        <path pathLength="12" stroke-dasharray="12" d="M650 128V122H656"/>
+        <path pathLength="12" stroke-dasharray="12" d="M664 122H670V128"/>
+        <path pathLength="12" stroke-dasharray="12" d="M670 136V142H664"/>
+        <path pathLength="12" stroke-dasharray="12" d="M656 142H650V136"/>
+      </g>
+      <path class="nd" d="M660 128l4 4-4 4-4-4z" stroke="#4C2377" fill="#0A0614" stroke-width="1.2" style="animation-delay:-3.40s"/>
+    </g>
+    <g class="ndg">
+      <text class="lb" x="756" y="110" text-anchor="middle" font-size="10" letter-spacing=".2" fill="#A89591" style="animation-delay:-2.42s">STRIPE_KEY</text>
+      <text class="tg" x="756" y="150" text-anchor="middle" font-size="8.5" letter-spacing="1.1" fill="#A89591" style="animation-delay:-2.42s">KEY</text>
+      <circle class="pn" cx="756" cy="132" r="3" fill="none" stroke="#C8F81A" stroke-width="1" style="animation-delay:-2.42s"/>
+      <g class="bk" fill="none" stroke="#C8F81A" stroke-width="1.4" stroke-linecap="square" style="animation-delay:-2.42s">
+        <path pathLength="12" stroke-dasharray="12" d="M746 128V122H752"/>
+        <path pathLength="12" stroke-dasharray="12" d="M760 122H766V128"/>
+        <path pathLength="12" stroke-dasharray="12" d="M766 136V142H760"/>
+        <path pathLength="12" stroke-dasharray="12" d="M752 142H746V136"/>
+      </g>
+      <path class="nd" d="M756 128l4 4-4 4-4-4z" stroke="#4C2377" fill="#0A0614" stroke-width="1.2" style="animation-delay:-2.42s"/>
+    </g>
+    <g class="ndg">
+      <text class="lb" x="852" y="110" text-anchor="middle" font-size="10" letter-spacing=".2" fill="#A89591" style="animation-delay:-1.45s">report.md</text>
+      <text class="tg" x="852" y="150" text-anchor="middle" font-size="8.5" letter-spacing="1.1" fill="#A89591" style="animation-delay:-1.45s">REPORT</text>
+      <circle class="pn" cx="852" cy="132" r="3" fill="none" stroke="#C8F81A" stroke-width="1" style="animation-delay:-1.45s"/>
+      <g class="bk" fill="none" stroke="#C8F81A" stroke-width="1.4" stroke-linecap="square" style="animation-delay:-1.45s">
+        <path pathLength="12" stroke-dasharray="12" d="M842 128V122H848"/>
+        <path pathLength="12" stroke-dasharray="12" d="M856 122H862V128"/>
+        <path pathLength="12" stroke-dasharray="12" d="M862 136V142H856"/>
+        <path pathLength="12" stroke-dasharray="12" d="M848 142H842V136"/>
+      </g>
+      <path class="nd" d="M852 128l4 4-4 4-4-4z" stroke="#4C2377" fill="#0A0614" stroke-width="1.2" style="animation-delay:-1.45s"/>
     </g>
 
-    <g class="nc" style="animation-delay:-7.91s"><circle cx="60" cy="112" r="2.6"/></g>
-    <g class="nc" style="animation-delay:-7.48s"><circle cx="124" cy="96" r="2.6"/></g>
-    <g class="nc" style="animation-delay:-7.03s"><circle cx="190" cy="122" r="2.6"/></g>
-    <g class="nc" style="animation-delay:-6.62s"><circle cx="252" cy="88" r="2.6"/></g>
-    <g class="nc" style="animation-delay:-6.17s"><circle cx="318" cy="106" r="2.6"/></g>
-    <g class="nc" style="animation-delay:-5.76s"><circle cx="380" cy="94" r="2.6"/></g>
-    <g class="nc" style="animation-delay:-5.33s"><circle cx="444" cy="118" r="2.6"/></g>
-    <g class="nc" style="animation-delay:-4.90s"><circle cx="508" cy="90" r="2.6"/></g>
-    <g class="nc" style="animation-delay:-4.48s"><circle cx="570" cy="110" r="2.6"/></g>
-    <g class="nc" style="animation-delay:-4.05s"><circle cx="634" cy="98" r="2.6"/></g>
-    <g class="nc" style="animation-delay:-3.62s"><circle cx="698" cy="124" r="2.6"/></g>
-    <g class="nc" style="animation-delay:-3.21s"><circle cx="760" cy="92" r="2.6"/></g>
-    <g class="nc" style="animation-delay:-2.78s"><circle cx="824" cy="108" r="2.6"/></g>
-    <g class="nc" style="animation-delay:-2.36s"><circle cx="886" cy="116" r="2.6"/></g>
-    <g class="nh" style="animation-delay:-7.91s"><circle cx="60" cy="112" r="7"/></g>
-    <g class="nh" style="animation-delay:-7.48s"><circle cx="124" cy="96" r="7"/></g>
-    <g class="nh" style="animation-delay:-7.03s"><circle cx="190" cy="122" r="7"/></g>
-    <g class="nh" style="animation-delay:-6.62s"><circle cx="252" cy="88" r="7"/></g>
-    <g class="nh" style="animation-delay:-6.17s"><circle cx="318" cy="106" r="7"/></g>
-    <g class="nh" style="animation-delay:-5.76s"><circle cx="380" cy="94" r="7"/></g>
-    <g class="nh" style="animation-delay:-5.33s"><circle cx="444" cy="118" r="7"/></g>
-    <g class="nh" style="animation-delay:-4.90s"><circle cx="508" cy="90" r="7"/></g>
-    <g class="nh" style="animation-delay:-4.48s"><circle cx="570" cy="110" r="7"/></g>
-    <g class="nh" style="animation-delay:-4.05s"><circle cx="634" cy="98" r="7"/></g>
-    <g class="nh" style="animation-delay:-3.62s"><circle cx="698" cy="124" r="7"/></g>
-    <g class="nh" style="animation-delay:-3.21s"><circle cx="760" cy="92" r="7"/></g>
-    <g class="nh" style="animation-delay:-2.78s"><circle cx="824" cy="108" r="7"/></g>
-    <g class="nh" style="animation-delay:-2.36s"><circle cx="886" cy="116" r="7"/></g>
-
-    <g class="net" filter="url(#naglow)">
-      <g class="nbob">
-        <g transform="translate(0,54)" fill="none" stroke="#C8F81A">
-          <g stroke-width="1.6" opacity=".85">
-            <path d="M4 10Q170 4 336 10"/>
-            <path d="M8 32Q170 22 332 32"/>
-            <path d="M12 54Q170 40 328 54"/>
-            <path d="M16 76Q170 58 324 76"/>
-          </g>
-          <g stroke-width="1.1" opacity=".5">
-            <path d="M26 10L18 76"/>
-            <path d="M66 8L57 76"/>
-            <path d="M106 7L99 76"/>
-            <path d="M146 6L141 76"/>
-            <path d="M186 6L184 76"/>
-            <path d="M226 7L227 76"/>
-            <path d="M266 8L270 76"/>
-            <path d="M306 9L313 76"/>
-          </g>
-        </g>
-      </g>
+    <g class="beam" filter="url(#naglow)">
+      <rect x="-14" y="58" width="28" height="94" fill="url(#nabcol)"/>
+      <path d="M0 60V150" fill="none" stroke="url(#nabv)" stroke-width="2" opacity=".95"/>
+      <circle cx="0" cy="132" r="2.5" fill="#F5F87D"/>
     </g>
   </g>
 
   <g class="m">
-    <text x="32" y="162" font-size="11.5" letter-spacing=".4" fill="#A89591">// the net sweeps every endpoint the target serves</text>
+    <text x="32" y="166" font-size="11.5" letter-spacing=".4" fill="#A89591">// the net sweeps every endpoint the target serves</text>
   </g>
 </svg>
