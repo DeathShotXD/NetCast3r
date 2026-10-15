@@ -255,9 +255,13 @@ class Server:
         @add("PATCH", r"/api/v1/findings/(?P<id>[A-Za-z0-9_]+)")
         def patch_finding(ctx):
             body = ctx.json()
-            finding = self.index.patch_finding(
-                ctx.params["id"], status=body.get("status", ""), notes=body.get("notes", ""),
-                tags=body.get("tags"), severity_override=body.get("severity_override", ""))
+            body = body if isinstance(body, dict) else {}
+            try:
+                finding = self.index.patch_finding(
+                    ctx.params["id"], status=body.get("status", ""), notes=body.get("notes"),
+                    tags=body.get("tags"), severity_override=body.get("severity_override", ""))
+            except ValueError as exc:
+                return _problem(400, str(exc))
             return _json(finding) if finding else _problem(404, "finding not found")
 
         @add("GET", r"/api/v1/keys")

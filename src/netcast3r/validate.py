@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
+from urllib.parse import quote
 
 import httpx
 
@@ -79,7 +80,10 @@ def load_recipes(path: Path | None = None) -> dict[str, Recipe]:
     return recipes
 
 
-def _render(template: str, value: str, value2: str = "") -> str:
+def _render(template: str, value: str, value2: str = "", url: bool = False) -> str:
+    if url:
+        value = quote(value, safe="")
+        value2 = quote(value2, safe="")
     return template.replace("{value}", value).replace("{value2}", value2)
 
 
@@ -114,13 +118,13 @@ class Validator:
             return Validation(secret_type, value, "skipped", provider=recipe.provider,
                               detail="write recipe held back at the current tier")
 
-        url = _render(recipe.url, value, value2)
-        headers = {key: _render(val, value, value2) for key, val in recipe.headers.items()}
-        body = _render(recipe.body, value, value2) or None
-        if any(ch in url for ch in ("\r", "\n", "\x00")) or \
-                any(ch in header for header in headers.values() for ch in ("\r", "\n", "\x00")):
+        if any(ch in value for ch in ("\r", "\n", "\x00")) or \
+                any(ch in value2 for ch in ("\r", "\n", "\x00")):
             return Validation(secret_type, value, "unknown", provider=recipe.provider,
                               detail="value carries control characters; request not sent")
+        url = _render(recipe.url, value, value2, url=True)
+        headers = {key: _render(val, value, value2) for key, val in recipe.headers.items()}
+        body = _render(recipe.body, value, value2) or None
         proxy = self.egress.get() if self.egress else None
 
         try:

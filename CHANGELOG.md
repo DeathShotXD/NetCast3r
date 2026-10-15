@@ -6,6 +6,18 @@ Notable changes to NetCast3r, newest first.
 
 ### Security
 
+- The Scribe prompt no longer carries the raw credential: the value is masked
+  and every copy of it inside the finding text is scrubbed before the writing
+  call, so model prose cannot re-expose what the report redacts.
+- A scope file that was named but is missing now stops the command with the
+  path and exit code 2 instead of silently running with no exclusions.
+- The crawler follows redirects one hop at a time and re-checks scope on every
+  hop, so a target that bounces to an internal or out-of-scope host mid-chain
+  is refused before its body is read.
+- The findings triage endpoint validates the status against the known set and
+  returns 400 for anything else, so it can no longer store arbitrary values.
+- The report's code-review section (weak points, evidence, endpoints, notes) is
+  scrubbed of every confirmed and candidate secret, not just the value field.
 - Five credential patterns no longer backtrack catastrophically. A hostile or
   heavily minified script that mentioned a provider name could hang the
   scanner; the nested bounded repeats are flattened and a keyword rule now
@@ -35,6 +47,15 @@ Notable changes to NetCast3r, newest first.
 
 ### Changed
 
+- The default openrouter model list names models that exist again
+  (`openrouter/free`, nemotron 3.5 lightning, nemotron super 120b); the old
+  qwen and gemma entries had been withdrawn. The Keys preset hints mirror the
+  same pool.
+- The value injected into a recipe URL is percent-encoded, so a key that
+  contains `/`, `&`, `=`, or `+` reaches the provider intact instead of
+  corrupting the check request.
+- Triage notes can be cleared: an empty notes value clears the stored note,
+  while an omitted field leaves it alone.
 - Live event streams resume from the standard `Last-Event-ID` header and no
   longer send a replayed event twice; replayed frames carry their id so a
   reconnect picks up where it left off.
@@ -333,6 +354,17 @@ Notable changes to NetCast3r, newest first.
 
 ### Fixed
 
+- The HTTP stop conditions count failed attempts as well as responses, so a
+  target that times out on every request aborts the run instead of grinding to
+  the page cap.
+- A stop request interrupts the crawler between fetches instead of only at
+  stage boundaries.
+- A confidence value that is not a number no longer raises during finding
+  indexing; it indexes as 0.0.
+- Wildcard certificate names are stripped with an exact `*.` prefix instead of
+  a character-set strip, so a name is never mangled.
+- `mailto:`, `javascript:`, and other non-http links are skipped by the crawler
+  instead of being resolved and run through scope lookups.
 - The drifting mesh no longer shows a seam where it loops: it advances by
   background position instead of a translate, and the scan sweep fades at
   both edges instead of ending on a hard line.

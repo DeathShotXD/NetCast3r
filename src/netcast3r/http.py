@@ -40,6 +40,9 @@ class Stats:
     timeouts: int = 0
     bytes_read: int = 0
 
+    def attempts(self) -> int:
+        return self.requests + self.errors
+
     def as_dict(self) -> dict:
         return {
             "requests": self.requests,
@@ -104,13 +107,14 @@ class Session:
             self._clients.clear()
 
     def _stop_check(self) -> None:
-        if not self.stop_on_rate_limit or self.stats.requests < 20:
+        attempts = self.stats.attempts()
+        if not self.stop_on_rate_limit or attempts < 20:
             return
-        if self.stats.status_429 > self.stats.requests * 0.95:
+        if self.stats.status_429 > attempts * 0.95:
             raise StopRun("more than 95 percent of responses were rate limited")
-        if self.stats.status_403 > self.stats.requests * 0.95:
+        if self.stats.status_403 > attempts * 0.95:
             raise StopRun("more than 95 percent of responses were forbidden")
-        if self.stats.timeouts > self.stats.requests * 0.95:
+        if self.stats.timeouts > attempts * 0.95:
             raise StopRun("more than 95 percent of requests timed out")
 
     def request(self, method: str, url: str, headers: dict | None = None,
@@ -147,6 +151,7 @@ class Session:
                 if attempt <= self.retries:
                     time.sleep(0.4 * attempt)
                     continue
+                self._stop_check()
                 return None
             except Exception:
                 with self._lock:
@@ -154,6 +159,7 @@ class Session:
                 if attempt <= self.retries:
                     time.sleep(0.4 * attempt)
                     continue
+                self._stop_check()
                 return None
 
             with self._lock:

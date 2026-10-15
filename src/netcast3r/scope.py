@@ -121,7 +121,7 @@ class ScopeManager:
                 return []
             candidate = Path(path)
             if not candidate.exists():
-                return []
+                raise FileNotFoundError(f"scope file not found: {path}")
             return [line.strip() for line in candidate.read_text().splitlines() if line.strip()]
 
         entries = read(in_file) + [x for x in (extra_in or []) if x]

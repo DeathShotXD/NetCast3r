@@ -60,6 +60,16 @@ class ScopeManagerTests(unittest.TestCase):
         manager.add_seed("https://target.com")
         self.assertTrue(manager.is_in_scope("https://sub.target.com/"))
 
+    def test_missing_scope_file_raises(self):
+        with self.assertRaises(FileNotFoundError):
+            ScopeManager.from_files("/nonexistent/netcast3r-scope.txt", "")
+        with self.assertRaises(FileNotFoundError):
+            ScopeManager.from_files("", "/nonexistent/netcast3r-out-scope.txt")
+
+    def test_blank_scope_file_is_allowed(self):
+        manager = ScopeManager.from_files("", "")
+        self.assertTrue(manager.is_in_scope("https://anything.net/"))
+
 
 if __name__ == "__main__":
     unittest.main()

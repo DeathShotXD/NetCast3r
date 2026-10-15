@@ -90,6 +90,7 @@ CREATE TABLE IF NOT EXISTS settings (
 """
 
 SEVERITY_ORDER = {"critical": 0, "high": 1, "medium": 2, "low": 3, "info": 4, "unknown": 5}
+TRIAGE_STATUSES = {"new", "in_progress", "confirmed", "escalated", "rejected", "false_positive"}
 SORTS = {"created_at", "severity", "confidence", "title"}
 
 
@@ -248,6 +249,10 @@ class Index:
                 override = prior["severity_override"] if prior else None
                 tags = prior["tags_json"] if prior else "[]"
                 notes = prior["notes"] if prior else ""
+                try:
+                    confidence = float(finding.get("confidence", 0.0) or 0.0)
+                except (TypeError, ValueError):
+                    confidence = 0.0
                 self.conn.execute(
                     "INSERT OR REPLACE INTO findings (id, run_id, fingerprint, severity, title, "
                     "secret_type, status, value, impact, evidence, source, confidence, created_at, "
@@ -257,7 +262,7 @@ class Index:
                      finding.get("title", ""), finding.get("secret_type", ""),
                      finding.get("status", ""), mask(raw_value),
                      finding.get("impact", ""), finding.get("evidence", ""),
-                     finding.get("source", ""), float(finding.get("confidence", 0.0) or 0.0),
+                     finding.get("source", ""), confidence,
                      _now(), triage, override, tags, notes),
                 )
                 added += 1
@@ -307,13 +312,15 @@ class Index:
             row = self.conn.execute("SELECT * FROM findings WHERE id = ?", (finding_id,)).fetchone()
         return self._finding_row(row) if row else None
 
-    def patch_finding(self, finding_id: str, status: str = "", notes: str = "",
+    def patch_finding(self, finding_id: str, status: str = "", notes: str | None = None,
                       tags: list | None = None, severity_override: str = "") -> dict | None:
+        if status and status not in TRIAGE_STATUSES:
+            raise ValueError(f"unknown triage status: {status}")
         sets, values = [], []
         if status:
             sets.append("triage_status = ?")
             values.append(status)
-        if notes:
+        if notes is not None:
             sets.append("notes = ?")
             values.append(notes)
         if tags is not None:

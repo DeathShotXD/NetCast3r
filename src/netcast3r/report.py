@@ -146,6 +146,15 @@ def render(target: str, summary: dict, findings: list[dict],
             lines.append("")
     code_endpoints = (review or {}).get("endpoints") or []
     code_loopholes = (review or {}).get("loopholes") or []
+    known_values = [str(f.get("value", "")) for f in findings if f.get("value")]
+    known_values += [str(u.get("value", "")) for u in (unverified or []) if u.get("value")]
+
+    def wash(text) -> str:
+        text = _inline(text)
+        for value in known_values:
+            text = _scrub(text, value)
+        return text
+
     if code_endpoints or code_loopholes:
         lines.append("## Code review (from the JavaScript and source pass)")
         lines.append("")
@@ -154,14 +163,14 @@ def render(target: str, summary: dict, findings: list[dict],
             lines.append("")
             for item in code_loopholes[:100]:
                 sev = str(item.get("severity", "")).strip()
-                head = f"- {_inline(item.get('detail', ''))}".rstrip()
+                head = f"- {wash(item.get('detail', ''))}".rstrip()
                 if sev:
                     head += f"  (severity: {_inline(sev)})"
                 lines.append(head)
                 if item.get("evidence"):
-                    lines.append(f"  - evidence: {_inline(item['evidence'])}")
+                    lines.append(f"  - evidence: {wash(item['evidence'])}")
                 if item.get("source"):
-                    lines.append(f"  - source: {_inline(item['source'])}")
+                    lines.append(f"  - source: {wash(item['source'])}")
             lines.append("")
         if code_endpoints:
             lines.append("### Endpoints")
@@ -169,12 +178,12 @@ def render(target: str, summary: dict, findings: list[dict],
             for item in code_endpoints[:200]:
                 method = str(item.get("method", "")).upper()
                 note = str(item.get("note", "")).strip()
-                line = f"- {_inline(method)} {_inline(item.get('path', ''))}".rstrip()
+                line = f"- {_inline(method)} {wash(item.get('path', ''))}".rstrip()
                 if note:
-                    line += f" - {_inline(note)}"
+                    line += f" - {wash(note)}"
                 lines.append(line)
                 if item.get("source"):
-                    lines.append(f"  - source: {_inline(item['source'])}")
+                    lines.append(f"  - source: {wash(item['source'])}")
             lines.append("")
     if out_of_scope:
         lines.append("## Out of scope skipped")

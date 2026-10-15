@@ -111,7 +111,10 @@ class SubdomainFinder:
                 continue
             for field in ("name_value", "common_name"):
                 for name in str(row.get(field) or "").splitlines():
-                    name = name.strip().lower().lstrip("*.").rstrip(".")
+                    name = name.strip().lower()
+                    if name.startswith("*."):
+                        name = name[2:]
+                    name = name.rstrip(".")
                     if name == domain or name.endswith("." + domain):
                         names.add(name)
         return names

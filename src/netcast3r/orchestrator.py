@@ -140,7 +140,7 @@ class Orchestrator:
         recon = Recon(self.scope, self.config, session=self.session, on_fetch=feed)
         originals = list(seeds)
         seeds = self._map_subdomains(recon, seeds)
-        result = recon.crawl(seeds)
+        result = recon.crawl(seeds, should_stop=should_stop)
         if self._stop_requested(should_stop):
             raise StopRun("stopped by request")
         discovered = recon.discover_apis(seeds)

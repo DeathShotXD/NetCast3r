@@ -56,6 +56,15 @@ class SessionTests(unittest.TestCase):
             for _ in range(25):
                 session.get("https://example.test/")
 
+    def test_stop_condition_on_timeouts(self):
+        def handler(request):
+            raise httpx.ReadTimeout("slow", request=request)
+
+        session = self._session(handler, retries=0)
+        with self.assertRaises(StopRun):
+            for _ in range(25):
+                session.get("https://example.test/")
+
     def test_no_response_returns_none(self):
         def handler(request):
             raise httpx.ConnectError("nope")

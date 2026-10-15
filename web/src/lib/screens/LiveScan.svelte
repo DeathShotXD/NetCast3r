@@ -19,7 +19,6 @@
   let counts = $state<Record<string, number>>({});
   let landed = $state<{ id: number; status: string; secret_type: string; value: string; detail: string }[]>([]);
   let currentStage = $state('');
-  let elapsed = $state(0);
   let follow = $state(true);
   let stopOpen = $state(false);
   let stop = $state<() => void>(() => {});
@@ -317,7 +316,6 @@
     return `${mm}:${ss}`;
   }
 
-  let timer: number | undefined;
   let poller: number | undefined;
   let destroyed = false;
 
@@ -332,9 +330,6 @@
     await load();
     if (destroyed) return;
     if (!finished) connect();
-    timer = window.setInterval(() => {
-      if (running) elapsed += 1;
-    }, 1000);
     poller = window.setInterval(() => void poll(), 2000);
     void scrollToLatest();
     void scrollThinking();
@@ -343,7 +338,6 @@
   onDestroy(() => {
     destroyed = true;
     stop();
-    if (timer) window.clearInterval(timer);
     if (poller) window.clearInterval(poller);
   });
 </script>

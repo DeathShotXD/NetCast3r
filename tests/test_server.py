@@ -123,6 +123,31 @@ class ServerTests(unittest.TestCase):
         self.assertEqual(patched["triage_status"], "confirmed")
         self.assertEqual(patched["tags"], ["aws"])
 
+    def test_an_unknown_triage_status_is_refused(self):
+        run_id = self.data(self.call("POST", "/api/v1/runs", body={"target": "b.com"}))["id"]
+        self.wait(run_id)
+        finding = self.data(self.call("GET", "/api/v1/findings",
+                                      query={"run_id": run_id}))["items"][0]
+        response = self.call("PATCH", f"/api/v1/findings/{finding['id']}",
+                             body={"status": "pwned"})
+        self.assertEqual(response.status, 400)
+        self.assertEqual(self.index.get_finding(finding["id"])["triage_status"], "new")
+
+    def test_notes_can_be_cleared_and_survive_other_patches(self):
+        run_id = self.data(self.call("POST", "/api/v1/runs", body={"target": "b.com"}))["id"]
+        self.wait(run_id)
+        finding = self.data(self.call("GET", "/api/v1/findings",
+                                      query={"run_id": run_id}))["items"][0]
+        patched = self.data(self.call("PATCH", f"/api/v1/findings/{finding['id']}",
+                                      body={"notes": "looked at it"}))
+        self.assertEqual(patched["notes"], "looked at it")
+        kept = self.data(self.call("PATCH", f"/api/v1/findings/{finding['id']}",
+                                   body={"tags": ["aws"]}))
+        self.assertEqual(kept["notes"], "looked at it")
+        cleared = self.data(self.call("PATCH", f"/api/v1/findings/{finding['id']}",
+                                      body={"notes": ""}))
+        self.assertEqual(cleared["notes"], "")
+
     def test_events_are_persisted(self):
         run_id = self.data(self.call("POST", "/api/v1/runs", body={"target": "c.com"}))["id"]
         self.wait(run_id)

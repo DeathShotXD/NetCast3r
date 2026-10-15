@@ -93,6 +93,22 @@ class ValidatorTests(unittest.TestCase):
         result = self.validator.validate("nope", "value")
         self.assertEqual(result.status, "unknown")
 
+    def test_a_value_in_the_url_is_percent_encoded(self):
+        seen = {}
+
+        def capture(request):
+            seen["url"] = str(request.url)
+            return httpx.Response(200, text='{"ok":true}')
+
+        recipe = Recipe(type="enc", provider="E", method="GET",
+                        url="https://e.test/check?token={value}",
+                        success_match="ok", success_codes=[200])
+        validator = Validator(recipes={"enc": recipe}, tier="read",
+                              client=httpx.Client(transport=httpx.MockTransport(capture)))
+        result = validator.validate("enc", "a/b&c=d")
+        self.assertEqual(result.status, "verified")
+        self.assertIn("token=a%2Fb%26c%3Dd", seen["url"])
+
     def test_write_recipe_held_at_read_tier(self):
         result = self.validator.validate("stateful", "value")
         self.assertEqual(result.status, "skipped")

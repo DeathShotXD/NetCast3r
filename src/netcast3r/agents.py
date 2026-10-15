@@ -14,6 +14,7 @@ from dataclasses import dataclass, field
 
 from .knowledge import Knowledge
 from .providers import Chunk, ProviderBus
+from .report import redact
 
 
 def _first_json(text: str):
@@ -217,7 +218,13 @@ class Scribe(Agent):
             "Write the finding as short markdown with these parts: title, impact, "
             "proof, reproduction, remediation. Keep it human."
         )
-        return self.ask(task, json.dumps(finding)[:16000], on_reasoning=on_reasoning)
+        payload = dict(finding)
+        raw = str(payload.get("value", ""))
+        payload["value"] = redact(raw)
+        content = json.dumps(payload)[:16000]
+        if raw:
+            content = content.replace(raw, redact(raw))
+        return self.ask(task, content, on_reasoning=on_reasoning)
 
 
 @dataclass

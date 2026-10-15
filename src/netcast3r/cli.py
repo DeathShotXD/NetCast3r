@@ -82,9 +82,13 @@ def _prepare(args):
     config = load_config(Path(args.config) if getattr(args, "config", None) else None)
     _apply_options(config, args)
     seeds = _load_seeds(getattr(args, "input", "") or "", getattr(args, "stdin", False))
-    scope = ScopeManager.from_files(args.scope or config.scope.in_scope,
-                                    args.out_of_scope or config.scope.out_of_scope,
-                                    extra_in=seeds)
+    try:
+        scope = ScopeManager.from_files(args.scope or config.scope.in_scope,
+                                        args.out_of_scope or config.scope.out_of_scope,
+                                        extra_in=seeds)
+    except FileNotFoundError as exc:
+        print(str(exc))
+        raise SystemExit(2)
     return config, seeds, scope
 
 
@@ -165,9 +169,13 @@ def cmd_run(args) -> int:
         print("no input given")
         return 1
 
-    scope = ScopeManager.from_files(args.scope or config.scope.in_scope,
-                                    args.out_of_scope or config.scope.out_of_scope,
-                                    extra_in=seeds)
+    try:
+        scope = ScopeManager.from_files(args.scope or config.scope.in_scope,
+                                        args.out_of_scope or config.scope.out_of_scope,
+                                        extra_in=seeds)
+    except FileNotFoundError as exc:
+        print(str(exc))
+        return 2
     out = Path(args.out or "results")
     store = Store(out / "netcast3r.db")
 

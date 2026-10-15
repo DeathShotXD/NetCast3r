@@ -76,6 +76,80 @@ class ReconTests(unittest.TestCase):
         self.assertEqual(len(urls), 1)
 
 
+class _RedirectSession:
+    def __init__(self, chain):
+        self.chain = chain
+        self.requested = []
+
+    def get(self, url, **kwargs):
+        self.requested.append(url)
+        entry = self.chain.get(url)
+        if entry is None:
+            return None
+        status, headers, text = entry
+        response = _Response(text, status)
+        response.headers = headers
+        return response
+
+
+class FetchTests(unittest.TestCase):
+    def test_a_redirect_out_of_scope_is_refused(self):
+        scope = ScopeManager(in_scope=["*.example.com"])
+        session = _RedirectSession({
+            "https://app.example.com/go":
+                (302, {"location": "https://internal.other.net/x", "content-type": "text/html"}, ""),
+        })
+        recon = Recon(scope, default_config(), session=session)
+        self.assertEqual(recon.fetch("https://app.example.com/go"), (0, "", ""))
+        self.assertEqual(session.requested, ["https://app.example.com/go"])
+
+    def test_an_in_scope_redirect_is_followed_once(self):
+        scope = ScopeManager(in_scope=["*.example.com"])
+        session = _RedirectSession({
+            "https://app.example.com/go":
+                (301, {"location": "/home", "content-type": "text/html"}, ""),
+            "https://app.example.com/home":
+                (200, {"content-type": "text/html"}, "<html>ok</html>"),
+        })
+        recon = Recon(scope, default_config(), session=session)
+        self.assertEqual(recon.fetch("https://app.example.com/go"),
+                         (200, "<html>ok</html>", "text/html"))
+        self.assertEqual(session.requested,
+                         ["https://app.example.com/go", "https://app.example.com/home"])
+
+    def test_a_redirect_loop_ends_cleanly(self):
+        scope = ScopeManager(in_scope=["*.example.com"])
+        session = _RedirectSession({
+            "https://app.example.com/a":
+                (302, {"location": "/b", "content-type": "text/html"}, ""),
+            "https://app.example.com/b":
+                (302, {"location": "/a", "content-type": "text/html"}, ""),
+        })
+        recon = Recon(scope, default_config(), session=session)
+        self.assertEqual(recon.fetch("https://app.example.com/a"), (0, "", ""))
+
+    def test_crawl_stops_when_asked(self):
+        scope = ScopeManager(in_scope=["*.example.com"])
+        session = _PageSession({"https://app.example.com/": "<a href='/a'>a</a>"})
+        recon = Recon(scope, default_config(), session=session)
+        result = recon.crawl(["https://app.example.com/"], should_stop=lambda: True)
+        self.assertEqual(result.pages, [])
+
+    def test_non_http_links_are_ignored(self):
+        scope = ScopeManager(in_scope=["*.example.com"])
+        session = _PageSession({
+            "https://app.example.com/": (
+                "<a href='mailto:x@example.com'>m</a>"
+                "<a href='javascript:void(0)'>j</a>"
+                "<script src='/a.js'></script>"),
+            "https://app.example.com/a.js": "var x=1;",
+        })
+        recon = Recon(scope, default_config(), session=session)
+        result = recon.crawl(["https://app.example.com/"])
+        self.assertEqual(result.out_of_scope, [])
+        self.assertEqual(result.js_urls, ["https://app.example.com/a.js"])
+
+
 class SourceMapTests(unittest.TestCase):
     def test_remote_source_map_is_recovered(self):
         scope = ScopeManager(in_scope=["*.example.com"])

@@ -34,6 +34,9 @@ WELLKNOWN_PATHS = ("/robots.txt", "/sitemap.xml", "/sitemap_index.xml",
                    "/sitemap-index.xml")
 DISALLOW_RE = re.compile(r"(?im)^\s*disallow:\s*(\S+)")
 LOC_RE = re.compile(r"<loc>\s*([^<\s]+)\s*</loc>", re.I)
+SCHEME_RE = re.compile(r"(?i)^[a-z][a-z0-9+.\-]*:")
+REDIRECT_CODES = (301, 302, 303, 307, 308)
+MAX_REDIRECTS = 6
 MAX_SITEMAP_LOCS = 500
 ASSET_EXT = (".png", ".jpg", ".jpeg", ".gif", ".svg", ".css", ".woff", ".woff2",
              ".ico", ".mp4", ".webm", ".pdf", ".zip")
@@ -86,14 +89,23 @@ class Recon:
         return [f"https://{host}" for host in hosts if host not in existing]
 
     def _fetch(self, url: str):
-        response = self.session.get(url)
-        if response is None:
-            return 0, "", ""
-        final = getattr(response, "url", "") or url
-        if final != url and not self.scope.is_in_scope(final):
-            # a redirect left scope: refuse the body rather than fetch internal
-            return 0, "", ""
-        return response.status_code, response.text, response.headers.get("content-type", "")
+        current = url
+        for _ in range(MAX_REDIRECTS):
+            response = self.session.get(current, follow_redirects=False)
+            if response is None:
+                return 0, "", ""
+            content_type = response.headers.get("content-type", "")
+            if response.status_code not in REDIRECT_CODES:
+                return response.status_code, response.text, content_type
+            location = response.headers.get("location", "")
+            if not location:
+                return response.status_code, response.text, content_type
+            nxt = _absolute(current, location)
+            if not self.scope.is_in_scope(nxt):
+                # a redirect left scope: refuse the body rather than fetch internal
+                return 0, "", ""
+            current = nxt
+        return 0, "", ""
 
     def _source_map(self, base_url: str, js_text: str):
         """Recover original sources from a source map, when one is referenced.
@@ -211,7 +223,7 @@ class Recon:
                         found.append(loc)
         return sorted(set(found))
 
-    def crawl(self, seeds: list[str]) -> ReconResult:
+    def crawl(self, seeds: list[str], should_stop=None) -> ReconResult:
         result = ReconResult()
         queue: list[tuple[str, int]] = []
         for seed in seeds:
@@ -223,6 +235,12 @@ class Recon:
         tick = 0
         self.max_pages = max(self.max_pages, len(seeds) * 20)
         while queue and len(seen) < self.max_pages:
+            if should_stop is not None:
+                try:
+                    if should_stop():
+                        break
+                except Exception:
+                    pass
             url, depth = queue.pop(0)
             if url in seen:
                 continue
@@ -265,7 +283,10 @@ class Recon:
                 if self.on_fetch:
                     self.on_fetch("page", url, status)
                 for link in LINK_RE.findall(text):
-                    child = _absolute(url, link)
+                    trimmed = link.strip()
+                    if SCHEME_RE.match(trimmed) and not trimmed.lower().startswith(("http://", "https://")):
+                        continue
+                    child = _absolute(url, trimmed)
                     if child.split("?")[0].lower().endswith(ASSET_EXT):
                         continue
                     if self.scope.is_in_scope(child):

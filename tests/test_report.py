@@ -62,6 +62,24 @@ class RenderTests(unittest.TestCase):
         self.assertIn("sk_liv...uvwx", text)
         self.assertNotIn(STRIPE_KEY, text)
 
+    def test_code_review_evidence_is_scrubbed_of_findings(self):
+        findings = [{
+            "title": "Stripe credential exposed", "severity": "critical",
+            "secret_type": "stripe_live", "value": STRIPE_KEY,
+            "proof": "ok", "reproduction": [],
+        }]
+        review = {
+            "loopholes": [{"detail": "key in the bundle", "severity": "high",
+                           "evidence": f"var k = '{STRIPE_KEY}'",
+                           "source": "https://target/app.js"}],
+            "endpoints": [{"path": f"/api/keys?token={STRIPE_KEY}", "method": "get",
+                           "note": f"uses {STRIPE_KEY}"}],
+        }
+        text = render("https://target", {"pages": 1}, findings, review=review)
+        self.assertNotIn(STRIPE_KEY, text)
+        self.assertIn("var k = ", text)
+        self.assertIn("key in the bundle", text)
+
     def test_unconfirmed_and_code_review_sections(self):
         unverified = [{
             "type": "aws_secret_access_key", "value": AWS_KEY,

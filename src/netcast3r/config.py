@@ -132,9 +132,9 @@ def default_config() -> Config:
             api_key_env="NETCAST3R_OPENROUTER_KEY",
             priority=10,
             models=[
-                "qwen/qwen3.8-27b:free",
+                "openrouter/free",
                 "nvidia/nemotron-3.5-lightning:free",
-                "google/gemma-4-31b-it:free",
+                "nvidia/nemotron-3-super-120b-a12b:free",
             ],
         ),
         ProviderConfig(

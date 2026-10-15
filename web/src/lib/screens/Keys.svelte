@@ -27,14 +27,14 @@
       id: 'openrouter', label: 'openrouter', hint: 'free model pool',
       base_url: 'https://openrouter.ai/api/v1', key_name: 'openrouter',
       placeholder: 'sk-or-v1-...', needsKey: true,
-      hinted: ['qwen/qwen3.8-27b:free', 'nvidia/nemotron-3.5-lightning:free', 'google/gemma-4-31b-it:free'],
+      hinted: ['openrouter/free', 'nvidia/nemotron-3.5-lightning:free', 'nvidia/nemotron-3-super-120b-a12b:free'],
       free: [':free']
     },
     {
       id: 'nvidia', label: 'nvidia', hint: 'build.nvidia.com credits',
       base_url: 'https://integrate.api.nvidia.com/v1', key_name: 'nvidia',
       placeholder: 'nvapi-...', needsKey: true,
-      hinted: ['nvidia/llama-3.3-70b-instruct', 'nvidia/nemotron-3-500e-instruct'], free: []
+      hinted: [], free: []
     },
     {
       id: 'opencode', label: 'opencode zen', hint: 'opencode zen gateway',
