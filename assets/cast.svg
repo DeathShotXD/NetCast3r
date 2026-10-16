@@ -1,185 +1,193 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="960" height="180" viewBox="0 0 960 180" role="img" aria-label="A single sweep moving across a field of targets. As it passes each artifact locks on and lights up: a host, two JavaScript bundles, a config, an API route, a source map, an env file, a stripe key, and the report.">
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="240" viewBox="0 0 960 240" role="img" aria-label="A radar sweep across a target field. As the sweep passes each bearing a blip locks on, a matching line lights up in the live endpoint log beside it, and the yield meters fill: 121 hosts, 61 bundles, 128 routes, 4 candidates. A stripe key reads live.">
   <defs>
     <pattern id="nagrid" width="27" height="27" patternUnits="userSpaceOnUse">
       <path d="M27 0H0v27" fill="none" stroke="#9F23DD" stroke-width="1" opacity=".11"/>
     </pattern>
-    <clipPath id="naclip"><rect x="1" y="1" width="958" height="178" rx="6"/></clipPath>
-    <linearGradient id="nabcol" x1="0" y1="0" x2="1" y2="0">
+    <pattern id="nascan" width="4" height="4" patternUnits="userSpaceOnUse">
+      <rect y="0" width="4" height="1" fill="#000" opacity=".45"/>
+    </pattern>
+    <clipPath id="naclip"><rect x="1" y="1" width="958" height="238" rx="6"/></clipPath>
+    <linearGradient id="wgrad" x1="0" y1="0" x2="1" y2="0">
       <stop offset="0" stop-color="#C8F81A" stop-opacity="0"/>
-      <stop offset=".5" stop-color="#C8F81A" stop-opacity=".12"/>
-      <stop offset="1" stop-color="#C8F81A" stop-opacity="0"/>
+      <stop offset="1" stop-color="#C8F81A" stop-opacity=".28"/>
     </linearGradient>
-    <linearGradient id="nabv" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#C8F81A" stop-opacity="0"/>
-      <stop offset=".25" stop-color="#C8F81A" stop-opacity=".9"/>
-      <stop offset=".75" stop-color="#C8F81A" stop-opacity=".9"/>
-      <stop offset="1" stop-color="#C8F81A" stop-opacity="0"/>
-    </linearGradient>
-    <filter id="naglow" x="-60%" y="-30%" width="220%" height="160%">
-      <feGaussianBlur stdDeviation="1.6" result="b"/>
-      <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+    <radialGradient id="navig" gradientUnits="userSpaceOnUse" cx="480" cy="136" r="560">
+      <stop offset=".55" stop-color="#05030A" stop-opacity="0"/>
+      <stop offset="1" stop-color="#05030A" stop-opacity=".5"/>
+    </radialGradient>
+    <filter id="nagrain" x="0" y="0" width="100%" height="100%">
+      <feTurbulence type="fractalNoise" baseFrequency=".8" numOctaves="2" seed="7" stitchTiles="stitch"/>
+      <feColorMatrix type="saturate" values="0"/>
+      <feComponentTransfer><feFuncA type="linear" slope=".05"/></feComponentTransfer>
+    </filter>
+    <filter id="hg" x="-5%" y="-40%" width="110%" height="180%">
+      <feTurbulence type="fractalNoise" baseFrequency="0.002 0.55" numOctaves="1" seed="8" result="bands"/>
+      <feDisplacementMap in="SourceGraphic" in2="bands" xChannelSelector="R" yChannelSelector="G" scale="0">
+        <animate attributeName="scale" values="0;0;2.5;0;0;1.5;0" keyTimes="0;0.45;0.5;0.53;0.7;0.74;0.77" calcMode="discrete" dur="6.4s" repeatCount="indefinite"/>
+      </feDisplacementMap>
     </filter>
     <style><![CDATA[
       .m{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace}
-      .beam{animation:bm 9.0s linear infinite, bmfade 9.0s linear infinite}
-      @keyframes bm{from{transform:translateX(36px)}to{transform:translateX(924px)}}
-      @keyframes bmfade{0%,2%{opacity:0}4%{opacity:1}96%{opacity:1}98%,100%{opacity:0}}
-      .trail{animation:tl 9.0s linear infinite, tlfade 9.0s linear infinite}
-      @keyframes tl{from{stroke-dashoffset:1}to{stroke-dashoffset:0}}
-      @keyframes tlfade{0%,2%{opacity:0}4%{opacity:.28}96%{opacity:.28}98%,100%{opacity:0}}
-      .nd{animation:ndacq 9.0s linear infinite}
-      @keyframes ndacq{0%,5.5%{stroke:#4C2377;fill:#0A0614}7%,13%{stroke:#C8F81A;fill:#160334}15.5%,100%{stroke:#4C2377;fill:#0A0614}}
-      .bk{animation:bkacq 9.0s linear infinite}
-      @keyframes bkacq{0%,5%{stroke-dashoffset:12;opacity:0}6.5%,13%{stroke-dashoffset:0;opacity:1}13.1%,100%{stroke-dashoffset:12;opacity:0}}
-      .lb{animation:lbacq 9.0s linear infinite}
-      @keyframes lbacq{0%,5.5%{fill:#A89591}7%,13%{fill:#F5E9DC}15.5%,100%{fill:#A89591}}
-      .tg{animation:tgacq 9.0s linear infinite}
-      @keyframes tgacq{0%,5.5%{fill:#A89591;opacity:.45}7%,13%{fill:#C8F81A;opacity:1}15.5%,100%{fill:#A89591;opacity:.45}}
-      .pn{animation:pnacq 9.0s linear infinite}
-      @keyframes pnacq{0%,5.5%{r:3;opacity:0}6.5%{opacity:.85}13%{r:15;opacity:0}100%{r:15;opacity:0}}
-      @media (prefers-reduced-motion:reduce){.beam{animation:none;opacity:0}.trail{animation:none;stroke-dashoffset:0;opacity:.28}.nd{animation:none;stroke:#C8F81A;fill:#160334}.bk{animation:none;stroke-dashoffset:0;opacity:1}.lb{animation:none;fill:#F5E9DC}.tg{animation:none;fill:#C8F81A;opacity:1}.pn{animation:none;opacity:0}}
+      .wgd{animation:spin 8.0s linear infinite;transform-origin:150px 144px;transform-box:view-box}
+      @keyframes spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}
+      .gv{animation:gflk 7.3s steps(1) infinite;opacity:0}
+      .ga{animation:gflk 7.3s steps(1) infinite;opacity:0;animation-delay:-3.9s}
+      @keyframes gflk{0%,69%{opacity:0}70%,72.5%{opacity:.8}73%,86%{opacity:0}87%,88.5%{opacity:.55}89%,100%{opacity:0}}
+      .gm{animation:gmflk 7.3s steps(1) infinite;opacity:0}
+      @keyframes gmflk{0%,46%{opacity:0}47%,47.6%{opacity:.85}48%,71%{opacity:0}72%,72.5%{opacity:.7}73%,100%{opacity:0}}
+      .bl{animation:blacq 8.0s linear infinite}
+      @keyframes blacq{0%,5.5%{fill:#9F23DD;opacity:.35}8%,30%{fill:#C8F81A;opacity:1}36%,100%{fill:#9F23DD;opacity:.35}}
+      .pn{animation:pnacq 8.0s linear infinite}
+      @keyframes pnacq{0%,5.5%{r:3;opacity:0}7%{opacity:.85}30%{r:13;opacity:0}100%{r:13;opacity:0}}
+      .rg{animation:rgacq 8.0s linear infinite}
+      @keyframes rgacq{0%,5.5%{stroke:#4C2377;fill:#0A0614}8%,30%{stroke:#C8F81A;fill:#160334}36%,100%{stroke:#4C2377;fill:#0A0614}}
+      .rl{animation:rlacq 8.0s linear infinite}
+      @keyframes rlacq{0%,5.5%{fill:#A89591}8%,30%{fill:#F5E9DC}36%,100%{fill:#A89591}}
+      .rt{animation:rtacq 8.0s linear infinite}
+      @keyframes rtacq{0%,5.5%{fill:#4C2377}8%,30%{fill:#9F23DD}36%,100%{fill:#4C2377}}
+      .rs{animation:rsacq 8.0s linear infinite}
+      @keyframes rsacq{0%,5.5%{fill:#A89591;opacity:.45}8%,30%{fill:#C8F81A;opacity:1}36%,100%{fill:#A89591;opacity:.45}}
+      .rb{opacity:0;animation:rbacq 8.0s linear infinite}
+      @keyframes rbacq{0%,5.5%{opacity:0}8%,30%{opacity:.06}36%,100%{opacity:0}}
+      .ra{opacity:0;animation:raacq 8.0s linear infinite}
+      @keyframes raacq{0%,5.5%{opacity:0}8%,30%{opacity:1}36%,100%{opacity:0}}
+      .bf{transform:scaleX(0);transform-box:fill-box;transform-origin:left;animation:bargrow 8.0s linear infinite}
+      @keyframes bargrow{0%{transform:scaleX(0)}12%{transform:scaleX(1)}88%{transform:scaleX(1);opacity:1}92%{transform:scaleX(1);opacity:0}94%{transform:scaleX(0);opacity:0}100%{transform:scaleX(0);opacity:0}}
+      .lvd{animation:lv 1.6s ease-in-out infinite}
+      @keyframes lv{0%,100%{opacity:1}50%{opacity:.25}}
+      @media (prefers-reduced-motion:reduce){
+        .wgd{animation:none;opacity:0}.gv,.ga,.gm{animation:none;opacity:0}
+        .bl{animation:none;fill:#C8F81A;opacity:1}.pn{animation:none;opacity:0}
+        .rg{animation:none;stroke:#C8F81A;fill:#160334}.rl{animation:none;fill:#F5E9DC}
+        .rt{animation:none;fill:#9F23DD}.rs{animation:none;fill:#C8F81A;opacity:1}
+        .rb{animation:none;opacity:.06}.ra{animation:none;opacity:1}
+        .bf{animation:none;transform:scaleX(1)}.lvd{animation:none}
+      }
     ]]></style>
   </defs>
 
-  <rect x=".5" y=".5" width="959" height="179" rx="6" fill="#05030A" stroke="#170F3F"/>
-  <g clip-path="url(#naclip)"><rect width="960" height="180" fill="url(#nagrid)" opacity=".5"/></g>
+  <rect x=".5" y=".5" width="959" height="239" rx="6" fill="#05030A" stroke="#170F3F"/>
+  <g clip-path="url(#naclip)">
+    <rect width="960" height="240" fill="url(#nagrid)" opacity=".5"/>
+
+    <g fill="none" stroke="#4C2377" opacity=".5">
+      <circle cx="150" cy="144" r="24"/>
+      <circle cx="150" cy="144" r="48" opacity=".8"/>
+      <circle cx="150" cy="144" r="72" opacity="1"/>
+    </g>
+    <path d="M150.0 72.0L150.0 80.0M168.6 74.5L167.6 78.3M186.0 81.6L184.0 85.1M200.9 93.1L195.3 98.7M212.4 108.0L208.9 110.0M219.5 125.4L215.7 126.4M222.0 144.0L214.0 144.0M219.5 162.6L215.7 161.6M212.4 180.0L208.9 178.0M200.9 194.9L195.3 189.3M186.0 206.4L184.0 202.9M168.6 213.5L167.6 209.7M150.0 216.0L150.0 208.0M131.4 213.5L132.4 209.7M114.0 206.4L116.0 202.9M99.1 194.9L104.7 189.3M87.6 180.0L91.1 178.0M80.5 162.6L84.3 161.6M78.0 144.0L86.0 144.0M80.5 125.4L84.3 126.4M87.6 108.0L91.1 110.0M99.1 93.1L104.7 98.7M114.0 81.6L116.0 85.1M131.4 74.5L132.4 78.3" stroke="#4C2377" stroke-width="1" opacity=".55"/>
+    <path d="M150 72V216M78 144H222" stroke="#241640" stroke-width="1"/>
+    <g class="wgd">
+      <path d="M150 144L98.2 94A72 72 0 0 1 150 72Z" fill="url(#wgrad)"/>
+      <path d="M150 144V72" stroke="#C8F81A" stroke-width="1.4" opacity=".8"/>
+    </g>
+    <circle cx="194" cy="107" r="1.8" fill="#9F23DD" opacity=".22"/><circle cx="214" cy="161" r="1.8" fill="#9F23DD" opacity=".22"/><circle cx="165" cy="185" r="1.8" fill="#9F23DD" opacity=".22"/><circle cx="123" cy="191" r="1.8" fill="#9F23DD" opacity=".22"/><circle cx="89" cy="155" r="1.8" fill="#9F23DD" opacity=".22"/><circle cx="107" cy="108" r="1.8" fill="#9F23DD" opacity=".22"/>
+        <circle class="bl" cx="175" cy="81" r="2.4" fill="#9F23DD" opacity=".35" style="animation-delay:-7.99s"/>
+    <circle class="pn" cx="175" cy="81" r="3" fill="none" stroke="#C8F81A" stroke-width="1" style="animation-delay:-7.99s"/>
+    <circle class="bl" cx="191" cy="133" r="2.4" fill="#9F23DD" opacity=".35" style="animation-delay:-6.81s"/>
+    <circle class="pn" cx="191" cy="133" r="3" fill="none" stroke="#C8F81A" stroke-width="1" style="animation-delay:-6.81s"/>
+    <circle class="bl" cx="197" cy="181" r="2.4" fill="#9F23DD" opacity=".35" style="animation-delay:-5.64s"/>
+    <circle class="pn" cx="197" cy="181" r="3" fill="none" stroke="#C8F81A" stroke-width="1" style="animation-delay:-5.64s"/>
+    <circle class="bl" cx="149" cy="192" r="2.4" fill="#9F23DD" opacity=".35" style="animation-delay:-4.46s"/>
+    <circle class="pn" cx="149" cy="192" r="3" fill="none" stroke="#C8F81A" stroke-width="1" style="animation-delay:-4.46s"/>
+    <circle class="bl" cx="98" cy="182" r="2.4" fill="#9F23DD" opacity=".35" style="animation-delay:-3.28s"/>
+    <circle class="pn" cx="98" cy="182" r="3" fill="none" stroke="#C8F81A" stroke-width="1" style="animation-delay:-3.28s"/>
+    <circle class="bl" cx="114" cy="133" r="2.4" fill="#9F23DD" opacity=".35" style="animation-delay:-2.10s"/>
+    <circle class="pn" cx="114" cy="133" r="3" fill="none" stroke="#C8F81A" stroke-width="1" style="animation-delay:-2.10s"/>
+    <circle cx="150" cy="144" r="2.2" fill="#C8F81A"/>
+    <circle cx="150" cy="144" r="5" fill="none" stroke="#4C2377"/>
+
+    <g class="m" fill="#A89591" font-size="8" letter-spacing=".5">
+      <text x="150" y="67" text-anchor="middle">000</text>
+      <text x="228" y="147">090</text>
+      <text x="72" y="147" text-anchor="end">270</text>
+    </g>
+
+    <g class="m" font-size="7.5" letter-spacing="1.5" fill="#A89591">
+      <text x="300" y="67">ENDPOINT</text>
+      <text x="500" y="67">TYPE</text>
+      <text x="628" y="67" text-anchor="end">STATUS</text>
+    </g>
+    <rect class="rb" x="300" y="71" width="328" height="21" fill="#C8F81A"/>
+    <rect class="ra" x="300" y="70" width="2" height="22" fill="#C8F81A"/>
+    <path class="rg" d="M313 77l4 4-4 4-4-4z" stroke="#4C2377" fill="#0A0614" stroke-width="1.1" style="animation-delay:-7.99s"/>
+    <text class="rl" x="326" y="86" font-size="11" fill="#A89591" style="animation-delay:-7.99s">api.target.io</text>
+    <text class="rt" x="500" y="86" font-size="7.5" letter-spacing="1.2" fill="#4C2377" style="animation-delay:-7.99s">HOST</text>
+    <text class="rs" x="628" y="86" font-size="10" letter-spacing=".5" text-anchor="end" fill="#A89591" opacity=".45" style="animation-delay:-7.99s">200</text>
+    <rect class="rb" x="300" y="95" width="328" height="21" fill="#C8F81A"/>
+    <rect class="ra" x="300" y="94" width="2" height="22" fill="#C8F81A"/>
+    <path class="rg" d="M313 101l4 4-4 4-4-4z" stroke="#4C2377" fill="#0A0614" stroke-width="1.1" style="animation-delay:-6.81s"/>
+    <text class="rl" x="326" y="110" font-size="11" fill="#A89591" style="animation-delay:-6.81s">/assets/vendor.js</text>
+    <text class="rt" x="500" y="110" font-size="7.5" letter-spacing="1.2" fill="#4C2377" style="animation-delay:-6.81s">JS</text>
+    <text class="rs" x="628" y="110" font-size="10" letter-spacing=".5" text-anchor="end" fill="#A89591" opacity=".45" style="animation-delay:-6.81s">200</text>
+    <rect class="rb" x="300" y="119" width="328" height="21" fill="#C8F81A"/>
+    <rect class="ra" x="300" y="118" width="2" height="22" fill="#C8F81A"/>
+    <path class="rg" d="M313 125l4 4-4 4-4-4z" stroke="#4C2377" fill="#0A0614" stroke-width="1.1" style="animation-delay:-5.64s"/>
+    <text class="rl" x="326" y="134" font-size="11" fill="#A89591" style="animation-delay:-5.64s">/api/v2/session</text>
+    <text class="rt" x="500" y="134" font-size="7.5" letter-spacing="1.2" fill="#4C2377" style="animation-delay:-5.64s">API</text>
+    <text class="rs" x="628" y="134" font-size="10" letter-spacing=".5" text-anchor="end" fill="#A89591" opacity=".45" style="animation-delay:-5.64s">304</text>
+    <rect class="rb" x="300" y="143" width="328" height="21" fill="#C8F81A"/>
+    <rect class="ra" x="300" y="142" width="2" height="22" fill="#C8F81A"/>
+    <path class="rg" d="M313 149l4 4-4 4-4-4z" stroke="#4C2377" fill="#0A0614" stroke-width="1.1" style="animation-delay:-4.46s"/>
+    <text class="rl" x="326" y="158" font-size="11" fill="#A89591" style="animation-delay:-4.46s">/tools/report</text>
+    <text class="rt" x="500" y="158" font-size="7.5" letter-spacing="1.2" fill="#4C2377" style="animation-delay:-4.46s">API</text>
+    <text class="rs" x="628" y="158" font-size="10" letter-spacing=".5" text-anchor="end" fill="#A89591" opacity=".45" style="animation-delay:-4.46s">429</text>
+    <rect class="rb" x="300" y="167" width="328" height="21" fill="#C8F81A"/>
+    <rect class="ra" x="300" y="166" width="2" height="22" fill="#C8F81A"/>
+    <path class="rg" d="M313 173l4 4-4 4-4-4z" stroke="#4C2377" fill="#0A0614" stroke-width="1.1" style="animation-delay:-3.28s"/>
+    <text class="rl" x="326" y="182" font-size="11" fill="#A89591" style="animation-delay:-3.28s">app.js.map</text>
+    <text class="rt" x="500" y="182" font-size="7.5" letter-spacing="1.2" fill="#4C2377" style="animation-delay:-3.28s">MAP</text>
+    <text class="rs" x="628" y="182" font-size="10" letter-spacing=".5" text-anchor="end" fill="#A89591" opacity=".45" style="animation-delay:-3.28s">MAPPED</text>
+    <rect class="rb" x="300" y="191" width="328" height="21" fill="#C8F81A"/>
+    <rect class="ra" x="300" y="190" width="2" height="22" fill="#C8F81A"/>
+    <path class="rg" d="M313 197l4 4-4 4-4-4z" stroke="#4C2377" fill="#0A0614" stroke-width="1.1" style="animation-delay:-2.10s"/>
+    <text class="rl" x="326" y="206" font-size="11" fill="#A89591" style="animation-delay:-2.10s">STRIPE_KEY</text>
+    <text class="rt" x="500" y="206" font-size="7.5" letter-spacing="1.2" fill="#4C2377" style="animation-delay:-2.10s">KEY</text>
+    <text class="rs" x="628" y="206" font-size="10" letter-spacing=".5" text-anchor="end" fill="#A89591" opacity=".45" style="animation-delay:-2.10s">LIVE</text>
+
+    <g class="m">
+      <text x="680" y="67" font-size="7.5" letter-spacing="1.5" fill="#A89591">// YIELD</text>
+    <text x="680" y="95" font-size="8.5" letter-spacing="1.5" fill="#A89591">HOSTS</text>
+    <text x="928" y="95" font-size="11.5" letter-spacing=".4" font-weight="700" text-anchor="end" fill="#C8F81A">121</text>
+    <rect x="680" y="103" width="248" height="3" fill="#171033"/>
+    <rect class="bf" x="680" y="103" width="234" height="3" fill="#C8F81A" style="animation-delay:0.35s"/>
+    <text x="680" y="127" font-size="8.5" letter-spacing="1.5" fill="#A89591">BUNDLES</text>
+    <text x="928" y="127" font-size="11.5" letter-spacing=".4" font-weight="700" text-anchor="end" fill="#C8F81A">61</text>
+    <rect x="680" y="135" width="248" height="3" fill="#171033"/>
+    <rect class="bf" x="680" y="135" width="118" height="3" fill="#C8F81A" style="animation-delay:1.05s"/>
+    <text x="680" y="159" font-size="8.5" letter-spacing="1.5" fill="#A89591">ROUTES</text>
+    <text x="928" y="159" font-size="11.5" letter-spacing=".4" font-weight="700" text-anchor="end" fill="#C8F81A">128</text>
+    <rect x="680" y="167" width="248" height="3" fill="#171033"/>
+    <rect class="bf" x="680" y="167" width="248" height="3" fill="#C8F81A" style="animation-delay:1.75s"/>
+    <text x="680" y="191" font-size="8.5" letter-spacing="1.5" fill="#A89591">CANDIDATES</text>
+    <text x="928" y="191" font-size="11.5" letter-spacing=".4" font-weight="700" text-anchor="end" fill="#C8F81A">4</text>
+    <rect x="680" y="199" width="248" height="3" fill="#171033"/>
+    <rect class="bf" x="680" y="199" width="8" height="3" fill="#C8F81A" style="animation-delay:2.45s"/>
+    </g>
+
+    <g fill="#C8F81A" opacity=".35"><rect x="830" y="60" width="2" height="6"/><rect x="835" y="58" width="3" height="8"/><rect x="841" y="58" width="1" height="8"/><rect x="845" y="60" width="4" height="6"/><rect x="852" y="58" width="1" height="8"/><rect x="856" y="58" width="2" height="8"/><rect x="861" y="60" width="1" height="6"/><rect x="865" y="58" width="3" height="8"/><rect x="871" y="58" width="2" height="8"/><rect x="876" y="60" width="1" height="6"/><rect x="880" y="58" width="4" height="8"/><rect x="887" y="58" width="2" height="8"/></g>
+
+    <rect width="960" height="240" fill="url(#navig)"/>
+    <rect width="960" height="240" fill="url(#nascan)" opacity=".3"/>
+    <rect x="1" y="55" width="958" height="163" fill="#000" filter="url(#nagrain)"/>
+  </g>
 
   <g fill="none" stroke="#C8F81A" stroke-width="1.6" stroke-linecap="square">
     <path d="M9 21V9h12"/>
     <path d="M951 21V9h-12"/>
-    <path d="M9 159v12h12"/>
-    <path d="M951 159v12h-12"/>
+    <path d="M9 219v12h12"/>
+    <path d="M951 219v12h-12"/>
   </g>
   <path d="M872 26h62" stroke="#9F23DD" stroke-width="3" stroke-linecap="round" opacity=".9"/>
 
   <g class="m">
+    <text class="gv" x="32" y="40" font-size="15" font-weight="700" letter-spacing="1.6" style="transform:translate(1.6px,-1px)">CAST THE NET  //  CRAWL - READ - HUNT</text>
+    <text class="ga" x="32" y="40" font-size="15" font-weight="700" letter-spacing="1.6" style="transform:translate(-1.6px,1px)">CAST THE NET  //  CRAWL - READ - HUNT</text>
+    <text class="gm" x="32" y="40" font-size="15" font-weight="700" letter-spacing="1.6" fill="#F5E9DC" filter="url(#hg)">CAST THE NET  //  CRAWL - READ - HUNT</text>
     <text x="32" y="40" font-size="15" font-weight="700" letter-spacing="1.6" fill="#F5E9DC">CAST THE NET<tspan fill="#C8F81A" font-size="12" letter-spacing=".8">  //  CRAWL - READ - HUNT</tspan></text>
     <text x="928" y="40" font-size="11.5" letter-spacing=".8" text-anchor="end" fill="#A89591">// FIRST PASS</text>
     <path d="M32 54H928" stroke="#241640" stroke-width="1"/>
-  </g>
-
-  <g clip-path="url(#naclip)">
-    <path d="M60 133v3M84 133v3M108 133v3M132 133v3M156 133v3M180 133v3M204 133v3M228 133v3M252 133v3M276 133v3M300 133v3M324 133v3M348 133v3M372 133v3M396 133v3M420 133v3M444 133v3M468 133v3M492 133v3M516 133v3M540 133v3M564 133v3M588 133v3M612 133v3M636 133v3M660 133v3M684 133v3M708 133v3M732 133v3M756 133v3M780 133v3M804 133v3M828 133v3M852 133v3M876 133v3M900 133v3" stroke="#9F23DD" stroke-width="1" opacity=".35"/>
-    <path d="M36 132H924" stroke="#241640" stroke-width="1"/>
-    <path class="trail" d="M36 132H924" fill="none" stroke="#C8F81A" stroke-width="1.2" pathLength="1" stroke-dasharray="1" stroke-dashoffset="1"/>
-
-    <g class="ndg">
-      <text class="lb" x="84" y="110" text-anchor="middle" font-size="10" letter-spacing=".2" fill="#A89591" style="animation-delay:-0.23s">api.target.io</text>
-      <text class="tg" x="84" y="150" text-anchor="middle" font-size="8.5" letter-spacing="1.1" fill="#A89591" style="animation-delay:-0.23s">HOST</text>
-      <circle class="pn" cx="84" cy="132" r="3" fill="none" stroke="#C8F81A" stroke-width="1" style="animation-delay:-0.23s"/>
-      <g class="bk" fill="none" stroke="#C8F81A" stroke-width="1.4" stroke-linecap="square" style="animation-delay:-0.23s">
-        <path pathLength="12" stroke-dasharray="12" d="M74 128V122H80"/>
-        <path pathLength="12" stroke-dasharray="12" d="M88 122H94V128"/>
-        <path pathLength="12" stroke-dasharray="12" d="M94 136V142H88"/>
-        <path pathLength="12" stroke-dasharray="12" d="M80 142H74V136"/>
-      </g>
-      <path class="nd" d="M84 128l4 4-4 4-4-4z" stroke="#4C2377" fill="#0A0614" stroke-width="1.2" style="animation-delay:-0.23s"/>
-    </g>
-    <g class="ndg">
-      <text class="lb" x="180" y="110" text-anchor="middle" font-size="10" letter-spacing=".2" fill="#A89591" style="animation-delay:-8.26s">app.js</text>
-      <text class="tg" x="180" y="150" text-anchor="middle" font-size="8.5" letter-spacing="1.1" fill="#A89591" style="animation-delay:-8.26s">JS</text>
-      <circle class="pn" cx="180" cy="132" r="3" fill="none" stroke="#C8F81A" stroke-width="1" style="animation-delay:-8.26s"/>
-      <g class="bk" fill="none" stroke="#C8F81A" stroke-width="1.4" stroke-linecap="square" style="animation-delay:-8.26s">
-        <path pathLength="12" stroke-dasharray="12" d="M170 128V122H176"/>
-        <path pathLength="12" stroke-dasharray="12" d="M184 122H190V128"/>
-        <path pathLength="12" stroke-dasharray="12" d="M190 136V142H184"/>
-        <path pathLength="12" stroke-dasharray="12" d="M176 142H170V136"/>
-      </g>
-      <path class="nd" d="M180 128l4 4-4 4-4-4z" stroke="#4C2377" fill="#0A0614" stroke-width="1.2" style="animation-delay:-8.26s"/>
-    </g>
-    <g class="ndg">
-      <text class="lb" x="276" y="110" text-anchor="middle" font-size="10" letter-spacing=".2" fill="#A89591" style="animation-delay:-7.29s">vendor.js</text>
-      <text class="tg" x="276" y="150" text-anchor="middle" font-size="8.5" letter-spacing="1.1" fill="#A89591" style="animation-delay:-7.29s">JS</text>
-      <circle class="pn" cx="276" cy="132" r="3" fill="none" stroke="#C8F81A" stroke-width="1" style="animation-delay:-7.29s"/>
-      <g class="bk" fill="none" stroke="#C8F81A" stroke-width="1.4" stroke-linecap="square" style="animation-delay:-7.29s">
-        <path pathLength="12" stroke-dasharray="12" d="M266 128V122H272"/>
-        <path pathLength="12" stroke-dasharray="12" d="M280 122H286V128"/>
-        <path pathLength="12" stroke-dasharray="12" d="M286 136V142H280"/>
-        <path pathLength="12" stroke-dasharray="12" d="M272 142H266V136"/>
-      </g>
-      <path class="nd" d="M276 128l4 4-4 4-4-4z" stroke="#4C2377" fill="#0A0614" stroke-width="1.2" style="animation-delay:-7.29s"/>
-    </g>
-    <g class="ndg">
-      <text class="lb" x="372" y="110" text-anchor="middle" font-size="10" letter-spacing=".2" fill="#A89591" style="animation-delay:-6.31s">config.json</text>
-      <text class="tg" x="372" y="150" text-anchor="middle" font-size="8.5" letter-spacing="1.1" fill="#A89591" style="animation-delay:-6.31s">CFG</text>
-      <circle class="pn" cx="372" cy="132" r="3" fill="none" stroke="#C8F81A" stroke-width="1" style="animation-delay:-6.31s"/>
-      <g class="bk" fill="none" stroke="#C8F81A" stroke-width="1.4" stroke-linecap="square" style="animation-delay:-6.31s">
-        <path pathLength="12" stroke-dasharray="12" d="M362 128V122H368"/>
-        <path pathLength="12" stroke-dasharray="12" d="M376 122H382V128"/>
-        <path pathLength="12" stroke-dasharray="12" d="M382 136V142H376"/>
-        <path pathLength="12" stroke-dasharray="12" d="M368 142H362V136"/>
-      </g>
-      <path class="nd" d="M372 128l4 4-4 4-4-4z" stroke="#4C2377" fill="#0A0614" stroke-width="1.2" style="animation-delay:-6.31s"/>
-    </g>
-    <g class="ndg">
-      <text class="lb" x="468" y="110" text-anchor="middle" font-size="10" letter-spacing=".2" fill="#A89591" style="animation-delay:-5.34s">/api/v2</text>
-      <text class="tg" x="468" y="150" text-anchor="middle" font-size="8.5" letter-spacing="1.1" fill="#A89591" style="animation-delay:-5.34s">API</text>
-      <circle class="pn" cx="468" cy="132" r="3" fill="none" stroke="#C8F81A" stroke-width="1" style="animation-delay:-5.34s"/>
-      <g class="bk" fill="none" stroke="#C8F81A" stroke-width="1.4" stroke-linecap="square" style="animation-delay:-5.34s">
-        <path pathLength="12" stroke-dasharray="12" d="M458 128V122H464"/>
-        <path pathLength="12" stroke-dasharray="12" d="M472 122H478V128"/>
-        <path pathLength="12" stroke-dasharray="12" d="M478 136V142H472"/>
-        <path pathLength="12" stroke-dasharray="12" d="M464 142H458V136"/>
-      </g>
-      <path class="nd" d="M468 128l4 4-4 4-4-4z" stroke="#4C2377" fill="#0A0614" stroke-width="1.2" style="animation-delay:-5.34s"/>
-    </g>
-    <g class="ndg">
-      <text class="lb" x="564" y="110" text-anchor="middle" font-size="10" letter-spacing=".2" fill="#A89591" style="animation-delay:-4.37s">app.js.map</text>
-      <text class="tg" x="564" y="150" text-anchor="middle" font-size="8.5" letter-spacing="1.1" fill="#A89591" style="animation-delay:-4.37s">MAP</text>
-      <circle class="pn" cx="564" cy="132" r="3" fill="none" stroke="#C8F81A" stroke-width="1" style="animation-delay:-4.37s"/>
-      <g class="bk" fill="none" stroke="#C8F81A" stroke-width="1.4" stroke-linecap="square" style="animation-delay:-4.37s">
-        <path pathLength="12" stroke-dasharray="12" d="M554 128V122H560"/>
-        <path pathLength="12" stroke-dasharray="12" d="M568 122H574V128"/>
-        <path pathLength="12" stroke-dasharray="12" d="M574 136V142H568"/>
-        <path pathLength="12" stroke-dasharray="12" d="M560 142H554V136"/>
-      </g>
-      <path class="nd" d="M564 128l4 4-4 4-4-4z" stroke="#4C2377" fill="#0A0614" stroke-width="1.2" style="animation-delay:-4.37s"/>
-    </g>
-    <g class="ndg">
-      <text class="lb" x="660" y="110" text-anchor="middle" font-size="10" letter-spacing=".2" fill="#A89591" style="animation-delay:-3.40s">.env</text>
-      <text class="tg" x="660" y="150" text-anchor="middle" font-size="8.5" letter-spacing="1.1" fill="#A89591" style="animation-delay:-3.40s">ENV</text>
-      <circle class="pn" cx="660" cy="132" r="3" fill="none" stroke="#C8F81A" stroke-width="1" style="animation-delay:-3.40s"/>
-      <g class="bk" fill="none" stroke="#C8F81A" stroke-width="1.4" stroke-linecap="square" style="animation-delay:-3.40s">
-        <path pathLength="12" stroke-dasharray="12" d="M650 128V122H656"/>
-        <path pathLength="12" stroke-dasharray="12" d="M664 122H670V128"/>
-        <path pathLength="12" stroke-dasharray="12" d="M670 136V142H664"/>
-        <path pathLength="12" stroke-dasharray="12" d="M656 142H650V136"/>
-      </g>
-      <path class="nd" d="M660 128l4 4-4 4-4-4z" stroke="#4C2377" fill="#0A0614" stroke-width="1.2" style="animation-delay:-3.40s"/>
-    </g>
-    <g class="ndg">
-      <text class="lb" x="756" y="110" text-anchor="middle" font-size="10" letter-spacing=".2" fill="#A89591" style="animation-delay:-2.42s">STRIPE_KEY</text>
-      <text class="tg" x="756" y="150" text-anchor="middle" font-size="8.5" letter-spacing="1.1" fill="#A89591" style="animation-delay:-2.42s">KEY</text>
-      <circle class="pn" cx="756" cy="132" r="3" fill="none" stroke="#C8F81A" stroke-width="1" style="animation-delay:-2.42s"/>
-      <g class="bk" fill="none" stroke="#C8F81A" stroke-width="1.4" stroke-linecap="square" style="animation-delay:-2.42s">
-        <path pathLength="12" stroke-dasharray="12" d="M746 128V122H752"/>
-        <path pathLength="12" stroke-dasharray="12" d="M760 122H766V128"/>
-        <path pathLength="12" stroke-dasharray="12" d="M766 136V142H760"/>
-        <path pathLength="12" stroke-dasharray="12" d="M752 142H746V136"/>
-      </g>
-      <path class="nd" d="M756 128l4 4-4 4-4-4z" stroke="#4C2377" fill="#0A0614" stroke-width="1.2" style="animation-delay:-2.42s"/>
-    </g>
-    <g class="ndg">
-      <text class="lb" x="852" y="110" text-anchor="middle" font-size="10" letter-spacing=".2" fill="#A89591" style="animation-delay:-1.45s">report.md</text>
-      <text class="tg" x="852" y="150" text-anchor="middle" font-size="8.5" letter-spacing="1.1" fill="#A89591" style="animation-delay:-1.45s">REPORT</text>
-      <circle class="pn" cx="852" cy="132" r="3" fill="none" stroke="#C8F81A" stroke-width="1" style="animation-delay:-1.45s"/>
-      <g class="bk" fill="none" stroke="#C8F81A" stroke-width="1.4" stroke-linecap="square" style="animation-delay:-1.45s">
-        <path pathLength="12" stroke-dasharray="12" d="M842 128V122H848"/>
-        <path pathLength="12" stroke-dasharray="12" d="M856 122H862V128"/>
-        <path pathLength="12" stroke-dasharray="12" d="M862 136V142H856"/>
-        <path pathLength="12" stroke-dasharray="12" d="M848 142H842V136"/>
-      </g>
-      <path class="nd" d="M852 128l4 4-4 4-4-4z" stroke="#4C2377" fill="#0A0614" stroke-width="1.2" style="animation-delay:-1.45s"/>
-    </g>
-
-    <g class="beam" filter="url(#naglow)">
-      <rect x="-14" y="58" width="28" height="94" fill="url(#nabcol)"/>
-      <path d="M0 60V150" fill="none" stroke="url(#nabv)" stroke-width="2" opacity=".95"/>
-      <circle cx="0" cy="132" r="2.5" fill="#F5F87D"/>
-    </g>
-  </g>
-
-  <g class="m">
-    <text x="32" y="166" font-size="11.5" letter-spacing=".4" fill="#A89591">// the net sweeps every endpoint the target serves</text>
+    <text x="32" y="230" font-size="11.5" letter-spacing=".4" fill="#A89591">// the net sweeps every endpoint the target serves</text>
+    <circle class="lvd" cx="884" cy="226" r="2.6" fill="#C8F81A"/>
   </g>
 </svg>
