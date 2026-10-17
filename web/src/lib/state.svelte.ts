@@ -39,7 +39,8 @@ class Store {
   }
 
   syncHash(): void {
-    const next = `#/${this.screen}${this.screen === 'live' && this.activeRunId ? `/${this.activeRunId}` : ''}`;
+    const tracked = this.screen === 'live' || this.screen === 'engine';
+    const next = `#/${this.screen}${tracked && this.activeRunId ? `/${this.activeRunId}` : ''}`;
     if (window.location.hash !== next) window.location.hash = next;
   }
 
