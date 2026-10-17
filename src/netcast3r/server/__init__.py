@@ -454,7 +454,7 @@ class Server:
         persisted up to the replay boundary is dropped from the live queue
         by ``EventBus.stream(since=...)``. The backlog is paged so a long run
         replays fully (bounded by the bus ring size), and replay frames are
-        written straight to the wire — never through the subscriber queue,
+        written straight to the wire - never through the subscriber queue,
         where a busy run could overflow it mid-replay.
         """
         sub = self.bus.subscribe()
