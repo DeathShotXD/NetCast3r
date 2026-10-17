@@ -326,7 +326,11 @@ class EventConsoleTests(unittest.TestCase):
         self.assertEqual(logs[0].payload["text"], "bar  4/4 (100%)")
         self.assertNotIn("\x1b", logs[1].payload["text"])
 
-    def test_reasoning_pieces_are_streamed_as_events(self):
+    def test_reasoning_chunks_are_forwarded_verbatim(self):
+        # Provider deltas are arbitrary fragments. Splitting them into "lines"
+        # here used to strip the boundary spaces, and the coalescer re-joined
+        # the fragments with newlines - words split across chunks came out
+        # mangled. One event per chunk keeps the text whole end to end.
         from netcast3r.server.events import Event
         from netcast3r.server.runner import EventConsole
 
@@ -335,10 +339,10 @@ class EventConsoleTests(unittest.TestCase):
         console.reasoning("prospector", "checking value\n\n  ranking candidates  ")
         reasons = [event for event in seen if event.type == "reasoning"]
         self.assertEqual([event.payload["text"] for event in reasons],
-                         ["checking value", "ranking candidates"])
+                         ["checking value\n\n  ranking candidates  "])
         self.assertTrue(all(event.agent == "prospector" and event.run_id == "run_1"
                             for event in reasons))
-        self.assertEqual([row["kind"] for row in console.events[-2:]], ["reason", "reason"])
+        self.assertEqual([row["kind"] for row in console.events[-1:]], ["reason"])
 
     def test_model_calls_are_streamed_with_provider_and_latency(self):
         from netcast3r.server.events import Event

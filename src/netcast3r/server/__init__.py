@@ -126,11 +126,15 @@ class Server:
         self.jobs = jobs
         self.keys = keys
         self.config = config
+        if self.config is None:
+            # A bare server still needs an output root for runs it starts.
+            from types import SimpleNamespace
+            self.config = SimpleNamespace(results_dir="results")
         self.token = token
         self.auth_required = auth_required
         self.static_dir = Path(static_dir) if static_dir else None
         self.started = threading.Event()
-        self._app_loaded = False
+        self._app_stamp: tuple[int, int] | None = None
         self._app_cache: str | None = None
         self._csp = CSP
         self._routes = self._build_routes()
@@ -410,16 +414,28 @@ class Server:
 
     # -- static app -------------------------------------------------------
     def _app(self) -> str | None:
-        """The built dashboard, loaded once. None when it has not been built."""
-        if not self._app_loaded:
-            text = None
-            if self.static_dir and (self.static_dir / "index.html").exists():
-                text = (self.static_dir / "index.html").read_text("utf-8")
-            elif (APP_DIR / "index.html").exists():
-                text = (APP_DIR / "index.html").read_text("utf-8")
+        """The built dashboard, re-read whenever the file on disk changes.
+
+        A rebuild should be visible on the next page load instead of needing a
+        server restart; the stat check keeps the common path to one syscall.
+        """
+        path = None
+        if self.static_dir and (self.static_dir / "index.html").exists():
+            path = self.static_dir / "index.html"
+        elif (APP_DIR / "index.html").exists():
+            path = APP_DIR / "index.html"
+        if path is None:
+            return None
+        try:
+            stat = path.stat()
+            stamp = (stat.st_mtime_ns, stat.st_size)
+        except OSError:
+            return self._app_cache
+        if stamp != self._app_stamp:
+            text = path.read_text("utf-8")
             self._app_cache = text
             self._csp = _app_csp(text) if text else CSP
-            self._app_loaded = True
+            self._app_stamp = stamp
         return self._app_cache
 
     @staticmethod
@@ -431,16 +447,40 @@ class Server:
 
     # -- helpers ----------------------------------------------------------
     def _event_frames(self, run_id: str | None, last_event_id: int | None):
-        replay = (self.index.list_events(run_id, since=last_event_id or 0)
-                  if run_id is not None else [])
-        boundary = max((event.get("seq", 0) for event in replay), default=last_event_id or 0)
+        """Yield replay frames, then live frames, without gaps or interleaving.
+
+        The subscription is opened *before* the database is read so events
+        published during the read are captured live; anything already
+        persisted up to the replay boundary is dropped from the live queue
+        by ``EventBus.stream(since=...)``. The backlog is paged so a long run
+        replays fully (bounded by the bus ring size), and replay frames are
+        written straight to the wire — never through the subscriber queue,
+        where a busy run could overflow it mid-replay.
+        """
         sub = self.bus.subscribe()
-        for event in replay:
-            try:
-                sub.put_nowait(_Replay(event))
-            except Exception:
-                break
-        return self.bus.stream(sub, run_id=run_id, since=boundary)
+        replay: list[dict] = []
+        if run_id is not None:
+            since = max(0, last_event_id or 0)
+            while len(replay) < self.bus.capacity:
+                page = self.index.list_events(run_id, since=since, limit=1000)
+                if not page:
+                    break
+                replay.extend(page)
+                since = int(page[-1].get("seq") or since)
+                if len(page) < 1000:
+                    break
+        boundary = max((int(event.get("seq") or 0) for event in replay),
+                       default=last_event_id or 0)
+        return self._frames(run_id, replay, boundary, sub)
+
+    def _frames(self, run_id: str | None, replay: list[dict], boundary: int, sub):
+        try:
+            for event in replay:
+                yield (f"id: {event.get('seq', 0)}\nevent: message\ndata: "
+                       + json.dumps(event, default=str) + "\n\n")
+            yield from self.bus.stream(sub, run_id=run_id, since=boundary)
+        finally:
+            self.bus.unsubscribe(sub)
 
     @staticmethod
     def _reachable_host(host: str) -> bool:
@@ -559,18 +599,6 @@ class Server:
         return self._matches(supplied, self.token)
 
 
-@dataclass
-class _Replay:
-    event: dict
-    type: str = "replay"
-    seq: int = 0
-    ts: float = 0.0
-
-    def sse(self) -> str:
-        return (f"id: {self.event.get('seq', 0)}\nevent: message\ndata: "
-                + json.dumps(self.event, default=str) + "\n\n")
-
-
 class _Context:
     def __init__(self, method, path, query, headers, body, params, server: Server):
         self.method = method
@@ -677,10 +705,14 @@ class _Handler(BaseHTTPRequestHandler):
 
 def build_server(results_dir: str | Path = "results", base: Path | None = None,
                  runner=None, config=None, workers: int = 2) -> Server:
+    from types import SimpleNamespace
+
     from . import runner as runner_module
     from .runner import DashboardBridge, run_scan
 
     base = Path(base) if base else Path.home() / ".netcast3r"
+    if config is None:
+        config = SimpleNamespace(results_dir=str(results_dir))
     index = Index(base / "netcast3r.db")
     bus = EventBus()
     keys = KeyStore(base)

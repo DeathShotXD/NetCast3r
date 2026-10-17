@@ -50,7 +50,9 @@ class _ReasonCoalescer:
         if timer is not None:
             timer.cancel()
         for agent, pieces in pending.items():
-            text = "\n".join(piece.strip() for piece in pieces if piece.strip())
+            # Pieces are raw stream deltas: concatenate them verbatim so words
+            # split across deltas reassemble instead of gaining newlines.
+            text = "".join(pieces).strip()
             if text:
                 self._emit(Event(type="reasoning", agent=agent, payload={"text": text}))
 

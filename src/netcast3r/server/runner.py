@@ -59,12 +59,14 @@ class EventConsole:
             self.line("run", text)
 
     def reasoning(self, agent: str, text: str) -> None:
-        for piece in (text or "").splitlines():
-            piece = piece.strip()
-            if piece:
-                self.events.append({"kind": "reason", "agent": agent, "text": piece})
-                self.emit(Event(type="reasoning", run_id=self.run_id, agent=agent,
-                                payload={"text": piece}))
+        # Forward the chunk as-is; the coalescer concatenates raw deltas so
+        # words split across chunks reassemble (embedded newlines survive).
+        text = text or ""
+        if not text.strip():
+            return
+        self.events.append({"kind": "reason", "agent": agent, "text": text})
+        self.emit(Event(type="reasoning", run_id=self.run_id, agent=agent,
+                        payload={"text": text}))
 
     def model_call(self, payload: dict) -> None:
         """Forward a provider attempt (call/done) to the live stream."""

@@ -207,29 +207,49 @@ class Index:
 
     # -- events -----------------------------------------------------------
     def add_event(self, run_id: str, event: dict) -> None:
+        # The counters ride inside the payload so replay keeps them; the
+        # "progress" column does not exist, and a JSON key costs nothing.
+        payload = dict(event.get("payload") or {})
+        if event.get("progress"):
+            payload["_progress"] = event["progress"]
         with self._lock:
             self.conn.execute(
                 "INSERT INTO events (run_id, seq, ts, type, level, stage, agent, payload_json) "
                 "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
                 (run_id, event.get("seq", 0), event.get("ts", time.time()), event.get("type", ""),
                  event.get("level", "info"), event.get("stage", ""), event.get("agent", ""),
-                 json.dumps(event.get("payload") or {}, default=str)),
+                 json.dumps(payload, default=str)),
             )
             self.conn.commit()
 
     def list_events(self, run_id: str, since: int = 0, limit: int = 1000) -> list[dict]:
+        # With `since`, page forward from that seq (reconnect replay). Without
+        # it, return the most recent `limit` events so a late-joining client
+        # still sees the tail of a long run instead of only its first page.
         with self._lock:
-            rows = self.conn.execute(
-                "SELECT * FROM events WHERE run_id = ? AND seq > ? ORDER BY seq LIMIT ?",
-                (run_id, since, limit),
-            ).fetchall()
+            if since:
+                rows = self.conn.execute(
+                    "SELECT * FROM events WHERE run_id = ? AND seq > ? ORDER BY seq LIMIT ?",
+                    (run_id, since, limit),
+                ).fetchall()
+            else:
+                rows = self.conn.execute(
+                    "SELECT * FROM events WHERE run_id = ? ORDER BY seq DESC LIMIT ?",
+                    (run_id, limit),
+                ).fetchall()
+                rows = rows[::-1]
         events = []
         for row in rows:
-            events.append({
+            payload = _loads(row["payload_json"], {})
+            progress = payload.pop("_progress", None)
+            event = {
                 "id": row["seq"], "seq": row["seq"], "ts": row["ts"], "run_id": row["run_id"],
                 "type": row["type"], "level": row["level"], "stage": row["stage"],
-                "agent": row["agent"], "payload": _loads(row["payload_json"], {}),
-            })
+                "agent": row["agent"], "payload": payload,
+            }
+            if progress is not None:
+                event["progress"] = progress
+            events.append(event)
         return events
 
     # -- findings ---------------------------------------------------------

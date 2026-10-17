@@ -66,10 +66,14 @@ class EventBus:
             try:
                 sub.put_nowait(event)
             except queue.Full:
-                self._shed(sub)
+                # Backpressure is best-effort: a bug in the shed path must
+                # never propagate into the run thread that is publishing.
                 try:
+                    self._shed(sub)
                     sub.put_nowait(event)
                 except queue.Full:
+                    pass
+                except Exception:  # noqa: BLE001
                     pass
         return event
 
@@ -84,7 +88,7 @@ class EventBus:
         dropped = None
         while sub.queue:
             head = sub.queue[0]
-            if head.type in ("log", "reasoning", "fetch"):
+            if getattr(head, "type", "") in ("log", "reasoning", "fetch"):
                 try:
                     dropped = sub.get_nowait()
                 except queue.Empty:
@@ -96,8 +100,13 @@ class EventBus:
                 dropped = sub.get_nowait()
             except queue.Empty:
                 return
+        run_id = getattr(dropped, "run_id", "")
+        if not run_id:
+            inner = getattr(dropped, "event", None)
+            if isinstance(inner, dict):
+                run_id = str(inner.get("run_id") or "")
         try:
-            sub.put_nowait(Event(type="lagged", run_id=dropped.run_id,
+            sub.put_nowait(Event(type="lagged", run_id=run_id,
                                  payload={"dropped_from": dropped.seq}))
         except queue.Full:
             pass
@@ -142,19 +151,10 @@ class EventBus:
                     yield ": keepalive\n\n"
                     continue
                 if run_id is not None:
-                    owner = None
-                    if isinstance(event, dict):
-                        owner = event.get("run_id")
-                    else:
-                        owner = getattr(event, "run_id", None)
-                        if owner is None:
-                            inner = getattr(event, "event", None)
-                            if isinstance(inner, dict):
-                                owner = inner.get("run_id")
+                    owner = event.get("run_id") if isinstance(event, dict) else getattr(event, "run_id", None)
                     if owner != run_id:
                         continue
-                if since and not (not isinstance(event, dict)
-                                  and getattr(event, "type", "") == "replay"):
+                if since:
                     seq = event.get("seq") if isinstance(event, dict) else getattr(event, "seq", 0)
                     if isinstance(seq, int) and 0 < seq <= since:
                         continue
