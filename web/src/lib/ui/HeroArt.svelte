@@ -14,243 +14,122 @@
   const MONO = 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace';
   const SANS = 'system-ui, -apple-system, sans-serif';
 
-  // deterministic scatter so the city never shifts between renders
-  let seed = 7;
-  const rnd = () => ((seed = (seed * 16807) % 2147483647), seed / 2147483647);
+  const f1 = (n: number) => +n.toFixed(1);
+  const rad = (deg: number) => (deg * Math.PI) / 180;
 
-  // ---- the city ---------------------------------------------------------
-  const GROUND = 316;
-  type Bld = { x: number; w: number; h: number };
-  const makeRow = (minW: number, maxW: number, minH: number, maxH: number, gap: number): Bld[] => {
-    const out: Bld[] = [];
-    let x = -14;
-    while (x < W + 10) {
-      const w = minW + rnd() * (maxW - minW);
-      const h = minH + rnd() * (maxH - minH);
-      out.push({ x: +x.toFixed(1), w: +w.toFixed(1), h: +h.toFixed(1) });
-      x += w + rnd() * gap;
-    }
-    return out;
-  };
-  const far = makeRow(30, 74, 56, 150, 16);
-  const near = makeRow(24, 62, 34, 112, 18);
+  // ---- the scope ---------------------------------------------------------
+  // everything in the scene hangs off one instrument face: a hub, a rim,
+  // twelve rays, five rings. the sweep and every blip share one clock, so
+  // a knot lights up exactly when the sweep crosses its bearing.
+  const C = { x: 862, y: 160 };
+  const RIM = 134;
+  const SWEEP_S = 9;
+  const HUB = 34;
 
-  type Win = { x: number; y: number; c: string; d: number };
-  const wins: Win[] = [];
-  const winColors = ['var(--nc-acid)', 'var(--nc-violet)', 'var(--nc-gold)'];
-  for (const b of near) {
-    const cols = Math.floor((b.w - 8) / 9);
-    const rows = Math.floor((b.h - 10) / 11);
-    for (let c = 0; c < cols; c++) {
-      for (let r = 0; r < rows; r++) {
-        if (rnd() > 0.55 && wins.length < 40) {
-          wins.push({
-            x: +(b.x + 5 + c * 9).toFixed(1),
-            y: +(GROUND - b.h + 7 + r * 11).toFixed(1),
-            c: winColors[Math.floor(rnd() * 3)],
-            d: Math.floor(rnd() * 4200)
-          });
-        }
-      }
-    }
-  }
-
-  const spires = [3, 9, 16]
-    .map((i) => far[i]).filter(Boolean)
-    .map((b) => ({ x: b.x + b.w / 2, y: GROUND - b.h }))
-    .filter((s) => s.x > 20 && s.x < W - 20);
-
-  // ---- the caster: a spider at the hub of the net ------------------------
-  // eight jointed legs braced across the ribs, feet anchored by glowing
-  // silk tips; each leg bends at a raised knee and tapers from a thick
-  // femur to a fine tarsal point, drawn as a filled chitin wedge so the
-  // stance reads hard and menacing instead of tubed
-  const LEGS = [
-    // left side, front to back
-    'M838 135 Q823 119 815 106 Q807 99 796 94',
-    'M834 142 Q812 134 802 130 Q797 135 794 146',
-    'M837 150 Q812 160 801 172 Q794 184 786 196',
-    'M847 155 Q836 178 832 196 Q830 206 828 214',
-    // right side, front to back
-    'M856 137 Q875 117 884 106 Q897 99 912 94',
-    'M860 143 Q890 132 905 127 Q919 127 930 132',
-    'M858 151 Q888 162 900 175 Q908 188 914 200',
-    'M851 155 Q864 180 869 197 Q871 208 874 216'
-  ];
-  const LEG_KNEES = [
-    { x: 815, y: 106 },
-    { x: 802, y: 130 },
-    { x: 801, y: 172 },
-    { x: 832, y: 196 },
-    { x: 884, y: 106 },
-    { x: 905, y: 127 },
-    { x: 900, y: 175 },
-    { x: 869, y: 197 }
-  ];
-  const LEG_TIPS = [
-    { x: 796, y: 94 },
-    { x: 794, y: 146 },
-    { x: 786, y: 196 },
-    { x: 828, y: 214 },
-    { x: 912, y: 94 },
-    { x: 930, y: 132 },
-    { x: 914, y: 200 },
-    { x: 874, y: 216 }
-  ];
-
-  // sample the quadratic centerlines, then swell them into tapered wedges
-  type Pt = { x: number; y: number };
-  const sampleLeg = (d: string, perSeg = 4): Pt[] => {
-    const n = (d.match(/-?\d+(?:\.\d+)?/g) ?? []).map(Number);
-    const pts: Pt[] = [{ x: n[0], y: n[1] }];
-    let cur = pts[0];
-    for (let i = 2; i + 3 < n.length; i += 4) {
-      const c = { x: n[i], y: n[i + 1] };
-      const e = { x: n[i + 2], y: n[i + 3] };
-      for (let k = 1; k <= perSeg; k++) {
-        const t = k / perSeg;
-        const u = 1 - t;
-        pts.push({
-          x: u * u * cur.x + 2 * u * t * c.x + t * t * e.x,
-          y: u * u * cur.y + 2 * u * t * c.y + t * t * e.y
-        });
-      }
-      cur = e;
-    }
-    return pts;
-  };
-
-  const legWidth = (f: number) => {
-    const BASE = 5.6;
-    const KNEE = 4.1;
-    const TIP = 0.9;
-    return f < 0.45
-      ? BASE + (KNEE - BASE) * (f / 0.45)
-      : KNEE + (TIP - KNEE) * ((f - 0.45) / 0.55);
-  };
-
-  const taper = (pts: Pt[], widths: number[]): string => {
-    const left: Pt[] = [];
-    const right: Pt[] = [];
-    for (let i = 0; i < pts.length; i++) {
-      const prev = pts[Math.max(i - 1, 0)];
-      const next = pts[Math.min(i + 1, pts.length - 1)];
-      const dx = next.x - prev.x;
-      const dy = next.y - prev.y;
-      const len = Math.hypot(dx, dy) || 1;
-      const nx = (-dy / len) * widths[i];
-      const ny = (dx / len) * widths[i];
-      left.push({ x: pts[i].x + nx, y: pts[i].y + ny });
-      right.push({ x: pts[i].x - nx, y: pts[i].y - ny });
-    }
-    const f = (p: Pt) => `${p.x.toFixed(1)} ${p.y.toFixed(1)}`;
-    const tip = pts[pts.length - 1];
-    let d = `M${f(left[0])}`;
-    for (let i = 1; i < left.length; i++) d += `L${f(left[i])}`;
-    d += `Q${f(tip)} ${f(right[right.length - 1])}`;
-    for (let i = right.length - 2; i >= 0; i--) d += `L${f(right[i])}`;
-    return d + 'Z';
-  };
-
-  const LEG_SHAPES = LEGS.map((d) => {
-    const pts = sampleLeg(d);
-    return taper(
-      pts,
-      pts.map((_, i) => legWidth(i / (pts.length - 1)))
-    );
+  const at = (deg: number, r: number) => ({
+    x: f1(C.x + Math.cos(rad(deg)) * r),
+    y: f1(C.y + Math.sin(rad(deg)) * r)
   });
 
-  // ---- the moon ---------------------------------------------------------
-  const MOON = { cx: 686, cy: 150, r: 106 };
-  const maria = [
-    { cx: 648, cy: 118, rx: 26, ry: 15, o: 0.26, rot: -18 },
-    { cx: 722, cy: 176, rx: 22, ry: 13, o: 0.24, rot: 24 },
-    { cx: 674, cy: 208, rx: 30, ry: 12, o: 0.22, rot: -6 },
-    { cx: 736, cy: 120, rx: 13, ry: 9, o: 0.25, rot: 0 }
-  ];
+  const RAYS = Array.from({ length: 12 }, (_, i) => -90 + i * 30);
+  const RING_R = [0.18, 0.34, 0.5, 0.66, 0.82].map((f) => f1(RIM * f));
 
-  const stars = Array.from({ length: 7 }, () => ({
-    x: +(560 + rnd() * 600).toFixed(1),
-    y: +(10 + rnd() * 72).toFixed(1),
-    r: +(0.9 + rnd() * 0.8).toFixed(1),
-    c: rnd() > 0.5 ? 'var(--nc-bone)' : 'var(--nc-acid)',
-    d: Math.floor(rnd() * 3200)
-  }));
-
-  // ---- the cast: net ribs from the outstretched palm --------------------
-  const O = { x: 854, y: 144 };
-  const ANG = [-52, -40, -28, -16, -4, 8, 20, 32, 44, 56, 68, 80, 92];
-  const LEN = [470, 500, 520, 500, 470, 430, 300, 260, 240, 200, 180, 170, 168];
-  const RAD = ANG.map((a) => (a * Math.PI) / 180);
-
-  const along = (i: number, d: number) => ({
-    x: O.x + Math.cos(RAD[i]) * LEN[i] * d,
-    y: O.y + Math.sin(RAD[i]) * LEN[i] * d
+  // silk: radii run hub to rim, each ring sags toward the hub between
+  // neighbouring radii -- the curve that makes a starburst read as a web
+  const radii = RAYS.map((deg) => {
+    const a = at(deg, HUB);
+    const b = at(deg, RIM);
+    return `M${a.x} ${a.y} L${b.x} ${b.y}`;
   });
 
-  const ribs = ANG.map((_, i) => {
-    const e = along(i, 1);
-    return { i, path: `M${O.x} ${O.y} L${e.x.toFixed(1)} ${e.y.toFixed(1)}` };
-  });
-
-  const DEPTHS = [0.24, 0.4, 0.56, 0.72];
-  const chords = DEPTHS.map((d) => {
-    const pts = ANG.map((_, i) => along(i, d));
-    let path = `M${pts[0].x.toFixed(1)} ${pts[0].y.toFixed(1)}`;
-    for (let k = 1; k < pts.length; k++) {
+  const ringPath = (r: number) => {
+    const pts = RAYS.map((deg) => at(deg, r));
+    let d = `M${pts[0].x} ${pts[0].y}`;
+    for (let k = 1; k <= pts.length; k++) {
       const a = pts[k - 1];
-      const b = pts[k];
+      const b = pts[k % pts.length];
       const mx = (a.x + b.x) / 2;
       const my = (a.y + b.y) / 2;
-      path += ` Q${(mx + (O.x - mx) * 0.06).toFixed(1)} ${(my + (O.y - my) * 0.06).toFixed(1)} ${b.x.toFixed(1)} ${b.y.toFixed(1)}`;
+      d += ` Q${f1(mx + (C.x - mx) * 0.14)} ${f1(my + (C.y - my) * 0.14)} ${b.x} ${b.y}`;
     }
-    return { d, path };
+    return d;
+  };
+  const rings = RING_R.map(ringPath);
+  const rim = ringPath(RIM);
+
+  // bearing ticks every six degrees; majors land on the radii
+  const ticks = Array.from({ length: 60 }, (_, i) => {
+    const major = i % 5 === 0;
+    const a = at(i * 6 - 90, RIM - (major ? 11 : 6));
+    const b = at(i * 6 - 90, RIM - 2);
+    return { x: a.x, y: a.y, x2: b.x, y2: b.y, major };
   });
 
-  const nodes = DEPTHS.flatMap((d, di) =>
-    ANG.map((_, i) => ({ i, di, ...along(i, d) })).filter(
-      (n) => n.x > 4 && n.x < 1176 && n.y > 4 && n.y < 354 && n.i % 3 === di % 3
-    )
-  );
+  // anchors: scaffold silk pinning the web past the rim, out to the frame
+  const anchors = (
+    [
+      { rim: -152, to: [596, 38] },
+      { rim: -28, to: [1046, 44] },
+      { rim: 148, to: [640, 318] },
+      { rim: 60, to: [1006, 314] },
+      { rim: -105, to: [827, 0] },
+      { rim: -75, to: [897, 0] }
+    ] as { rim: number; to: [number, number] }[]
+  ).map((a) => {
+    const p = at(a.rim, RIM);
+    return `M${p.x} ${p.y} L${a.to[0]} ${a.to[1]}`;
+  });
 
-  const hemTips = [6, 7, 8, 9, 10, 11, 12]
-    .map((i) => ({ i, ...along(i, 1) }))
-    .filter((t) => t.x < 1174 && t.y < 352);
+  // the sweep: a wedge trailing the leading edge, spun about the hub
+  const wedge = (() => {
+    const lead = at(-90, RIM);
+    const tail = at(-124, RIM);
+    return `M0 0 L${f1(tail.x - C.x)} ${f1(tail.y - C.y)} A${RIM} ${RIM} 0 0 1 ${f1(lead.x - C.x)} ${f1(lead.y - C.y)} Z`;
+  })();
+  const tailLine = at(-124, RIM);
 
-  // ---- the caught: four credential cards floating in the banner ---------
-  const CARD_W = 176;
-  const CARD_H = 38;
+  // blips: knots in the silk; each flares as the sweep reaches its bearing.
+  // the knot on the rim -- where the catch hangs -- burns brightest.
+  const KNOT = at(-30, RIM);
+  const blips = (
+    [
+      { deg: -30, r: RIM, hot: true },
+      { deg: 30, r: f1(RIM * 0.82) },
+      { deg: 120, r: f1(RIM * 0.66) },
+      { deg: 180, r: f1(RIM * 0.5) },
+      { deg: 210, r: f1(RIM * 0.82) },
+      { deg: 300, r: f1(RIM * 0.5) },
+      { deg: 0, r: f1(RIM * 0.82) }
+    ] as { deg: number; r: number; hot?: boolean }[]
+  ).map((b) => {
+    const p = at(b.deg, b.r);
+    const t = (((b.deg + 90) % 360) / 360) * SWEEP_S;
+    return { x: p.x, y: p.y, hot: !!b.hot, delay: f1(t - SWEEP_S) };
+  });
 
-  type Item = { icon: string; label: string; value: string; accent: string };
-  type Slot = { x: number; y: number; rot: number; fl: string; item?: Item };
+  // ---- the caster: line-art spider at the hub ----------------------------
+  // drawn like an engraving instead of a body: silk-thin legs jointed at
+  // the elbow, void held in the abdomen, a dragline paid toward the rail
+  const legs = (
+    [
+      { s: [-6, -6], k: [-26, -26], t: [-44, -30] },
+      { s: [-9, -2], k: [-34, -12], t: [-52, -12] },
+      { s: [-9, 4], k: [-32, 18], t: [-48, 26] },
+      { s: [-6, 9], k: [-20, 30], t: [-30, 44] },
+      { s: [6, -6], k: [26, -26], t: [44, -30] },
+      { s: [9, -2], k: [34, -12], t: [52, -12] },
+      { s: [9, 4], k: [32, 18], t: [48, 26] },
+      { s: [6, 9], k: [20, 30], t: [30, 44] }
+    ] as { s: [number, number]; k: [number, number]; t: [number, number] }[]
+  ).map((l) => ({
+    d: `M${l.s[0]} ${l.s[1]} Q${l.k[0]} ${l.k[1]} ${l.t[0]} ${l.t[1]}`,
+    k: l.k,
+    t: l.t
+  }));
 
-  // one key caught in the mesh, the way the reference draws it: the net is
-  // the spectacle, the catch is the proof. no drifting cards over the city.
-  const SLOTS: Slot[] = [
-    {
-      x: 966,
-      y: 124,
-      rot: 2,
-      fl: 'f-b',
-      item: { icon: 'db', label: 'DATABASE_URL', value: 'postgres://user:pass@***', accent: 'var(--nc-acid)' }
-    }
-  ];
-
-  // only the key that rides the mesh is tied into it
-  const TETHERS = [{ ax: 966, ay: 142, i: 5, d: 0.5 }];
-
-  // ---- the report panel and the validation ladder ------------------------
-  // the report rides the moon as a HUD pane; the ladder stacks down the
-  // clean right-edge sky, clear of the net's hem and the credential card
-  const REPORT = { x: 596, y: 52, w: 180, h: 96 };
-  const CHECKS = ['PoC', 'Evidence', 'Steps to Reproduce', 'Submission Ready'];
-
-  const CHIPS = [
-    { label: 'CONFIRMED', color: 'var(--nc-acid)' },
-    { label: 'CORROBORATED', color: 'var(--nc-gold)' },
-    { label: 'INFERRED', color: 'var(--nc-violet)' },
-    { label: 'UNRESOLVED', color: 'var(--nc-ash)' }
-  ];
+  // ---- the catch ---------------------------------------------------------
+  // one credential snagged on the rim knot, hung by an animated tether
+  const CARD = { x: 966, y: 124, w: 176, h: 38, rot: 2 };
 
   // ---- the six-stage rail ------------------------------------------------
   const RAIL = [
@@ -263,7 +142,14 @@
   ];
   const cellLeft = (i: number) => 190 + i * 140;
 
-  let hot = $state(-1); // hovered card slot, -1 when the cursor is elsewhere
+  const CHIPS = [
+    { label: 'CONFIRMED', color: 'var(--nc-acid)' },
+    { label: 'CORROBORATED', color: 'var(--nc-gold)' },
+    { label: 'INFERRED', color: 'var(--nc-violet)' },
+    { label: 'UNRESOLVED', color: 'var(--nc-ash)' }
+  ];
+
+  let hot = $state(false);
   let svgEl = $state<SVGSVGElement | null>(null);
 
   const reduced =
@@ -271,11 +157,11 @@
     window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
   // ---- the scene listens back --------------------------------------------
-  // pointer sweeps bend every depth layer on its own parallax factor and the
-  // spider's eyes follow the cursor; everything eases on a damped lerp and
-  // the whole engine sleeps while the banner is scrolled away or the tab is
-  // hidden. Card hover is hit-tested here in SVG space -- the copy column
-  // stacks above the scene, so DOM hit-testing could never see the cards.
+  // pointer sweeps bend the depth layers on their own parallax factors and
+  // the caster's eyes track the cursor; everything eases on a damped lerp
+  // and sleeps while the banner is scrolled away or the tab is hidden.
+  // card hover is hit-tested here in SVG space -- the copy column stacks
+  // above the scene, so DOM hit-testing could never see the card.
   $effect(() => {
     if (reduced) return;
     const root = document.documentElement;
@@ -300,19 +186,12 @@
       const ctm = svg.getScreenCTM();
       if (ctm) {
         const p = new DOMPoint(event.clientX, event.clientY).matrixTransform(ctm.inverse());
-        let found = -1;
-        for (let i = 0; i < SLOTS.length; i++) {
-          const s = SLOTS[i];
-          const dx = p.x - s.x;
-          const dy = p.y - s.y;
-          const a = (-s.rot * Math.PI) / 180;
-          const lx = dx * Math.cos(a) - dy * Math.sin(a);
-          const ly = dx * Math.sin(a) + dy * Math.cos(a);
-          if (lx >= -8 && lx <= CARD_W + 8 && ly >= -8 && ly <= CARD_H + 8) {
-            found = i;
-            break;
-          }
-        }
+        const dx = p.x - CARD.x;
+        const dy = p.y - CARD.y;
+        const a = (-CARD.rot * Math.PI) / 180;
+        const lx = dx * Math.cos(a) - dy * Math.sin(a);
+        const ly = dx * Math.sin(a) + dy * Math.cos(a);
+        const found = lx >= -8 && lx <= CARD.w + 8 && ly >= -8 && ly <= CARD.h + 8;
         if (found !== hot) hot = found;
       }
     };
@@ -335,11 +214,10 @@
   });
 </script>
 
-<!-- The caster: a spider throws the net over the city. Recreated from
-     assets/NetCast3r-Banner.png -- moon and skyline behind, the six-stage
-     rail and validation ladder along the edges, credentials caught in the
-     mesh and scattered across the banner. Dynamic copy overlays the left
-     column. -->
+<!-- The caster: a spider at the hub of a radar scope, its web strung across
+     the instrument face. The sweep orbits once every nine seconds and every
+     knot in the silk flares as the beam crosses its bearing; one credential
+     hangs off the rim knot. Dynamic copy overlays the left column. -->
 <svg
   viewBox="0 0 {W} {H}"
   class="caster-scene {klass}"
@@ -363,27 +241,32 @@
     </mask>
 
     <linearGradient id="{id}-sky" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="var(--nc-violet_abyss)" stop-opacity="0.95" />
-      <stop offset="0.5" stop-color="var(--nc-indigo_deep)" stop-opacity="0.75" />
-      <stop offset="1" stop-color="var(--nc-void_soft)" stop-opacity="1" />
+      <stop offset="0" stop-color="var(--nc-violet_abyss)" stop-opacity="0.72" />
+      <stop offset="0.55" stop-color="var(--nc-indigo_deep)" stop-opacity="0.5" />
+      <stop offset="1" stop-color="var(--nc-void)" stop-opacity="0.88" />
     </linearGradient>
 
-    <radialGradient id="{id}-atmos" gradientUnits="userSpaceOnUse" cx={MOON.cx} cy={MOON.cy} r="240">
-      <stop offset="0" stop-color="var(--nc-violet)" stop-opacity="0.16" />
-      <stop offset="0.6" stop-color="var(--nc-violet)" stop-opacity="0.05" />
+    <radialGradient id="{id}-atmos" gradientUnits="userSpaceOnUse" cx={C.x} cy={C.y} r="250">
+      <stop offset="0" stop-color="var(--nc-violet)" stop-opacity="0.14" />
+      <stop offset="0.55" stop-color="var(--nc-violet)" stop-opacity="0.05" />
       <stop offset="1" stop-color="var(--nc-violet)" stop-opacity="0" />
     </radialGradient>
 
-    <radialGradient id="{id}-halo" gradientUnits="userSpaceOnUse" cx={MOON.cx} cy={MOON.cy} r="150">
-      <stop offset="0.71" stop-color="var(--nc-gold)" stop-opacity="0.11" />
-      <stop offset="1" stop-color="var(--nc-gold)" stop-opacity="0" />
+    <radialGradient id="{id}-sweep" gradientUnits="userSpaceOnUse" cx="0" cy="0" r={RIM}>
+      <stop offset="0.12" stop-color="var(--nc-acid)" stop-opacity="0.2" />
+      <stop offset="0.6" stop-color="var(--nc-acid)" stop-opacity="0.06" />
+      <stop offset="1" stop-color="var(--nc-acid)" stop-opacity="0" />
     </radialGradient>
 
-    <radialGradient id="{id}-moon" gradientUnits="userSpaceOnUse" cx={MOON.cx} cy={MOON.cy} r={MOON.r}>
-      <stop offset="0" stop-color="var(--nc-bone)" stop-opacity="0.97" />
-      <stop offset="0.55" stop-color="var(--nc-gold)" stop-opacity="0.92" />
-      <stop offset="0.93" stop-color="var(--nc-gold)" stop-opacity="0.68" />
-      <stop offset="1" stop-color="var(--nc-acid)" stop-opacity="0.38" />
+    <radialGradient id="{id}-hub" gradientUnits="userSpaceOnUse" cx={C.x} cy={C.y} r="46">
+      <stop offset="0" stop-color="var(--nc-void)" stop-opacity="0.85" />
+      <stop offset="0.62" stop-color="var(--nc-void)" stop-opacity="0.6" />
+      <stop offset="1" stop-color="var(--nc-void)" stop-opacity="0" />
+    </radialGradient>
+
+    <radialGradient id="{id}-eye-halo" gradientUnits="userSpaceOnUse" cx="874" cy="149" r="13">
+      <stop offset="0" stop-color="var(--nc-acid)" stop-opacity="0.22" />
+      <stop offset="1" stop-color="var(--nc-acid)" stop-opacity="0" />
     </radialGradient>
 
     <linearGradient id="{id}-shine" x1="0" y1="0" x2="1" y2="0">
@@ -392,384 +275,178 @@
       <stop offset="1" stop-color="white" stop-opacity="0" />
     </linearGradient>
 
-    <radialGradient id="{id}-hub" gradientUnits="userSpaceOnUse" cx={O.x} cy={O.y} r="46">
-      <stop offset="0" stop-color="var(--nc-void)" stop-opacity="0.82" />
-      <stop offset="0.62" stop-color="var(--nc-void)" stop-opacity="0.62" />
-      <stop offset="1" stop-color="var(--nc-void)" stop-opacity="0" />
-    </radialGradient>
-
-    <linearGradient id="{id}-chitin" gradientUnits="userSpaceOnUse" x1="828" y1="130" x2="866" y2="160">
-      <stop offset="0" stop-color="var(--nc-violet_deep)" />
-      <stop offset="0.55" stop-color="var(--nc-violet_abyss)" />
-      <stop offset="1" stop-color="var(--nc-void)" />
-    </linearGradient>
-
-    <linearGradient id="{id}-chitinA" gradientUnits="userSpaceOnUse" x1="858" y1="140" x2="910" y2="178">
-      <stop offset="0" stop-color="var(--nc-violet_deep)" />
-      <stop offset="0.5" stop-color="var(--nc-violet_abyss)" />
-      <stop offset="1" stop-color="var(--nc-void)" />
-    </linearGradient>
-
-    <linearGradient id="{id}-chitinLeg" gradientUnits="userSpaceOnUse" x1="770" y1="90" x2="930" y2="220">
-      <stop offset="0" stop-color="var(--nc-violet_deep)" />
-      <stop offset="0.45" stop-color="var(--nc-violet_abyss)" />
-      <stop offset="1" stop-color="var(--nc-void)" />
-    </linearGradient>
-
-    <radialGradient id="{id}-cast-shadow" gradientUnits="userSpaceOnUse" cx="866" cy="172" r="44">
-      <stop offset="0" stop-color="var(--nc-void)" stop-opacity="0.66" />
-      <stop offset="1" stop-color="var(--nc-void)" stop-opacity="0" />
-    </radialGradient>
-
-    <radialGradient id="{id}-eye-halo" gradientUnits="userSpaceOnUse" cx="836" cy="144" r="16">
-      <stop offset="0" stop-color="var(--nc-acid)" stop-opacity="0.24" />
-      <stop offset="1" stop-color="var(--nc-acid)" stop-opacity="0" />
-    </radialGradient>
-
     <clipPath id="{id}-clip" clipPathUnits="userSpaceOnUse">
-      <rect width={CARD_W} height={CARD_H} rx="2" />
+      <rect width={CARD.w} height={CARD.h} rx="2" />
     </clipPath>
   </defs>
 
   <g mask="url(#{id}-mask)">
-    <!-- sky + atmosphere -->
+    <!-- the dark the scope hangs in -->
     <rect width={W} height={H} fill="url(#{id}-sky)" />
-    <circle cx={MOON.cx} cy={MOON.cy} r="240" fill="url(#{id}-atmos)" />
+    <circle class="px-sky" cx={C.x} cy={C.y} r="250" fill="url(#{id}-atmos)" />
 
-    <!-- the moon -->
-    <g class="moon-breath px-sky">
-      <circle cx={MOON.cx} cy={MOON.cy} r="150" fill="url(#{id}-halo)" />
-      <circle cx={MOON.cx} cy={MOON.cy} r={MOON.r} fill="url(#{id}-moon)" />
-      {#each maria as m, i (i)}
-        <ellipse
-          cx={m.cx}
-          cy={m.cy}
-          rx={m.rx}
-          ry={m.ry}
-          fill="var(--nc-void)"
-          opacity={m.o}
-          transform="rotate({m.rot} {m.cx} {m.cy})"
+    <!-- anchors: the web tied back past the rim -->
+    <g class="px-near" stroke="var(--nc-violet_deep)" stroke-width="1" opacity="0.32">
+      {#each anchors as d, i (i)}
+        <path d={d} class="hero-draw" style="animation-delay:{60 + i * 90}ms" />
+      {/each}
+    </g>
+
+    <!-- the instrument face: bezel, bearings, crosshair -->
+    <g class="px-far">
+      <circle cx={C.x} cy={C.y} r={RIM} stroke="var(--nc-violet_deep)" stroke-width="1.4" opacity="0.9" />
+      <circle cx={C.x} cy={C.y} r={RIM - 5} stroke="var(--nc-indigo_deep)" stroke-width="1" opacity="0.9" />
+      {#each ticks as t, i (i)}
+        <line
+          x1={t.x}
+          y1={t.y}
+          x2={t.x2}
+          y2={t.y2}
+          stroke={t.major ? 'var(--nc-acid)' : 'var(--nc-ash)'}
+          stroke-width={t.major ? 1.1 : 0.7}
+          opacity={t.major ? 0.45 : 0.22}
         />
       {/each}
-      <circle
-        cx={MOON.cx}
-        cy={MOON.cy}
-        r={MOON.r}
-        stroke="var(--nc-gold)"
-        stroke-width="1.4"
-        opacity="0.4"
-      />
+      <line x1={C.x} y1={C.y - RIM + 8} x2={C.x} y2={C.y + RIM - 8} stroke="var(--nc-acid)" stroke-width="0.8" opacity="0.12" />
+      <line x1={C.x - RIM + 8} y1={C.y} x2={C.x + RIM - 8} y2={C.y} stroke="var(--nc-acid)" stroke-width="0.8" opacity="0.12" />
     </g>
 
-    <!-- far + near skyline, drifting on their own depths -->
-    <g class="px-far" opacity="0.9">
-      <g fill="var(--nc-violet_abyss)" opacity="0.85">
-        {#each far as b, i (i)}
-          <rect x={b.x} y={GROUND - b.h} width={b.w} height={b.h} />
-        {/each}
-      </g>
-      {#each spires as s, i (i)}
-        <path d="M{s.x} {s.y} V{s.y - 26}" stroke="var(--nc-violet_abyss)" stroke-width="2" />
-        <circle cx={s.x} cy={s.y - 28} r="2" fill="var(--nc-acid)" class="twinkle" style="animation-delay:{i * 900 + 400}ms" />
-      {/each}
-    </g>
+    <!-- the web strung across the face -->
     <g class="px-near">
-      <g fill="var(--nc-indigo_deep)" opacity="0.92">
-        {#each near as b, i (i)}
-          <rect x={b.x} y={GROUND - b.h} width={b.w} height={b.h} />
+      <g stroke="var(--nc-violet)" stroke-width="0.9" opacity="0.46">
+        {#each radii as d, i (i)}
+          <path d={d} class="hero-draw" style="animation-delay:{240 + i * 45}ms" />
         {/each}
       </g>
-      <g>
-        {#each wins as w, i (i)}
-          {@const blink = i % 3 === 0}
-          <rect
-            x={w.x}
-            y={w.y}
-            width="3.4"
-            height="4.6"
-            fill={w.c}
-            opacity={blink ? 0.55 : 0.34}
-            class={blink ? 'win-blink' : ''}
-            style={blink ? 'animation-delay:{w.d}ms' : ''}
-          />
+      <g stroke="var(--nc-violet)" stroke-width="0.9" opacity="0.54">
+        {#each rings as d, i (i)}
+          <path d={d} class="hero-draw" style="animation-delay:{140 + i * 80}ms" />
         {/each}
       </g>
-    </g>
+      <path d={rim} stroke="var(--nc-acid)" stroke-width="1.1" opacity="0.5" class="hero-draw" style="animation-delay:900ms" />
 
-    <!-- ground -->
-    <rect x="0" y={GROUND} width={W} height={H - GROUND} fill="var(--nc-void)" opacity="0.92" />
-
-    <!-- a signal crosses the sky now and then -->
-    {#if !reduced}
-      <g class="comet" opacity="0.85">
-        <line x1="-80" y1="52" x2="30" y2="40" stroke="var(--nc-bone)" stroke-width="1.1" stroke-linecap="round" opacity="0.7" />
-        <circle cx="30" cy="40" r="1.8" fill="var(--nc-bone)" />
+      <!-- sweep: the beam that ties every knot to one clock -->
+      <g transform="translate({C.x},{C.y})">
+        <g class="scope-sweep">
+          <path d={wedge} fill="url(#{id}-sweep)" />
+          <line x1="0" y1="0" x2={f1(tailLine.x - C.x)} y2={f1(tailLine.y - C.y)} stroke="var(--nc-violet)" stroke-width="0.8" opacity="0.55" />
+          <line x1="0" y1="0" x2="0" y2={-RIM} stroke="var(--nc-acid)" stroke-width="1.35" opacity="0.62" />
+        </g>
       </g>
-    {/if}
 
-    <!-- the net, cast from the palm -->
-    <g stroke="var(--nc-violet)" stroke-width="1" opacity="0.62">
-      {#each chords as chord (chord.d)}
-        <path d={chord.path} class="hero-draw" />
-      {/each}
-    </g>
-    <g stroke="var(--nc-acid)" stroke-width="1.1" opacity="0.8">
-      {#each ribs as rib (rib.i)}
-        <path d={rib.path} class="hero-draw" />
+      <!-- knots: static standing dots, then the flares the sweep triggers -->
+      {#each blips as bp, i (i)}
+        <circle cx={bp.x} cy={bp.y} r={bp.hot ? 2.4 : 1.2} fill="var(--nc-violet)" opacity={bp.hot ? 0.9 : 0.55} />
+        <g class="scope-blip" style="animation-delay:{bp.delay}s">
+          <circle cx={bp.x} cy={bp.y} r={bp.hot ? 7.5 : 5.5} stroke="var(--nc-acid)" stroke-width="1" />
+          <circle cx={bp.x} cy={bp.y} r={bp.hot ? 2.4 : 1.6} fill="var(--nc-acid)" />
+        </g>
       {/each}
     </g>
 
-    <!-- knots -->
-    <g>
-      {#each nodes as node (node.i * 10 + node.di)}
-        {@const r = node.di === DEPTHS.length - 1 ? 2.5 : 1.7}
-        {@const color = node.di === DEPTHS.length - 1 ? 'var(--nc-acid)' : 'var(--nc-violet)'}
-        {@const pulse = (node.i + node.di) % 2 === 0}
-        <circle cx={node.x.toFixed(1)} cy={node.y.toFixed(1)} r={r + 3.4} fill={color} opacity="0.16" />
-        <circle
-          cx={node.x.toFixed(1)}
-          cy={node.y.toFixed(1)}
-          r={r}
-          fill={color}
-          class={pulse ? 'knot-pulse' : ''}
-          style={pulse ? 'animation-delay:{(node.i * 170 + node.di * 320) % 2400}ms' : ''}
-        />
-      {/each}
-    </g>
-
-    <!-- weighted hem -->
-    <g fill="var(--nc-acid)" opacity="0.8">
-      {#each hemTips as w, i (i)}
-        <rect
-          x="-2.6"
-          y="-2.6"
-          width="5.2"
-          height="5.2"
-          transform="translate({w.x.toFixed(1)} {w.y.toFixed(1)}) rotate(45)"
-        />
-      {/each}
-    </g>
-
-    <!-- the caster: a spider at the hub, jointed legs braced across the mesh -->
+    <!-- the caster: line-art spider at the hub, dragline paid to the rail -->
     <g class="px-net">
-      <!-- the web clears where the spider sits -->
-      <circle class="hub-shadow" cx={O.x} cy={O.y} r="46" fill="url(#{id}-hub)" />
-      <!-- soft cast shadow under the body -->
-      <ellipse cx="866" cy="174" rx="44" ry="17" fill="url(#{id}-cast-shadow)" />
+      <circle class="hub-shadow" cx={C.x} cy={C.y} r="46" fill="url(#{id}-hub)" />
+      <path d="M846 175 Q836 222 818 252" stroke="var(--nc-bone_dust)" stroke-width="0.8" opacity="0.28" />
+      <circle cx="818" cy="252" r="1.4" fill="var(--nc-bone_dust)" opacity="0.4" />
 
-      <!-- legs: dark chitin wedges with a violet rim, an acid pulse down
-           the center, a node at each knee -->
-      {#each LEG_SHAPES as shape, i (i)}
-        <path
-          d={shape}
-          fill="url(#{id}-chitinLeg)"
-          stroke="var(--nc-violet)"
-          stroke-width="1"
-          stroke-opacity="0.55"
-          stroke-linejoin="round"
-        />
-        <path
-          d={LEGS[i]}
-          stroke="var(--nc-acid)"
-          stroke-width="0.7"
-          stroke-linecap="round"
-          fill="none"
-          opacity="0.5"
-          class="knot-pulse"
-          style="animation-delay:{i * 420}ms"
-        />
-        <circle cx={LEG_KNEES[i].x} cy={LEG_KNEES[i].y} r="1.9" fill="var(--nc-violet_abyss)" stroke="var(--nc-violet)" stroke-width="0.8" />
-        <circle cx={LEG_KNEES[i].x} cy={LEG_KNEES[i].y} r="0.9" fill="var(--nc-acid)" opacity="0.9" />
-      {/each}
-      {#each LEG_TIPS as tip, i (i)}
-        <circle cx={tip.x} cy={tip.y} r="3.2" fill="var(--nc-acid)" opacity="0.16" />
-        <circle cx={tip.x} cy={tip.y} r="1.6" fill="var(--nc-acid)" class="twinkle" style="animation-delay:{i * 340}ms" />
-      {/each}
+      <g transform="translate({C.x},{C.y})">
+        {#each legs as leg, i (i)}
+          <path d={leg.d} stroke="var(--nc-violet)" stroke-width="1.3" stroke-linecap="round" opacity="0.9" />
+          <circle cx={leg.k[0]} cy={leg.k[1]} r="1.8" fill="var(--nc-void)" stroke="var(--nc-violet)" stroke-width="0.8" />
+          <circle cx={leg.k[0]} cy={leg.k[1]} r="0.7" fill="var(--nc-acid)" opacity="0.8" />
+          <circle cx={leg.t[0]} cy={leg.t[1]} r="2.2" fill="var(--nc-acid)" opacity="0.12" class="twinkle" style="animation-delay:{i * 520}ms" />
+          <circle cx={leg.t[0]} cy={leg.t[1]} r="0.95" fill="var(--nc-acid)" opacity="0.85" />
+        {/each}
 
-      <!-- body: breathes above the standing legs -->
-      <g class="caster-bob">
-        <!-- pedicel -->
-        <path d="M857 151 Q862 153 867 156" stroke="var(--nc-void)" stroke-width="6" stroke-linecap="round" fill="none" />
+        <g class="caster-bob">
+          <!-- abdomen, turned up-right; the hourglass sits on the dorsum -->
+          <ellipse cx="-10" cy="9" rx="12" ry="9.5" fill="var(--nc-void)" stroke="var(--nc-violet)" stroke-width="1.3" transform="rotate(-35 -10 9)" />
+          <g transform="rotate(-35 -8 8)">
+            <path d="M-12 3 L-4 5.6 L-8.2 8.4 Z" fill="var(--nc-acid)" opacity="0.9" />
+            <path d="M-12 12.4 L-4 9.8 L-8.2 8.4 Z" fill="var(--nc-acid)" opacity="0.9" />
+          </g>
 
-        <!-- abdomen, angled down-right toward the spinnerets -->
-        <g transform="rotate(30 884 158)">
-          <ellipse cx="884" cy="158" rx="26" ry="20" fill="url(#{id}-chitinA)" stroke="var(--nc-violet)" stroke-width="1.4" />
-          <path d="M866 146 Q884 138 902 148" stroke="var(--nc-bone)" stroke-width="1.6" fill="none" opacity="0.2" stroke-linecap="round" />
-        </g>
-        <!-- widow hourglass, upright on the dorsum -->
-        <g transform="rotate(14 884 158)">
-          <path d="M879.5 150.5 L888.5 150.5 L884 158.5 Z" fill="var(--nc-acid)" opacity="0.92" />
-          <path d="M879.5 166.5 L888.5 166.5 L884 158.5 Z" fill="var(--nc-acid)" opacity="0.92" />
-        </g>
-        <!-- spinnerets -->
-        <ellipse cx="907" cy="171" rx="3.6" ry="2.5" fill="var(--nc-void)" stroke="var(--nc-violet)" stroke-width="0.9" transform="rotate(38 907 171)" />
+          <!-- cephalothorax, chelicerae, pedipalps facing the catch -->
+          <ellipse cx="7" cy="-6" rx="8.5" ry="7" fill="var(--nc-void)" stroke="var(--nc-violet)" stroke-width="1.3" />
+          <path d="M14 -12 Q19 -17 23 -16" stroke="var(--nc-violet_abyss)" stroke-width="2.2" stroke-linecap="round" />
+          <path d="M14 -7 Q20 -5 23 -7" stroke="var(--nc-violet_abyss)" stroke-width="2.2" stroke-linecap="round" />
+          <circle cx="23" cy="-16" r="0.8" fill="var(--nc-acid)" opacity="0.9" />
+          <circle cx="23" cy="-7" r="0.8" fill="var(--nc-acid)" opacity="0.9" />
 
-        <!-- cephalothorax -->
-        <ellipse cx="846" cy="145" rx="17" ry="13.5" fill="url(#{id}-chitin)" stroke="var(--nc-violet)" stroke-width="1.4" />
-        <path d="M833 139 Q846 131 860 138" stroke="var(--nc-bone)" stroke-width="1.5" fill="none" opacity="0.22" stroke-linecap="round" />
-        <path d="M834 153 Q846 159 858 153" stroke="var(--nc-violet_deep)" stroke-width="1.4" fill="none" opacity="0.75" stroke-linecap="round" />
-
-        <!-- chelicerae and pedipalps, facing the moon -->
-        <path d="M833 149 Q827 152 826 157" stroke="var(--nc-void)" stroke-width="2.8" stroke-linecap="round" fill="none" />
-        <path d="M826 157 Q825 160 828 162" stroke="var(--nc-violet)" stroke-width="1.6" stroke-linecap="round" fill="none" />
-        <circle cx="828" cy="162" r="0.9" fill="var(--nc-acid)" opacity="0.95" />
-        <path d="M836 137 Q825 132 819 136 Q816 141 820 146" stroke="var(--nc-violet_abyss)" stroke-width="2.6" stroke-linecap="round" fill="none" />
-        <path d="M835 156 Q824 160 820 165" stroke="var(--nc-violet_abyss)" stroke-width="2.6" stroke-linecap="round" fill="none" />
-        <circle cx="820" cy="165" r="0.9" fill="var(--nc-acid)" opacity="0.95" />
-
-        <!-- eyes: they follow your cursor across the page -->
-        <g class="eye-glow eye-track">
-          <circle cx="836" cy="144" r="16" fill="url(#{id}-eye-halo)" />
-          <circle cx="838" cy="140" r="1.9" fill="var(--nc-acid)" />
-          <circle cx="839" cy="146" r="1.9" fill="var(--nc-acid)" />
-          <circle cx="833" cy="142.5" r="1.15" fill="var(--nc-acid)" />
-          <circle cx="833.5" cy="148" r="1.15" fill="var(--nc-acid)" />
-          <circle cx="837.4" cy="139.4" r="0.7" fill="var(--nc-bone)" />
-          <circle cx="838.4" cy="145.4" r="0.7" fill="var(--nc-bone)" />
-        </g>
-      </g>
-    </g>
-
-    <!-- tethers: cards snagged on live knots -->
-    {#each TETHERS as teth, i (i)}
-      {@const node = along(teth.i, teth.d)}
-      <path
-        d="M{teth.ax} {teth.ay} Q{(teth.ax + node.x) / 2} {(teth.ay + node.y) / 2 - 8} {node.x.toFixed(1)} {node.y.toFixed(1)}"
-        stroke="var(--nc-violet)"
-        stroke-width="1"
-        stroke-dasharray="3 4"
-        opacity="0.8"
-        class="ants"
-      />
-      <circle cx={node.x.toFixed(1)} cy={node.y.toFixed(1)} r="5.4" fill="var(--nc-acid)" opacity="0.16" />
-      <circle
-        cx={node.x.toFixed(1)}
-        cy={node.y.toFixed(1)}
-        r="2.4"
-        fill="var(--nc-acid)"
-        class="knot-pulse"
-        style="animation-delay:{i * 600}ms"
-      />
-    {/each}
-
-    <!-- stars over the city -->
-    {#each stars as star, i (i)}
-      <circle cx={star.x} cy={star.y} r={star.r} fill={star.c} class="twinkle" style="animation-delay:{star.d}ms" />
-    {/each}
-  </g>
-
-  <!-- the caught: one credential card. The frame lives and drifts for
-       good; the hover lift composes with the position transform. -->
-  {#snippet cardBody(item: Item)}
-    <g clip-path="url(#{id}-clip)">
-      <rect width={CARD_W} height={CARD_H} rx="2" fill="var(--nc-void)" stroke="var(--nc-violet_deep)" />
-      <rect x="0" y="0" width={CARD_W} height="2" fill="url(#{id}-shine)" class="badge-shine" />
-
-      <rect x="7" y="11" width="16" height="16" rx="2" fill="var(--nc-violet_abyss)" stroke="var(--nc-violet_deep)" />
-      <g
-        transform="translate(9.5,13.5)"
-        stroke={item.accent}
-        stroke-width="1.15"
-        stroke-linecap="round"
-        stroke-linejoin="round"
-        fill="none"
-      >
-        {#if item.icon === 'key'}
-          <circle cx="4" cy="4" r="2.5" />
-          <path d="M5.8 5.8 L11.5 11.5 M9.6 9.6 l1.4 -1.4 M11 11 l1.3 1.3" />
-        {:else if item.icon === 'db'}
-          <ellipse cx="7" cy="3.4" rx="4.4" ry="1.9" />
-          <path d="M2.6 3.4 v7.2 c0 1.05 1.97 1.9 4.4 1.9 s4.4 -0.85 4.4 -1.9 V3.4" />
-          <path d="M2.6 7 c0 1.05 1.97 1.9 4.4 1.9 s4.4 -0.85 4.4 -1.9" />
-        {:else if item.icon === 'cloud'}
-          <path d="M4.2 10.6 a2.5 2.5 0 0 1 0.2 -4.95 a3.3 3.3 0 0 1 6.3 0.85 a2.3 2.3 0 0 1 -0.5 4.1 z" />
-        {:else if item.icon === 'card'}
-          <rect x="1.5" y="3" width="11" height="8" rx="1.5" />
-          <path d="M1.5 5.8 h11" />
-          <path d="M3.5 8.4 h3" />
-        {:else if item.icon === 'brackets'}
-          <path d="M5 2.5 L2.4 7 L5 11.5 M9 2.5 L11.6 7 L9 11.5" />
-        {:else}
-          <path d="M7 1.6 L11.8 3.4 v3.9 c0 2.9 -2.3 4.4 -4.8 5.2 c-2.5 -0.8 -4.8 -2.3 -4.8 -5.2 V3.4 z" />
-        {/if}
-      </g>
-
-      <text x="30" y="17" font-size="6.8" letter-spacing="0.05em" fill="var(--nc-bone_dust)" font-family={MONO}
-        >{item.label}</text
-      >
-      <text x="30" y="31" font-size="9.5" fill="var(--nc-acid)" font-family={MONO}>{item.value}</text>
-
-      <circle cx="160" cy="12" r="4.6" fill="var(--nc-acid)" class="card-beacon" opacity="0.2" />
-      <circle cx="160" cy="12" r="2" fill="var(--nc-acid)" class="led-blink" />
-    </g>
-  {/snippet}
-
-  {#snippet card(item: Item, x: number, y: number, rot: number, fl: string, i: number)}
-    <g class="secret-badge card-slot" class:hot={hot === i}>
-      <g class="badge-float {fl}">
-        <!-- position lives on this attribute transform; the hover lift must
-             live on a separate group, since a CSS transform here would
-             replace the attribute and throw the card to the svg origin -->
-        <g transform="translate({x},{y}) rotate({rot})">
-          <g class="card-lift">
-            {@render cardBody(item)}
-
-            <path class="card-tick" d="M0.5 7 v-6 h6" stroke="var(--nc-acid)" stroke-width="1.2" opacity="0.75" />
-            <path class="card-tick" d="M{CARD_W - 6.5} {CARD_H - 0.5} h6 v-6" stroke="var(--nc-acid)" stroke-width="1.2" opacity="0.75" />
+          <!-- eyes: they follow your cursor across the page -->
+          <g class="eye-glow eye-track">
+            <circle cx="12" cy="-11" r="13" fill="url(#{id}-eye-halo)" />
+            <circle cx="13" cy="-12.5" r="1.4" fill="var(--nc-acid)" />
+            <circle cx="15.4" cy="-9.8" r="1.4" fill="var(--nc-acid)" />
+            <circle cx="10.4" cy="-15" r="0.9" fill="var(--nc-acid)" />
+            <circle cx="13" cy="-10.6" r="0.9" fill="var(--nc-acid)" />
+            <circle cx="12.5" cy="-13" r="0.5" fill="var(--nc-bone)" />
+            <circle cx="14.9" cy="-10.3" r="0.5" fill="var(--nc-bone)" />
           </g>
         </g>
       </g>
     </g>
-  {/snippet}
 
-  {#each SLOTS as slot, i (i)}
-    {@render card(slot.item!, slot.x, slot.y, slot.rot, slot.fl, i)}
-  {/each}
-
-  <!-- report panel -->
-  <g>
-    <rect
-      x={REPORT.x}
-      y={REPORT.y}
-      width={REPORT.w}
-      height={REPORT.h}
-      rx="6"
-      fill="var(--nc-void)"
-      stroke="var(--nc-acid)"
-      stroke-width="1.3"
-    />
-    <path d="M{REPORT.x + 8} {REPORT.y + 18} V{REPORT.y + 8} h10" stroke="var(--nc-acid)" stroke-width="1.2" fill="none" />
-    <text x={REPORT.x + 10} y={REPORT.y + 18} font-size="10.5" font-weight="700" letter-spacing="0.12em" fill="var(--nc-bone)" font-family={MONO}
-      >REPORT</text
+    <!-- readout under the face -->
+    <text x={C.x} y="312" text-anchor="middle" font-size="7" letter-spacing="0.16em" fill="var(--nc-acid)" opacity="0.45" font-family={MONO}
+      >R{RIM} / SWEEP {SWEEP_S}.0S / 7 KNOTS LIVE</text
     >
-    <g transform="translate({REPORT.x + 154},{REPORT.y + 6}) scale(0.5)" stroke="var(--nc-acid)" stroke-width="2.4" fill="none" stroke-linecap="round">
-      <path d="M6 4.5 A1.5 1.5 0 0 1 7.5 3 H14 L18.5 7.5 V19.5 A1.5 1.5 0 0 1 17 21 H7.5 A1.5 1.5 0 0 1 6 19.5 Z" />
-      <path d="M14 3 V7.5 H18.5" />
-      <path d="M8.7 10.6 H15.8 M8.7 13.2 H14.2 M8.7 15.8 H11.6" />
-      <circle cx="15.4" cy="16.8" r="3.5" />
-      <path d="M13.9 16.8 l1.05 1.05 l1.95 -2.15" />
+  </g>
+
+  <!-- the tether: the catch hangs off the rim knot -->
+  <path
+    d="M{CARD.x} {CARD.y + 18} Q976 118 {KNOT.x} {KNOT.y}"
+    stroke="var(--nc-violet)"
+    stroke-width="1"
+    stroke-dasharray="3 4"
+    opacity="0.8"
+    class="ants"
+  />
+  <circle cx={KNOT.x} cy={KNOT.y} r="6" fill="var(--nc-acid)" opacity="0.15" />
+  <circle cx={KNOT.x} cy={KNOT.y} r="2.4" fill="var(--nc-acid)" class="knot-pulse" />
+
+  <!-- the caught: one credential card. The frame lives and drifts for
+       good; the hover lift composes with the position transform. -->
+  <g class="secret-badge card-slot" class:hot>
+    <g class="badge-float f-b">
+      <!-- position lives on this attribute transform; the hover lift must
+           live on a separate group, since a CSS transform here would
+           replace the attribute and throw the card to the svg origin -->
+      <g transform="translate({CARD.x},{CARD.y}) rotate({CARD.rot})">
+        <g class="card-lift">
+          <g clip-path="url(#{id}-clip)">
+            <rect width={CARD.w} height={CARD.h} rx="2" fill="var(--nc-void)" stroke="var(--nc-violet_deep)" />
+            <rect x="0" y="0" width={CARD.w} height="2" fill="url(#{id}-shine)" class="badge-shine" />
+
+            <rect x="7" y="11" width="16" height="16" rx="2" fill="var(--nc-violet_abyss)" stroke="var(--nc-violet_deep)" />
+            <g
+              transform="translate(9.5,13.5)"
+              stroke="var(--nc-acid)"
+              stroke-width="1.15"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              fill="none"
+            >
+              <ellipse cx="7" cy="3.4" rx="4.4" ry="1.9" />
+              <path d="M2.6 3.4 v7.2 c0 1.05 1.97 1.9 4.4 1.9 s4.4 -0.85 4.4 -1.9 V3.4" />
+              <path d="M2.6 7 c0 1.05 1.97 1.9 4.4 1.9 s4.4 -0.85 4.4 -1.9" />
+            </g>
+
+            <text x="30" y="17" font-size="6.8" letter-spacing="0.05em" fill="var(--nc-bone_dust)" font-family={MONO}
+              >DATABASE_URL</text
+            >
+            <text x="30" y="31" font-size="9.5" fill="var(--nc-acid)" font-family={MONO}>postgres://user:pass@***</text>
+
+            <circle cx="160" cy="12" r="4.6" fill="var(--nc-acid)" class="card-beacon" opacity="0.2" />
+            <circle cx="160" cy="12" r="2" fill="var(--nc-acid)" class="led-blink" />
+          </g>
+
+          <path class="card-tick" d="M0.5 7 v-6 h6" stroke="var(--nc-acid)" stroke-width="1.2" opacity="0.75" />
+          <path class="card-tick" d="M{CARD.w - 6.5} {CARD.h - 0.5} h6 v-6" stroke="var(--nc-acid)" stroke-width="1.2" opacity="0.75" />
+        </g>
+      </g>
     </g>
-    <path d="M{REPORT.x + 10} {REPORT.y + 24} H{REPORT.x + REPORT.w - 10}" stroke="var(--nc-indigo_deep)" stroke-width="1" />
-    {#each CHECKS as label, i (i)}
-      {@const cy = REPORT.y + 38 + i * 15}
-      <path
-        d="M{REPORT.x + 12} {cy - 4} l3.5 4 7 -8.5"
-        stroke="var(--nc-acid)"
-        stroke-width="1.6"
-        stroke-linecap="round"
-        stroke-linejoin="round"
-        class="hero-ck"
-        style="animation-delay:{0.6 + i * 0.15}s"
-      />
-      <text
-        x={REPORT.x + 30}
-        y={cy + 0.5}
-        font-size="8.5"
-        fill={i === 3 ? 'var(--nc-acid)' : 'var(--nc-bone)'}
-        font-weight={i === 3 ? '700' : '400'}
-        font-family={MONO}>{label}</text
-      >
-    {/each}
   </g>
 
   <!-- validation ladder -->
