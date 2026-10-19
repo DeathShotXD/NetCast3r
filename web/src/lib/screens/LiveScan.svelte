@@ -3,16 +3,52 @@
   import { api } from '../api';
   import { AGENT_COLORS, STAGES } from '../../tokens';
   import { clock, finishedThrough, isoMs, sevColor, sevShape, stageForAgent, statusColor, statusLabel } from '../format';
+  import { renderMarkdown } from '../markdown';
   import { store } from '../state.svelte';
   import type { Run, RunEvent } from '../types';
   import Chip from '../ui/Chip.svelte';
   import Confirm from '../ui/Confirm.svelte';
   import EmptyState from '../ui/EmptyState.svelte';
+  import RunScope from '../ui/RunScope.svelte';
   import StageRail from '../ui/StageRail.svelte';
-  import { countup, pauseOffscreen, spotlight } from '../actions';
+  import StageSignal from '../ui/StageSignal.svelte';
+  import { countup, spotlight } from '../actions';
 
   const stages = STAGES as unknown as { key: string; label: string }[];
   const TERMINAL = ['done', 'failed', 'stopped', 'interrupted'];
+  const RESUMABLE = ['stopped', 'interrupted', 'failed'];
+  const BUCKET_MS = 250;
+  const BUCKETS = 96;
+  const STREAM_CAP = 700;
+
+  type StreamRow = { seq: number; ts: number; kind: string; agent: string; text: string; sub: string };
+
+  const TABS: { id: string; label: string }[] = [
+    { id: 'feed', label: 'transmission' },
+    { id: 'assets', label: 'assets' },
+    { id: 'endpoints', label: 'endpoints' },
+    { id: 'js', label: 'js & code' },
+    { id: 'secrets', label: 'secrets' },
+    { id: 'findings', label: 'findings' },
+    { id: 'report', label: 'report' }
+  ];
+
+  const FILTERS: { id: string; label: string }[] = [
+    { id: 'all', label: 'everything' },
+    { id: 'log', label: 'logs' },
+    { id: 'think', label: 'thinking' },
+    { id: 'url', label: 'fetches' },
+    { id: 'call', label: 'model calls' },
+    { id: 'found', label: 'findings' }
+  ];
+
+  const TAB_KINDS: Record<string, string[]> = {
+    assets: ['subdomains', 'pages'],
+    endpoints: ['endpoints'],
+    js: ['js', 'reviews'],
+    secrets: ['secrets', 'candidates', 'corroborations'],
+    findings: ['findings']
+  };
 
   let run = $state<Run | null>(null);
   let events = $state<RunEvent[]>([]);
@@ -20,44 +56,153 @@
   let landed = $state<{ id: number; status: string; secret_type: string; value: string; detail: string }[]>([]);
   let currentStage = $state('');
   let follow = $state(true);
+  let filter = $state('all');
+  let tab = $state('feed');
   let stopOpen = $state(false);
   let stop = $state<() => void>(() => {});
-  let logBox: HTMLDivElement | undefined = $state();
-  let thinkBox: HTMLDivElement | undefined = $state();
-  let thinkFollow = $state(true);
-  // reasoning arrives token-by-token; consecutive pieces from one agent are
-  // fused into a single block so the stream renders dozens of nodes, not thousands
-  let thinking = $state<{
-    id: number; ts: number; agent: string; text: string; parts: number;
-    sentences: string[]; expanded?: boolean;
-  }[]>([]);
-  let calls = $state<{
-    seq: number; ts: number; agent: string; provider: string; model: string;
-    pending: boolean; ok: boolean; ms: number; error: string;
-  }[]>([]);
-  let fetches = $state<{ seq: number; kind: string; url: string; status: number }[]>([]);
-  let crawl = $state({ pages: 0, js: 0, total: 0 });
+  let continuing = $state(false);
+  let streamBox: HTMLDivElement | undefined = $state();
 
-  const LOG_RENDER_CAP = 400;
-  const THINK_BLOCK_CAP = 120;
+  // run signal: events, buckets, stages, per agent tail
+  let eventCount = $state(0);
+  let urlCount = $state(0);
+  let stageCounts = $state<Record<string, number>>({});
+  let buckets = $state<number[]>(new Array(BUCKETS).fill(0));
+  let nowTick = $state(Date.now());
+  let crawled = $state(0);
+  let pending = 0;
+  let agents = $state<Record<string, { lines: number; calls: number; lastTs: number; lastText: string; lastCall: string; lastCallOk: boolean | null }>>({});
 
-  const lines = $derived(
-    events
-      .filter((event) => event.type === 'log' || event.type === 'error')
-      .map((event) => ({
-        seq: event.seq,
-        ts: event.ts,
-        agent: event.agent || 'run',
-        text: String(event.payload?.text ?? event.payload?.error ?? ''),
-        bad: event.type === 'error'
-      }))
-  );
-  const visibleLines = $derived(lines.length > LOG_RENDER_CAP ? lines.slice(-LOG_RENDER_CAP) : lines);
-  const thinkFragments = $derived(thinking.reduce((n, block) => n + block.parts, 0));
+  // per run evidence, loaded on demand
+  let inv = $state<Record<string, any[]>>({});
+  let loadedInv = $state<Record<string, boolean>>({});
+  let invBusy = $state('');
+  const inflight = new Set<string>();
+
+  // report preview
+  let report = $state('');
+  let reportErr = $state('');
+
+  // agent spotlight
+  let spotlightAgent = $state('');
+  let spotlightEl = $state<HTMLDivElement | undefined>(undefined);
+  let spotlightStick = $state(true);
+  let panelEl = $state<HTMLElement | undefined>(undefined);
+
   const finished = $derived(!!run && TERMINAL.includes(run.status));
   const running = $derived(!!run && (run.status === 'running' || run.status === 'queued'));
-  const pendingCalls = $derived(calls.filter((row) => row.pending).length);
-  const usedEndpoints = $derived(new Set(calls.map((row) => row.provider)).size);
+  const canContinue = $derived(!!run && RESUMABLE.includes(run.status) && !continuing);
+
+  const elapsed = $derived.by(() => {
+    if (!run) return '--:--';
+    const start = isoMs(run.started_at || run.created_at);
+    if (!Number.isFinite(start)) return '--:--';
+    const end = running ? nowTick : run.finished_at ? isoMs(run.finished_at) : nowTick;
+    const seconds = Math.max(0, Math.floor((end - start) / 1000));
+    const m = Math.floor(seconds / 60);
+    const s = seconds % 60;
+    return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+  });
+
+  const rate = $derived.by(() => {
+    const win = buckets.slice(-8);
+    const total = win.reduce((sum, value) => sum + value, 0);
+    return total / ((win.length * BUCKET_MS) / 1000);
+  });
+
+  const stageCount = $derived.by(() => {
+    const next: Record<string, number> = {};
+    for (const stage of stages) next[stage.key] = stageCounts[stage.key] ?? 0;
+    next.crawl = Math.max(next.crawl ?? 0, crawled);
+    return next;
+  });
+
+  /** One chronological stream: logs, model reasoning, fetches, calls,
+   *  findings. Reasoning fragments from the same agent within 5s fuse
+   *  into one row so the transmission reads like sentences, not tokens. */
+  const streamAll = $derived.by<StreamRow[]>(() => {
+    const rows: StreamRow[] = [];
+    let think: StreamRow | null = null;
+    for (const event of events) {
+      if (event.type === 'lagged') continue;
+      const agent = event.agent || 'run';
+      if (event.type === 'log' || event.type === 'error') {
+        rows.push({
+          seq: event.seq, ts: event.ts, kind: event.type === 'error' ? 'err' : 'log', agent,
+          text: String(event.payload?.text ?? event.payload?.error ?? ''), sub: ''
+        });
+        think = null;
+      } else if (event.type === 'reasoning' && event.payload?.text) {
+        const raw = String(event.payload.text).trim();
+        if (!raw) continue;
+        if (think && think.agent === agent && event.ts - think.ts < 5000) {
+          think.text = `${think.text} ${raw}`.replace(/\s+/g, ' ').slice(-1800);
+          think.ts = event.ts;
+          think.seq = event.seq;
+        } else {
+          think = { seq: event.seq, ts: event.ts, kind: 'think', agent, text: raw.slice(0, 900), sub: '' };
+          rows.push(think);
+        }
+      } else if (event.type === 'fetch' && event.payload?.url) {
+        if (String(event.payload.kind ?? '') === 'progress') continue;
+        rows.push({
+          seq: event.seq, ts: event.ts, kind: 'url', agent,
+          text: String(event.payload.url), sub: String(event.payload.status ?? '--')
+        });
+        think = null;
+      } else if (event.type === 'model' && event.payload?.kind === 'done') {
+        const payload = event.payload;
+        rows.push({
+          seq: event.seq, ts: event.ts, kind: 'call', agent,
+          text: `${String(payload.provider ?? '?')}/${String(payload.model ?? '?')}`,
+          sub: `${payload.ok ? 'ok' : 'failed'} ${Number(payload.ms ?? 0)}ms${payload.error ? ` / ${String(payload.error)}` : ''}`
+        });
+        think = null;
+      } else if (event.type === 'finding.created' && event.payload) {
+        rows.push({
+          seq: event.seq, ts: event.ts, kind: 'found', agent,
+          text: `${String(event.payload.secret_type ?? 'secret')} / ${String(event.payload.value ?? '')}`,
+          sub: String(event.payload.status ?? '')
+        });
+        think = null;
+      }
+    }
+    return rows;
+  });
+
+  const stream = $derived.by(() => {
+    const rows = filter === 'all'
+      ? streamAll
+      : streamAll.filter((row) => filter === 'log' ? row.kind === 'log' || row.kind === 'err' : row.kind === filter);
+    return rows.slice(-STREAM_CAP);
+  });
+  const lastSeq = $derived(stream.length ? stream[stream.length - 1].seq : 0);
+  const reasoningCount = $derived(streamAll.filter((row) => row.kind === 'think').length);
+  const agentList = $derived(
+    Object.entries(agents)
+      .map(([agent, stats]) => ({ agent, ...stats }))
+      .filter((item) => item.lines > 0)
+      .sort((a, b) => b.lastTs - a.lastTs)
+  );
+  const spotlightRows = $derived(
+    spotlightAgent ? streamAll.filter((row) => row.agent === spotlightAgent).slice(-400) : []
+  );
+
+  function badgeOf(row: StreamRow): { text: string; color: string } {
+    if (row.kind === 'log') return { text: 'log', color: 'var(--nc-ash)' };
+    if (row.kind === 'err') return { text: 'err', color: 'var(--nc-violet)' };
+    if (row.kind === 'think') return { text: 'think', color: (AGENT_COLORS as Record<string, string>)[row.agent] ?? 'var(--nc-bone-dust)' };
+    if (row.kind === 'url') return { text: 'fetch', color: 'var(--nc-acid)' };
+    if (row.kind === 'call') return { text: 'model', color: 'var(--nc-bone-dust)' };
+    return { text: 'found', color: 'var(--nc-violet)' };
+  }
+
+  function rowColor(row: StreamRow): string {
+    if (row.kind === 'err') return 'var(--nc-violet)';
+    if (row.kind === 'think') return 'var(--nc-bone-dust)';
+    if (row.kind === 'call') return 'var(--nc-ash)';
+    return 'var(--nc-bone)';
+  }
 
   const seen = new Set<number>();
   let queue: RunEvent[] = [];
@@ -83,52 +228,44 @@
     events = [...events, ...batch].slice(-1500);
     for (const event of batch) applyEvent(event);
     await tick();
-    if (follow && logBox) logBox.scrollTop = logBox.scrollHeight;
-    if (thinkFollow && thinkBox) thinkBox.scrollTop = thinkBox.scrollHeight;
-  }
-
-  /** Reasoning arrives as repeated template lines and token fragments; keep it
-   *  brief: drop markdown debris, collapse exact repeats, split into readable
-   *  sentences, and keep the tail short until the reader opens the block. */
-  function absorbReasoning(block: { text: string; parts: number; sentences: string[] }, text: string) {
-    block.parts += 1;
-    let line = text.trim();
-    if (!line) return;
-    // token debris: bare markdown punctuation, lone bullets, stray separators
-    if (!/[a-zA-Z0-9]/.test(line)) return;
-    line = line.replace(/^[\s*#>|-]+/, '').replace(/[\s*]+$/, '').trim();
-    if (!line || !/[a-zA-Z0-9]/.test(line)) return;
-    // a line that only continues the last sentence gets appended, not split
-    const continues = block.sentences.length > 0 && !/[.!?:]$/.test(block.sentences[block.sentences.length - 1]);
-    if (continues && !block.sentences.some((s) => s.toLowerCase() === line.toLowerCase())) {
-      block.sentences[block.sentences.length - 1] = `${block.sentences[block.sentences.length - 1]} ${line}`.replace(/\s+/g, ' ');
-    } else {
-      if (block.sentences.some((s) => s.toLowerCase() === line.toLowerCase())) return;
-      for (const part of line.split(/(?<=[.!?:])\s+/).map((s) => s.trim()).filter(Boolean)) {
-        if (!block.sentences.some((prev) => prev.toLowerCase() === part.toLowerCase())) {
-          block.sentences.push(part);
-        }
-      }
-    }
-    if (block.sentences.length > 24) block.sentences.splice(0, block.sentences.length - 24);
-    block.text = block.sentences.join(' ');
+    if (follow && streamBox) streamBox.scrollTop = streamBox.scrollHeight;
   }
 
   function applyEvent(event: RunEvent) {
-    if (event.progress) {
-      counts = { ...counts, ...event.progress };
-      if (event.progress.crawled !== undefined) crawl.total = event.progress.crawled;
+    if (event.type === 'lagged') return;
+    eventCount += 1;
+    pending += 1;
+    const agent = event.agent || '';
+    const stage = event.stage || stageForAgent(agent);
+    if (stage) {
+      stageCounts = { ...stageCounts, [stage]: (stageCounts[stage] ?? 0) + 1 };
+      currentStage = stage;
+    }
+    const progressed = Number(event.progress?.crawled ?? 0);
+    if (progressed > crawled) crawled = progressed;
+    if (event.progress) counts = { ...counts, ...event.progress };
+    if (agent) {
+      const lane = agents[agent] ?? { lines: 0, calls: 0, lastTs: 0, lastText: '', lastCall: '', lastCallOk: null };
+      const updated = { ...lane, lines: lane.lines + 1 };
+      if (event.type === 'log' || event.type === 'error') {
+        updated.lastText = String(event.payload?.text ?? event.payload?.error ?? '');
+        updated.lastTs = event.ts;
+      }
+      if (event.type === 'reasoning' && event.payload?.text) {
+        updated.lastText = String(event.payload.text);
+        updated.lastTs = event.ts;
+      }
+      if (event.type === 'model' && event.payload?.kind === 'done') {
+        updated.calls = lane.calls + 1;
+        updated.lastCall = String(event.payload.model ?? '');
+        updated.lastCallOk = !!event.payload.ok;
+        updated.lastTs = event.ts;
+      }
+      agents = { ...agents, [agent]: updated };
     }
     if (event.type === 'fetch' && event.payload?.url) {
       const kind = String(event.payload.kind ?? '');
-      if (kind === 'page') crawl.pages += 1;
-      if (kind === 'js') crawl.js += 1;
-      if (kind !== 'progress') {
-        fetches = [
-          { seq: event.seq, kind, url: String(event.payload.url), status: Number(event.payload.status ?? 0) },
-          ...fetches
-        ].slice(0, 120);
-      }
+      if (kind !== 'progress') urlCount += 1;
     }
     if (event.type === 'finding.created' && event.payload) {
       landed = [
@@ -136,74 +273,98 @@
         ...landed
       ].slice(0, 80);
     }
-    if (event.type === 'reasoning' && event.payload?.text) {
-      const text = String(event.payload.text);
-      const agent = event.agent || 'model';
-      const last = thinking[thinking.length - 1];
-      if (last && last.agent === agent && event.ts - last.ts < 5000) {
-        absorbReasoning(last, text);
-        last.ts = event.ts;
-        thinking = [...thinking];
-      } else if (thinking.length < THINK_BLOCK_CAP) {
-        const block = { id: event.seq, ts: event.ts, agent, text: '', parts: 0, sentences: [] as string[] };
-        absorbReasoning(block, text);
-        thinking = [...thinking, block];
-      } else {
-        const block = { id: event.seq, ts: event.ts, agent, text: '', parts: 0, sentences: [] as string[] };
-        absorbReasoning(block, text);
-        thinking = [...thinking.slice(1), block];
+    if (event.type === 'run.state' && event.payload) {
+      const status = String(event.payload.status ?? '');
+      if (status && !TERMINAL.includes(run?.status ?? '')) {
+        run = run ? { ...run, status: status as Run['status'] } : run;
+      }
+      const merged = event.payload.counts ?? event.payload.summary;
+      if (merged && typeof merged === 'object') {
+        const numeric: Record<string, number> = {};
+        for (const [key, value] of Object.entries(merged as Record<string, unknown>)) {
+          if (typeof value === 'number') numeric[key] = value;
+        }
+        counts = { ...counts, ...numeric };
       }
     }
-    if (event.type === 'model' && event.payload) {
-      const payload = event.payload;
-      const provider = String(payload.provider ?? '?');
-      const model = String(payload.model ?? '?');
-      const agent = event.agent || '';
-      if (payload.kind === 'call') {
-        calls = [
-          { seq: event.seq, ts: event.ts, agent, provider, model, pending: true, ok: false, ms: 0, error: '' },
-          ...calls
-        ].slice(0, 80);
-      } else if (payload.kind === 'done') {
-        let updated = false;
-        calls = calls.map((row) => {
-          if (!updated && row.pending && row.provider === provider && row.model === model && row.agent === agent) {
-            updated = true;
-            return {
-              ...row, pending: false, ok: !!payload.ok,
-              ms: Number(payload.ms ?? 0), error: String(payload.error ?? '')
-            };
-          }
-          return row;
-        });
-      }
+  }
+
+  function seedBuckets(items: RunEvent[]) {
+    if (!items.length) return;
+    const end = items[items.length - 1].ts;
+    const out = new Array(BUCKETS).fill(0);
+    for (const item of items) {
+      const slot = BUCKETS - 1 - Math.floor(((end - item.ts) * 1000) / BUCKET_MS);
+      if (slot >= 0 && slot < BUCKETS) out[slot] += 1;
     }
-    const agentStage = stageForAgent(event.agent);
-    if (agentStage) currentStage = agentStage;
-    if (event.stage) currentStage = event.stage;
-    if (event.type === 'run.state' && event.payload?.status && !TERMINAL.includes(run?.status ?? '')) {
-      run = run ? { ...run, status: event.payload.status } : run;
+    buckets = out;
+  }
+
+  function onStreamScroll() {
+    if (!streamBox) return;
+    follow = streamBox.scrollTop + streamBox.clientHeight >= streamBox.scrollHeight - 32;
+  }
+
+  function onSpotlightScroll() {
+    if (!spotlightEl) return;
+    spotlightStick = spotlightEl.scrollHeight - spotlightEl.scrollTop - spotlightEl.clientHeight < 48;
+  }
+
+  function openSpotlight(agent: string) {
+    spotlightStick = true;
+    spotlightAgent = agent;
+  }
+
+  async function loadInv(kind: string) {
+    if (!run || inflight.has(kind)) return;
+    inflight.add(kind);
+    invBusy = kind;
+    try {
+      const page = await api.inventory(run.id, kind);
+      inv = { ...inv, [kind]: page.items ?? [] };
+      loadedInv = { ...loadedInv, [kind]: true };
+    } catch (exc) {
+      store.fail(exc instanceof Error ? exc.message : `could not load ${kind}`);
+    } finally {
+      inflight.delete(kind);
+      invBusy = '';
     }
   }
 
-  async function scrollToLatest() {
-    await tick();
-    if (logBox) logBox.scrollTop = logBox.scrollHeight;
+  async function loadReport() {
+    if (!run) return;
+    try {
+      report = await api.runReport(run.id);
+      reportErr = '';
+    } catch (exc) {
+      reportErr = exc instanceof Error ? exc.message : 'could not load the report';
+    }
   }
 
-  async function scrollThinking() {
-    await tick();
-    if (thinkBox) thinkBox.scrollTop = thinkBox.scrollHeight;
+  async function refreshTab() {
+    if (tab === 'report') {
+      report = '';
+      reportErr = '';
+      await loadReport();
+      return;
+    }
+    for (const kind of TAB_KINDS[tab] ?? []) {
+      loadedInv = { ...loadedInv, [kind]: false };
+      void loadInv(kind);
+    }
   }
 
-  function onThinkScroll() {
-    if (!thinkBox) return;
-    thinkFollow = thinkBox.scrollTop + thinkBox.clientHeight >= thinkBox.scrollHeight - 32;
+  function sizeText(bytes: number): string {
+    if (!bytes) return '--';
+    if (bytes < 1024) return `${bytes} b`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} kb`;
+    return `${(bytes / (1024 * 1024)).toFixed(1)} mb`;
   }
 
-  function onLogScroll() {
-    if (!logBox) return;
-    follow = logBox.scrollTop + logBox.clientHeight >= logBox.scrollHeight - 32;
+  function verdictColor(verdict: string): string {
+    if (verdict === 'live' || verdict === 'verified') return 'var(--nc-acid)';
+    if (verdict === 'suspect') return 'var(--nc-violet)';
+    return 'var(--nc-slate)';
   }
 
   async function load() {
@@ -217,25 +378,37 @@
     events = [];
     seen.clear();
     landed = [];
-    thinking = [];
-    calls = [];
-    fetches = [];
-    crawl = { pages: 0, js: 0, total: 0 };
     counts = run?.counts ?? {};
     currentStage = '';
+    eventCount = 0;
+    urlCount = 0;
+    stageCounts = {};
+    agents = {};
+    crawled = 0;
+    buckets = new Array(BUCKETS).fill(0);
+    pending = 0;
+    nowTick = Date.now();
+    inv = {};
+    loadedInv = {};
+    report = '';
+    reportErr = '';
+    filter = 'all';
+    tab = 'feed';
     if (run) {
       try {
         const page = await api.runEvents(run.id);
-        for (const event of page.items) push(event);
+        const items = (page.items ?? []) as RunEvent[];
+        for (const event of items) push(event);
         await flushQueue();
+        seedBuckets(items);
       } catch {
         /* show the run we have; events will resume over the stream */
       }
       counts = { ...counts, ...(run.counts ?? {}) };
       if (finished) currentStage = '';
     }
-    await scrollToLatest();
-    await scrollThinking();
+    await tick();
+    if (streamBox) streamBox.scrollTop = streamBox.scrollHeight;
   }
 
   function connect() {
@@ -305,19 +478,24 @@
     }
   }
 
-  function elapsedText(): string {
-    if (!run) return '00:00';
-    const start = isoMs(run.started_at || run.created_at);
-    const end = run.finished_at ? isoMs(run.finished_at) : Date.now();
-    if (!Number.isFinite(start) || !Number.isFinite(end)) return '00:00';
-    const seconds = Math.max(0, Math.floor((end - start) / 1000));
-    const mm = String(Math.floor(seconds / 60)).padStart(2, '0');
-    const ss = String(seconds % 60).padStart(2, '0');
-    return `${mm}:${ss}`;
+  async function continueRun() {
+    if (!run || continuing) return;
+    continuing = true;
+    try {
+      const fresh = await api.resumeRun(run.id);
+      store.runs = [fresh, ...store.runs.filter((item) => item.id !== fresh.id)];
+      store.watch(fresh.id);
+      store.toast('ok', `continuing the scan of ${fresh.target} where it stopped`);
+    } catch (exc) {
+      store.fail(exc instanceof Error ? exc.message : 'could not continue the run');
+    } finally {
+      continuing = false;
+    }
   }
 
   let poller: number | undefined;
   let destroyed = false;
+  let sawFinished = $state(false);
 
   $effect(() => {
     if (finished) {
@@ -326,13 +504,65 @@
     }
   });
 
+  // one 250ms clock drives the scope bar, the hot-lane decay and elapsed
+  $effect(() => {
+    if (!running) return;
+    const tick = window.setInterval(() => {
+      nowTick = Date.now();
+      buckets = [...buckets.slice(1), pending];
+      pending = 0;
+    }, BUCKET_MS);
+    return () => window.clearInterval(tick);
+  });
+
+  // evidence for the open tab, fetched once per run
+  $effect(() => {
+    for (const kind of TAB_KINDS[tab] ?? []) {
+      if (!loadedInv[kind]) void loadInv(kind);
+    }
+    if (tab === 'report' && !report && !reportErr) void loadReport();
+  });
+
+  // a finished run has written its files: refresh whatever is loaded
+  $effect(() => {
+    if (finished && !sawFinished) {
+      sawFinished = true;
+      for (const kind of Object.keys(loadedInv)) void loadInv(kind);
+      if (report || reportErr) {
+        report = '';
+        reportErr = '';
+        void loadReport();
+      }
+    } else if (!finished && sawFinished) {
+      sawFinished = false;
+    }
+  });
+
+  $effect(() => {
+    spotlightRows.length;
+    if (spotlightEl && spotlightStick) spotlightEl.scrollTop = spotlightEl.scrollHeight;
+  });
+
+  $effect(() => {
+    if (spotlightAgent) panelEl?.focus();
+  });
+
+  $effect(() => {
+    if (!spotlightAgent) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') spotlightAgent = '';
+    };
+    window.addEventListener('keydown', onKey, true);
+    return () => window.removeEventListener('keydown', onKey, true);
+  });
+
   onMount(async () => {
     await load();
     if (destroyed) return;
     if (!finished) connect();
     poller = window.setInterval(() => void poll(), 2000);
-    void scrollToLatest();
-    void scrollThinking();
+    await tick();
+    if (streamBox) streamBox.scrollTop = streamBox.scrollHeight;
   });
 
   onDestroy(() => {
@@ -348,7 +578,7 @@
       <EmptyState
         eyebrow="live runs"
         title="No run selected"
-        body="Start a scan and it appears here with a live stage rail, running counters, and every line the agents print as they work."
+        body="Start a scan and it appears here live: the stage rail, a verbose transmission of every agent line, and inspectable evidence for each run - assets, endpoints, scripts, secrets, findings and the report."
         action="start a scan"
         onAction={() => store.go('new')}
       >
@@ -372,23 +602,29 @@
     </div>
   </div>
 {:else if run}
-  <div class="stagger mx-auto flex max-w-[1180px] flex-col gap-5">
+  <div class="stagger mx-auto flex max-w-[1240px] flex-col gap-5">
     <section class="panel panel-hud p-5" class:finish-glow={finished} use:spotlight>
       <div class="flex flex-wrap items-center gap-3">
         <div class="min-w-0">
           <p class="eyebrow">run {run.id.slice(-6)}</p>
           <h1 class="truncate font-mono text-lg text-bone">{run.target}</h1>
         </div>
-        <span class="chip" style="color:{statusColor(run.status)}">
+        <span class="chip" style="color:{statusColor(run.status)}" title={run.error || ''}>
           <svg viewBox="0 0 8 8" class="h-[7px] w-[7px] fill-current" aria-hidden="true">
             <circle cx="4" cy="4" r="3.4" />
           </svg>
           {statusLabel(run.status)}
         </span>
-        <span class="num text-sm text-ash">{elapsedText()}</span>
+        <span class="num text-sm text-ash">{elapsed}</span>
+        <span class="mono hidden text-xs text-slate sm:inline"><span use:countup={eventCount}>0</span> events</span>
         <div class="ml-auto flex gap-2">
           {#if running}
             <button class="btn btn-danger" type="button" onclick={requestStop}>stop scan</button>
+          {:else if canContinue}
+            <button class="btn btn-acid" type="button" onclick={continueRun} disabled={continuing}>
+              {continuing ? 'continuing...' : 'continue scan'}
+            </button>
+            <button class="btn" type="button" onclick={rerun}>rerun</button>
           {:else}
             <button class="btn" type="button" onclick={rerun}>rerun</button>
           {/if}
@@ -397,6 +633,58 @@
       </div>
       <div class="mt-4">
         <StageRail current={currentStage} finished={finished ? stages.map((s) => s.key) : finishedThrough(currentStage)} />
+      </div>
+    </section>
+
+    <section class="grid gap-3 lg:grid-cols-[1.35fr_1fr]">
+      <div class="panel panel-hud flex flex-col justify-center gap-3 px-4 py-3">
+        <div class="flex items-center justify-between">
+          <p class="eyebrow">stage signal</p>
+          <span
+            class="mono text-[10px] tracking-[0.14em]"
+            style="color:{running ? 'var(--nc-acid)' : 'var(--nc-ash)'}"
+          >
+            {running ? `${(currentStage || 'crawl').toLowerCase()} // live` : statusLabel(run.status)}
+          </span>
+        </div>
+        <StageSignal stages={stages} counts={stageCount} current={currentStage} {running} />
+      </div>
+
+      <div class="panel flex flex-col overflow-hidden">
+        <div class="flex items-center justify-between border-b border-indigo-deep px-4 py-2.5">
+          <p class="eyebrow">run signal</p>
+          <span class="flex items-center gap-2">
+            {#if running}
+              <span class="pulse-live h-1.5 w-1.5 rounded-full bg-acid" aria-hidden="true"></span>
+            {/if}
+            <span class="mono text-[10px] tracking-[0.14em] text-ash">
+              {running ? 'live' : statusLabel(run.status)}
+            </span>
+          </span>
+        </div>
+        <div class="px-4 pt-3">
+          <RunScope {buckets} {running} />
+        </div>
+        <div class="grid grid-cols-4 gap-2 px-4 pb-3 pt-1">
+          <div>
+            <p class="eyebrow">events</p>
+            <p class="num mt-0.5 text-[15px] text-bone"><span use:countup={eventCount}>0</span></p>
+          </div>
+          <div>
+            <p class="eyebrow">rate</p>
+            <p class="num mt-0.5 text-[15px] text-bone">
+              {rate.toFixed(1)}<span class="text-xs text-ash">/s</span>
+            </p>
+          </div>
+          <div>
+            <p class="eyebrow">urls</p>
+            <p class="num mt-0.5 text-[15px] text-bone"><span use:countup={urlCount}>0</span></p>
+          </div>
+          <div>
+            <p class="eyebrow">elapsed</p>
+            <p class="num mt-0.5 text-[15px] text-bone">{elapsed}</p>
+          </div>
+        </div>
       </div>
     </section>
 
@@ -409,263 +697,513 @@
       {/each}
     </section>
 
-    <!-- the crawler feed: every URL as it is fetched, pages and js split -->
-    <section class="panel overflow-hidden" data-crawler="1">
-      <div class="flex flex-wrap items-center justify-between gap-2 border-b border-indigo-deep px-4 py-2.5">
-        <div class="flex items-center gap-3">
-          <p class="eyebrow">crawler feed</p>
-          {#if running}
-            <span class="chip text-acid">
-              <span class="pulse-live h-1.5 w-1.5 rounded-full bg-acid" aria-hidden="true"></span>
-              crawling
-            </span>
-          {/if}
-        </div>
-        <span class="mono num text-xs text-ash">
-          <span class="text-acid">{crawl.pages}</span> pages
-          <span class="text-slate">//</span>
-          <span class="text-violet">{crawl.js}</span> js
-          <span class="text-slate">//</span>
-          {crawl.total} touched
-        </span>
-      </div>
-      <div class="grid max-h-[240px] overflow-y-auto md:grid-cols-2">
-        {#if fetches.length === 0}
-          <p class="px-4 py-4 text-xs text-slate">
-            {running ? 'waiting for the first response...' : 'The crawler feed fills as the run works.'}
-          </p>
-        {/if}
-        {#each fetches as row (row.seq)}
-          <p class="flex items-center gap-2 border-b border-indigo-deep/40 px-4 py-1.5 text-[12px] last:border-0">
-            <span
-              class="mono w-[44px] shrink-0 text-[10px] tracking-[0.08em]"
-              style="color:{row.kind === 'js' ? 'var(--nc-violet)' : 'var(--nc-acid)'}"
-            >
-              {row.kind === 'js' ? 'JS' : row.kind === 'page' ? 'HTML' : 'SKIP'}
-            </span>
-            <span
-              class="num w-[30px] shrink-0 text-[10px]"
-              style="color:{row.status >= 400 ? 'var(--nc-violet)' : row.status === 0 ? 'var(--nc-slate)' : 'var(--nc-bone-dust)'}"
-            >
-              {row.status || '--'}
-            </span>
-            <span class="mono min-w-0 flex-1 truncate text-bone-dust" title={row.url}>{row.url}</span>
-          </p>
-        {/each}
-      </div>
-    </section>
-
-    <section class="grid gap-5 lg:grid-cols-[1.4fr_1fr]">
-      <div class="panel flex min-h-[420px] flex-col overflow-hidden">
-        <div class="flex items-center justify-between border-b border-indigo-deep px-4 py-2.5">
-          <p class="eyebrow">agent log</p>
+    <section class="panel overflow-hidden">
+      <div class="flex flex-wrap items-center gap-1 border-b border-indigo-deep px-3 py-2" role="tablist" aria-label="run inspector">
+        {#each TABS as item (item.id)}
           <button
-            class="btn btn-quiet px-2! py-1! text-xs"
+            class="live-tab"
+            class:active={tab === item.id}
             type="button"
-            onclick={() => {
-              follow = true;
-              void scrollToLatest();
-            }}
+            role="tab"
+            aria-selected={tab === item.id}
+            onclick={() => (tab = item.id)}
           >
-            {follow ? 'following' : 'jump to latest'}
+            {item.label}
           </button>
-        </div>
-        <div
-          class="mono flex-1 overflow-y-auto px-4 py-3 text-[13px] leading-relaxed"
-          data-log="1"
-          class:is-live={running}
-          bind:this={logBox}
-          onscroll={onLogScroll}
-        >
-          {#if visibleLines.length === 0}
-            <p class="text-slate">waiting for the first line...</p>
-          {/if}
-          {#each visibleLines as line (line.seq)}
-            <p class="stream-line flex gap-2" class:text-violet={line.bad}>
-              <span class="shrink-0 text-slate">{clock(line.ts)}</span>
-              <span class="w-[92px] shrink-0 truncate" style="color:{(AGENT_COLORS as Record<string, string>)[line.agent] ?? 'var(--nc-bone-dust)'}">
-                {line.agent}
-              </span>
-              <span class="min-w-0 break-words" class:text-bone={!line.bad}>{line.text}</span>
-            </p>
-          {/each}
-        </div>
+        {/each}
+        <button class="btn btn-quiet ml-auto px-2! py-1! text-xs" type="button" onclick={refreshTab} disabled={invBusy !== ''}>
+          {invBusy ? 'loading...' : 'refresh'}
+        </button>
       </div>
 
-      <div class="flex flex-col gap-5">
-        <div class="panel overflow-hidden">
-          <div class="flex items-center justify-between border-b border-indigo-deep px-4 py-2.5">
-            <p class="eyebrow">credentials caught</p>
-            <span class="num text-xs text-ash">{landed.length}</span>
-          </div>
-          {#if landed.length === 0}
-            <p class="px-4 py-5 text-sm text-bone-dust">
-              {finished
-                ? 'Nothing was caught on this pass.'
-                : 'Candidates land here the moment one is validated.'}
-            </p>
-          {:else}
-            <ul class="max-h-[300px] overflow-y-auto" data-landed="1">
-              {#each landed as item (item.id)}
-                <li class="shard-in flex items-center gap-3 border-b border-indigo-deep/60 px-4 py-2.5 last:border-0">
-                  <Chip label={item.status} color={sevColor(item.status)} shape={sevShape(item.status)} />
-                  <span class="min-w-0 flex-1">
-                    <span class="mono block truncate text-sm text-bone">{item.secret_type}</span>
-                    <span class="mono block truncate text-xs text-bone-dust">{item.value}</span>
+      {#if tab === 'feed'}
+        <div class="grid lg:grid-cols-[1.55fr_1fr]">
+          <div class="flex min-h-[460px] flex-col border-b border-indigo-deep lg:border-b-0 lg:border-r">
+            <div class="flex flex-wrap items-center gap-2 px-4 py-2">
+              {#each FILTERS as item (item.id)}
+                <button
+                  class="live-filter"
+                  class:active={filter === item.id}
+                  type="button"
+                  onclick={() => (filter = item.id)}
+                >
+                  {item.label}
+                </button>
+              {/each}
+              <button
+                class="btn btn-quiet ml-auto px-2! py-1! text-xs"
+                type="button"
+                onclick={() => {
+                  follow = true;
+                  void tick().then(() => {
+                    if (streamBox) streamBox.scrollTop = streamBox.scrollHeight;
+                  });
+                }}
+              >
+                {follow ? 'following' : 'jump to latest'}
+              </button>
+            </div>
+            <div
+              class="mono flex-1 overflow-y-auto px-4 pb-3 text-[12px] leading-relaxed"
+              data-transmission="1"
+              class:is-live={running}
+              bind:this={streamBox}
+              onscroll={onStreamScroll}
+            >
+              {#if stream.length === 0}
+                <p class="py-2 text-slate">
+                  {running
+                    ? `waiting for the first line from ${run.target}...`
+                    : filter === 'all'
+                      ? 'Nothing was transmitted on this run.'
+                      : `No ${filter} rows on this run.`}
+                </p>
+              {/if}
+              {#each stream as row (row.seq)}
+                {@const badge = badgeOf(row)}
+                <p
+                  class="stream-line flex items-start gap-2 py-0.5"
+                  class:line-arrive={running && row.seq === lastSeq}
+                  class:border-l-2={row.kind === 'think'}
+                  class:pl-2={row.kind === 'think'}
+                  style={row.kind === 'think' ? `border-color:${badge.color}` : ''}
+                >
+                  <span class="shrink-0 text-slate">{clock(row.ts)}</span>
+                  <span class="w-[46px] shrink-0 text-[10px] tracking-[0.08em]" style="color:{badge.color}">
+                    {badge.text}
                   </span>
+                  {#if row.kind === 'found'}
+                    <Chip label={row.sub} color={sevColor(row.sub)} shape={sevShape(row.sub)} />
+                    <span class="min-w-0 flex-1 break-words text-bone" title={row.text}>{row.text}</span>
+                  {:else}
+                    <span class="min-w-0 flex-1 break-words" style="color:{rowColor(row)}" title={row.text}>
+                      {row.text.slice(0, 420)}
+                    </span>
+                    {#if row.sub}
+                      <span class="num shrink-0 text-[10px] text-ash">{row.sub}</span>
+                    {/if}
+                  {/if}
+                </p>
+              {/each}
+            </div>
+          </div>
+
+          <div class="flex flex-col">
+            <div class="border-b border-indigo-deep">
+              <div class="flex items-center justify-between px-4 py-2.5">
+                <p class="eyebrow">credentials caught</p>
+                <span class="num text-xs text-ash">{landed.length}</span>
+              </div>
+              {#if landed.length === 0}
+                <p class="px-4 pb-4 text-sm text-bone-dust">
+                  {finished
+                    ? 'Nothing was caught on this pass.'
+                    : 'Candidates land here the moment one is validated.'}
+                </p>
+              {:else}
+                <ul class="max-h-[220px] overflow-y-auto" data-landed="1">
+                  {#each landed as item (item.id)}
+                    <li class="shard-in flex items-center gap-3 border-b border-indigo-deep/60 px-4 py-2 last:border-0">
+                      <Chip label={item.status} color={sevColor(item.status)} shape={sevShape(item.status)} />
+                      <span class="min-w-0 flex-1">
+                        <span class="mono block truncate text-sm text-bone">{item.secret_type}</span>
+                        <span class="mono block truncate text-xs text-bone-dust">{item.value}</span>
+                      </span>
+                    </li>
+                  {/each}
+                </ul>
+              {/if}
+            </div>
+
+            <div class="flex-1">
+              <div class="flex items-center justify-between px-4 py-2.5">
+                <p class="eyebrow">agents on the wire</p>
+                <span class="mono text-xs text-ash">{reasoningCount} reasoning rows</span>
+              </div>
+              {#if agentList.length === 0}
+                <p class="px-4 pb-4 text-xs text-slate">
+                  {running ? 'the agents are waking up...' : 'no agent activity on this run.'}
+                </p>
+              {:else}
+                <ul class="max-h-[320px] overflow-y-auto" data-agents="1">
+                  {#each agentList as lane (lane.agent)}
+                    {@const color = (AGENT_COLORS as Record<string, string>)[lane.agent] ?? 'var(--nc-bone-dust)'}
+                    <li class="flex items-center gap-3 border-b border-indigo-deep/60 px-4 py-2 last:border-0">
+                      <span class="lane-led" style="--agent:{color}" aria-hidden="true"></span>
+                      <span class="mono w-[86px] shrink-0 truncate text-xs" style="color:{color}">{lane.agent}</span>
+                      <span class="num shrink-0 text-[11px] text-ash">{lane.lines}</span>
+                      {#if lane.lastCall}
+                        <span
+                          class="mono hidden min-w-0 flex-1 truncate text-[11px] sm:block"
+                          style="color:{lane.lastCallOk === false ? 'var(--nc-violet)' : 'var(--nc-ash)'}"
+                        >
+                          {lane.lastCall}
+                        </span>
+                      {:else}
+                        <span class="min-w-0 flex-1"></span>
+                      {/if}
+                      <span class="mono hidden shrink-0 text-[10px] text-slate md:block">{clock(lane.lastTs)}</span>
+                      <button
+                        class="shrink-0 text-[10px] tracking-[0.12em] text-acid opacity-70 transition-opacity hover:opacity-100"
+                        type="button"
+                        onclick={() => openSpotlight(lane.agent)}
+                      >
+                        WATCH &gt;
+                      </button>
+                    </li>
+                  {/each}
+                </ul>
+              {/if}
+            </div>
+          </div>
+        </div>
+      {:else if tab === 'assets'}
+        <div class="grid gap-0 lg:grid-cols-2">
+          <div class="border-b border-indigo-deep lg:border-b-0 lg:border-r">
+            <div class="flex items-center justify-between px-4 py-2.5">
+              <p class="eyebrow">subdomains</p>
+              <span class="num text-xs text-ash">{inv.subdomains?.length ?? 0}</span>
+            </div>
+            {#if !loadedInv.subdomains}
+              <p class="px-4 pb-4 text-xs text-slate">mapping...</p>
+            {:else if (inv.subdomains ?? []).length === 0}
+              <p class="px-4 pb-4 text-sm text-bone-dust">No subdomains were mapped on this run.</p>
+            {:else}
+              <ul class="max-h-[420px] overflow-y-auto" data-subdomains="1">
+                {#each inv.subdomains as row (row.host)}
+                  <li class="flex items-center gap-3 border-b border-indigo-deep/60 px-4 py-2 last:border-0">
+                    <span
+                      class="h-1.5 w-1.5 shrink-0 rounded-full"
+                      style="background:{row.resolved ? 'var(--nc-acid)' : 'var(--nc-slate)'}"
+                      title={row.resolved ? 'resolves' : 'no answer'}
+                    ></span>
+                    <span class="mono min-w-0 flex-1 truncate text-sm text-bone">{row.host}</span>
+                  </li>
+                {/each}
+              </ul>
+            {/if}
+          </div>
+          <div>
+            <div class="flex items-center justify-between px-4 py-2.5">
+              <p class="eyebrow">pages</p>
+              <span class="num text-xs text-ash">{inv.pages?.length ?? 0}</span>
+            </div>
+            {#if !loadedInv.pages}
+              <p class="px-4 pb-4 text-xs text-slate">reading...</p>
+            {:else if (inv.pages ?? []).length === 0}
+              <p class="px-4 pb-4 text-sm text-bone-dust">No pages were crawled on this run.</p>
+            {:else}
+              <ul class="max-h-[420px] overflow-y-auto" data-pages="1">
+                {#each inv.pages as row (row.url)}
+                  <li class="flex items-center gap-3 border-b border-indigo-deep/60 px-4 py-2 last:border-0">
+                    <span
+                      class="num w-[34px] shrink-0 text-[11px]"
+                      style="color:{row.status >= 400 ? 'var(--nc-violet)' : row.status === 0 ? 'var(--nc-slate)' : 'var(--nc-bone-dust)'}"
+                    >
+                      {row.status || '--'}
+                    </span>
+                    <span class="mono min-w-0 flex-1 truncate text-xs text-bone-dust" title={row.url}>{row.url}</span>
+                  </li>
+                {/each}
+              </ul>
+            {/if}
+          </div>
+        </div>
+      {:else if tab === 'endpoints'}
+        <div>
+          <div class="flex items-center justify-between px-4 py-2.5">
+            <p class="eyebrow">endpoints</p>
+            <span class="num text-xs text-ash">{inv.endpoints?.length ?? 0}</span>
+          </div>
+          {#if !loadedInv.endpoints}
+            <p class="px-4 pb-4 text-xs text-slate">collecting...</p>
+          {:else if (inv.endpoints ?? []).length === 0}
+            <p class="px-4 pb-4 text-sm text-bone-dust">No endpoints were extracted on this run.</p>
+          {:else}
+            <ul class="max-h-[520px] overflow-y-auto" data-endpoints="1">
+              {#each inv.endpoints as row (row.url)}
+                <li class="flex items-center gap-3 border-b border-indigo-deep/60 px-4 py-1.5 last:border-0">
+                  <span class="mono min-w-0 flex-1 truncate text-xs text-bone-dust" title={row.url}>{row.url}</span>
+                  {#if row.source}
+                    <span class="mono shrink-0 text-[10px] text-slate">{row.source}</span>
+                  {/if}
                 </li>
               {/each}
             </ul>
           {/if}
         </div>
-
-        <div class="panel p-4">
-          <p class="eyebrow">what happens next</p>
-          <ol class="mt-2 flex flex-col gap-2">
-            {#each stages as stage, i (stage.key)}
-              <li class="flex items-center gap-3 text-sm">
-                <span class="num w-6 text-xs text-slate">{String(i + 1).padStart(2, '0')}</span>
-                <span class="mono {currentStage === stage.key ? 'text-acid' : 'text-bone-dust'}">
-                  {stage.label}
-                </span>
-                {#if currentStage === stage.key}
-                  <span class="pulse-live ml-auto h-1.5 w-1.5 rounded-full bg-acid"></span>
-                {/if}
-              </li>
-            {/each}
-          </ol>
-          <p class="mt-3 border-t border-indigo-deep pt-3 text-xs leading-relaxed text-ash">
-            Every report file lands in your own results folder when the run finishes.
-          </p>
+      {:else if tab === 'js'}
+        <div class="grid gap-0 lg:grid-cols-2">
+          <div class="border-b border-indigo-deep lg:border-b-0 lg:border-r">
+            <div class="flex items-center justify-between px-4 py-2.5">
+              <p class="eyebrow">scripts read</p>
+              <span class="num text-xs text-ash">{inv.js?.length ?? 0}</span>
+            </div>
+            {#if !loadedInv.js}
+              <p class="px-4 pb-4 text-xs text-slate">reading...</p>
+            {:else if (inv.js ?? []).length === 0}
+              <p class="px-4 pb-4 text-sm text-bone-dust">No scripts were read on this run.</p>
+            {:else}
+              <ul class="max-h-[440px] overflow-y-auto" data-js="1">
+                {#each inv.js as row (row.url)}
+                  <li class="border-b border-indigo-deep/60 px-4 py-2 last:border-0">
+                    <span class="mono block truncate text-xs text-bone" title={row.url}>{row.url}</span>
+                    <span class="mono mt-0.5 block text-[10px] text-slate">
+                      {sizeText(Number(row.size ?? 0))}{#if row.sha256} / {String(row.sha256).slice(0, 12)}{/if}
+                    </span>
+                  </li>
+                {/each}
+              </ul>
+            {/if}
+          </div>
+          <div>
+            <div class="flex items-center justify-between px-4 py-2.5">
+              <p class="eyebrow">code review</p>
+              <span class="num text-xs text-ash">{inv.reviews?.length ?? 0}</span>
+            </div>
+            {#if !loadedInv.reviews}
+              <p class="px-4 pb-4 text-xs text-slate">reading...</p>
+            {:else if (inv.reviews ?? []).length === 0}
+              <p class="px-4 pb-4 text-sm text-bone-dust">The source pass flagged nothing to review.</p>
+            {:else}
+              <ul class="max-h-[440px] overflow-y-auto" data-reviews="1">
+                {#each inv.reviews as row, i (i)}
+                  <li class="border-b border-indigo-deep/60 px-4 py-2.5 last:border-0">
+                    <div class="flex items-center gap-2">
+                      <Chip label={row.severity || 'note'} color={sevColor(row.severity)} shape={sevShape(row.severity)} />
+                      <span class="mono min-w-0 flex-1 truncate text-xs text-bone">{row.kind || 'observation'}</span>
+                    </div>
+                    <p class="mt-1.5 text-xs leading-relaxed text-bone-dust">{row.detail}</p>
+                    {#if row.source}
+                      <p class="mono mt-1 truncate text-[10px] text-slate" title={row.source}>{row.source}</p>
+                    {/if}
+                  </li>
+                {/each}
+              </ul>
+            {/if}
+          </div>
         </div>
-      </div>
-    </section>
-
-    <section class="panel overflow-hidden" data-thinking="1" use:pauseOffscreen>
-      <div class="flex flex-wrap items-center justify-between gap-3 border-b border-indigo-deep px-4 py-2.5">
-        <div class="flex items-center gap-3">
-          <p class="eyebrow">model activity</p>
-          {#if pendingCalls > 0}
-            <span class="chip text-acid">
-              <span class="pulse-live h-1.5 w-1.5 rounded-full bg-acid" aria-hidden="true"></span>
-              working
-            </span>
+      {:else if tab === 'secrets'}
+        <div class="grid gap-0 xl:grid-cols-3">
+          <div class="border-b border-indigo-deep xl:border-b-0 xl:border-r">
+            <div class="flex items-center justify-between px-4 py-2.5">
+              <p class="eyebrow">secrets spotted</p>
+              <span class="num text-xs text-ash">{inv.secrets?.length ?? 0}</span>
+            </div>
+            {#if !loadedInv.secrets}
+              <p class="px-4 pb-4 text-xs text-slate">sweeping...</p>
+            {:else if (inv.secrets ?? []).length === 0}
+              <p class="px-4 pb-4 text-sm text-bone-dust">No secrets were spotted on this run.</p>
+            {:else}
+              <ul class="max-h-[440px] overflow-y-auto" data-secrets="1">
+                {#each inv.secrets as row, i (i)}
+                  <li class="border-b border-indigo-deep/60 px-4 py-2 last:border-0">
+                    <div class="flex items-center gap-2">
+                      <span class="mono min-w-0 flex-1 truncate text-xs text-bone">{row.type}</span>
+                      <span class="num shrink-0 text-[10px] text-ash">{Math.round(Number(row.confidence ?? 0) * 100)}%</span>
+                    </div>
+                    <span class="mono block truncate text-[11px] text-bone-dust" title={row.value}>{row.value}</span>
+                    {#if row.source}
+                      <span class="mono block truncate text-[10px] text-slate" title={row.source}>{row.source}</span>
+                    {/if}
+                  </li>
+                {/each}
+              </ul>
+            {/if}
+          </div>
+          <div class="border-b border-indigo-deep xl:border-b-0 xl:border-r">
+            <div class="flex items-center justify-between px-4 py-2.5">
+              <p class="eyebrow">candidates</p>
+              <span class="num text-xs text-ash">{inv.candidates?.length ?? 0}</span>
+            </div>
+            {#if !loadedInv.candidates}
+              <p class="px-4 pb-4 text-xs text-slate">ranking...</p>
+            {:else if (inv.candidates ?? []).length === 0}
+              <p class="px-4 pb-4 text-sm text-bone-dust">No unconfirmed candidates on this run.</p>
+            {:else}
+              <ul class="max-h-[440px] overflow-y-auto" data-candidates="1">
+                {#each inv.candidates as row, i (i)}
+                  <li class="border-b border-indigo-deep/60 px-4 py-2 last:border-0">
+                    <div class="flex items-center gap-2">
+                      <Chip label={row.severity || 'info'} color={sevColor(row.severity)} shape={sevShape(row.severity)} />
+                      <span class="mono min-w-0 flex-1 truncate text-xs text-bone">{row.type}</span>
+                    </div>
+                    <span class="mono block truncate text-[11px] text-bone-dust" title={row.value}>{row.value}</span>
+                    {#if row.detail}
+                      <p class="mt-1 text-[11px] leading-relaxed text-ash">{row.detail}</p>
+                    {/if}
+                  </li>
+                {/each}
+              </ul>
+            {/if}
+          </div>
+          <div>
+            <div class="flex items-center justify-between px-4 py-2.5">
+              <p class="eyebrow">corroboration</p>
+              <span class="num text-xs text-ash">{inv.corroborations?.length ?? 0}</span>
+            </div>
+            {#if !loadedInv.corroborations}
+              <p class="px-4 pb-4 text-xs text-slate">checking...</p>
+            {:else if (inv.corroborations ?? []).length === 0}
+              <p class="px-4 pb-4 text-sm text-bone-dust">
+                Nothing has been through the second read yet. Verified findings are rechecked live
+                and then read by models from different providers before they are reported.
+              </p>
+            {:else}
+              <ul class="max-h-[440px] overflow-y-auto" data-corroborations="1">
+                {#each inv.corroborations as row, i (i)}
+                  <li class="border-b border-indigo-deep/60 px-4 py-2 last:border-0">
+                    <div class="flex items-center gap-2">
+                      <span
+                        class="mono shrink-0 text-[10px] tracking-[0.08em] uppercase"
+                        style="color:{verdictColor(String(row.verdict))}"
+                      >
+                        {row.verdict}
+                      </span>
+                      <span class="mono min-w-0 flex-1 truncate text-[11px] text-bone" title={row.validator}>{row.validator}</span>
+                    </div>
+                    <span class="mono block truncate text-[11px] text-bone-dust" title={row.value}>{row.type} / {row.value}</span>
+                    {#if row.detail}
+                      <p class="mt-1 text-[11px] leading-relaxed text-ash">{row.detail}</p>
+                    {/if}
+                  </li>
+                {/each}
+              </ul>
+            {/if}
+          </div>
+        </div>
+      {:else if tab === 'findings'}
+        <div>
+          <div class="flex items-center justify-between px-4 py-2.5">
+            <p class="eyebrow">findings</p>
+            <span class="num text-xs text-ash">{inv.findings?.length ?? 0}</span>
+          </div>
+          {#if !loadedInv.findings}
+            <p class="px-4 pb-4 text-xs text-slate">collecting...</p>
+          {:else if (inv.findings ?? []).length === 0}
+            <p class="px-4 pb-4 text-sm text-bone-dust">No confirmed findings on this run yet.</p>
+          {:else}
+            <ul class="max-h-[520px] overflow-y-auto" data-findings="1">
+              {#each inv.findings as row, i (i)}
+                {@const corroboration = row.corroboration as { live?: number; total?: number } | null}
+                <li class="border-b border-indigo-deep/60 px-4 py-3 last:border-0">
+                  <div class="flex flex-wrap items-center gap-2">
+                    <Chip label={row.severity || 'info'} color={sevColor(row.severity)} shape={sevShape(row.severity)} />
+                    <span class="min-w-0 flex-1 truncate text-sm text-bone">{row.title}</span>
+                    {#if corroboration && (corroboration.total ?? 0) > 0}
+                      <span class="mono shrink-0 text-[10px] text-acid">
+                        {corroboration.live ?? 0}/{corroboration.total} live
+                      </span>
+                    {/if}
+                  </div>
+                  <p class="mono mt-1 truncate text-[11px] text-bone-dust" title={row.value}>
+                    {row.secret_type} / {row.value}
+                  </p>
+                  {#if row.status}
+                    <p class="mono mt-0.5 text-[10px] text-ash">{row.status}</p>
+                  {/if}
+                </li>
+              {/each}
+            </ul>
           {/if}
         </div>
-        <span class="mono text-xs text-ash">
-          {calls.length} calls / {usedEndpoints} endpoints / {thinkFragments} reasoning lines
-        </span>
-      </div>
-      <div class="grid md:grid-cols-2">
-        <div class="border-b border-indigo-deep md:border-b-0 md:border-r">
-          <div class="flex items-center justify-between px-4 py-2">
-            <p class="eyebrow">reasoning stream</p>
-            <button
-              class="btn btn-quiet px-2! py-1! text-xs"
-              type="button"
-              onclick={() => {
-                thinkFollow = true;
-                void scrollThinking();
-              }}
-            >
-              {thinkFollow ? 'following' : 'jump to latest'}
-            </button>
-          </div>
-          <div
-            class="think-stream h-[300px] overflow-y-auto px-4 pb-3"
-            data-reasoning="1"
-            bind:this={thinkBox}
-            onscroll={onThinkScroll}
-          >
-            {#if thinking.length === 0}
-              <p class="mono text-xs text-slate">
-                {finished
-                  ? 'No model reasoning on this run.'
-                  : 'Waiting for the first reasoning line...'}
-              </p>
-            {/if}
-            {#each thinking as block (block.id)}
-              {@const agentColor = (AGENT_COLORS as Record<string, string>)[block.agent] ?? 'var(--nc-bone-dust)'}
-              {@const shown = block.expanded ? block.sentences : block.sentences.slice(-2)}
-              <div class="think-block" style="--agent:{agentColor}">
-                <div class="think-meta mono">
-                  <span class="think-dot" aria-hidden="true"></span>
-                  <span class="text-slate">{clock(block.ts)}</span>
-                  <span style="color:{agentColor}">{block.agent}</span>
-                  {#if block.parts > 1}
-                    <span class="think-parts">{block.parts} fragments</span>
-                  {/if}
-                </div>
-                <p class="think-text">
-                  {#if shown.length > 1}{#each shown as sentence, si (si)}{si > 0 ? ' ' : ''}{sentence}{/each}{:else}{shown[0] ?? ''}{/if}
-                </p>
-                {#if block.sentences.length > shown.length}
-                  <button
-                    class="think-more mono"
-                    type="button"
-                    onclick={() => (block.expanded = !block.expanded)}
-                  >
-                    {block.expanded
-                      ? 'collapse'
-                      : `+ ${block.sentences.length - shown.length} earlier ${block.sentences.length - shown.length === 1 ? 'line' : 'lines'}`}
-                  </button>
-                {/if}
-              </div>
-            {/each}
-          </div>
+      {:else if tab === 'report'}
+        <div class="px-5 py-4" data-report="1">
+          {#if reportErr}
+            <p class="text-sm text-violet">{reportErr}</p>
+          {:else if report}
+            <article class="report-prose max-w-[860px]">{@html renderMarkdown(report)}</article>
+          {:else}
+            <p class="text-sm text-slate">
+              {running
+                ? 'the report is written when the run finishes - this preview will refresh on its own.'
+                : 'loading the report...'}
+            </p>
+          {/if}
         </div>
-        <div>
-          <div class="flex items-center justify-between px-4 py-2">
-            <p class="eyebrow">call timeline</p>
-            <span class="mono text-[11px] text-ash">{calls.length} total</span>
-          </div>
-          <ul class="h-[300px] overflow-y-auto" data-calls="1">
-            {#if calls.length === 0}
-              <li class="px-4 py-2 text-xs text-slate">
-                {finished
-                  ? 'No model calls on this run.'
-                  : 'Calls appear here the moment an agent asks the model something.'}
-              </li>
-            {/if}
-            {#each calls as row (row.seq)}
-              <li class="flex items-center gap-3 border-b border-indigo-deep/60 px-4 py-2 last:border-0">
-                <span
-                  class="h-2 w-2 shrink-0 rounded-full transition-colors duration-300"
-                  class:bg-acid={!row.pending && row.ok}
-                  class:bg-violet={!row.pending && !row.ok}
-                  class:bg-slate={row.pending}
-                  aria-hidden="true"
-                ></span>
-                <span class="mono min-w-0 flex-1 truncate text-xs text-bone">
-                  {row.provider}<span class="text-slate">/{row.model}</span>
-                </span>
-                <span
-                  class="mono hidden shrink-0 text-[11px] sm:block"
-                  style="color:{(AGENT_COLORS as Record<string, string>)[row.agent] ?? 'var(--nc-ash)'}"
-                >
-                  {row.agent}
-                </span>
-                <span class="mono num shrink-0 text-[11px] text-ash">
-                  {row.pending ? '...' : `${row.ms} ms`}
-                </span>
-                {#if row.error}
-                  <span class="mono max-w-[140px] shrink-0 truncate text-[11px] text-violet" title={row.error}>
-                    {row.error}
-                  </span>
-                {/if}
-              </li>
-            {/each}
-          </ul>
-        </div>
-      </div>
+      {/if}
     </section>
+  </div>
+{/if}
+
+{#if spotlightAgent}
+  {@const color = (AGENT_COLORS as Record<string, string>)[spotlightAgent] ?? 'var(--nc-acid)'}
+  <div
+    class="palette-veil"
+    role="presentation"
+    onclick={() => (spotlightAgent = '')}
+    onkeydown={(event) => {
+      if (event.key === 'Escape') spotlightAgent = '';
+    }}
+  >
+    <div
+      class="palette-panel panel-raised panel-hud mx-auto mt-[7vh] flex w-[min(880px,94vw)] flex-col overflow-hidden"
+      style="max-height:80vh"
+      role="dialog"
+      aria-modal="true"
+      aria-label="{spotlightAgent} live thinking"
+      tabindex="-1"
+      bind:this={panelEl}
+      onclick={(event) => event.stopPropagation()}
+      onkeydown={(event) => event.stopPropagation()}
+    >
+      <header class="flex items-center gap-3 border-b border-indigo-deep px-5 py-3">
+        <span class="lane-led" style="--agent:{color}" aria-hidden="true"></span>
+        <div class="min-w-0">
+          <p class="eyebrow">live model spotlight</p>
+          <h2 class="font-mono text-lg" style="color:{color}">{spotlightAgent}</h2>
+        </div>
+        <div class="ml-auto flex items-center gap-3">
+          <span class="num text-xs text-ash">{spotlightRows.length} rows</span>
+          <button class="btn btn-quiet px-2! py-1! text-xs" type="button" onclick={() => (spotlightAgent = '')}>
+            close
+          </button>
+        </div>
+      </header>
+      <div
+        class="think-stream flex-1 overflow-y-auto px-5 py-3"
+        data-spotlight="1"
+        bind:this={spotlightEl}
+        onscroll={onSpotlightScroll}
+      >
+        {#if spotlightRows.length === 0}
+          <p class="mono text-xs text-slate">
+            {running
+              ? `waiting for ${spotlightAgent} to speak...`
+              : `no activity recorded for ${spotlightAgent} on this run`}
+          </p>
+        {/if}
+        {#each spotlightRows as row, i (row.seq)}
+          {@const badge = badgeOf(row)}
+          <p class="think-line mono text-[11px]">
+            <span class="text-slate">{clock(row.ts)} </span>
+            <span style="color:{badge.color}">{badge.text} </span>
+            <span class="whitespace-pre-wrap" style="color:{rowColor(row)}">{row.text}</span>
+            {#if row.sub}<span class="text-ash"> / {row.sub}</span>{/if}
+            {#if running && i === spotlightRows.length - 1}
+              <span class="caret" aria-hidden="true"></span>
+            {/if}
+          </p>
+        {/each}
+      </div>
+      <footer class="flex items-center gap-2 border-t border-indigo-deep px-5 py-2">
+        {#if running}
+          <span class="pulse-live h-1.5 w-1.5 rounded-full bg-acid" aria-hidden="true"></span>
+          <span class="mono text-[10px] tracking-[0.14em] text-ash">streaming // press esc to close</span>
+        {:else}
+          <span class="mono text-[10px] tracking-[0.14em] text-ash">
+            {run ? statusLabel(run.status) : 'closed'} // press esc to close
+          </span>
+        {/if}
+      </footer>
+    </div>
   </div>
 {/if}
 
 {#if stopOpen && run}
   <Confirm
     title="Stop the scan of {run.target}?"
-    body="The run stops at the next safe point and keeps everything it found so far. Partial results are written to disk. This cannot be undone, but you can rerun the target later."
+    body="The run stops at the next safe point and keeps everything it found so far. Partial results are written to disk, and you can continue the scan later from where it stopped. This cannot be undone."
     confirmLabel="stop this scan"
     danger
     onConfirm={confirmStop}

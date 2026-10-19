@@ -89,8 +89,7 @@
   const tailLine = at(-124, RIM);
 
   // blips: knots in the silk; each flares as the sweep reaches its bearing.
-  // the knot on the rim -- where the catch hangs -- burns brightest.
-  const KNOT = at(-30, RIM);
+  // the knot on the rim burns brightest.
   const blips = (
     [
       { deg: -30, r: RIM, hot: true },
@@ -127,10 +126,6 @@
     t: l.t
   }));
 
-  // ---- the catch ---------------------------------------------------------
-  // one credential snagged on the rim knot, hung by an animated tether
-  const CARD = { x: 966, y: 124, w: 176, h: 38, rot: 2 };
-
   // ---- the six-stage rail ------------------------------------------------
   const RAIL = [
     { key: 'crawl', label: 'CRAWL', detail: 'Target & Endpoints' },
@@ -149,7 +144,6 @@
     { label: 'UNRESOLVED', color: 'var(--nc-ash)' }
   ];
 
-  let hot = $state(false);
   let svgEl = $state<SVGSVGElement | null>(null);
 
   const reduced =
@@ -160,8 +154,6 @@
   // pointer sweeps bend the depth layers on their own parallax factors and
   // the caster's eyes track the cursor; everything eases on a damped lerp
   // and sleeps while the banner is scrolled away or the tab is hidden.
-  // card hover is hit-tested here in SVG space -- the copy column stacks
-  // above the scene, so DOM hit-testing could never see the card.
   $effect(() => {
     if (reduced) return;
     const root = document.documentElement;
@@ -183,17 +175,6 @@
     const onMove = (event: PointerEvent) => {
       tx = (event.clientX / window.innerWidth) * 2 - 1;
       ty = (event.clientY / window.innerHeight) * 2 - 1;
-      const ctm = svg.getScreenCTM();
-      if (ctm) {
-        const p = new DOMPoint(event.clientX, event.clientY).matrixTransform(ctm.inverse());
-        const dx = p.x - CARD.x;
-        const dy = p.y - CARD.y;
-        const a = (-CARD.rot * Math.PI) / 180;
-        const lx = dx * Math.cos(a) - dy * Math.sin(a);
-        const ly = dx * Math.sin(a) + dy * Math.cos(a);
-        const found = lx >= -8 && lx <= CARD.w + 8 && ly >= -8 && ly <= CARD.h + 8;
-        if (found !== hot) hot = found;
-      }
     };
     const step = () => {
       px += (tx - px) * 0.05;
@@ -268,16 +249,6 @@
       <stop offset="0" stop-color="var(--nc-acid)" stop-opacity="0.22" />
       <stop offset="1" stop-color="var(--nc-acid)" stop-opacity="0" />
     </radialGradient>
-
-    <linearGradient id="{id}-shine" x1="0" y1="0" x2="1" y2="0">
-      <stop offset="0" stop-color="white" stop-opacity="0" />
-      <stop offset="0.5" stop-color="white" stop-opacity="0.85" />
-      <stop offset="1" stop-color="white" stop-opacity="0" />
-    </linearGradient>
-
-    <clipPath id="{id}-clip" clipPathUnits="userSpaceOnUse">
-      <rect width={CARD.w} height={CARD.h} rx="2" />
-    </clipPath>
   </defs>
 
   <g mask="url(#{id}-mask)">
@@ -392,61 +363,6 @@
     <text x={C.x} y="312" text-anchor="middle" font-size="7" letter-spacing="0.16em" fill="var(--nc-acid)" opacity="0.45" font-family={MONO}
       >R{RIM} / SWEEP {SWEEP_S}.0S / 7 KNOTS LIVE</text
     >
-  </g>
-
-  <!-- the tether: the catch hangs off the rim knot -->
-  <path
-    d="M{CARD.x} {CARD.y + 18} Q976 118 {KNOT.x} {KNOT.y}"
-    stroke="var(--nc-violet)"
-    stroke-width="1"
-    stroke-dasharray="3 4"
-    opacity="0.8"
-    class="ants"
-  />
-  <circle cx={KNOT.x} cy={KNOT.y} r="6" fill="var(--nc-acid)" opacity="0.15" />
-  <circle cx={KNOT.x} cy={KNOT.y} r="2.4" fill="var(--nc-acid)" class="knot-pulse" />
-
-  <!-- the caught: one credential card. The frame lives and drifts for
-       good; the hover lift composes with the position transform. -->
-  <g class="secret-badge card-slot" class:hot>
-    <g class="badge-float f-b">
-      <!-- position lives on this attribute transform; the hover lift must
-           live on a separate group, since a CSS transform here would
-           replace the attribute and throw the card to the svg origin -->
-      <g transform="translate({CARD.x},{CARD.y}) rotate({CARD.rot})">
-        <g class="card-lift">
-          <g clip-path="url(#{id}-clip)">
-            <rect width={CARD.w} height={CARD.h} rx="2" fill="var(--nc-void)" stroke="var(--nc-violet_deep)" />
-            <rect x="0" y="0" width={CARD.w} height="2" fill="url(#{id}-shine)" class="badge-shine" />
-
-            <rect x="7" y="11" width="16" height="16" rx="2" fill="var(--nc-violet_abyss)" stroke="var(--nc-violet_deep)" />
-            <g
-              transform="translate(9.5,13.5)"
-              stroke="var(--nc-acid)"
-              stroke-width="1.15"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-              fill="none"
-            >
-              <ellipse cx="7" cy="3.4" rx="4.4" ry="1.9" />
-              <path d="M2.6 3.4 v7.2 c0 1.05 1.97 1.9 4.4 1.9 s4.4 -0.85 4.4 -1.9 V3.4" />
-              <path d="M2.6 7 c0 1.05 1.97 1.9 4.4 1.9 s4.4 -0.85 4.4 -1.9" />
-            </g>
-
-            <text x="30" y="17" font-size="6.8" letter-spacing="0.05em" fill="var(--nc-bone_dust)" font-family={MONO}
-              >DATABASE_URL</text
-            >
-            <text x="30" y="31" font-size="9.5" fill="var(--nc-acid)" font-family={MONO}>postgres://user:pass@***</text>
-
-            <circle cx="160" cy="12" r="4.6" fill="var(--nc-acid)" class="card-beacon" opacity="0.2" />
-            <circle cx="160" cy="12" r="2" fill="var(--nc-acid)" class="led-blink" />
-          </g>
-
-          <path class="card-tick" d="M0.5 7 v-6 h6" stroke="var(--nc-acid)" stroke-width="1.2" opacity="0.75" />
-          <path class="card-tick" d="M{CARD.w - 6.5} {CARD.h - 0.5} h6 v-6" stroke="var(--nc-acid)" stroke-width="1.2" opacity="0.75" />
-        </g>
-      </g>
-    </g>
   </g>
 
   <!-- validation ladder -->

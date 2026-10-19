@@ -90,6 +90,20 @@ def render(target: str, summary: dict, findings: list[dict],
         lines.append(f"- status: {_inline(finding.get('status', ''))}")
         if finding.get("confidence"):
             lines.append(f"- confidence: {finding.get('confidence')}")
+        corroboration = finding.get("corroboration") or {}
+        verdicts = corroboration.get("verdicts") or []
+        if verdicts:
+            lines.append("- corroboration: "
+                         f"{corroboration.get('live', 0)}/{corroboration.get('total', 0)} "
+                         f"models across different providers agree the credential is live")
+            for verdict in verdicts:
+                who = f"{verdict.get('provider', '?')}/{verdict.get('model', '?')}"
+                said = "live" if verdict.get("live") else "not convinced"
+                reason = str(verdict.get("reason") or "").strip()
+                line = f"  - {_inline(who)}: {said}"
+                if reason:
+                    line += f" ({_inline(reason, finding.get('value', ''))})"
+                lines.append(line)
         lines.append("")
         lines.append("Impact")
         lines.append("")

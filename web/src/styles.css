@@ -1830,6 +1830,139 @@
     animation: blink 1.05s steps(2, start) infinite;
   }
 
+  /* live inspector: tab strip, stream filters, report preview */
+  .live-tab {
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    padding: 6px 10px;
+    border-radius: 6px;
+    border: 1px solid transparent;
+    color: var(--nc-ash);
+    transition: color var(--t-hover) var(--ease-enter),
+      border-color var(--t-hover) var(--ease-enter),
+      background var(--t-hover) var(--ease-enter);
+  }
+
+  .live-tab:hover {
+    color: var(--nc-bone);
+  }
+
+  .live-tab.active {
+    color: var(--nc-acid);
+    border-color: color-mix(in srgb, var(--nc-acid) 38%, transparent);
+    background: color-mix(in srgb, var(--nc-acid) 7%, transparent);
+  }
+
+  .live-filter {
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    padding: 3px 9px;
+    border-radius: 999px;
+    border: 1px solid var(--nc-indigo_deep);
+    color: var(--nc-slate);
+    transition: color var(--t-hover) var(--ease-enter),
+      border-color var(--t-hover) var(--ease-enter),
+      background var(--t-hover) var(--ease-enter);
+  }
+
+  .live-filter:hover {
+    color: var(--nc-bone-dust);
+  }
+
+  .live-filter.active {
+    color: var(--nc-bone);
+    border-color: color-mix(in srgb, var(--nc-violet) 55%, transparent);
+    background: color-mix(in srgb, var(--nc-violet) 12%, transparent);
+  }
+
+  .report-prose {
+    color: var(--nc-bone-dust);
+    font-size: 13.5px;
+    line-height: 1.75;
+  }
+
+  .report-prose > * + * {
+    margin-top: 0.85em;
+  }
+
+  .report-prose h1 {
+    font-family: var(--mono);
+    font-size: 19px;
+    letter-spacing: 0.04em;
+    color: var(--nc-bone);
+  }
+
+  .report-prose h2 {
+    font-family: var(--mono);
+    font-size: 15px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--nc-acid);
+    border-bottom: 1px solid var(--nc-indigo_deep);
+    padding-bottom: 0.35em;
+    margin-top: 1.6em;
+  }
+
+  .report-prose h3 {
+    font-family: var(--mono);
+    font-size: 14px;
+    color: var(--nc-violet);
+    margin-top: 1.4em;
+  }
+
+  .report-prose ul,
+  .report-prose ol {
+    padding-left: 1.35em;
+  }
+
+  .report-prose li::marker {
+    color: var(--nc-acid);
+  }
+
+  .report-prose strong {
+    color: var(--nc-bone);
+  }
+
+  .report-prose code {
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--nc-acid);
+    background: color-mix(in srgb, var(--nc-acid) 8%, transparent);
+    border: 1px solid var(--nc-indigo_deep);
+    border-radius: 4px;
+    padding: 0.5px 4px;
+  }
+
+  .report-prose pre {
+    background: var(--nc-void);
+    border: 1px solid var(--nc-indigo_deep);
+    border-radius: 8px;
+    padding: 12px 14px;
+    overflow-x: auto;
+  }
+
+  .report-prose pre code {
+    background: none;
+    border: 0;
+    padding: 0;
+    color: var(--nc-bone-dust);
+  }
+
+  .report-prose a {
+    color: var(--nc-violet);
+    text-decoration: underline;
+    text-underline-offset: 2px;
+  }
+
+  .report-prose hr {
+    border: 0;
+    border-top: 1px solid var(--nc-indigo_deep);
+  }
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

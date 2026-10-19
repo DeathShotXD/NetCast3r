@@ -21,9 +21,68 @@ from .subdomains import SubdomainFinder
 LINK_RE = re.compile(r"""(?:href|src|action)\s*=\s*["']([^"'#]+)["']""", re.I)
 JS_REF_RE = re.compile(r"""(?:src|href)\s*=\s*["']([^"']+\.js(?:\?[^"']*)?)["']""", re.I)
 JS_IMPORT_RE = re.compile(r"""(?:import\s*\(\s*|from\s*|require\(\s*)["']([^"']+\.js)(?:\?[^"']*)?["']""")
+# any quoted string that names a script, anywhere in the body: webpack chunk
+# tables, vite asset maps, service-worker precache lists
+QUOTED_JS_RE = re.compile(
+    r"""["'`]([^"'\s`\\]{1,240}?\.(?:js|mjs|cjs|jsx)(?:\?[^"'\s`\\]{0,120})?)["'`]""", re.I)
+# module specifiers, with or without an extension: static/dynamic imports,
+# workers, workers loading their own scripts, and URL constructors
+MODULE_REF_RE = re.compile(
+    r"""(?:import\s*\(\s*|from\s*|require\(\s*|importScripts\(\s*|"""
+    r"""new\s+(?:Shared)?Worker\(\s*|new\s+URL\(\s*)"""
+    r"""["']([^"'\s]{1,300})["']""")
 ENDPOINT_RE = re.compile(r"""["'](/[A-Za-z0-9_\-./]{2,}(?:\?[A-Za-z0-9_\-=&%]*)?)["']""")
 SOURCE_MAP_RE = re.compile(r"""//[#@]\s*sourceMappingURL=(\S+)""")
+INLINE_SCRIPT_RE = re.compile(r"""<script(?![^>]*\bsrc\s*=)[^>]*>(.*?)</script>""",
+                              re.I | re.S)
 MAX_SOURCE_MAP = 8_000_000
+JS_EXTENSIONS = (".js", ".mjs", ".cjs", ".jsx")
+
+
+def _is_js_url(url: str) -> bool:
+    return url.split("?")[0].lower().endswith(JS_EXTENSIONS)
+
+
+def js_children(base_url: str, text: str, cap: int = 60) -> list[str]:
+    """Every script this body references, resolved to absolute URLs.
+
+    Two passes: any quoted string ending in a script extension (which is how
+    bundlers name their chunks), then module specifiers that may carry no
+    extension at all -- ``import("./panel")`` -- expanded to the plausible
+    file names.
+    """
+    found: list[str] = []
+    seen: set[str] = set()
+
+    def add(candidate: str) -> None:
+        if candidate and candidate not in seen:
+            seen.add(candidate)
+            found.append(candidate)
+
+    for spec in QUOTED_JS_RE.findall(text):
+        if spec.startswith(("data:", "blob:", "javascript:", "mailto:", "#")):
+            continue
+        add(_absolute(base_url, spec))
+    for spec in MODULE_REF_RE.findall(text):
+        if not spec.startswith((".", "/")) or spec.startswith("//"):
+            continue
+        resolved = _absolute(base_url, spec)
+        if _is_js_url(resolved):
+            add(resolved)
+            continue
+        add(resolved + ".js")
+        add(resolved.rstrip("/") + "/index.js")
+    return found[:cap]
+
+
+def inline_scripts(page_text: str, minimum: int = 16) -> list[str]:
+    """Bodies of inline ``<script>`` blocks big enough to be worth scanning."""
+    blocks = []
+    for body in INLINE_SCRIPT_RE.findall(page_text or ""):
+        body = body.strip()
+        if len(body) >= minimum:
+            blocks.append(body[:60000])
+    return blocks
 
 SPEC_PATHS = ("/openapi.json", "/swagger.json", "/swagger/v1/swagger.json",
               "/v2/api-docs", "/v3/api-docs", "/api-docs", "/api/swagger.json",
@@ -223,15 +282,36 @@ class Recon:
                         found.append(loc)
         return sorted(set(found))
 
-    def crawl(self, seeds: list[str], should_stop=None) -> ReconResult:
-        result = ReconResult()
-        queue: list[tuple[str, int]] = []
-        for seed in seeds:
-            url = seed if "://" in seed else "https://" + seed
-            self.scope.add_seed(url)
-            queue.append((url, 0))
+    def js_children(self, base_url: str, text: str, cap: int = 60) -> list[str]:
+        return js_children(base_url, text, cap=cap)
 
-        seen: set[str] = set()
+    def crawl(self, seeds: list[str], should_stop=None, resume=None,
+              on_discover=None, on_checkpoint=None) -> ReconResult:
+        """Walk the site from the seeds, staying inside scope.
+
+        ``resume`` is a ``(queue, seen, result)`` triple from a checkpoint: the
+        result keeps what was already collected and the walk continues where
+        it stopped. ``on_discover(kind, url, text)`` fires for each new page,
+        script, endpoint, or out-of-scope URL as it lands, and
+        ``on_checkpoint(state)`` fires every few fetches with the remaining
+        queue and the seen set, so a stopped scan can start again without
+        re-fetching anything.
+        """
+        if resume is not None:
+            raw_queue, raw_seen, result = resume
+            queue: list[tuple[str, int]] = [(str(url), int(depth)) for url, depth in raw_queue]
+            seen: set[str] = set(raw_seen)
+        else:
+            result = ReconResult()
+            queue = []
+            for seed in seeds:
+                url = seed if "://" in seed else "https://" + seed
+                self.scope.add_seed(url)
+                queue.append((url, 0))
+            seen = set()
+
+        known_endpoints = set(result.endpoints)
+        fetched = 0
         tick = 0
         self.max_pages = max(self.max_pages, len(seeds) * 20)
         while queue and len(seen) < self.max_pages:
@@ -245,7 +325,10 @@ class Recon:
             if url in seen:
                 continue
             if not self.scope.is_in_scope(url):
-                result.out_of_scope.append(url)
+                if url not in result.out_of_scope:
+                    result.out_of_scope.append(url)
+                    if on_discover:
+                        on_discover("out-of-scope", url)
                 continue
             seen.add(url)
             if self.on_fetch:
@@ -257,11 +340,14 @@ class Recon:
                 if self.on_fetch:
                     self.on_fetch("skip", url, 0)
                 continue
+            fetched += 1
 
-            is_js = url.split("?")[0].lower().endswith(".js") or "javascript" in content_type
+            is_js = _is_js_url(url) or "javascript" in content_type
             if is_js:
                 result.js_urls.append(url)
                 result.js_text[url] = text
+                if on_discover:
+                    on_discover("js", url, text)
                 if self.on_fetch:
                     self.on_fetch("js", url, status)
                 recovered = self._source_map(url, text)
@@ -269,17 +355,30 @@ class Recon:
                     map_url, sources = recovered
                     result.js_text[map_url] = sources
                     result.js_urls.append(map_url)
+                    if on_discover:
+                        on_discover("js", map_url, sources)
                     for endpoint in ENDPOINT_RE.findall(sources):
-                        result.endpoints.append(_absolute(map_url, endpoint))
-                for ref in JS_IMPORT_RE.findall(text):
-                    child = _absolute(url, ref)
+                        absolute = _absolute(map_url, endpoint)
+                        result.endpoints.append(absolute)
+                        if absolute not in known_endpoints:
+                            known_endpoints.add(absolute)
+                            if on_discover:
+                                on_discover("endpoint", absolute)
+                for child in js_children(url, text):
                     if self.scope.is_in_scope(child):
                         queue.append((child, depth + 1))
                 for endpoint in ENDPOINT_RE.findall(text):
-                    result.endpoints.append(_absolute(url, endpoint))
+                    absolute = _absolute(url, endpoint)
+                    result.endpoints.append(absolute)
+                    if absolute not in known_endpoints:
+                        known_endpoints.add(absolute)
+                        if on_discover:
+                            on_discover("endpoint", absolute)
             else:
                 result.pages.append(url)
                 result.page_text[url] = text
+                if on_discover:
+                    on_discover("page", url, text)
                 if self.on_fetch:
                     self.on_fetch("page", url, status)
                 for link in LINK_RE.findall(text):
@@ -296,10 +395,19 @@ class Recon:
                         elif depth < self.max_depth:
                             queue.append((child, depth + 1))
                     elif self.scope.is_out_of_scope(child):
-                        result.out_of_scope.append(child)
+                        if child not in result.out_of_scope:
+                            result.out_of_scope.append(child)
+                            if on_discover:
+                                on_discover("out-of-scope", child)
                 for absolute in re.findall(r"""https?://[^\s"'<>)\\]+""", text):
                     if absolute.split("?")[0].lower().endswith(".js") and self.scope.is_in_scope(absolute):
                         queue.append((absolute, depth))
+            if on_checkpoint and fetched % 10 == 0:
+                on_checkpoint({"queue": [[u, d] for u, d in queue], "seen": sorted(seen)})
+        if on_checkpoint:
+            # the final state: whatever is still queued when the walk stops,
+            # so an interrupted crawl can pick up exactly where it left off
+            on_checkpoint({"queue": [[u, d] for u, d in queue], "seen": sorted(seen)})
         result.js_urls = sorted(set(result.js_urls))
         result.endpoints = sorted(set(result.endpoints))
         result.out_of_scope = sorted(set(result.out_of_scope))

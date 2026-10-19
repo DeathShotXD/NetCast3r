@@ -206,13 +206,21 @@ def run_scan(run_id: str, target: str, options: dict, emit: Callable[[Event], No
         run_config.concurrency = max(1, int(options["max_pages"]) // 25)
 
     results_root = _safe_results_dir(options.get("results_dir"))
+    resume = bool(options.get("resume"))
+    resume_from = str(options.get("resume_from") or "") if resume else ""
     out = results_root / run_id
+    if resume and resume_from:
+        # continue in the parent's results directory so the store keeps the
+        # pages, scripts, findings and stage markers the run already wrote
+        parent_out = results_root / resume_from
+        if (parent_out / "netcast3r.db").is_file():
+            out = parent_out
     out.mkdir(parents=True, exist_ok=True)
     store = Store(out / "netcast3r.db")
     scope = ScopeManager.from_files("", "", extra_in=[target])
     console = EventConsole(emit, run_id)
     orchestrator = Orchestrator(config, scope, store, console=console,
-                                observer=console.model_call)
+                                observer=console.model_call, resume=resume)
     try:
         summary = orchestrator.run([target], should_stop=should_stop)
     finally:

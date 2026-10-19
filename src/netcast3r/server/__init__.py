@@ -97,6 +97,30 @@ def _int_or(value, default: int) -> int:
         return default
 
 
+def _inventory_items(store, kind: str, limit: int) -> list:
+    """Read one slice of a run's evidence store for the dashboard inspector."""
+    limit = max(1, min(int(limit or 2000), 5000))
+    readers = {
+        "subdomains": lambda: store.list_subdomains(),
+        "pages": lambda: store.list_assets(kind="page", limit=limit),
+        "assets": lambda: store.list_assets(limit=limit),
+        "js": lambda: store.list_js(limit=limit),
+        "endpoints": lambda: store.list_endpoints(limit=limit),
+        "secrets": lambda: store.list_secrets(limit=limit),
+        "candidates": lambda: store.list_secret_candidates(limit=limit),
+        "validations": lambda: store.list_validations(limit=limit),
+        "corroborations": lambda: store.list_corroborations(limit=limit),
+        "reviews": lambda: store.list_reviews(limit=limit),
+        "findings": lambda: store.list_findings(limit=limit),
+        "stages": lambda: [{"name": name, **data}
+                           for name, data in store.stages().items()],
+    }
+    reader = readers.get(kind)
+    if reader is None:
+        return []
+    return reader()
+
+
 PLACEHOLDER = """<!doctype html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>NetCast3r</title>
@@ -224,6 +248,44 @@ class Server:
                                         parent_run_id=parent["id"])
             self.jobs.submit(run["id"], parent["target"], parent.get("options") or {})
             return _json(self.index.get_run(run["id"]), 201)
+
+        @add("POST", r"/api/v1/runs/(?P<id>[A-Za-z0-9_]+)/resume")
+        def resume_run(ctx):
+            parent = self.index.get_run(ctx.params["id"])
+            if not parent:
+                return _problem(404, "run not found")
+            if parent.get("status") in ("running", "queued"):
+                return _problem(409, "run is still active", "stop it before resuming")
+            options = dict(parent.get("options") or {})
+            options["resume"] = True
+            options["resume_from"] = parent["id"]
+            if self.config is not None:
+                options.setdefault("results_dir", str(getattr(self.config, "results_dir", "results")))
+            run = self.index.create_run(parent["target"], options, parent_run_id=parent["id"])
+            self.jobs.submit(run["id"], parent["target"], options)
+            return _json(self.index.get_run(run["id"]), 201)
+
+        @add("GET", r"/api/v1/runs/(?P<id>[A-Za-z0-9_]+)/inventory")
+        def run_inventory(ctx):
+            run = self.index.get_run(ctx.params["id"])
+            if not run:
+                return _problem(404, "run not found")
+            kind = (ctx.query.get("kind") or "").strip()
+            limit = _int_or(ctx.query.get("limit"), 2000)
+            results_dir = (run.get("counts") or {}).get("results_dir") or run.get("results_dir") or ""
+            empty = _json({"kind": kind, "items": [], "total": 0})
+            if not results_dir:
+                return empty
+            db = Path(str(results_dir)) / "netcast3r.db"
+            if not db.is_file():
+                return empty
+            from ..store import Store
+            store = Store(db)
+            try:
+                items = _inventory_items(store, kind, limit)
+            finally:
+                store.close()
+            return _json({"kind": kind, "items": items, "total": len(items)})
 
         @add("GET", r"/api/v1/runs/(?P<id>[A-Za-z0-9_]+)/summary")
         def run_summary(ctx):

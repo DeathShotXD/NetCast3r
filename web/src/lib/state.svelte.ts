@@ -31,15 +31,16 @@ class Store {
     const raw = window.location.hash.replace(/^#\/?/, '');
     if (!raw) return false;
     const [screen, id] = raw.split('/');
-    const known: Screen[] = ['home', 'new', 'live', 'engine', 'findings', 'runs', 'keys', 'help'];
-    if (!known.includes(screen as Screen)) return false;
-    this.screen = screen as Screen;
+    const known: Screen[] = ['home', 'new', 'live', 'findings', 'runs', 'keys', 'help'];
+    const legacy = screen === 'engine' ? 'live' : (screen as Screen);
+    if (!known.includes(legacy)) return false;
+    this.screen = legacy;
     if (id) this.activeRunId = id;
     return true;
   }
 
   syncHash(): void {
-    const tracked = this.screen === 'live' || this.screen === 'engine';
+    const tracked = this.screen === 'live';
     const next = `#/${this.screen}${tracked && this.activeRunId ? `/${this.activeRunId}` : ''}`;
     if (window.location.hash !== next) window.location.hash = next;
   }
@@ -88,7 +89,7 @@ class Store {
     this.syncHash();
   }
 
-  /** Select a run without changing screens (used by the engine room). */
+  /** Select a run without changing screens (used by the live inspector). */
   select(runId: string): void {
     this.activeRunId = runId;
     this.syncHash();

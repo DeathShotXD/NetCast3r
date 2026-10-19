@@ -1,4 +1,4 @@
-import type { Finding, KeyEntry, Meta, Paged, Provider, ProviderHealth, Run, RunEvent, Totals } from './types';
+import type { Finding, Inventory, KeyEntry, Meta, Paged, Provider, ProviderHealth, Run, RunEvent, Totals } from './types';
 
 const BASE = '/api/v1';
 
@@ -65,6 +65,9 @@ export const api = {
     request<Run>('POST', '/runs', { target, options }),
   stopRun: (id: string) => request<{ stopped: boolean }>('POST', `/runs/${id}/stop`),
   rerun: (id: string) => request<Run>('POST', `/runs/${id}/rerun`),
+  resumeRun: (id: string) => request<Run>('POST', `/runs/${id}/resume`),
+  inventory: (id: string, kind: string, limit = 5000) =>
+    request<Inventory>('GET', `/runs/${id}/inventory?kind=${encodeURIComponent(kind)}&limit=${limit}`),
   deleteRun: (id: string) => request<{ deleted: boolean }>('DELETE', `/runs/${id}`),
   runSummary: (id: string) =>
     request<{ severity: Record<string, number>; triage: Record<string, number> }>(

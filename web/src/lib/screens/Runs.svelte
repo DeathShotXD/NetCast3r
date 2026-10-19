@@ -36,6 +36,17 @@
     }
   }
 
+  async function resume(id: string) {
+    try {
+      const fresh = await api.resumeRun(id);
+      store.runs = [fresh, ...store.runs.filter((item) => item.id !== fresh.id)];
+      store.watch(fresh.id);
+      store.toast('ok', `continuing the scan of ${fresh.target} where it stopped`);
+    } catch (exc) {
+      store.fail(exc instanceof Error ? exc.message : 'could not continue the run');
+    }
+  }
+
   onMount(() => {
     void store.refreshRuns();
   });
@@ -109,6 +120,16 @@
                     <button class="btn btn-quiet px-2! py-1! text-xs" type="button" onclick={() => store.watch(run.id)}>
                       open
                     </button>
+                    {#if ['stopped', 'interrupted', 'failed'].includes(run.status)}
+                      <button
+                        class="btn btn-quiet px-2! py-1! text-xs"
+                        style="color:var(--nc-acid)"
+                        type="button"
+                        onclick={() => resume(run.id)}
+                      >
+                        continue
+                      </button>
+                    {/if}
                     <button
                       class="btn btn-quiet px-2! py-1! text-xs"
                       type="button"

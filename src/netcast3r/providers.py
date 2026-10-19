@@ -106,7 +106,7 @@ class ProviderBus:
         except Exception:  # noqa: BLE001 - an observer must not break the stream
             pass
 
-    def _candidates(self, agent: str):
+    def _candidates(self, agent: str, exclude_providers=None):
         route = self.config.route_for(agent)
         ordered = self.config.ordered_providers()
         if route.provider:
@@ -118,6 +118,8 @@ class ProviderBus:
             # everything is cooling down -- better to try than to stall
             fresh = ordered
         for provider in fresh:
+            if exclude_providers and provider.name in exclude_providers:
+                continue
             key = provider.resolve_key()
             if not key and provider.name != "ollama" and not _local_endpoint(provider.base_url):
                 continue
@@ -132,12 +134,30 @@ class ProviderBus:
                 if model and not self._model_dead(provider.name, model):
                     yield provider, model, key
 
+    def providers_available(self, agent: str, exclude_providers=None) -> int:
+        """How many distinct providers could serve this agent right now."""
+        names = {provider.name for provider, _, _ in
+                 self._candidates(agent, exclude_providers=exclude_providers)}
+        return len(names)
+
     def chat_stream(self, agent: str, messages: list[dict], on_chunk=None):
+        text, _, _ = self.chat_stream_ex(agent, messages, on_chunk=on_chunk)
+        return text
+
+    def chat_stream_ex(self, agent: str, messages: list[dict], on_chunk=None,
+                       exclude_providers=None):
+        """One model call; returns ``(text, provider, model)``.
+
+        ``exclude_providers`` keeps the call off providers that already
+        answered a related question, which is how a panel of distinct models
+        corroborates a finding.
+        """
         route = self.config.route_for(agent)
         budget = getattr(self.config.run, "max_call_seconds", 90)
         call_timeout = min(self.timeout, budget)
         last_error = "no provider available"
-        for provider, model, key in self._candidates(agent):
+        for provider, model, key in self._candidates(agent,
+                                                     exclude_providers=exclude_providers):
             attempt = time.monotonic()
             self._observe({"kind": "call", "agent": agent,
                            "provider": provider.name, "model": model})
@@ -228,7 +248,7 @@ class ProviderBus:
                         self._observe({"kind": "done", "agent": agent,
                                        "provider": provider.name, "model": model,
                                        "ok": True, "ms": _ms(attempt)})
-                        return collected
+                        return collected, provider.name, model
             except Exception as exc:
                 last_error = _redact(f"{provider.name}: {type(exc).__name__}", key)
                 self._strike(provider.name, model)
@@ -241,4 +261,4 @@ class ProviderBus:
                 continue
         if on_chunk:
             on_chunk(Chunk("error", last_error))
-        return ""
+        return "", "", ""

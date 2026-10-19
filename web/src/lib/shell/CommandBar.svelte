@@ -13,7 +13,6 @@
     home: 'home',
     new: 'new scan',
     live: 'live run',
-    engine: 'engine room',
     findings: 'findings',
     runs: 'runs',
     keys: 'providers and keys',

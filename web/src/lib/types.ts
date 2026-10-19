@@ -108,11 +108,16 @@ export type Screen =
   | 'home'
   | 'new'
   | 'live'
-  | 'engine'
   | 'findings'
   | 'runs'
   | 'keys'
   | 'help';
+
+export interface Inventory {
+  kind: string;
+  items: Record<string, any>[];
+  total: number;
+}
 
 export interface Toast {
   id: number;

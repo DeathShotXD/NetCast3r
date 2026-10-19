@@ -213,6 +213,56 @@ class ServerTests(unittest.TestCase):
         self.assertEqual(summary["triage"].get("new"), 1)
         self.assertEqual(summary["last_run"]["target"], "s.com")
 
+    def test_inventory_reads_a_runs_store(self):
+        from netcast3r.store import Store
+
+        run_id = self.data(self.call("POST", "/api/v1/runs", body={"target": "s.com"}))["id"]
+        run = self.wait(run_id)
+        out = Path(self.tmp.name) / "results" / run_id
+        out.mkdir(parents=True, exist_ok=True)
+        store = Store(out / "netcast3r.db")
+        store.add_subdomain("api.example.com")
+        store.add_endpoint("https://api.example.com/v1/users", "js")
+        store.add_finding("AWS key", "high", "aws", "AKIAEXAMPLE", "impact", "proof")
+        store.stage_end("crawl", detail="4 pages")
+        store.close()
+        self.index.update_run(run["id"], counts_json={"results_dir": str(out)})
+
+        response = self.call("GET", f"/api/v1/runs/{run_id}/inventory", query={"kind": "findings"})
+        self.assertEqual(response.status, 200)
+        data = self.data(response)
+        self.assertEqual(data["total"], 1)
+        self.assertEqual(data["items"][0]["secret_type"], "aws")
+
+        subdomains = self.data(self.call(
+            "GET", f"/api/v1/runs/{run_id}/inventory", query={"kind": "subdomains"}))
+        self.assertEqual(subdomains["items"][0]["host"], "api.example.com")
+
+        stages = self.data(self.call(
+            "GET", f"/api/v1/runs/{run_id}/inventory", query={"kind": "stages"}))
+        self.assertEqual(stages["items"][0]["status"], "done")
+
+    def test_inventory_of_an_unknown_run_is_a_404(self):
+        response = self.call("GET", "/api/v1/runs/run_missing/inventory", query={"kind": "pages"})
+        self.assertEqual(response.status, 404)
+
+    def test_resume_creates_a_child_run_with_resume_options(self):
+        parent = self.index.create_run("https://a.example")
+        self.jobs.submit(parent["id"], "https://a.example", {})
+        self.wait(parent["id"])
+        response = self.call("POST", f"/api/v1/runs/{parent['id']}/resume")
+        self.assertEqual(response.status, 201)
+        child = self.data(response)
+        self.assertEqual(child["parent_run_id"], parent["id"])
+        self.assertTrue(child["options"]["resume"])
+        self.assertEqual(child["options"]["resume_from"], parent["id"])
+        self.wait(child["id"])
+
+    def test_resume_refuses_an_active_run(self):
+        run = self.index.create_run("https://a.example")
+        response = self.call("POST", f"/api/v1/runs/{run['id']}/resume")
+        self.assertEqual(response.status, 409)
+
 
 class DashboardAppTests(unittest.TestCase):
     """The built SPA as the server actually serves it."""

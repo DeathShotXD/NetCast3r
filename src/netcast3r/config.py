@@ -98,6 +98,8 @@ class RunConfig:
     subdomains: bool = True
     subdomain_wordlist: str = ""
     subdomain_limit: int = 300
+    corroboration_calls: int = 2
+    recheck_live: bool = True
 
 
 @dataclass
