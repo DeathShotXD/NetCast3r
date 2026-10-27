@@ -245,7 +245,7 @@ class Server:
             return _json({"name": "netcast3r", "version": _version(), "api_version": API_VERSION,
                           "auth_required": self.auth_required,
                           "capabilities": ["runs", "findings", "events", "providers", "keys",
-                                           "settings", "triage"]})
+                                           "settings", "triage", "missions", "approvals"]})
 
         @add("GET", r"/api/v1/healthz")
         def healthz(ctx):
@@ -405,6 +405,117 @@ class Server:
             except ValueError as exc:
                 return _problem(400, str(exc))
             return _json(finding) if finding else _problem(404, "finding not found")
+
+        @add("GET", r"/api/v1/missions")
+        def list_missions(ctx):
+            try:
+                items, total = self.index.list_missions(
+                    status=ctx.query.get("status", ""), limit=ctx.limit, offset=ctx.offset)
+            except ValueError as exc:
+                return _problem(400, str(exc))
+            return _json({"items": items, "total": total, "page": ctx.page, "size": ctx.limit})
+
+        @add("POST", r"/api/v1/missions")
+        def create_mission(ctx):
+            body = ctx.json()
+            body = body if isinstance(body, dict) else {}
+            try:
+                mission = self.index.create_mission(
+                    title=str(body.get("title", "")), target=str(body.get("target", "")),
+                    objective=str(body.get("objective", "")), status=str(body.get("status", "draft")),
+                    autonomy=str(body.get("autonomy", "supervised")),
+                    budget=body.get("budget") if isinstance(body.get("budget"), dict) else {},
+                    scope=body.get("scope") if isinstance(body.get("scope"), list) else [],
+                    plan=body.get("plan") if isinstance(body.get("plan"), list) else [])
+            except ValueError as exc:
+                return _problem(400, str(exc))
+            return _json(mission, 201)
+
+        @add("GET", r"/api/v1/missions/(?P<id>[A-Za-z0-9_]+)")
+        def get_mission(ctx):
+            mission = self.index.get_mission(ctx.params["id"])
+            return _json(mission) if mission else _problem(404, "mission not found")
+
+        @add("PATCH", r"/api/v1/missions/(?P<id>[A-Za-z0-9_]+)")
+        def patch_mission(ctx):
+            body = ctx.json()
+            body = body if isinstance(body, dict) else {}
+            fields = {key: body.get(key) for key in
+                      ("title", "target", "objective", "status", "autonomy",
+                       "budget", "scope", "plan", "last_run_id") if key in body}
+            try:
+                mission = self.index.patch_mission(ctx.params["id"], **fields)
+            except ValueError as exc:
+                return _problem(400, str(exc))
+            return _json(mission) if mission else _problem(404, "mission not found")
+
+        @add("DELETE", r"/api/v1/missions/(?P<id>[A-Za-z0-9_]+)")
+        def delete_mission(ctx):
+            return _json({"deleted": self.index.delete_mission(ctx.params["id"])})
+
+        @add("POST", r"/api/v1/missions/(?P<id>[A-Za-z0-9_]+)/runs")
+        def start_mission_run(ctx):
+            mission = self.index.get_mission(ctx.params["id"])
+            if not mission:
+                return _problem(404, "mission not found")
+            body = ctx.json()
+            body = body if isinstance(body, dict) else {}
+            run_id = str(body.get("run_id", "")).strip()
+            if run_id:
+                updated = self.index.add_mission_run(mission["id"], run_id)
+                if not updated:
+                    return _problem(404, "run not found")
+                return _json(updated, 201)
+            target = str(body.get("target") or mission.get("target") or "").strip()
+            options = body.get("options")
+            options = dict(options) if isinstance(options, dict) else {}
+            if not target:
+                return _problem(400, "target required")
+            run = self._start_run(target, options)
+            self.index.add_mission_run(mission["id"], run["id"])
+            if mission.get("status") in {"draft", "paused"}:
+                mission = self.index.patch_mission(mission["id"], status="active") or mission
+            return _json({"mission": mission, "run": run}, 201)
+
+        @add("GET", r"/api/v1/approvals")
+        def list_approvals(ctx):
+            try:
+                items, total = self.index.list_approvals(
+                    status=ctx.query.get("status", ""),
+                    mission_id=ctx.query.get("mission_id", ""),
+                    limit=ctx.limit, offset=ctx.offset)
+            except ValueError as exc:
+                return _problem(400, str(exc))
+            return _json({"items": items, "total": total, "page": ctx.page, "size": ctx.limit})
+
+        @add("POST", r"/api/v1/approvals")
+        def create_approval(ctx):
+            body = ctx.json()
+            body = body if isinstance(body, dict) else {}
+            try:
+                approval = self.index.create_approval(
+                    mission_id=str(body.get("mission_id", "")),
+                    action=str(body.get("action", "")), risk=str(body.get("risk", "medium")),
+                    requested_by=str(body.get("requested_by", "agent")),
+                    reason=str(body.get("reason", "")),
+                    payload=body.get("payload") if isinstance(body.get("payload"), dict) else {},
+                    run_id=str(body.get("run_id", "")))
+            except ValueError as exc:
+                return _problem(400, str(exc))
+            return _json(approval, 201) if approval else _problem(404, "mission not found")
+
+        @add("POST", r"/api/v1/approvals/(?P<id>[A-Za-z0-9_]+)/decision")
+        def decide_approval(ctx):
+            body = ctx.json()
+            body = body if isinstance(body, dict) else {}
+            try:
+                approval = self.index.decide_approval(
+                    ctx.params["id"], str(body.get("decision", "")),
+                    decided_by=str(body.get("decided_by", "operator")),
+                    reason=str(body.get("reason", "")))
+            except ValueError as exc:
+                return _problem(409 if "already" in str(exc) else 400, str(exc))
+            return _json(approval) if approval else _problem(404, "approval not found")
 
         @add("GET", r"/api/v1/keys")
         def list_keys(ctx):

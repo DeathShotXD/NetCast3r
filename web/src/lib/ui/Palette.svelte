@@ -7,6 +7,7 @@
 
   const NAV: { id: Screen; label: string; glyph: string; hint: string }[] = [
     { id: 'home', label: 'Home', glyph: '#', hint: 'overview, what to do next' },
+    { id: 'missions', label: 'Missions', glyph: '@', hint: 'scoped objectives and their runs' },
     { id: 'new', label: 'New scan', glyph: '>', hint: 'point the tool at a target' },
     { id: 'live', label: 'Live runs', glyph: '[*]', hint: 'watch a scan, inspect everything it found' },
     { id: 'findings', label: 'Findings', glyph: '*', hint: 'triage what came back' },

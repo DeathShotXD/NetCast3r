@@ -59,9 +59,55 @@ export interface Totals {
   runs: number;
   active_runs: number;
   findings: number;
+  missions: number;
+  active_missions: number;
+  pending_approvals: number;
   triage: Record<string, number>;
   severity: Record<string, number>;
   last_run: Run | null;
+}
+
+export type MissionStatus = 'draft' | 'active' | 'paused' | 'done' | 'archived';
+export type Autonomy = 'manual' | 'supervised' | 'autonomous';
+export type ApprovalStatus = 'pending' | 'approved' | 'rejected';
+
+export interface Mission {
+  id: string;
+  title: string;
+  target: string;
+  objective: string;
+  status: MissionStatus;
+  autonomy: Autonomy;
+  budget: { max_usd?: number; max_minutes?: number; [key: string]: unknown };
+  scope: string[];
+  plan: unknown[];
+  created_at: string;
+  updated_at: string;
+  started_at?: string;
+  finished_at?: string;
+  last_run_id?: string;
+  run_count: number;
+  finding_count: number;
+  pending_approvals: number;
+  runs?: Run[];
+}
+
+export interface Approval {
+  id: string;
+  mission_id: string;
+  run_id: string;
+  action: string;
+  risk: 'low' | 'medium' | 'high' | 'critical';
+  status: ApprovalStatus;
+  requested_by: string;
+  decided_by: string;
+  reason: string;
+  payload: Record<string, unknown>;
+  nonce: string;
+  created_at: string;
+  decided_at?: string;
+  mission_title?: string;
+  mission_target?: string;
 }
 
 export interface KeyEntry {
@@ -106,6 +152,7 @@ export interface Paged<T> {
 
 export type Screen =
   | 'home'
+  | 'missions'
   | 'new'
   | 'live'
   | 'findings'

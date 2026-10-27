@@ -33,6 +33,12 @@ the tested engine.
 instructions in [`../design/README.md`](../design/README.md). It is static and
 mock-driven; the blueprint below is the source of truth for production.
 
+**Implementation status (2026-10-28):** Command Center v1 runs on real
+runs/events/findings. The shell uses the Obsidian Signal system. Mission and
+Approval entities, their SQLite tables, APIs, and the Missions portfolio screen
+exist. The agent runtime, planner, policy engine, budget enforcement, and
+cost ledger are still proposed; no synthetic approvals or spend are shown.
+
 ---
 
 ## 1. What exists today

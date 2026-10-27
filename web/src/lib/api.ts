@@ -1,4 +1,4 @@
-import type { Finding, Inventory, KeyEntry, Meta, Paged, Provider, ProviderHealth, Run, RunEvent, Totals } from './types';
+import type { Approval, Finding, Inventory, KeyEntry, Meta, Mission, Paged, Provider, ProviderHealth, Run, RunEvent, Totals } from './types';
 
 const BASE = '/api/v1';
 
@@ -78,6 +78,21 @@ export const api = {
   finding: (id: string) => request<Finding>('GET', `/findings/${id}`),
   patchFinding: (id: string, patch: Partial<Finding>) =>
     request<Finding>('PATCH', `/findings/${id}`, patch),
+  missions: (q = '') => request<Paged<Mission>>('GET', `/missions${q}`),
+  mission: (id: string) => request<Mission>('GET', `/missions/${id}`),
+  createMission: (body: Record<string, unknown>) =>
+    request<Mission>('POST', '/missions', body),
+  patchMission: (id: string, body: Record<string, unknown>) =>
+    request<Mission>('PATCH', `/missions/${id}`, body),
+  deleteMission: (id: string) =>
+    request<{ deleted: boolean }>('DELETE', `/missions/${id}`),
+  startMissionRun: (id: string, body: Record<string, unknown>) =>
+    request<{ mission: Mission; run: Run }>('POST', `/missions/${id}/runs`, body),
+  approvals: (q = '') => request<Paged<Approval>>('GET', `/approvals${q}`),
+  createApproval: (body: Record<string, unknown>) =>
+    request<Approval>('POST', '/approvals', body),
+  decideApproval: (id: string, body: Record<string, unknown>) =>
+    request<Approval>('POST', `/approvals/${id}/decision`, body),
   keys: () => request<{ items: KeyEntry[] }>('GET', '/keys'),
   putKey: (name: string, value: string) =>
     request<{ name: string; masked: string }>('PUT', `/keys/${name}`, { value }),

@@ -8,6 +8,7 @@
   import Home from './lib/screens/Home.svelte';
   import Keys from './lib/screens/Keys.svelte';
   import LiveScan from './lib/screens/LiveScan.svelte';
+  import Missions from './lib/screens/Missions.svelte';
   import NewScan from './lib/screens/NewScan.svelte';
   import Runs from './lib/screens/Runs.svelte';
   import Backdrop from './lib/ui/Backdrop.svelte';
@@ -81,6 +82,8 @@
         <div class="screen-in">
           {#if store.screen === 'new'}
             <NewScan />
+          {:else if store.screen === 'missions'}
+            <Missions />
           {:else if store.screen === 'live'}
             <LiveScan />
           {:else if store.screen === 'findings'}

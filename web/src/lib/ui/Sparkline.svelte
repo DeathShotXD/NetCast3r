@@ -36,6 +36,8 @@
 
 <svg
   class={klass}
+  width={width}
+  height={height}
   viewBox="0 0 {width} {height}"
   preserveAspectRatio="none"
   fill="none"

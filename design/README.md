@@ -59,3 +59,8 @@ stub rather than pretending to work.
 After direction sign-off: port the shell and Command Center to Svelte against
 real `runs`, `events`, and `findings` from the Python API, then add Mission and
 Approval entities. The prototype is the spec, not the shipping frontend.
+
+Those first two steps are now implemented in production: the Obsidian shell,
+the real-data Command Center, and the Mission/Approval entities and Missions
+screen. The prototype remains the visual reference for the agent runtime,
+evidence graph, and report rooms that follow.

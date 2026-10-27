@@ -17,6 +17,7 @@
       label: 'Command',
       items: [
         { id: 'home', label: 'Command Center', icon: 'grid', hint: 'what happened, what needs you' },
+        { id: 'missions', label: 'Missions', icon: 'crosshair', hint: 'scoped objectives and their runs' },
         { id: 'new', label: 'New Scan', icon: 'target', hint: 'point the net at a target' },
         { id: 'live', label: 'Live Runs', icon: 'activity', hint: 'watch a cast, inspect everything it found' },
         { id: 'findings', label: 'Findings', icon: 'bug', hint: 'triage what came back' }
@@ -46,6 +47,8 @@
     (store.totals?.triage?.new ?? 0) + (store.totals?.triage?.in_progress ?? 0)
   );
   const findingCount = $derived(store.totals?.findings ?? 0);
+  const missionCount = $derived(store.totals?.missions ?? 0);
+  const pendingApprovals = $derived(store.totals?.pending_approvals ?? 0);
   const lastRun = $derived(store.totals?.last_run ?? store.runs[0] ?? null);
   const stageName = $derived(
     (STAGES as unknown as { key: string; label: string }[]).find((stage) => stage.key === store.liveStage)?.label ??
@@ -145,6 +148,14 @@
               <span class="obs-nav-badge" class:hot={openCount > 0} class:badge-pop={pop} title="{findingCount} findings">
                 {findingCount}
               </span>
+            {/if}
+            {#if item.id === 'missions' && missionCount > 0}
+              <span class="obs-nav-badge" class:hot={pendingApprovals > 0} title="{missionCount} missions">
+                {missionCount}
+              </span>
+            {/if}
+            {#if item.id === 'home' && pendingApprovals > 0}
+              <span class="obs-nav-badge hot" title="{pendingApprovals} approvals waiting">{pendingApprovals}</span>
             {/if}
             {#if item.id === 'live' && running}
               <span class="obs-nav-live" aria-hidden="true"></span>

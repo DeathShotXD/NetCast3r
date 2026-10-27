@@ -13,6 +13,7 @@
 
   const labels: Record<string, string> = {
     home: 'Command Center',
+    missions: 'Missions',
     new: 'New scan',
     live: 'Live run',
     findings: 'Findings',

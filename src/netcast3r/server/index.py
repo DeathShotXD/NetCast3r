@@ -87,11 +87,59 @@ CREATE TABLE IF NOT EXISTS settings (
     is_secret INTEGER DEFAULT 0,
     updated_at TEXT
 );
+
+CREATE TABLE IF NOT EXISTS missions (
+    id TEXT PRIMARY KEY,
+    title TEXT,
+    target TEXT,
+    objective TEXT,
+    status TEXT DEFAULT 'draft',
+    autonomy TEXT DEFAULT 'supervised',
+    budget_json TEXT DEFAULT '{}',
+    scope_json TEXT DEFAULT '[]',
+    plan_json TEXT DEFAULT '[]',
+    created_at TEXT,
+    updated_at TEXT,
+    started_at TEXT,
+    finished_at TEXT,
+    last_run_id TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_missions_status ON missions(status, updated_at DESC);
+
+CREATE TABLE IF NOT EXISTS mission_runs (
+    mission_id TEXT,
+    run_id TEXT,
+    added_at TEXT,
+    PRIMARY KEY (mission_id, run_id)
+);
+CREATE INDEX IF NOT EXISTS idx_mission_runs_run ON mission_runs(run_id);
+
+CREATE TABLE IF NOT EXISTS approvals (
+    id TEXT PRIMARY KEY,
+    mission_id TEXT,
+    run_id TEXT,
+    action TEXT,
+    risk TEXT DEFAULT 'medium',
+    status TEXT DEFAULT 'pending',
+    requested_by TEXT,
+    decided_by TEXT,
+    reason TEXT,
+    payload_json TEXT DEFAULT '{}',
+    nonce TEXT,
+    created_at TEXT,
+    decided_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_approvals_status ON approvals(status, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_approvals_mission ON approvals(mission_id, created_at DESC);
 """
 
 SEVERITY_ORDER = {"critical": 0, "high": 1, "medium": 2, "low": 3, "info": 4, "unknown": 5}
 TRIAGE_STATUSES = {"new", "in_progress", "confirmed", "escalated", "rejected", "false_positive"}
 SORTS = {"created_at", "severity", "confidence", "title"}
+MISSION_STATUSES = {"draft", "active", "paused", "done", "archived"}
+AUTONOMY_LEVELS = {"manual", "supervised", "autonomous"}
+APPROVAL_RISKS = {"low", "medium", "high", "critical"}
+APPROVAL_DECISIONS = {"approved", "rejected"}
 
 
 def _now() -> str:
@@ -420,10 +468,259 @@ class Index:
                     "FROM findings GROUP BY k"
                 )
             }
+            missions = self.conn.execute("SELECT COUNT(*) FROM missions").fetchone()[0]
+            active_missions = self.conn.execute(
+                "SELECT COUNT(*) FROM missions WHERE status = 'active'"
+            ).fetchone()[0]
+            pending_approvals = self.conn.execute(
+                "SELECT COUNT(*) FROM approvals WHERE status = 'pending'"
+            ).fetchone()[0]
         recent, _ = self.list_runs(limit=1)
         return {"runs": runs, "active_runs": active, "findings": findings,
                 "triage": triage, "severity": severity,
+                "missions": missions, "active_missions": active_missions,
+                "pending_approvals": pending_approvals,
                 "last_run": recent[0] if recent else None}
+
+    # -- missions ---------------------------------------------------------
+    def create_mission(self, title: str, target: str, objective: str = "",
+                       status: str = "draft", autonomy: str = "supervised",
+                       budget: dict | None = None, scope: list | None = None,
+                       plan: list | None = None) -> dict:
+        title = (title or "").strip()
+        target = (target or "").strip()
+        if not title:
+            raise ValueError("title required")
+        if not target:
+            raise ValueError("target required")
+        if status not in MISSION_STATUSES:
+            raise ValueError(f"unknown mission status: {status}")
+        if autonomy not in AUTONOMY_LEVELS:
+            raise ValueError(f"unknown autonomy level: {autonomy}")
+        now = _now()
+        mission_id = _new_id("msn")
+        with self._lock:
+            self.conn.execute(
+                "INSERT INTO missions (id, title, target, objective, status, autonomy, "
+                "budget_json, scope_json, plan_json, created_at, updated_at, started_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (mission_id, title, target, objective, status, autonomy,
+                 json.dumps(budget or {}), json.dumps(scope or []), json.dumps(plan or []),
+                 now, now, now if status == "active" else None),
+            )
+            self.conn.commit()
+        return self.get_mission(mission_id) or {}
+
+    def list_missions(self, status: str = "", limit: int = 50,
+                      offset: int = 0) -> tuple[list[dict], int]:
+        clause, params = "", []
+        if status:
+            clause = "WHERE m.status = ?"
+            params.append(status)
+        with self._lock:
+            total = self.conn.execute(
+                f"SELECT COUNT(*) FROM missions m {clause}", params
+            ).fetchone()[0]
+            rows = self.conn.execute(
+                f"""SELECT m.*,
+                    (SELECT COUNT(*) FROM mission_runs mr WHERE mr.mission_id = m.id) AS run_count,
+                    (SELECT COUNT(*) FROM findings f JOIN mission_runs mr ON mr.run_id = f.run_id
+                     WHERE mr.mission_id = m.id) AS finding_count,
+                    (SELECT COUNT(*) FROM approvals a WHERE a.mission_id = m.id
+                     AND a.status = 'pending') AS pending_approvals
+                    FROM missions m {clause}
+                    ORDER BY m.updated_at DESC LIMIT ? OFFSET ?""",
+                [*params, limit, offset],
+            ).fetchall()
+        return [self._mission_row(row) for row in rows], total
+
+    def get_mission(self, mission_id: str) -> dict | None:
+        with self._lock:
+            row = self.conn.execute(
+                """SELECT m.*,
+                   (SELECT COUNT(*) FROM mission_runs mr WHERE mr.mission_id = m.id) AS run_count,
+                   (SELECT COUNT(*) FROM findings f JOIN mission_runs mr ON mr.run_id = f.run_id
+                    WHERE mr.mission_id = m.id) AS finding_count,
+                   (SELECT COUNT(*) FROM approvals a WHERE a.mission_id = m.id
+                    AND a.status = 'pending') AS pending_approvals
+                   FROM missions m WHERE m.id = ?""",
+                (mission_id,),
+            ).fetchone()
+            if not row:
+                return None
+            runs = self.conn.execute(
+                """SELECT r.* FROM runs r JOIN mission_runs mr ON mr.run_id = r.id
+                   WHERE mr.mission_id = ? ORDER BY r.created_at DESC""",
+                (mission_id,),
+            ).fetchall()
+        mission = self._mission_row(row)
+        mission["runs"] = [self._run_row(run) for run in runs]
+        return mission
+
+    def patch_mission(self, mission_id: str, **fields) -> dict | None:
+        current = self.get_mission(mission_id)
+        if not current:
+            return None
+        sets, values = [], []
+        for column in ("title", "target", "objective", "autonomy", "last_run_id"):
+            if column in fields and fields[column] is not None:
+                value = str(fields[column]).strip()
+                if column in {"title", "target"} and not value:
+                    raise ValueError(f"{column} required")
+                sets.append(f"{column} = ?")
+                values.append(value)
+        if "status" in fields and fields["status"] is not None:
+            status = str(fields["status"]).strip()
+            if status not in MISSION_STATUSES:
+                raise ValueError(f"unknown mission status: {status}")
+            sets.append("status = ?")
+            values.append(status)
+            if status == "active":
+                if not current.get("started_at"):
+                    sets.append("started_at = ?")
+                    values.append(_now())
+                sets.append("finished_at = NULL")
+            if status == "done":
+                sets.append("finished_at = ?")
+                values.append(_now())
+        if "autonomy" in fields and fields["autonomy"] is not None:
+            if fields["autonomy"] not in AUTONOMY_LEVELS:
+                raise ValueError(f"unknown autonomy level: {fields['autonomy']}")
+        for key, column in (("budget", "budget_json"), ("scope", "scope_json"), ("plan", "plan_json")):
+            if key in fields and fields[key] is not None:
+                sets.append(f"{column} = ?")
+                values.append(json.dumps(fields[key]))
+        if sets:
+            sets.append("updated_at = ?")
+            values.append(_now())
+            values.append(mission_id)
+            with self._lock:
+                self.conn.execute(
+                    f"UPDATE missions SET {', '.join(sets)} WHERE id = ?", values
+                )
+                self.conn.commit()
+        return self.get_mission(mission_id)
+
+    def delete_mission(self, mission_id: str) -> bool:
+        with self._lock:
+            cur = self.conn.execute("DELETE FROM missions WHERE id = ?", (mission_id,))
+            self.conn.execute("DELETE FROM mission_runs WHERE mission_id = ?", (mission_id,))
+            self.conn.execute("DELETE FROM approvals WHERE mission_id = ?", (mission_id,))
+            self.conn.commit()
+        return cur.rowcount > 0
+
+    def add_mission_run(self, mission_id: str, run_id: str) -> dict | None:
+        with self._lock:
+            mission = self.conn.execute(
+                "SELECT id FROM missions WHERE id = ?", (mission_id,)
+            ).fetchone()
+            run = self.conn.execute("SELECT id FROM runs WHERE id = ?", (run_id,)).fetchone()
+            if not mission or not run:
+                return None
+            self.conn.execute(
+                "INSERT OR IGNORE INTO mission_runs (mission_id, run_id, added_at) VALUES (?, ?, ?)",
+                (mission_id, run_id, _now()),
+            )
+            self.conn.execute(
+                "UPDATE missions SET last_run_id = ?, updated_at = ? WHERE id = ?",
+                (run_id, _now(), mission_id),
+            )
+            self.conn.commit()
+        return self.get_mission(mission_id)
+
+    @staticmethod
+    def _mission_row(row: sqlite3.Row) -> dict:
+        item = dict(row)
+        item["budget"] = _loads(item.pop("budget_json"), {})
+        item["scope"] = _loads(item.pop("scope_json"), [])
+        item["plan"] = _loads(item.pop("plan_json"), [])
+        return item
+
+    # -- approvals --------------------------------------------------------
+    def list_approvals(self, status: str = "", mission_id: str = "",
+                       limit: int = 50, offset: int = 0) -> tuple[list[dict], int]:
+        where, params = [], []
+        if status:
+            if status not in {"pending"} | APPROVAL_DECISIONS:
+                raise ValueError(f"unknown approval status: {status}")
+            where.append("a.status = ?")
+            params.append(status)
+        if mission_id:
+            where.append("a.mission_id = ?")
+            params.append(mission_id)
+        clause = ("WHERE " + " AND ".join(where)) if where else ""
+        with self._lock:
+            total = self.conn.execute(
+                f"SELECT COUNT(*) FROM approvals a {clause}", params
+            ).fetchone()[0]
+            rows = self.conn.execute(
+                f"""SELECT a.*, m.title AS mission_title, m.target AS mission_target
+                    FROM approvals a LEFT JOIN missions m ON m.id = a.mission_id
+                    {clause} ORDER BY a.created_at DESC LIMIT ? OFFSET ?""",
+                [*params, limit, offset],
+            ).fetchall()
+        return [self._approval_row(row) for row in rows], total
+
+    def get_approval(self, approval_id: str) -> dict | None:
+        with self._lock:
+            row = self.conn.execute(
+                """SELECT a.*, m.title AS mission_title, m.target AS mission_target
+                   FROM approvals a LEFT JOIN missions m ON m.id = a.mission_id
+                   WHERE a.id = ?""",
+                (approval_id,),
+            ).fetchone()
+        return self._approval_row(row) if row else None
+
+    def create_approval(self, mission_id: str, action: str, risk: str = "medium",
+                        requested_by: str = "agent", reason: str = "",
+                        payload: dict | None = None, run_id: str = "") -> dict | None:
+        action = (action or "").strip()
+        if not action:
+            raise ValueError("action required")
+        if risk not in APPROVAL_RISKS:
+            raise ValueError(f"unknown risk tier: {risk}")
+        with self._lock:
+            mission = self.conn.execute(
+                "SELECT id FROM missions WHERE id = ?", (mission_id,)
+            ).fetchone()
+            if not mission:
+                return None
+            approval_id = _new_id("apr")
+            self.conn.execute(
+                "INSERT INTO approvals (id, mission_id, run_id, action, risk, status, "
+                "requested_by, reason, payload_json, nonce, created_at) "
+                "VALUES (?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?)",
+                (approval_id, mission_id, run_id, action, risk, requested_by, reason,
+                 json.dumps(payload or {}), secrets.token_hex(12), _now()),
+            )
+            self.conn.commit()
+        return self.get_approval(approval_id)
+
+    def decide_approval(self, approval_id: str, decision: str,
+                        decided_by: str = "operator", reason: str = "") -> dict | None:
+        if decision not in APPROVAL_DECISIONS:
+            raise ValueError(f"unknown approval decision: {decision}")
+        with self._lock:
+            row = self.conn.execute(
+                "SELECT status FROM approvals WHERE id = ?", (approval_id,)
+            ).fetchone()
+            if not row:
+                return None
+            if row["status"] != "pending":
+                raise ValueError("approval already decided")
+            self.conn.execute(
+                "UPDATE approvals SET status = ?, decided_by = ?, reason = ?, decided_at = ? "
+                "WHERE id = ?",
+                (decision, decided_by, reason, _now(), approval_id),
+            )
+            self.conn.commit()
+        return self.get_approval(approval_id)
+
+    @staticmethod
+    def _approval_row(row: sqlite3.Row) -> dict:
+        item = dict(row)
+        item["payload"] = _loads(item.pop("payload_json"), {})
+        return item
 
     # -- providers --------------------------------------------------------
     def add_provider(self, name: str, kind: str = "openai", base_url: str = "",

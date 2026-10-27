@@ -16,8 +16,7 @@
   import { countup, pauseOffscreen } from '../actions';
   import Icon from '../ui/Icon.svelte';
   import Sparkline from '../ui/Sparkline.svelte';
-  import type { Finding, ProviderHealth, Run, RunEvent } from '../types';
-
+  import type { Approval, Finding, ProviderHealth, Run, RunEvent } from '../types';
   type Thought = { seq: number; ts: number; agent: string; stage: string; text: string };
   type Call = {
     seq: number;
@@ -73,6 +72,7 @@
 
   let providers = $state<ProviderHealth[]>([]);
   let recent = $state<Finding[]>([]);
+  let missionApprovals = $state<Approval[]>([]);
   let events = $state<RunEvent[]>([]);
   let loadedRun = $state('');
   let loadingRun = $state('');
@@ -119,7 +119,7 @@
   const pendingFindings = $derived(
     recent.filter((finding) => ['new', 'in_progress'].includes(finding.triage_status || 'new'))
   );
-  const pendingCount = $derived((triage.new ?? 0) + (triage.in_progress ?? 0));
+  const pendingCount = $derived((triage.new ?? 0) + (triage.in_progress ?? 0) + missionApprovals.length);
   const findingsPreview = $derived(recent.slice(0, 6));
   const agentsSeen = $derived(new Set(events.filter((event) => event.agent).map((event) => event.agent)).size);
 
@@ -421,13 +421,13 @@
       spark: true
     },
     {
-      key: 'runs',
-      icon: 'layers',
-      label: 'Casts archived',
-      value: totals?.runs ?? 0,
-      note: lastRun ? `last return ${ago(lastRun.created_at)}` : 'nothing in the ledger',
+      key: 'missions',
+      icon: 'crosshair',
+      label: 'Missions',
+      value: totals?.missions ?? 0,
+      note: `${totals?.active_missions ?? 0} active · ${totals?.pending_approvals ?? 0} approvals`,
       tone: '',
-      spark: true
+      spark: false
     }
   ]);
 
@@ -452,9 +452,6 @@
     }
     return [...map.values()].sort((a, b) => b.count - a.count).slice(0, 5);
   });
-  const hostMax = $derived(Math.max(1, ...hosts.map((host) => host.count)));
-  const fetchCount = $derived(events.filter((event) => event.type === 'fetch').length);
-
   const surface = $derived.by(() => {
     const rows = [
       { key: 'pages', label: 'pages', value: viewCounts.pages ?? 0, note: 'crawled', color: 'var(--obs-text-2)' },
@@ -607,6 +604,14 @@
     }
   }
 
+  async function loadApprovals() {
+    try {
+      missionApprovals = (await api.approvals('?status=pending&size=20')).items;
+    } catch {
+      /* the queue is optional until the mission service has work */
+    }
+  }
+
   async function review(finding: Finding, status: 'confirmed' | 'rejected') {
     reviewing = finding.id;
     try {
@@ -615,6 +620,19 @@
       await Promise.all([loadRecent(), store.refreshTotals()]);
     } catch (exc) {
       store.fail(exc instanceof Error ? exc.message : 'could not update the finding');
+    } finally {
+      reviewing = '';
+    }
+  }
+
+  async function decideApproval(approval: Approval, decision: 'approved' | 'rejected') {
+    reviewing = approval.id;
+    try {
+      await api.decideApproval(approval.id, { decision, decided_by: 'operator' });
+      store.toast('ok', decision === 'approved' ? 'approval granted' : 'approval rejected');
+      await Promise.all([loadApprovals(), store.refreshTotals()]);
+    } catch (exc) {
+      store.fail(exc instanceof Error ? exc.message : 'could not record the decision');
     } finally {
       reviewing = '';
     }
@@ -690,6 +708,7 @@
       void store.refreshTotals();
       void store.refreshRuns();
       void loadRecent();
+      void loadApprovals();
     }, 800);
   }
 
@@ -745,6 +764,7 @@
     void store.refreshRuns();
     void loadHealth();
     void loadRecent();
+    void loadApprovals();
   });
 
   onDestroy(() => {
@@ -1236,7 +1256,46 @@
           <span class="obs-approval-count" class:is-zero={pendingCount === 0}>{pendingCount}</span>
         </header>
 
-        {#if pendingFindings.length > 0}
+        {#if missionApprovals.length > 0}
+          <div class="obs-approval-list">
+            {#each missionApprovals.slice(0, 2) as approval (approval.id)}
+              <div class="obs-approval" class:is-urgent={approval.risk === 'critical' || approval.risk === 'high'}>
+                <div class="obs-approval-top">
+                  <span class="obs-approval-agent">{approval.requested_by || 'agent'}</span>
+                  <span class="obs-chip" style="color:{sevColor(approval.risk)}">{approval.risk} risk</span>
+                </div>
+                <div class="obs-approval-title">{approval.action}</div>
+                <div class="obs-approval-why">
+                  <strong>Why:</strong>
+                  {approval.reason || 'An agent requested this action and the policy gate stopped it here.'}
+                </div>
+                <div class="obs-approval-meta">
+                  {#if approval.mission_title}<span class="obs-chip">{approval.mission_title}</span>{/if}
+                  {#if approval.run_id}<span class="obs-chip">{approval.run_id.slice(-6)}</span>{/if}
+                  <span class="obs-chip violet">policy gate</span>
+                </div>
+                <div class="obs-approval-actions">
+                  <button
+                    class="obs-btn obs-btn-primary"
+                    type="button"
+                    disabled={reviewing === approval.id}
+                    onclick={() => void decideApproval(approval, 'approved')}
+                  >
+                    Approve
+                  </button>
+                  <button
+                    class="obs-btn obs-btn-ghost"
+                    type="button"
+                    disabled={reviewing === approval.id}
+                    onclick={() => void decideApproval(approval, 'rejected')}
+                  >
+                    Reject
+                  </button>
+                </div>
+              </div>
+            {/each}
+          </div>
+        {:else if pendingFindings.length > 0}
           <div class="obs-approval-list">
             {#each pendingFindings.slice(0, 2) as finding (finding.id)}
               <div class="obs-approval" class:is-urgent={finding.severity === 'critical' || finding.severity === 'high'}>
@@ -1281,8 +1340,8 @@
             <div class="obs-empty-title">{recent.length ? 'Queue is clear' : 'No approval waiting'}</div>
             <p>
               {recent.length
-                ? 'Every persisted finding has a triage decision. Open findings to revisit the evidence or change a call.'
-                : 'Human review opens when a finding is persisted. The gate cannot be skipped by an agent.'}
+                ? 'Every persisted finding has a triage decision and no agent is waiting on a policy gate.'
+                : 'Human review opens when a finding is persisted or an agent requests a risky action. The gate cannot be skipped.'}
             </p>
             <button
               class="obs-btn obs-btn-sm"
