@@ -6,7 +6,6 @@
     clock,
     isoMs,
     sevColor,
-    sevShape,
     stageForAgent,
     statusColor,
     statusLabel,
@@ -14,9 +13,8 @@
   } from '../format';
   import { store } from '../state.svelte';
   import { AGENT_COLORS, STAGES } from '../../tokens';
-  import { countup, pauseOffscreen, spotlight } from '../actions';
-  import Chip from '../ui/Chip.svelte';
-  import HeroArt from '../ui/HeroArt.svelte';
+  import { countup, pauseOffscreen } from '../actions';
+  import Icon from '../ui/Icon.svelte';
   import Sparkline from '../ui/Sparkline.svelte';
   import type { Finding, ProviderHealth, Run, RunEvent } from '../types';
 
@@ -49,17 +47,6 @@
     error: string;
     lastChecked: string;
   };
-  type Mission = {
-    tone: string;
-    eyebrow: string;
-    lead: string;
-    mark: string;
-    body: string;
-    primary: string;
-    secondary: string;
-    goPrimary: () => void;
-    goSecondary: () => void;
-  };
   type NextAction = {
     id: string;
     num: string;
@@ -69,19 +56,20 @@
     color: string;
     go: () => void;
   };
-  type QueueItem = {
-    id: string;
-    label: string;
-    value: string;
-    detail: string;
-    status: string;
-    severity: string;
-    ts: number;
-    finding: boolean;
-  };
   type Host = { host: string; count: number; ok: number };
 
   const stages = STAGES as unknown as { key: string; label: string; detail: string }[];
+
+  const roster = [
+    { key: 'recon', name: 'Recon', role: 'Surface mapper', mark: 'RC' },
+    { key: 'exegete', name: 'Exegete', role: 'JavaScript reader', mark: '<>' },
+    { key: 'prospector', name: 'Prospector', role: 'Candidate hunter', mark: 'PR' },
+    { key: 'classifier', name: 'Classifier', role: 'Credential triage', mark: 'CL' },
+    { key: 'assayer', name: 'Assayer', role: 'Validator', mark: 'AS' },
+    { key: 'chainer', name: 'Chainer', role: 'Impact chainer', mark: 'CH' },
+    { key: 'scribe', name: 'Scribe', role: 'Report writer', mark: 'SC' },
+    { key: 'sentinel', name: 'Sentinel', role: 'Adversarial verifier', mark: 'SN' }
+  ];
 
   let providers = $state<ProviderHealth[]>([]);
   let recent = $state<Finding[]>([]);
@@ -91,6 +79,7 @@
   let connectedRun = $state('');
   let feedTab = $state<'think' | 'models' | 'signals' | 'logs'>('think');
   let testing = $state('');
+  let reviewing = $state('');
   let now = $state(Date.now());
   let autoFollow = $state(true);
   let pausedCount = $state(0);
@@ -114,6 +103,44 @@
   const confirmed = $derived(triage.confirmed ?? 0);
   const escalated = $derived(triage.escalated ?? 0);
   const target = $derived(focusRun?.target ?? '');
+
+  const runOptions = $derived.by(() => {
+    const options = (focusRun?.options ?? {}) as Record<string, unknown>;
+    const chips: string[] = [];
+    if (options.depth !== undefined) chips.push(`depth ${options.depth}`);
+    if (options.tier) chips.push(`${String(options.tier)} tier`);
+    if (options.subdomains) chips.push('subdomains');
+    if (options.wayback) chips.push('wayback');
+    if (options.random_agent) chips.push('random agent');
+    if (options.resume) chips.push('resume');
+    return chips;
+  });
+  const reportAvailable = $derived(!!counts.report);
+  const pendingFindings = $derived(
+    recent.filter((finding) => ['new', 'in_progress'].includes(finding.triage_status || 'new'))
+  );
+  const pendingCount = $derived((triage.new ?? 0) + (triage.in_progress ?? 0));
+  const findingsPreview = $derived(recent.slice(0, 6));
+  const agentsSeen = $derived(new Set(events.filter((event) => event.agent).map((event) => event.agent)).size);
+
+  const utcTime = $derived(
+    new Intl.DateTimeFormat('en-GB', {
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: false,
+      timeZone: 'UTC'
+    }).format(now)
+  );
+  const utcDate = $derived(
+    new Intl.DateTimeFormat('en-GB', {
+      weekday: 'short',
+      day: '2-digit',
+      month: 'short',
+      year: 'numeric',
+      timeZone: 'UTC'
+    }).format(now)
+  );
 
   const agentColor = (agent: string) =>
     (AGENT_COLORS as Record<string, string>)[agent] ?? 'var(--nc-bone_dust)';
@@ -199,7 +226,6 @@
     return rows;
   });
 
-  const latestThought = $derived(thoughts.length ? thoughts[thoughts.length - 1] : null);
   const eventSurface = $derived.by(() => {
     const pages = new Set<string>();
     const scripts = new Set<string>();
@@ -233,6 +259,22 @@
     return current;
   });
   const stageIndex = $derived(stageNow ? stages.findIndex((stage) => stage.key === stageNow) : -1);
+  const stageAgent = $derived(stageIndex >= 0 ? (stages[stageIndex] as unknown as { agent: string }).agent : '');
+  const agentRows = $derived.by(() =>
+    roster
+      .map((agent) => {
+        const own = events.filter((event) => event.agent === agent.key);
+        const last = own.length ? own[own.length - 1] : null;
+        return {
+          ...agent,
+          events: own.length,
+          lastLabel: last ? clock(last.ts) : 'no events',
+          stage: last ? (last.stage || stageForAgent(agent.key)) : '',
+          live: live && stageAgent === agent.key
+        };
+      })
+      .sort((a, b) => Number(b.live) - Number(a.live) || b.events - a.events)
+  );
   const stageLabel = $derived(
     stageNow
       ? (stages[stageIndex]?.label ?? stageNow.toUpperCase())
@@ -339,27 +381,55 @@
     return minutes < 60 ? `${minutes}m ago` : `${Math.floor(minutes / 60)}h ago`;
   });
 
-  const heroStats = $derived.by(() => {
-    if (!focusRun) {
-      return [
-        { label: 'casts', value: totals?.runs ?? 0, note: 'in the ledger', color: 'var(--nc-bone)' },
-        { label: 'findings', value: totals?.findings ?? 0, note: 'written to disk', color: 'var(--nc-acid)' },
-        { label: 'providers', value: providers.length, note: `${fleet.ok} model replies`, color: 'var(--nc-violet)' },
-        { label: 'open work', value: openFindings, note: 'waiting for a human', color: 'var(--nc-gold)' }
-      ];
+  const kpis = $derived([
+    {
+      key: 'active',
+      icon: 'activity',
+      label: 'Active casts',
+      value: live ? 1 : 0,
+      note: live
+        ? `${target} in flight · ${stageLabel.toLowerCase()}`
+        : `${totals?.active_runs ?? 0} queued · control plane idle`,
+      tone: live ? 'acid' : '',
+      spark: false
+    },
+    {
+      key: 'findings',
+      icon: 'bug',
+      label: 'Findings',
+      value: totals?.findings ?? 0,
+      note: `${openFindings} awaiting triage · ${confirmed} confirmed`,
+      tone: 'violet',
+      spark: false
+    },
+    {
+      key: 'signals',
+      icon: 'crosshair',
+      label: 'Signals',
+      value: rawSignals,
+      note: `${verified} proved · ${viewCounts.review_loopholes ?? 0} code notes`,
+      tone: 'gold',
+      spark: false
+    },
+    {
+      key: 'surface',
+      icon: 'globe',
+      label: 'Surface mapped',
+      value: viewCounts.pages ?? 0,
+      note: `${viewCounts.js_files ?? 0} scripts · ${viewCounts.endpoints ?? 0} endpoints`,
+      tone: '',
+      spark: true
+    },
+    {
+      key: 'runs',
+      icon: 'layers',
+      label: 'Casts archived',
+      value: totals?.runs ?? 0,
+      note: lastRun ? `last return ${ago(lastRun.created_at)}` : 'nothing in the ledger',
+      tone: '',
+      spark: true
     }
-    return [
-      { label: 'pages', value: viewCounts.pages ?? 0, note: 'under the glass', color: 'var(--nc-bone)' },
-      { label: 'scripts', value: viewCounts.js_files ?? 0, note: 'parsed line by line', color: 'var(--nc-violet)' },
-      { label: 'endpoints', value: viewCounts.endpoints ?? 0, note: 'mapped in the surface', color: 'var(--nc-acid)' },
-      {
-        label: 'signals',
-        value: rawSignals,
-        note: `${verified} proved · ${viewCounts.review_loopholes ?? 0} code notes`,
-        color: 'var(--nc-gold)'
-      }
-    ];
-  });
+  ]);
 
   const hosts = $derived.by<Host[]>(() => {
     const map = new Map<string, Host>();
@@ -387,94 +457,31 @@
 
   const surface = $derived.by(() => {
     const rows = [
-      { key: 'pages', label: 'pages', value: viewCounts.pages ?? 0, note: 'crawled', color: 'var(--nc-bone_dust)' },
-      { key: 'scripts', label: 'scripts', value: viewCounts.js_files ?? 0, note: 'read', color: 'var(--nc-violet)' },
-      { key: 'endpoints', label: 'endpoints', value: viewCounts.endpoints ?? 0, note: 'mapped', color: 'var(--nc-acid)' },
-      { key: 'signals', label: 'candidates', value: rawSignals, note: 'surfaced', color: 'var(--nc-gold)' },
-      { key: 'verified', label: 'verified', value: verified, note: 'proved', color: 'var(--nc-acid_hot)' }
+      { key: 'pages', label: 'pages', value: viewCounts.pages ?? 0, note: 'crawled', color: 'var(--obs-text-2)' },
+      { key: 'scripts', label: 'scripts', value: viewCounts.js_files ?? 0, note: 'read', color: 'var(--obs-violet)' },
+      { key: 'endpoints', label: 'endpoints', value: viewCounts.endpoints ?? 0, note: 'mapped', color: 'var(--obs-acid)' },
+      { key: 'signals', label: 'candidates', value: rawSignals, note: 'surfaced', color: 'var(--obs-gold)' },
+      { key: 'verified', label: 'verified', value: verified, note: 'proved', color: 'var(--obs-acid-2)' }
     ];
     const max = Math.max(1, ...rows.map((row) => row.value));
     return rows.map((row) => ({ ...row, pct: Math.round((row.value / max) * 100) }));
   });
 
-  const heroMission = $derived.by<Mission>(() => {
-    if (runningRun) {
-      return {
-        tone: 'var(--nc-acid)',
-        eyebrow: 'live cast',
-        lead: 'Casting over',
-        mark: runningRun.target,
-        body: `${stageNow ? `The ${stageLabel.toLowerCase()} stage is engaged.` : 'The agents are spinning up.'} ${viewCounts.pages ?? 0} pages are under the glass, ${viewCounts.js_files ?? 0} scripts parsed and ${viewCounts.endpoints ?? 0} endpoints mapped. The transmission beside this is coming from the models themselves.`,
-        primary: 'watch live',
-        secondary: 'open inspector',
-        goPrimary: () => store.watch(runningRun.id),
-        goSecondary: () => store.watch(runningRun.id)
-      };
+  const heroBody = $derived.by(() => {
+    if (!focusRun) {
+      return 'No cast is in flight. Point the net at an authorized target and every agent, event, and decision will land here.';
     }
-    if (confirmed + escalated > 0) {
-      const n = confirmed + escalated;
-      return {
-        tone: 'var(--nc-gold)',
-        eyebrow: 'proof on the table',
-        lead: `${n} finding${n === 1 ? '' : 's'} confirmed.`,
-        mark: 'Write the report.',
-        body: 'A human marked these as real. Open the evidence, tighten the impact story and move the strongest one toward submission before the trail cools.',
-        primary: 'review findings',
-        secondary: 'open latest run',
-        goPrimary: () => store.go('findings'),
-        goSecondary: () => (focusRun ? store.watch(focusRun.id) : store.go('runs'))
-      };
+    const pages = viewCounts.pages ?? 0;
+    const scripts = viewCounts.js_files ?? 0;
+    const endpoints = viewCounts.endpoints ?? 0;
+    if (live) {
+      return `The ${stageLabel.toLowerCase()} stage is engaged. ${pages} pages are under the glass, ${scripts} scripts parsed and ${endpoints} endpoints mapped. The transmission below is the raw model and tool chatter, not a summary.`;
     }
-    if (openFindings > 0) {
-      return {
-        tone: 'var(--nc-bone)',
-        eyebrow: 'human queue',
-        lead: `${openFindings} candidate${openFindings === 1 ? '' : 's'} need`,
-        mark: 'a call.',
-        body: 'The pipeline surfaced these but did not prove them. Read the evidence, check the confidence and decide whether to confirm, escalate or reject each one.',
-        primary: 'open the queue',
-        secondary: 'start another cast',
-        goPrimary: () => store.go('findings'),
-        goSecondary: () => store.go('new')
-      };
-    }
-    if (rawSignals > 0) {
-      return {
-        tone: 'var(--nc-violet)',
-        eyebrow: 'last cast // unresolved',
-        lead: `${rawSignals} raw signal${rawSignals === 1 ? '' : 's'} surfaced.`,
-        mark: 'None proved.',
-        body: `The last pass over ${target || 'the target'} read ${viewCounts.pages ?? 0} pages and ${viewCounts.js_files ?? 0} scripts but closed without proof. Open the trace to see what the classifiers saw and where validation broke down.`,
-        primary: 'open the trace',
-        secondary: 'cast a deeper net',
-        goPrimary: () => (focusRun ? store.watch(focusRun.id) : store.go('live')),
-        goSecondary: () => store.go('new')
-      };
-    }
-    if ((totals?.runs ?? 0) === 0) {
-      return {
-        tone: 'var(--nc-acid)',
-        eyebrow: 'the net is armed',
-        lead: 'Point it at',
-        mark: 'something.',
-        body: 'NetCast3r crawls a site, reads its JavaScript, hunts for credentials and validates what it catches against the provider that issued it. Nothing leaves your machine until you start a cast.',
-        primary: 'start your first cast',
-        secondary: 'read the field guide',
-        goPrimary: () => store.go('new'),
-        goSecondary: () => store.go('help')
-      };
-    }
-    return {
-      tone: 'var(--nc-bone)',
-      eyebrow: 'all clear',
-      lead: 'The net is',
-      mark: 'quiet.',
-      body: `${totals?.runs ?? 0} casts are in the ledger. Nothing is waiting for a human right now. The last return is still in the trace if you want to read the agents' notes.`,
-      primary: 'cast a new target',
-      secondary: 'open last run',
-      goPrimary: () => store.go('new'),
-      goSecondary: () => (focusRun ? store.watch(focusRun.id) : store.go('runs'))
-    };
+    const candidates = rawSignals;
+    const closure = candidates
+      ? `${candidates} candidate${candidates === 1 ? '' : 's'} surfaced; ${verified} cleared validation.`
+      : 'No candidate survived the classifiers.';
+    return `The last cast over ${focusRun.target} closed ${statusLabel(focusRun.status)} after reading ${pages} pages, parsing ${scripts} scripts and mapping ${endpoints} endpoints. ${closure}`;
   });
 
   const nextActions = $derived.by<NextAction[]>(() => {
@@ -543,47 +550,6 @@
     logs: logs.length
   });
 
-  const ticker = $derived.by(() => {
-    const items: string[] = [];
-    if (latestThought) items.push(`${latestThought.agent}: ${latestThought.text.slice(0, 150)}`);
-    if (fleet.total > 0) items.push(`model fleet returned ${fleet.ok}/${fleet.total} calls`);
-    if (signals.length > 0) {
-      items.push(`${signals[signals.length - 1].secret_type} ${signals[signals.length - 1].value} · ${signals[signals.length - 1].detail || 'unresolved'}`);
-    }
-    if (focusRun) items.push(`${stageLabel.toLowerCase()} · ${elapsed} elapsed · ${events.length} events on the wire`);
-    return items.length ? items : ['no activity recorded on this cast'];
-  });
-
-  const tickerItems = $derived(ticker);
-
-  const queue = $derived.by<QueueItem[]>(() => {
-    if (recent.length > 0) {
-      return recent.slice(0, 4).map((finding) => ({
-        id: finding.id,
-        label: finding.secret_type,
-        value: finding.value,
-        detail: finding.title,
-        status: finding.triage_status || 'new',
-        severity: finding.severity,
-        ts: isoMs(finding.created_at) / 1000,
-        finding: true
-      }));
-    }
-    return signals
-      .slice(-4)
-      .reverse()
-      .map((signal) => ({
-        id: `signal-${signal.seq}`,
-        label: signal.secret_type,
-        value: signal.value,
-        detail: signal.detail || 'no validator recipe matched this value',
-        status: signal.status,
-        severity: signal.status,
-        ts: signal.ts,
-        finding: false
-      }));
-  });
-
   const runTrend = $derived(
     [...store.runs]
       .slice(0, 10)
@@ -600,6 +566,31 @@
     return minutes > 0 ? `${minutes}m ${seconds % 60}s` : `${seconds}s`;
   }
 
+  function actionIcon(id: string): string {
+    return (
+      { watch: 'eye', signals: 'crosshair', fleet: 'plug', report: 'file', scan: 'target' }[id] ?? 'arrow-right'
+    );
+  }
+
+  function hostOf(raw: string): string {
+    if (!raw) return '';
+    try {
+      return new URL(raw).hostname;
+    } catch {
+      return raw;
+    }
+  }
+
+  function findingSource(finding: Finding): string {
+    const run = store.runs.find((item) => item.id === finding.run_id);
+    return hostOf(finding.source) || hostOf(run?.target ?? '') || 'unattributed';
+  }
+
+  function confidencePct(finding: Finding): number {
+    const value = Number(finding.confidence ?? 0);
+    return Math.max(0, Math.min(100, Math.round(value <= 1 ? value * 100 : value)));
+  }
+
   async function loadHealth() {
     try {
       providers = (await api.providersHealth()).items;
@@ -610,9 +601,22 @@
 
   async function loadRecent() {
     try {
-      recent = (await api.findings('?size=6')).items;
+      recent = (await api.findings('?size=50')).items;
     } catch {
       /* an empty queue is a valid state */
+    }
+  }
+
+  async function review(finding: Finding, status: 'confirmed' | 'rejected') {
+    reviewing = finding.id;
+    try {
+      await api.patchFinding(finding.id, { status } as Partial<Finding>);
+      store.toast('ok', status === 'confirmed' ? 'finding confirmed' : 'finding rejected');
+      await Promise.all([loadRecent(), store.refreshTotals()]);
+    } catch (exc) {
+      store.fail(exc instanceof Error ? exc.message : 'could not update the finding');
+    } finally {
+      reviewing = '';
     }
   }
 
@@ -749,623 +753,747 @@
   });
 </script>
 
-<div class="stagger mx-auto flex max-w-[1280px] flex-col gap-5">
-  <!-- ------------------------------------------------------------------ -->
-  <!-- command hero                                                        -->
-  <!-- ------------------------------------------------------------------ -->
-  <section class="cmd-hero panel-raised panel-hud relative overflow-hidden" use:pauseOffscreen>
-    <HeroArt class="cmd-hero-art pointer-events-none absolute inset-0 h-full w-full" live={live} />
-    <div class="cmd-hero-veil" aria-hidden="true"></div>
-    <div class="cmd-hero-grid" aria-hidden="true"></div>
-
-    <div class="relative z-[4] px-6 pt-6 sm:px-8 sm:pt-8">
-      <div class="flex flex-wrap items-center gap-2.5">
-        <span class="mission-beacon" style="--beacon:{heroMission.tone}" aria-hidden="true"></span>
-        <p class="eyebrow" style="color:{heroMission.tone}">{heroMission.eyebrow}</p>
-        {#if focusRun}
-          <span class="chip" style="color:{statusColor(focusRun.status)}">
-            <svg viewBox="0 0 8 8" class="h-[7px] w-[7px] fill-current" aria-hidden="true">
-              <circle cx="4" cy="4" r="3.4" />
-            </svg>
-            {statusLabel(focusRun.status)}
-          </span>
-        {/if}
-        <span class="mono hidden text-[10px] tracking-[0.16em] text-slate sm:inline">
-          mission {focusRun?.id.slice(-6) ?? 'standby'}
-        </span>
-        <span class="ml-auto flex items-center gap-2 text-[10px] tracking-[0.12em] text-ash">
-          <span class="sync-dot" class:live></span>
-          <span class="mono">synced {syncLabel}</span>
-        </span>
-      </div>
-
-      <div class="mt-5 max-w-[760px]">
-        <h1 class="cmd-title">
-          {heroMission.lead}
-          {#if heroMission.mark}<span class="cmd-title-mark">{heroMission.mark}</span>{/if}
-        </h1>
-        <p class="cmd-sub">{heroMission.body}</p>
-
-        {#if latestThought}
-          <button
-            class="hero-thought mt-5"
-            type="button"
-            onclick={() => focusRun && store.watch(focusRun.id)}
-            title="open the full agent trace"
-          >
-            <span class="lane-led" style="--agent:{agentColor(latestThought.agent)}" aria-hidden="true"></span>
-            <span class="eyebrow shrink-0" style="color:{agentColor(latestThought.agent)}">{latestThought.agent}</span>
-            <span class="hero-thought-text">{latestThought.text}</span>
-            <span class="mono hidden shrink-0 text-[10px] text-slate sm:inline">{clock(latestThought.ts)}</span>
-            <span class="hero-thought-arrow" aria-hidden="true">↗</span>
-          </button>
-        {/if}
-
-        <div class="mt-6 flex flex-wrap items-center gap-3">
-          <button class="btn btn-acid" type="button" onclick={heroMission.goPrimary}>{heroMission.primary}</button>
-          <button class="btn" type="button" onclick={heroMission.goSecondary}>{heroMission.secondary}</button>
-          {#if live}
-            <span class="live-now">
-              <span class="pulse-live h-1.5 w-1.5 rounded-full bg-acid" aria-hidden="true"></span>
-              {elapsed} elapsed
-            </span>
-          {:else if focusRun}
-            <span class="mono text-[10px] tracking-[0.1em] text-ash">last return {ago(focusRun.created_at)}</span>
-          {/if}
-        </div>
-      </div>
+<div class="obs-page">
+  <header class="obs-page-head">
+    <div>
+      <div class="obs-eyebrow"><span class="tick"></span> Operations / Command Center</div>
+      <h1>Command Center</h1>
+      <p class="obs-page-sub">
+        The whole hunt at a glance: what the fleet is reading, what it actually proved, and what is waiting on a human decision.
+      </p>
     </div>
-
-    <aside class="hero-console absolute right-7 top-[92px] z-[4] hidden w-[188px] xl:block" aria-label="run scope">
-      <div class="flex items-center justify-between gap-2">
-        <p class="eyebrow">scope</p>
-        <span class="mono text-[9px] tracking-[0.14em]" style="color:{live ? 'var(--nc-acid)' : 'var(--nc-slate)'}">
-          {live ? 'live' : 'archive'}
-        </span>
+    <div class="obs-page-actions">
+      <div class="obs-page-time">
+        <strong>{utcTime} UTC</strong>
+        {utcDate}
       </div>
-      <div class="mt-3 flex items-center gap-3">
-        <div class="hero-ring" style="--ring:{pipelinePct * 3.6}deg">
-          <div class="hero-ring-inner">
-            <span class="num">{pipelinePct}<small>%</small></span>
-            <span>pipeline</span>
-          </div>
-        </div>
-        <div class="min-w-0">
-          <p class="mono truncate text-[11px] text-bone">{stageLabel}</p>
-          <p class="mono mt-1 text-[10px] text-ash">{elapsed}</p>
-          <p class="mono mt-0.5 text-[10px] text-slate">{events.length} events</p>
-        </div>
-      </div>
-      <div class="hero-console-rule"></div>
-      <div class="grid grid-cols-2 gap-2">
-        <div>
-          <p class="eyebrow">replies</p>
-          <p class="num mt-0.5 text-sm text-bone">{fleet.ok}<span class="text-ash">/{fleet.total}</span></p>
-        </div>
-        <div class="border-l border-indigo-deep pl-2">
-          <p class="eyebrow">signals</p>
-          <p class="num mt-0.5 text-sm" style="color:var(--nc-violet)">{rawSignals}</p>
-        </div>
-      </div>
-    </aside>
-
-    <div class="cmd-hero-stats relative z-[4]">
-      {#each heroStats as stat, index (stat.label)}
-        <div class="cmd-stat" use:spotlight>
-          <p class="eyebrow">{stat.label}</p>
-          <p class="num cmd-stat-value" style="color:{stat.color}">
-            <span use:countup={stat.value}>0</span>
-          </p>
-          <p class="cmd-stat-note">{stat.note}</p>
-          <span class="cmd-stat-index" aria-hidden="true">0{index + 1}</span>
-        </div>
-      {/each}
-    </div>
-
-    <div class="cmd-ticker relative z-[4]">
-      <span class="ticker-pill">
-        <span class="pulse-live h-1.5 w-1.5 rounded-full" class:bg-acid={live} class:bg-slate={!live} aria-hidden="true"></span>
-        {live ? 'transmitting' : 'replay'}
-      </span>
-      <div class="ticker-track">
-        {#each tickerItems as line, index (line + index)}
-          <span class="ticker-item">
-            <span class="ticker-glyph" aria-hidden="true">{index === 0 ? '▸' : '·'}</span>
-            {line}
-          </span>
-        {/each}
-      </div>
-      <span class="mono hidden shrink-0 text-[10px] text-slate sm:inline">{events.length} ev</span>
-    </div>
-    <div class="cmd-hero-progress" style="width:{pipelinePct}%" aria-hidden="true"></div>
-  </section>
-
-  <!-- ------------------------------------------------------------------ -->
-  <!-- intelligence + side deck                                           -->
-  <!-- ------------------------------------------------------------------ -->
-  <section class="grid gap-4 xl:grid-cols-[minmax(0,1.5fr)_minmax(300px,0.82fr)]">
-    <div class="relative min-h-[390px] xl:min-h-0">
-      <article class="panel panel-hud intel-panel overflow-hidden xl:absolute xl:inset-0" use:spotlight>
-      <header class="cmd-section-head flex-wrap">
-        <div class="min-w-0">
-          <p class="eyebrow">agent transmission</p>
-          <p class="cmd-section-sub">What the models are actually saying, as they say it.</p>
-        </div>
-        <div class="intel-tabs ml-auto" role="tablist" aria-label="intelligence feed">
-          {#each [
-            ['think', 'thinking'],
-            ['models', 'model calls'],
-            ['signals', 'signals'],
-            ['logs', 'logs']
-          ] as [id, label] (id)}
-            <button
-              class="intel-tab"
-              class:active={feedTab === id}
-              type="button"
-              role="tab"
-              aria-selected={feedTab === id}
-              onclick={() => (feedTab = id as typeof feedTab)}
-            >
-              {label}
-              <span>{feedCounts[id as keyof typeof feedCounts] ?? 0}</span>
-            </button>
-          {/each}
-        </div>
-        {#if focusRun}
-          <button class="btn btn-quiet hidden shrink-0 px-2! py-1! text-xs xl:inline-flex" type="button" onclick={() => store.watch(focusRun.id)}>
-            full trace ↗
-          </button>
-        {/if}
-      </header>
-
-      <div class="intel-body">
-        {#if events.length === 0}
-          <div class="intel-empty">
-            <span class="intel-empty-glyph" aria-hidden="true">⌁</span>
-            <p class="eyebrow">no transmission</p>
-            <p class="mt-2 max-w-[420px] text-sm text-bone-dust">
-              {focusRun
-                ? 'This run did not leave a readable event trail. Open the inspector for whatever was persisted.'
-                : 'Start a cast and the agents will narrate what they read, what they suspect and where they stop.'}
-            </p>
-            <button class="btn mt-4" type="button" onclick={() => store.go(focusRun ? 'live' : 'new')}>
-              {focusRun ? 'open inspector' : 'start a cast'}
-            </button>
-          </div>
-        {:else if feedTab === 'think'}
-          {#if thoughts.length === 0}
-            <div class="intel-empty">
-              <span class="intel-empty-glyph" aria-hidden="true">⌁</span>
-              <p class="eyebrow">{live ? 'reasoning pending' : 'no reasoning recorded'}</p>
-              <p class="mt-2 max-w-[430px] text-sm text-bone-dust">
-                {live
-                  ? stageNow === 'crawl'
-                    ? 'The crawl is still reading the surface. The first model call will narrate what it reads and where it stops.'
-                    : 'The agents are between calls. Their reasoning will land here as soon as the next call returns.'
-                  : 'This run left events but no model reasoning. Check the model calls and logs for what the agents were doing.'}
-              </p>
-              <button class="btn mt-4" type="button" onclick={() => (focusRun ? store.watch(focusRun.id) : store.go('live'))}>
-                {live ? 'watch the live cast' : 'open inspector'}
-              </button>
-            </div>
-          {:else}
-          <div class="grid gap-2">
-            {#each thoughts.slice(-7).reverse() as thought, index (thought.seq)}
-              <button
-                class="thought-row"
-                class:thought-live={live && index === 0}
-                type="button"
-                onclick={() => focusRun && store.watch(focusRun.id)}
-                title="open the full trace"
-              >
-                <span class="thought-meta">
-                  <span class="lane-led" style="--agent:{agentColor(thought.agent)}" aria-hidden="true"></span>
-                  <span class="mono" style="color:{agentColor(thought.agent)}">{thought.agent}</span>
-                  <span class="mono ml-auto text-[10px] text-slate">{clock(thought.ts)}</span>
-                </span>
-                <span class="thought-text">{thought.text}</span>
-              </button>
-            {/each}
-          </div>
-          {/if}
-        {:else if feedTab === 'models'}
-          {#if calls.length === 0}
-            <div class="intel-empty">
-              <span class="intel-empty-glyph" aria-hidden="true">◌</span>
-              <p class="eyebrow">{live ? 'no model calls yet' : 'no model calls'}</p>
-              <p class="mt-2 max-w-[430px] text-sm text-bone-dust">
-                {live
-                  ? 'The cast has not asked a model to read anything yet. Calls will appear here as each agent starts.'
-                  : 'No model traffic was recorded in this run. Add a provider or test the current fleet before the next cast.'}
-              </p>
-              <button class="btn mt-4" type="button" onclick={() => store.go('keys')}>manage fleet</button>
-            </div>
-          {:else}
-          <div class="grid gap-1.5">
-            {#each calls.slice(-10).reverse() as call (call.seq)}
-              <div class="call-row" class:call-fail={!call.ok}>
-                <span class="call-dot" class:ok={call.ok} aria-hidden="true"></span>
-                <span class="mono min-w-0 flex-1 truncate text-xs text-bone">{call.provider}/{call.model}</span>
-                <span class="mono shrink-0 text-[10px] text-ash">{call.ms}ms</span>
-                <span class="mono shrink-0 text-[10px]" style="color:{call.ok ? 'var(--nc-acid)' : 'var(--nc-violet)'}">
-                  {call.ok ? 'returned' : 'failed'}
-                </span>
-                {#if !call.ok && call.error}
-                  <span class="mono hidden max-w-[260px] truncate text-[10px] text-slate md:inline" title={call.error}>{call.error}</span>
-                {/if}
-              </div>
-            {/each}
-          </div>
-          {/if}
-        {:else if feedTab === 'signals'}
-          {#if signals.length === 0}
-            <div class="intel-empty">
-              <span class="intel-empty-glyph" aria-hidden="true">◇</span>
-              <p class="eyebrow">{live ? 'no signals yet' : 'no signals'}</p>
-              <p class="mt-2 max-w-[430px] text-sm text-bone-dust">
-                No raw candidate has surfaced in this cast. Values appear here only when the classifier can explain them.
-              </p>
-            </div>
-          {:else}
-          <div class="grid gap-1.5">
-            {#each signals.slice(-8).reverse() as signal (signal.seq)}
-              <div class="feed-signal">
-                <span class="mono text-[10px] tracking-[0.08em] text-violet">{signal.secret_type}</span>
-                <span class="mono min-w-0 flex-1 truncate text-xs text-bone">{signal.value}</span>
-                <span class="mono shrink-0 text-[10px] text-ash">{signal.status}</span>
-                <span class="mono hidden max-w-[280px] truncate text-[10px] text-slate md:inline">{signal.detail}</span>
-              </div>
-            {/each}
-          </div>
-          {/if}
-        {:else}
-          {#if logs.length === 0}
-            <div class="intel-empty">
-              <span class="intel-empty-glyph" aria-hidden="true">⌁</span>
-              <p class="eyebrow">{live ? 'no log lines yet' : 'no logs'}</p>
-              <p class="mt-2 max-w-[430px] text-sm text-bone-dust">
-                No log lines were emitted in this run.
-              </p>
-            </div>
-          {:else}
-          <div class="grid gap-1">
-            {#each logs.slice(-12).reverse() as line (line.seq)}
-              <div class="log-row" class:log-error={line.level === 'error'}>
-                <span class="mono shrink-0 text-[10px] text-slate">{clock(line.ts)}</span>
-                <span class="mono shrink-0 text-[10px]" style="color:{line.level === 'error' ? 'var(--nc-violet)' : 'var(--nc-acid)'}">
-                  {line.level === 'error' ? 'err' : 'log'}
-                </span>
-                <span class="mono min-w-0 flex-1 truncate text-[11px] text-bone-dust" title={line.text}>{line.text}</span>
-              </div>
-            {/each}
-          </div>
-          {/if}
-        {/if}
-      </div>
-
-      <footer class="intel-foot">
-        <span class="flex items-center gap-2">
-          <span class="pulse-live h-1.5 w-1.5 rounded-full" class:bg-acid={live} class:bg-slate={!live} aria-hidden="true"></span>
-          <span class="mono text-[10px] tracking-[0.12em] text-ash">
-            {live ? 'streaming from the live cast' : 'replay of the last cast'}
-          </span>
-        </span>
-        <span class="mono text-[10px] text-slate">
-          {thoughts.length} thoughts · {calls.length} calls · {signals.length} signals
-        </span>
-        <button class="btn btn-quiet ml-auto px-2! py-1! text-xs" type="button" onclick={toggleFollow}>
-          {autoFollow ? 'pause feed' : pausedCount ? `resume · ${pausedCount}` : 'resume feed'}
+      {#if focusRun}
+        <button class="obs-btn obs-btn-ghost" type="button" onclick={() => store.watch(focusRun.id)}>
+          <Icon name="eye" size={13} />
+          {live ? 'Inspect live cast' : 'Inspect last cast'}
         </button>
+      {/if}
+      <button class="obs-btn obs-btn-primary" type="button" onclick={() => store.go('new')}>
+        <Icon name="plus" size={13} />
+        New scan
+      </button>
+    </div>
+  </header>
+
+  <section class="obs-kpis" aria-label="control plane summary">
+    {#each kpis as kpi (kpi.key)}
+      <article class="obs-card obs-kpi {kpi.value > 0 ? kpi.tone : ''}">
+        <div class="obs-kpi-label"><Icon name={kpi.icon} size={12} />{kpi.label}</div>
+        <div class="obs-kpi-value"><span use:countup={kpi.value}>0</span></div>
+        <div class="obs-kpi-foot">
+          <span>{kpi.note}</span>
+          {#if kpi.spark}
+            <Sparkline class="obs-spark" values={runTrend} width={52} height={17} color="var(--obs-acid)" />
+          {/if}
+        </div>
+        <span class="obs-kpi-glyph" aria-hidden="true"><Icon name={kpi.icon} size={42} /></span>
+      </article>
+    {/each}
+  </section>
+
+  <div class="obs-command-grid">
+    <div class="obs-command-main">
+      <!-- mission hero -->
+      <section class="obs-card obs-hero" class:is-live={live} use:pauseOffscreen aria-label="current operation">
+        <svg class="obs-hero-net" viewBox="0 0 460 250" fill="none" aria-hidden="true">
+          <g stroke="#A855F7" stroke-opacity=".24">
+            <path d="M58 152 146 96 240 123 318 62 390 106" />
+            <path d="M58 152 156 190 240 123 306 176 390 106" />
+            <path d="M146 96 156 190M318 62 306 176M240 123 252 218" />
+          </g>
+          <g fill="#C8F81A">
+            <circle cx="146" cy="96" r="2.4" /><circle cx="240" cy="123" r="2.4" />
+            <circle cx="390" cy="106" r="2.8" /><circle cx="306" cy="176" r="2" />
+          </g>
+          <g fill="#A855F7" fill-opacity=".7">
+            <circle cx="58" cy="152" r="1.8" /><circle cx="318" cy="62" r="1.8" />
+            <circle cx="156" cy="190" r="1.8" /><circle cx="252" cy="218" r="1.8" />
+          </g>
+        </svg>
+
+        <div class="obs-hero-inner">
+          <div>
+            <div class="obs-hero-top">
+              <span class="obs-live-tag" class:is-archived={!live}>
+                <span class="obs-pulse" aria-hidden="true"></span>
+                {live ? 'Live cast' : focusRun ? 'Archived cast' : 'Standby'}
+              </span>
+              {#if focusRun}
+                <span class="obs-chip" style="color:{statusColor(focusRun.status)}">
+                  <span
+                    style="width:5px;height:5px;border-radius:50%;background:currentColor;box-shadow:0 0 6px currentColor"
+                    aria-hidden="true"
+                  ></span>
+                  {statusLabel(focusRun.status)}
+                </span>
+                <span class="obs-chip">{focusRun.id.slice(-6)}</span>
+                {#if focusRun.parent_run_id}
+                  <span class="obs-chip">resumed</span>
+                {/if}
+              {:else}
+                <span class="obs-chip">no run selected</span>
+              {/if}
+            </div>
+
+            <h2 class="obs-hero-title">{focusRun?.target ?? 'The net is armed'}</h2>
+            <p class="obs-hero-objective">{heroBody}</p>
+
+            <div class="obs-hero-meta">
+              {#if focusRun}
+                <span class="obs-chip"><Icon name="target" size={11} />{target}</span>
+                <span class="obs-chip">
+                  <Icon name="clock" size={11} />
+                  {live ? `${elapsed} elapsed` : `closed ${ago(focusRun.finished_at || focusRun.created_at)}`}
+                </span>
+                <span class="obs-chip"><Icon name="bot" size={11} />{agentsSeen} agents seen</span>
+                <span class="obs-chip"><Icon name="database" size={11} />{viewCounts.endpoints ?? 0} endpoints</span>
+              {:else}
+                <span class="obs-chip"><Icon name="shield" size={11} />authorization required</span>
+                <span class="obs-chip"><Icon name="terminal" size={11} />local control plane</span>
+              {/if}
+            </div>
+
+            <div class="obs-hero-stats">
+              <div class="obs-hero-stat"><span>Pages</span><strong>{viewCounts.pages ?? 0}</strong></div>
+              <div class="obs-hero-stat"><span>Scripts</span><strong>{viewCounts.js_files ?? 0}</strong></div>
+              <div class="obs-hero-stat"><span>Endpoints</span><strong>{viewCounts.endpoints ?? 0}</strong></div>
+              <div class="obs-hero-stat">
+                <span>Candidates</span>
+                <strong class="gold">{rawSignals}<small> / {verified} proved</small></strong>
+              </div>
+            </div>
+
+            <div class="obs-hero-actions">
+              {#if focusRun}
+                <button class="obs-btn obs-btn-primary" type="button" onclick={() => store.watch(focusRun.id)}>
+                  <Icon name={live ? 'activity' : 'eye'} size={13} />
+                  {live ? 'Watch live' : 'Inspect operation'}
+                </button>
+                {#if reportAvailable}
+                  <button class="obs-btn" type="button" onclick={() => store.watch(focusRun.id, 'report')}>
+                    <Icon name="file" size={13} />
+                    Open report
+                  </button>
+                {:else}
+                  <button class="obs-btn" type="button" onclick={() => store.go('runs')}>
+                    <Icon name="layers" size={13} />
+                    Run ledger
+                  </button>
+                {/if}
+              {:else}
+                <button class="obs-btn obs-btn-primary" type="button" onclick={() => store.go('new')}>
+                  <Icon name="crosshair" size={13} />
+                  Start your first cast
+                </button>
+                <button class="obs-btn" type="button" onclick={() => store.go('help')}>
+                  <Icon name="terminal" size={13} />
+                  Read the field guide
+                </button>
+              {/if}
+              <button class="obs-btn obs-btn-ghost" type="button" onclick={() => store.go('new')}>
+                <Icon name="plus" size={13} />
+                New scan
+              </button>
+              <span class="obs-hero-elapsed">
+                <span class="obs-status-dot" class:idle={!live} aria-hidden="true"></span>
+                {#if live}
+                  {stageLabel.toLowerCase()} · {elapsed}
+                {:else if focusRun}
+                  last event {events.length ? clock(events[events.length - 1].ts) : 'not recorded'}
+                {:else}
+                  waiting for a target
+                {/if}
+              </span>
+            </div>
+          </div>
+
+          <aside class="obs-hero-side" aria-label="pipeline state">
+            <div class="obs-ring" style="--p:{pipelinePct}">
+              <div class="obs-ring-copy">
+                <strong>{pipelinePct}<small>%</small></strong>
+                <span>pipeline</span>
+              </div>
+            </div>
+            <div class="obs-hero-side-meta">
+              <strong>{focusRun ? stageLabel : 'STANDBY'}</strong>
+              {events.length} events · {fleet.ok}/{fleet.total} replies
+              <br />
+              {runOptions.length ? runOptions.slice(0, 2).join(' · ') : 'no options recorded'}
+            </div>
+          </aside>
+        </div>
+      </section>
+
+      <!-- agent fleet -->
+      <section aria-label="agent fleet">
+        <div class="obs-section-head">
+          <div class="obs-section-title">
+            <Icon name="bot" size={14} />
+            Agent fleet
+            <span class="obs-section-meta">{agentsSeen} seen · {roster.length} in roster</span>
+          </div>
+          <button class="obs-link" type="button" onclick={() => store.go('keys')}>
+            Model mesh <Icon name="arrow-right" size={11} />
+          </button>
+        </div>
+        <div class="obs-fleet">
+          {#each agentRows.slice(0, 6) as agent (agent.key)}
+            <article class="obs-agent" class:is-live={agent.live}>
+              <div class="obs-agent-top">
+                <span class="obs-agent-avatar">{agent.mark}</span>
+                <div>
+                  <div class="obs-agent-name">{agent.name}</div>
+                  <div class="obs-agent-role">{agent.role}</div>
+                </div>
+                <span class="obs-agent-state">
+                  <span
+                    class="obs-status-dot"
+                    class:idle={!agent.live && agent.events === 0}
+                    class:violet={agent.events > 0 && !agent.live}
+                    aria-hidden="true"
+                  ></span>
+                </span>
+              </div>
+              <div class="obs-agent-action">
+                {#if agent.live}
+                  Engaged in the {stageLabel.toLowerCase()} stage.
+                {:else if agent.events}
+                  {agent.events} events recorded in this cast.
+                {:else}
+                  No events recorded in this cast.
+                {/if}
+              </div>
+              <div class="obs-agent-foot">
+                <span>{agent.lastLabel}</span>
+                <span class:acid={agent.live} class:violet={agent.events > 0 && !agent.live}>
+                  {agent.events} ev{agent.stage ? ` · ${agent.stage}` : ''}
+                </span>
+              </div>
+            </article>
+          {/each}
+        </div>
+      </section>
+
+      <!-- transmission -->
+      <article class="obs-card obs-transmission" aria-label="agent transmission">
+        <header class="obs-card-head">
+          <div>
+            <div class="obs-card-title"><Icon name="activity" size={13} />Agent transmission</div>
+            <div class="obs-card-sub">Append-only event log · {events.length} frames on the wire</div>
+          </div>
+          <div class="obs-tabs" role="tablist" aria-label="transmission feed">
+            {#each [
+              ['think', 'thinking'],
+              ['models', 'model calls'],
+              ['signals', 'signals'],
+              ['logs', 'logs']
+            ] as [id, label] (id)}
+              <button
+                class="obs-tab"
+                class:active={feedTab === id}
+                type="button"
+                role="tab"
+                aria-selected={feedTab === id}
+                onclick={() => (feedTab = id as typeof feedTab)}
+              >
+                {label}<b>{feedCounts[id as keyof typeof feedCounts] ?? 0}</b>
+              </button>
+            {/each}
+          </div>
+        </header>
+
+        <div class="obs-feed">
+          {#if events.length === 0}
+            <div class="obs-empty">
+              <span class="obs-empty-icon"><Icon name="terminal" size={18} /></span>
+              <div class="obs-empty-title">No transmission yet</div>
+              <p class="obs-empty-copy">
+                {focusRun
+                  ? 'This run did not leave a readable event trail. Open the inspector for whatever was persisted.'
+                  : 'Start a cast and the agents will narrate what they read, what they suspect, and where they stop.'}
+              </p>
+              <button class="obs-btn" type="button" onclick={() => store.go(focusRun ? 'live' : 'new')}>
+                {focusRun ? 'Open inspector' : 'Start a cast'}
+              </button>
+            </div>
+          {:else if feedTab === 'think'}
+            {#if thoughts.length === 0}
+              <div class="obs-empty">
+                <span class="obs-empty-icon"><Icon name="sparkles" size={18} /></span>
+                <div class="obs-empty-title">{live ? 'Reasoning pending' : 'No reasoning recorded'}</div>
+                <p class="obs-empty-copy">
+                  {live
+                    ? stageNow === 'crawl'
+                      ? 'The crawl is still reading the surface. The first model call will narrate what it reads and where it stops.'
+                      : 'The agents are between calls. Their reasoning will land here as soon as the next call returns.'
+                    : 'This run left events but no model reasoning. Check the model calls and logs for what the agents were doing.'}
+                </p>
+                <button class="obs-btn" type="button" onclick={() => (focusRun ? store.watch(focusRun.id) : store.go('live'))}>
+                  {live ? 'Watch the live cast' : 'Open inspector'}
+                </button>
+              </div>
+            {:else}
+              {#each thoughts.slice(-7).reverse() as thought, index (thought.seq)}
+                <button
+                  class="obs-thought"
+                  class:is-live={live && index === 0}
+                  type="button"
+                  onclick={() => focusRun && store.watch(focusRun.id)}
+                  title="open the full trace"
+                >
+                  <span class="obs-thought-meta" style="--agent:{agentColor(thought.agent)}">
+                    <span class="lane" aria-hidden="true"></span>
+                    <span class="agent">{thought.agent}</span>
+                    <span class="time">{clock(thought.ts)}</span>
+                  </span>
+                  <span class="obs-thought-text">{thought.text}</span>
+                </button>
+              {/each}
+            {/if}
+          {:else if feedTab === 'models'}
+            {#if calls.length === 0}
+              <div class="obs-empty">
+                <span class="obs-empty-icon"><Icon name="flow" size={18} /></span>
+                <div class="obs-empty-title">{live ? 'No model calls yet' : 'No model calls'}</div>
+                <p class="obs-empty-copy">
+                  {live
+                    ? 'The cast has not asked a model to read anything yet. Calls will appear here as each agent starts.'
+                    : 'No model traffic was recorded in this run. Add a provider or test the current fleet before the next cast.'}
+                </p>
+                <button class="obs-btn" type="button" onclick={() => store.go('keys')}>Manage fleet</button>
+              </div>
+            {:else}
+              {#each calls.slice(-10).reverse() as call (call.seq)}
+                <div class="obs-call">
+                  <span class="obs-call-dot" class:bad={!call.ok} aria-hidden="true"></span>
+                  <span class="obs-call-name">{call.provider}/{call.model}</span>
+                  <span class="obs-call-ms">{call.ms}ms</span>
+                  <span class="obs-call-state" class:ok={call.ok} class:bad={!call.ok}>
+                    {call.ok ? 'returned' : 'failed'}
+                  </span>
+                  {#if !call.ok && call.error}
+                    <span class="obs-call-error" title={call.error}>{call.error}</span>
+                  {/if}
+                </div>
+              {/each}
+            {/if}
+          {:else if feedTab === 'signals'}
+            {#if signals.length === 0}
+              <div class="obs-empty">
+                <span class="obs-empty-icon"><Icon name="crosshair" size={18} /></span>
+                <div class="obs-empty-title">{live ? 'No signals yet' : 'No signals'}</div>
+                <p class="obs-empty-copy">
+                  No raw candidate has surfaced in this cast. Values appear here only when the classifier can explain them.
+                </p>
+              </div>
+            {:else}
+              {#each signals.slice(-8).reverse() as signal (signal.seq)}
+                <div class="obs-signal-row">
+                  <span class="obs-signal-type">{signal.secret_type}</span>
+                  <span class="obs-signal-value">{signal.value}</span>
+                  <span class="obs-signal-state">{signal.status}</span>
+                  <span class="obs-signal-detail" title={signal.detail}>{signal.detail}</span>
+                </div>
+              {/each}
+            {/if}
+          {:else}
+            {#if logs.length === 0}
+              <div class="obs-empty">
+                <span class="obs-empty-icon"><Icon name="terminal" size={18} /></span>
+                <div class="obs-empty-title">{live ? 'No log lines yet' : 'No logs'}</div>
+                <p class="obs-empty-copy">No log lines were emitted in this run.</p>
+              </div>
+            {:else}
+              {#each logs.slice(-12).reverse() as line (line.seq)}
+                <div class="obs-log-row" class:is-error={line.level === 'error'}>
+                  <span class="obs-log-time">{clock(line.ts)}</span>
+                  <span class="obs-log-kind">{line.level === 'error' ? 'err' : 'log'}</span>
+                  <span class="obs-log-text" title={line.text}>{line.text}</span>
+                </div>
+              {/each}
+            {/if}
+          {/if}
+        </div>
+
+        <footer class="obs-feed-foot">
+          <span class="obs-pulse" class:live aria-hidden="true"></span>
+          <span>{live ? 'streaming from the live cast' : 'replay of the last cast'}</span>
+          <span class="spacer"></span>
+          <span>{thoughts.length} thoughts · {calls.length} calls · {signals.length} signals</span>
+          <button class="obs-btn obs-btn-sm obs-btn-ghost" type="button" onclick={toggleFollow}>
+            {autoFollow ? 'Pause feed' : pausedCount ? `Resume · ${pausedCount}` : 'Resume feed'}
+          </button>
         </footer>
+      </article>
+
+      <!-- findings -->
+      <article class="obs-card obs-findings" aria-label="findings">
+        <header class="obs-card-head">
+          <div>
+            <div class="obs-card-title"><Icon name="bug" size={13} />Findings in flight</div>
+            <div class="obs-card-sub">
+              {recent.length} persisted · {pendingCount} waiting · {confirmed} confirmed
+            </div>
+          </div>
+          <button class="obs-link" type="button" onclick={() => store.go('findings')}>
+            View all <Icon name="arrow-right" size={11} />
+          </button>
+        </header>
+
+        {#if findingsPreview.length === 0}
+          <div class="obs-empty-table">
+            <span class="obs-empty-icon"><Icon name="shield" size={18} /></span>
+            <div class="obs-empty-table-copy">
+              <div class="obs-empty-table-title">Nothing persisted yet</div>
+              <p>
+                {focusRun
+                  ? `The latest cast surfaced ${rawSignals} candidate${rawSignals === 1 ? '' : 's'} and proved ${verified}. A finding is written only after validation, so the proof trail stays clean.`
+                  : 'No cast has run yet. When a candidate clears validation, its evidence and triage state land here.'}
+              </p>
+              <div class="obs-funnel-mini">
+                <span class="obs-chip">surfaced {rawSignals}</span>
+                <span class="obs-chip acid">proved {verified}</span>
+                <span class="obs-chip">written {totals?.findings ?? 0}</span>
+              </div>
+            </div>
+            <button
+              class="obs-btn"
+              type="button"
+              onclick={() => (focusRun ? store.watch(focusRun.id) : store.go('new'))}
+            >
+              {focusRun ? 'Inspect the evidence' : 'Start a cast'}
+            </button>
+          </div>
+        {:else}
+          <div class="obs-table-wrap">
+            <table class="obs-table">
+              <thead>
+                <tr>
+                  <th>Severity</th>
+                  <th>Finding</th>
+                  <th>Asset</th>
+                  <th>Confidence</th>
+                  <th>State</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody>
+                {#each findingsPreview as finding (finding.id)}
+                  <tr
+                    role="link"
+                    tabindex="0"
+                    onclick={() => store.go('findings')}
+                    onkeydown={(event) => {
+                      if (event.key === 'Enter') store.go('findings');
+                    }}
+                  >
+                    <td>
+                      <span class="obs-chip" style="color:{sevColor(finding.severity)}">
+                        <span
+                          style="width:5px;height:5px;border-radius:50%;background:currentColor;box-shadow:0 0 5px currentColor"
+                          aria-hidden="true"
+                        ></span>
+                        {finding.severity}
+                      </span>
+                    </td>
+                    <td>
+                      <div class="obs-finding-title">{finding.title}</div>
+                      <div class="obs-finding-sub">
+                        {finding.secret_type} · {ago(finding.created_at)}
+                      </div>
+                    </td>
+                    <td class="obs-mono" style="font-size:8px;color:var(--obs-muted)">{findingSource(finding)}</td>
+                    <td>
+                      <div class="obs-conf">
+                        <span class="obs-meter"><i style="width:{confidencePct(finding)}%"></i></span>
+                        <span>{confidencePct(finding)}%</span>
+                      </div>
+                    </td>
+                    <td><span class="obs-chip">{triageLabel(finding.triage_status)}</span></td>
+                    <td><Icon name="arrow-right" size={12} class="obs-row-arrow" /></td>
+                  </tr>
+                {/each}
+              </tbody>
+            </table>
+          </div>
+        {/if}
       </article>
     </div>
 
-    <aside class="flex flex-col gap-4">
-      <article class="panel panel-hud action-deck overflow-hidden">
-        <header class="cmd-section-head">
+    <aside class="obs-command-rail">
+      <!-- approvals -->
+      <article class="obs-card obs-approvals" aria-label="approval queue">
+        <header class="obs-card-head">
           <div>
-            <p class="eyebrow">next moves</p>
-            <p class="cmd-section-sub">The shortest path from signal to proof.</p>
+            <div class="obs-card-title"><Icon name="lock" size={13} />Approval queue</div>
+            <div class="obs-card-sub">{pendingCount} decision{pendingCount === 1 ? '' : 's'} need you</div>
           </div>
-          <span class="chip" style="color:var(--nc-acid)">{nextActions.length} open</span>
+          <span class="obs-approval-count" class:is-zero={pendingCount === 0}>{pendingCount}</span>
         </header>
-        <div class="action-list">
+
+        {#if pendingFindings.length > 0}
+          <div class="obs-approval-list">
+            {#each pendingFindings.slice(0, 2) as finding (finding.id)}
+              <div class="obs-approval" class:is-urgent={finding.severity === 'critical' || finding.severity === 'high'}>
+                <div class="obs-approval-top">
+                  <span class="obs-approval-agent">{finding.secret_type}</span>
+                  <span class="obs-chip" style="color:{sevColor(finding.severity)}">{finding.severity}</span>
+                </div>
+                <div class="obs-approval-title">{finding.title}</div>
+                <div class="obs-approval-why">
+                  <strong>Why:</strong>
+                  {finding.impact || finding.evidence || 'A persisted finding is waiting for a human triage decision.'}
+                </div>
+                <div class="obs-approval-meta">
+                  <span class="obs-chip">{findingSource(finding)}</span>
+                  <span class="obs-chip">{confidencePct(finding)}% confidence</span>
+                  <span class="obs-chip violet">needs review</span>
+                </div>
+                <div class="obs-approval-actions">
+                  <button
+                    class="obs-btn obs-btn-primary"
+                    type="button"
+                    disabled={reviewing === finding.id}
+                    onclick={() => void review(finding, 'confirmed')}
+                  >
+                    Confirm
+                  </button>
+                  <button
+                    class="obs-btn obs-btn-ghost"
+                    type="button"
+                    disabled={reviewing === finding.id}
+                    onclick={() => void review(finding, 'rejected')}
+                  >
+                    Reject
+                  </button>
+                </div>
+              </div>
+            {/each}
+          </div>
+        {:else}
+          <div class="obs-empty-approval">
+            <span class="obs-empty-icon"><Icon name="shield" size={18} /></span>
+            <div class="obs-empty-title">{recent.length ? 'Queue is clear' : 'No approval waiting'}</div>
+            <p>
+              {recent.length
+                ? 'Every persisted finding has a triage decision. Open findings to revisit the evidence or change a call.'
+                : 'Human review opens when a finding is persisted. The gate cannot be skipped by an agent.'}
+            </p>
+            <button
+              class="obs-btn obs-btn-sm"
+              type="button"
+              onclick={() => (focusRun ? store.watch(focusRun.id) : store.go('new'))}
+            >
+              {focusRun ? 'Inspect latest cast' : 'Start a cast'}
+            </button>
+          </div>
+        {/if}
+      </article>
+
+      <!-- next moves -->
+      <article class="obs-card" aria-label="next best actions">
+        <header class="obs-card-head no-border">
+          <div>
+            <div class="obs-card-title"><Icon name="zap" size={13} />Next best actions</div>
+            <div class="obs-card-sub">Ranked from this cast's evidence</div>
+          </div>
+          <span class="obs-chip">{nextActions.length}</span>
+        </header>
+        <div class="obs-next-list">
           {#each nextActions as action (action.id)}
-            <button class="action-card" type="button" style="--action:{action.color}" onclick={action.go}>
-              <span class="action-num">{action.num}</span>
-              <span class="min-w-0 flex-1">
-                <span class="action-title">{action.title}<span class="action-arrow" aria-hidden="true">↗</span></span>
-                <span class="action-body">{action.body}</span>
-                <span class="action-cta">{action.cta} <span aria-hidden="true">→</span></span>
+            <button class="obs-next" type="button" onclick={action.go} style="--action:{action.color}">
+              <span class="obs-next-icon" style="color:{action.color}">
+                <Icon name={actionIcon(action.id)} size={13} />
               </span>
+              <span class="obs-next-body">
+                <span class="obs-next-title">{action.title}</span>
+                <span class="obs-next-why">{action.body}</span>
+                <span class="obs-next-cta">{action.cta} →</span>
+              </span>
+              <Icon name="arrow-right" size={11} />
             </button>
           {:else}
-            <p class="px-5 py-6 text-sm text-bone-dust">The deck is clear. Cast a new target when you are ready.</p>
+            <p style="padding:14px 16px;font-size:9.5px;color:var(--obs-faint)">
+              The deck is clear. Cast a new target when you are ready.
+            </p>
           {/each}
         </div>
       </article>
 
-      <article class="panel panel-hud fleet-panel overflow-hidden">
-        <header class="cmd-section-head">
+      <!-- scope -->
+      <article class="obs-card" aria-label="scope and surface">
+        <header class="obs-card-head">
           <div>
-            <p class="eyebrow">model fleet</p>
-            <p class="cmd-section-sub">Every reply, every stall, every reroute.</p>
+            <div class="obs-card-title"><Icon name="crosshair" size={13} />Scope &amp; surface</div>
+            <div class="obs-card-sub">
+              {focusRun ? `${focusRun.id.slice(-6)} · ${statusLabel(focusRun.status)}` : 'No cast recorded'}
+            </div>
           </div>
-          <span class="num text-sm" style="color:{fleet.rate > 0.8 ? 'var(--nc-acid)' : 'var(--nc-gold)'}">
-            {fleet.total ? Math.round(fleet.rate * 100) : 0}%
-          </span>
+          <span class="obs-chip" style="color:var(--obs-acid)">{Math.round(proofRate * 100)}% proof</span>
         </header>
-        <div class="fleet-meter" aria-hidden="true">
-          <i style="width:{fleet.rate * 100}%; background:linear-gradient(90deg,var(--nc-violet),var(--nc-acid))"></i>
-        </div>
-        <div class="fleet-list">
-          {#if fleetRows.length === 0}
-            <p class="px-4 py-5 text-sm text-bone-dust">No model traffic yet. Add a provider to give the agents a voice.</p>
-          {:else}
-            {#each fleetRows.slice(0, 5) as row (row.key)}
-              <div class="fleet-row" title={row.error || row.lastModel}>
-                <span class="fleet-dot" class:bad={!row.healthy && row.calls === 0} class:hot={row.failed > 0} aria-hidden="true"></span>
-                <span class="mono min-w-0 flex-1 truncate text-xs text-bone">{row.name}</span>
-                {#if row.calls > 0}
-                  <span class="num shrink-0 text-[11px] text-ash">{row.ok}/{row.calls}</span>
-                {:else}
-                  <span class="mono shrink-0 text-[10px] text-slate">{row.models} models</span>
-                {/if}
-                {#if row.failed > 0}
-                  <span class="mono shrink-0 text-[10px] text-violet">{row.failed} fail</span>
-                {:else if row.avgMs > 0}
-                  <span class="mono shrink-0 text-[10px] text-slate">{row.avgMs}ms</span>
-                {:else if row.healthy}
-                  <span class="mono shrink-0 text-[10px] text-acid">ready</span>
-                {:else}
-                  <span class="mono shrink-0 text-[10px] text-slate">idle</span>
-                {/if}
+
+        {#if focusRun}
+          <div class="obs-scope-target">
+            <Icon name="globe" size={13} />
+            <strong>{target}</strong>
+          </div>
+          <div class="obs-scope-funnel">
+            {#each surface.slice(0, 4) as row (row.key)}
+              <div class="obs-scope-row">
+                <span>{row.label}</span>
+                <span class="obs-meter"><i style="width:{row.pct}%;background:{row.color}"></i></span>
+                <strong>{row.value}</strong>
               </div>
             {/each}
+          </div>
+          {#if hosts.length}
+            <div class="obs-hosts">
+              {#each hosts.slice(0, 3) as host (host.host)}
+                <div class="obs-host">
+                  <span class="obs-provider-dot" class:ok={host.ok > 0} aria-hidden="true"></span>
+                  <span class="obs-host-name" title={host.host}>{host.host}</span>
+                  <span class="obs-provider-meta">{host.count}</span>
+                </div>
+              {/each}
+            </div>
           {/if}
+          <div class="obs-scope-chips">
+            {#each runOptions as chip (chip)}
+              <span class="obs-chip">{chip}</span>
+            {:else}
+              <span class="obs-chip">no options recorded</span>
+            {/each}
+          </div>
+        {:else}
+          <div class="obs-empty-approval" style="text-align:left;padding-top:14px">
+            <p style="margin:0;max-width:none">
+              No operation is loaded. Start a cast to map pages, scripts, endpoints and candidates here.
+            </p>
+          </div>
+        {/if}
+
+        <div class="obs-guardrail">
+          <Icon name="shield" size={12} />
+          <span>
+            <strong>Operator responsibility.</strong> NetCast3r runs only where you point it. Confirm authorization and scope before starting a cast.
+          </span>
         </div>
-        <footer class="intel-foot">
-          <span class="mono text-[10px] text-slate">{providers.length} configured · {fleetRows.length} in trace</span>
-          <button class="btn btn-quiet ml-auto px-2! py-1! text-xs" type="button" onclick={() => store.go('keys')}>manage fleet</button>
+      </article>
+
+      <!-- model mesh -->
+      <article class="obs-card" aria-label="model mesh">
+        <header class="obs-card-head">
+          <div>
+            <div class="obs-card-title"><Icon name="plug" size={13} />Model mesh</div>
+            <div class="obs-card-sub">{providers.length} provider{providers.length === 1 ? '' : 's'} · {fleet.total} calls this cast</div>
+          </div>
+          <button class="obs-link" type="button" onclick={() => store.go('keys')}>
+            Manage <Icon name="arrow-right" size={11} />
+          </button>
+        </header>
+
+        {#if providers.length === 0}
+          <div class="obs-empty-approval" style="padding-top:14px">
+            <p style="margin:0 auto">No provider is configured. Add one to give the agents a model.</p>
+            <button class="obs-btn obs-btn-sm" type="button" onclick={() => store.go('keys')}>Add provider</button>
+          </div>
+        {:else}
+          {#each providers as provider (provider.id)}
+            <div class="obs-provider">
+              <span class="obs-provider-dot" class:ok={provider.healthy} aria-hidden="true"></span>
+              <span class="obs-provider-name">{provider.name}</span>
+              <span class="obs-provider-meta">
+                {provider.models.length} models · {provider.key_set ? 'key set' : 'no key'}
+              </span>
+              <button
+                class="obs-btn obs-btn-ghost"
+                type="button"
+                disabled={testing === provider.id || !provider.key_set}
+                onclick={() => void testProvider(provider)}
+              >
+                {testing === provider.id ? '...' : 'test'}
+              </button>
+            </div>
+          {/each}
+        {/if}
+
+        <footer class="obs-mesh-foot">
+          <span>{fleet.ok}/{fleet.total} replies</span>
+          <span style="margin-left:auto">{store.syncState === 'error' ? 'sync lost' : `synced ${syncLabel}`}</span>
         </footer>
       </article>
     </aside>
-  </section>
+  </div>
 
-  <!-- ------------------------------------------------------------------ -->
-  <!-- surface + human queue                                              -->
-  <!-- ------------------------------------------------------------------ -->
-  <section class="grid gap-4 xl:grid-cols-[minmax(0,1.28fr)_minmax(300px,0.72fr)]">
-    <article class="panel panel-hud surface-panel p-5" use:spotlight>
-      <header class="flex flex-wrap items-start gap-3">
-        <div class="min-w-0">
-          <p class="eyebrow">attack surface</p>
-          <p class="cmd-section-sub">The funnel from crawl to proof.</p>
-        </div>
-        <span class="chip ml-auto" style="color:var(--nc-acid)">
-          {Math.round(proofRate * 100)}% proof rate
-        </span>
-      </header>
-
-      <div class="surface-chain mt-6">
-        {#each surface as node, index (node.key)}
-          <button
-            class="surface-node"
-            type="button"
-            onclick={() => focusRun && store.watch(focusRun.id)}
-            title="open the run inspector"
-          >
-            <span class="surface-index">0{index + 1}</span>
-            <span class="surface-label">{node.label}</span>
-            <span class="num surface-value">{node.value}</span>
-            <span class="surface-bar" aria-hidden="true"><i style="width:{node.pct}%; background:{node.color}"></i></span>
-            <span class="surface-note">{node.note}</span>
-          </button>
-          {#if index < surface.length - 1}
-            <span class="surface-link" aria-hidden="true"><i></i></span>
-          {/if}
-        {/each}
-      </div>
-
-      {#if hosts.length > 0}
-        <div class="host-board mt-5 border-t border-indigo-deep pt-3">
-          <div class="flex items-center justify-between gap-2">
-            <p class="eyebrow">assets under glass</p>
-            <span class="mono text-[9px] tracking-[0.1em] text-slate">top {hosts.length} · {fetchCount} fetches</span>
-          </div>
-          <div class="mt-2 grid gap-1.5">
-            {#each hosts as host (host.host)}
-              <div class="host-row">
-                <span class="host-dot" class:ok={host.ok > 0} aria-hidden="true"></span>
-                <span class="mono min-w-0 flex-1 truncate text-[11px] text-bone-dust" title={host.host}>{host.host}</span>
-                <span class="num shrink-0 text-[10px] text-ash">{host.count}</span>
-                <span class="host-bar" aria-hidden="true"><i style="width:{Math.round((host.count / hostMax) * 100)}%"></i></span>
-              </div>
-            {/each}
-          </div>
-        </div>
-      {/if}
-
-      <div class="surface-foot mt-5 grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <div>
-          <p class="eyebrow">code notes</p>
-          <p class="num mt-1 text-lg text-bone">{viewCounts.review_loopholes ?? 0}</p>
-        </div>
-        <div>
-          <p class="eyebrow">endpoint notes</p>
-          <p class="num mt-1 text-lg text-bone">{viewCounts.review_endpoints ?? 0}</p>
-        </div>
-        <div>
-          <p class="eyebrow">unverified</p>
-          <p class="num mt-1 text-lg" style="color:var(--nc-violet)">{viewCounts.unverified ?? 0}</p>
-        </div>
-        <div>
-          <p class="eyebrow">last return</p>
-          <p class="mt-1 text-sm text-bone-dust">{focusRun ? ago(focusRun.created_at) : 'never'}</p>
-        </div>
-      </div>
-    </article>
-
-    <article class="panel panel-hud queue-panel overflow-hidden">
-      <header class="cmd-section-head">
-        <div>
-          <p class="eyebrow">human queue</p>
-          <p class="cmd-section-sub">Raw signals waiting for judgement.</p>
-        </div>
-        <span class="chip" style="color:var(--nc-violet)">{queue.length}</span>
-      </header>
-
-      {#if queue.length === 0}
-        <div class="queue-empty">
-          <span class="intel-empty-glyph" aria-hidden="true">◌</span>
-          <p class="eyebrow mt-2">queue empty</p>
-          <p class="mt-2 text-sm text-bone-dust">
-            {focusRun
-              ? 'No raw signals on the last cast. The net came back clean.'
-              : 'No casts yet. The queue fills as soon as a credential-shaped value surfaces.'}
-          </p>
-        </div>
-      {:else}
-        <div class="queue-list">
-          {#each queue as item (item.id)}
-            <button
-              class="queue-item"
-              type="button"
-              onclick={() => (item.finding ? store.go('findings') : focusRun && store.watch(focusRun.id))}
-            >
-              <div class="flex items-center gap-2">
-                <Chip
-                  label={item.finding ? triageLabel(item.status) : item.status}
-                  color={item.finding ? sevColor(item.severity) : 'var(--nc-violet)'}
-                  shape={item.finding ? sevShape(item.severity) : 'dia'}
-                />
-                <span class="mono ml-auto text-[10px] text-slate">{clock(item.ts)}</span>
-              </div>
-              <p class="mt-2 flex items-center gap-2 text-sm text-bone">
-                <span class="mono text-[10px] uppercase tracking-[0.12em] text-violet">{item.label}</span>
-                <span class="min-w-0 flex-1 truncate">{item.value}</span>
-              </p>
-              <p class="mt-1 line-clamp-2 text-xs leading-relaxed text-bone-dust">{item.detail}</p>
-              <span class="queue-open">open evidence <span aria-hidden="true">→</span></span>
-            </button>
-          {/each}
-        </div>
-      {/if}
-
-      <div class="queue-guide">
-        <p class="eyebrow">how to read this</p>
-        <p class="mt-1.5 text-[11px] leading-relaxed text-bone-dust">
-          {recent.length
-            ? 'A persisted finding already passed a validator or a human. Confirm only when the evidence proves impact, not merely because the value looks secret.'
-            : 'A raw signal is a lead, not a finding. These values stalled because no validator recipe matched their type; they stay visible so a human can decide whether the context makes them real.'}
-        </p>
-      </div>
-
-      <footer class="intel-foot">
-        <span class="mono text-[10px] text-slate">{recent.length ? 'persisted findings' : 'unwritten candidates'}</span>
-        <button class="btn btn-quiet ml-auto px-2! py-1! text-xs" type="button" onclick={() => store.go('findings')}>open findings</button>
-      </footer>
-    </article>
-  </section>
-
-  <!-- ------------------------------------------------------------------ -->
-  <!-- run ledger + provider strip                                        -->
-  <!-- ------------------------------------------------------------------ -->
-  <section class="panel panel-hud ledger overflow-hidden">
-    <header class="cmd-section-head flex-wrap">
+  <!-- ledger -->
+  <section class="obs-card obs-ledger" aria-label="run ledger">
+    <header class="obs-card-head">
       <div>
-        <p class="eyebrow">run ledger</p>
-        <p class="cmd-section-sub">Every cast, every return, every dead end.</p>
+        <div class="obs-card-title"><Icon name="layers" size={13} />Run ledger</div>
+        <div class="obs-card-sub">Every cast, every return, every dead end</div>
       </div>
-      <div class="ml-auto flex items-center gap-3">
-        <div class="hidden items-center gap-2 text-right sm:flex">
-          <Sparkline values={runTrend} width={108} height={24} color="var(--nc-acid)" />
-          <div>
-            <p class="eyebrow">pages / last {runTrend.length}</p>
-            <p class="mono text-[10px] text-slate">coverage drift</p>
-          </div>
-        </div>
-        <button class="btn btn-quiet px-2! py-1! text-xs" type="button" onclick={() => store.go('runs')}>history</button>
+      <div style="display:flex;align-items:center;gap:10px;margin-left:auto">
+        <Sparkline values={runTrend} width={86} height={20} color="var(--obs-acid)" />
+        <button class="obs-link" type="button" onclick={() => store.go('runs')}>
+          History <Icon name="arrow-right" size={11} />
+        </button>
       </div>
     </header>
 
     {#if store.runs.length === 0}
-      <p class="px-5 py-7 text-sm text-bone-dust">No scans yet. Start a cast and the ledger begins here.</p>
+      <div class="obs-empty" style="min-height:150px">
+        <span class="obs-empty-icon"><Icon name="layers" size={18} /></span>
+        <div class="obs-empty-title">No casts in the ledger</div>
+        <p class="obs-empty-copy">Start a scan and every run will appear here with its surface, signals and findings.</p>
+        <button class="obs-btn" type="button" onclick={() => store.go('new')}>Start a cast</button>
+      </div>
     {:else}
-      <div class="ledger-head hidden grid-cols-[minmax(0,1.7fr)_repeat(5,minmax(54px,0.5fr))_28px] gap-4 border-b border-indigo-deep px-5 py-2 sm:grid">
-        <span class="eyebrow">target</span>
-        <span class="eyebrow text-right">pages</span>
-        <span class="eyebrow text-right">scripts</span>
-        <span class="eyebrow text-right">endpoints</span>
-        <span class="eyebrow text-right">signals</span>
-        <span class="eyebrow text-right">findings</span>
+      <div class="obs-ledger-head" aria-hidden="true">
+        <span>Operation</span>
+        <span>Pages</span>
+        <span>Scripts</span>
+        <span>Endpoints</span>
+        <span>Signals</span>
+        <span>Findings</span>
         <span></span>
       </div>
-      <div>
-        {#each store.runs.slice(0, 6) as run (run.id)}
-          <button
-            class="ledger-row"
-            class:ledger-current={run.id === focusRun?.id}
-            type="button"
-            onclick={() => store.watch(run.id)}
-          >
-            <span class="ledger-signal" style="background:{statusColor(run.status)}" aria-hidden="true"></span>
-            <span class="min-w-0">
-              <span class="flex min-w-0 items-center gap-2">
-                <span class="mono min-w-0 flex-1 truncate text-sm text-bone">{run.target}</span>
-                <span class="chip shrink-0" style="color:{statusColor(run.status)}">{statusLabel(run.status)}</span>
-              </span>
-              <span class="mono mt-1 flex flex-wrap gap-x-3 gap-y-1 text-[10px] text-slate">
+      {#each store.runs.slice(0, 6) as run (run.id)}
+        <button
+          class="obs-ledger-row"
+          class:is-current={run.id === focusRun?.id}
+          type="button"
+          onclick={() => store.watch(run.id)}
+        >
+          <span class="obs-ledger-main">
+            <span class="obs-ledger-signal" style="background:{statusColor(run.status)}" aria-hidden="true"></span>
+            <span style="min-width:0">
+              <span class="obs-ledger-target">{run.target}</span>
+              <span class="obs-ledger-sub">
+                <span>{statusLabel(run.status)}</span>
+                <span>·</span>
                 <span>{duration(run)}</span>
+                <span>·</span>
                 <span>{ago(run.created_at)}</span>
-                <span class="hidden sm:inline">{run.id.slice(-6)}</span>
               </span>
             </span>
-            <span class="ledger-metric"><b class="num">{run.counts?.pages ?? 0}</b><small>pages</small></span>
-            <span class="ledger-metric"><b class="num">{run.counts?.js_files ?? 0}</b><small>scripts</small></span>
-            <span class="ledger-metric"><b class="num">{run.counts?.endpoints ?? 0}</b><small>endpoints</small></span>
-            <span class="ledger-metric"><b class="num" style="color:{(run.counts?.candidates ?? 0) > 0 ? 'var(--nc-violet)' : 'var(--nc-bone_dust)'}">{run.counts?.candidates ?? 0}</b><small>signals</small></span>
-            <span class="ledger-metric"><b class="num" style="color:{(run.counts?.findings ?? 0) > 0 ? 'var(--nc-acid)' : 'var(--nc-bone_dust)'}">{run.counts?.findings ?? 0}</b><small>findings</small></span>
-            <span class="ledger-go" aria-hidden="true">↗</span>
-          </button>
-        {/each}
-      </div>
-    {/if}
-  </section>
-
-  <section class="panel provider-strip overflow-hidden">
-    <header class="cmd-section-head">
-      <div>
-        <p class="eyebrow">provider mesh</p>
-        <p class="cmd-section-sub">The keys behind the cast.</p>
-      </div>
-      <button class="btn btn-quiet ml-auto px-2! py-1! text-xs" type="button" onclick={() => store.go('keys')}>manage providers</button>
-    </header>
-    {#if providers.length === 0}
-      <div class="px-5 py-5 text-sm text-bone-dust">
-        No providers configured. Add one on the providers screen to give the agents a model.
-      </div>
-    {:else}
-      <div class="provider-grid">
-        {#each providers as provider (provider.id)}
-          <div class="provider-cell">
-            <span class="provider-dot" class:ok={provider.healthy} aria-hidden="true"></span>
-            <span class="mono min-w-0 flex-1 truncate text-xs text-bone">{provider.name}</span>
-            <span class="mono hidden text-[10px] text-ash sm:inline">{provider.models.length} models</span>
-            <span class="mono text-[10px] {provider.key_set ? 'text-bone-dust' : 'text-violet'}">
-              {provider.key_set ? 'key set' : 'no key'}
-            </span>
-            <button
-              class="btn btn-quiet px-2! py-1! text-[10px]"
-              type="button"
-              disabled={testing === provider.id || !provider.key_set}
-              onclick={() => testProvider(provider)}
-            >
-              {testing === provider.id ? 'testing...' : 'test'}
-            </button>
-          </div>
-        {/each}
-      </div>
+          </span>
+          <span class="obs-ledger-metric">{run.counts?.pages ?? 0}</span>
+          <span class="obs-ledger-metric">{run.counts?.js_files ?? 0}</span>
+          <span class="obs-ledger-metric">{run.counts?.endpoints ?? 0}</span>
+          <span class="obs-ledger-metric" style="color:{(run.counts?.candidates ?? 0) > 0 ? 'var(--obs-violet)' : 'var(--obs-faint)'}">
+            {run.counts?.candidates ?? 0}
+          </span>
+          <span class="obs-ledger-metric" style="color:{(run.counts?.findings ?? 0) > 0 ? 'var(--obs-acid)' : 'var(--obs-faint)'}">
+            {run.counts?.findings ?? 0}
+          </span>
+          <Icon name="arrow-right" size={11} class="obs-ledger-go" />
+        </button>
+      {/each}
     {/if}
   </section>
 </div>

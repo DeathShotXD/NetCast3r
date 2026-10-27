@@ -3,27 +3,39 @@
   import { ago, isoMs } from '../format';
   import { STAGES } from '../../tokens';
   import type { Screen } from '../types';
-  import { countup } from '../actions';
-  import Mark from '../ui/Mark.svelte';
-  import NetScope from '../ui/NetScope.svelte';
+  import Icon from '../ui/Icon.svelte';
 
   let {
     open = false,
     onNavigate = () => {}
   }: { open?: boolean; onNavigate?: () => void } = $props();
 
-  const items: { id: Screen; label: string; glyph: string; hint: string }[] = [
-    { id: 'home', label: 'Home', glyph: '#', hint: 'what we found, what to do' },
-    { id: 'new', label: 'New scan', glyph: '>', hint: 'point the tool at a target' },
-    { id: 'live', label: 'Live runs', glyph: '[*]', hint: 'watch a scan, inspect everything it found' },
-    { id: 'findings', label: 'Findings', glyph: '*', hint: 'triage what came back' },
-    { id: 'runs', label: 'Runs', glyph: '//', hint: 'history, rerun, delete' },
-    { id: 'keys', label: 'Providers', glyph: '^', hint: 'paste a key, test a provider' },
-    { id: 'help', label: 'Help', glyph: '?', hint: 'what every state means' }
+  type NavItem = { id: Screen; label: string; icon: string; hint: string };
+
+  const groups: { label: string; items: NavItem[] }[] = [
+    {
+      label: 'Command',
+      items: [
+        { id: 'home', label: 'Command Center', icon: 'grid', hint: 'what happened, what needs you' },
+        { id: 'new', label: 'New Scan', icon: 'target', hint: 'point the net at a target' },
+        { id: 'live', label: 'Live Runs', icon: 'activity', hint: 'watch a cast, inspect everything it found' },
+        { id: 'findings', label: 'Findings', icon: 'bug', hint: 'triage what came back' }
+      ]
+    },
+    {
+      label: 'Intelligence',
+      items: [
+        { id: 'runs', label: 'Run Ledger', icon: 'layers', hint: 'history, rerun, delete' },
+        { id: 'keys', label: 'Providers', icon: 'plug', hint: 'keys, models, health' }
+      ]
+    },
+    {
+      label: 'Reference',
+      items: [{ id: 'help', label: 'Field Guide', icon: 'terminal', hint: 'what every state means' }]
+    }
   ];
 
-  const isActive = (id: Screen) =>
-    id === store.screen || (id === 'live' && store.screen === 'live');
+  const isActive = (id: Screen) => id === store.screen;
 
   const running = $derived(
     store.runs.find((run) => run.status === 'running' || run.status === 'queued') ??
@@ -35,7 +47,6 @@
   );
   const findingCount = $derived(store.totals?.findings ?? 0);
   const lastRun = $derived(store.totals?.last_run ?? store.runs[0] ?? null);
-  const lastCounts = $derived((lastRun?.counts ?? {}) as Record<string, number>);
   const stageName = $derived(
     (STAGES as unknown as { key: string; label: string }[]).find((stage) => stage.key === store.liveStage)?.label ??
       (store.liveStage ? store.liveStage.toUpperCase() : 'WARMING UP')
@@ -73,154 +84,131 @@
 </script>
 
 {#if open}
-  <button
-    class="fixed inset-0 z-30 bg-black/60 lg:hidden"
-    aria-label="close navigation"
-    onclick={onNavigate}
-  ></button>
+  <button class="obs-scrim" aria-label="close navigation" onclick={onNavigate}></button>
 {/if}
 
-<aside
-  class="fixed inset-y-0 left-0 z-40 flex w-[248px] flex-col border-r border-indigo-deep bg-void-soft px-3 py-4 transition-transform duration-300 lg:translate-x-0 {open
-    ? 'translate-x-0'
-    : '-translate-x-full'}"
->
-  <div class="flex items-center gap-3 px-2">
-    <Mark class="h-9 w-9 shrink-0" live={!!running} />
-    <div class="leading-tight">
-      <p class="font-mono text-sm tracking-[0.2em] text-bone">NETCAST3R</p>
-      <p class="eyebrow tracking-[0.24em]!">dashboard</p>
+<aside class="obs-sidebar" class:is-open={open} aria-label="primary navigation">
+  <div class="obs-brand">
+    <div class="obs-brand-mark" aria-hidden="true">
+      <svg viewBox="0 0 28 28" fill="none">
+        <path
+          d="M14 2.5 24.5 8.6v10.8L14 25.5 3.5 19.4V8.6z"
+          stroke="url(#obs-brand-gradient)"
+          stroke-width="1.3"
+        />
+        <path
+          d="M14 7.2 20 10.7v6.6L14 20.8l-6-3.5v-6.6z"
+          stroke="#C8F81A"
+          stroke-opacity=".55"
+          stroke-width=".9"
+        />
+        <circle cx="14" cy="14" r="2.1" fill="#C8F81A" />
+        <path
+          d="M14 7.2v4.7M20 10.7l-3.9 2.2M20 17.3l-3.9-2.2M14 20.8v-4.7M8 17.3l3.9-2.2M8 10.7l3.9 2.2"
+          stroke="#C8F81A"
+          stroke-opacity=".42"
+          stroke-width=".75"
+        />
+      </svg>
+    </div>
+    <div>
+      <div class="obs-brand-name">NETCAST3R</div>
+      <div class="obs-brand-sub">Agentic security OS</div>
     </div>
   </div>
 
-  <nav class="mt-6 flex flex-col gap-1" aria-label="main">
-    {#each items as item (item.id)}
-      <button
-        type="button"
-        class="nav-item"
-        class:active={isActive(item.id)}
-        onclick={() => go(item.id)}
-        aria-current={isActive(item.id) ? 'page' : undefined}
-        title={item.hint}
-      >
-        <span class="nav-glyph" aria-hidden="true">{item.glyph}</span>
-        <span>{item.label}</span>
-        {#if item.id === 'findings' && findingCount > 0}
-          <span class="nav-badge" class:hot={openCount > 0} class:badge-pop={pop} title="{findingCount} findings"
-            >{findingCount}</span
+  <div class="obs-workspace">
+    <span class="obs-workspace-avatar">NC</span>
+    <span class="obs-workspace-copy">
+      <span class="obs-workspace-name">Local control plane</span>
+      <span class="obs-workspace-plan">single operator · SQLite</span>
+    </span>
+    <Icon name="lock" size={12} />
+  </div>
+
+  <nav class="obs-nav">
+    {#each groups as group (group.label)}
+      <div class="obs-nav-group">
+        <div class="obs-nav-label">{group.label}</div>
+        {#each group.items as item (item.id)}
+          <button
+            type="button"
+            class="obs-nav-item"
+            class:active={isActive(item.id)}
+            onclick={() => go(item.id)}
+            aria-current={isActive(item.id) ? 'page' : undefined}
+            title={item.hint}
           >
-        {/if}
-        {#if item.id === 'live' && store.runs.some((run) => run.status === 'running' || run.status === 'queued')}
-          <span class="pulse-live ml-auto h-1.5 w-1.5 rounded-full bg-acid" aria-hidden="true"></span>
-        {/if}
-      </button>
+            <Icon name={item.icon} size={15} />
+            <span>{item.label}</span>
+            {#if item.id === 'findings' && findingCount > 0}
+              <span class="obs-nav-badge" class:hot={openCount > 0} class:badge-pop={pop} title="{findingCount} findings">
+                {findingCount}
+              </span>
+            {/if}
+            {#if item.id === 'live' && running}
+              <span class="obs-nav-live" aria-hidden="true"></span>
+            {/if}
+          </button>
+        {/each}
+      </div>
     {/each}
   </nav>
 
-  <!-- status module: the rail's midsection earns its keep -->
-  <div class="mt-auto hidden min-h-0 flex-1 flex-col gap-3 pt-4 [@media(min-height:680px)]:flex">
-    <div class="panel panel-hud relative min-h-[200px] flex-1 overflow-hidden p-3">
-      <div class="relative z-[1] flex h-full flex-col gap-2">
-        <div class="flex items-center justify-between gap-2">
-          <p class="eyebrow">net status</p>
-          {#if running}
-            <span class="chip" style="color:var(--nc-acid)">
-              <span class="pulse-live h-[7px] w-[7px] rounded-full bg-acid" aria-hidden="true"></span>
-              {running.status === 'queued' ? 'queued' : 'casting'}
-            </span>
-          {:else}
-            <span class="chip" style="color:var(--nc-ash)">standby</span>
-          {/if}
-        </div>
-        {#if running}
-          <p class="mono truncate text-xs text-acid">{running.target}</p>
-          <p class="mono flex items-center gap-2 text-[10px] tracking-[0.06em] text-bone-dust">
-            <span class="text-violet">{stageName}</span>
-            <span class="text-slate">·</span>
-            <span>{elapsed}</span>
-          </p>
-        {:else if lastRun}
-          <p class="mono truncate text-xs text-bone-dust">{lastRun.target}</p>
-          <p class="mono text-[10px] tracking-[0.06em] text-slate">last cast {ago(lastRun.created_at)}</p>
-        {/if}
-
-        <!-- scope: the instrument well -->
-        <div
-          class="scope-well relative min-h-[120px] flex-1 overflow-hidden rounded-md border bg-void transition-colors duration-300"
-          class:border-acid={!!running}
-          class:border-indigo-deep={!running}
-          aria-hidden="true"
-        >
-          <div class="absolute inset-0 transition-opacity duration-500" class:opacity-60={!running}>
-            <NetScope class="h-full w-full" active={!!running} />
-          </div>
-          <div class="pointer-events-none absolute inset-x-0 bottom-1.5 text-center">
-            {#if running}
-              <span class="mono text-[10px] tracking-[0.08em] text-acid">{stageName.toLowerCase()} // mesh live</span>
-            {:else}
-              <span class="mono text-[10px] tracking-[0.08em] text-slate">at rest // net armed</span>
-              <span class="term-cursor ml-1 inline-block h-[9px] w-[5px] bg-acid align-[-1px]" aria-hidden="true"
-              ></span>
-            {/if}
-          </div>
-        </div>
-
-        {#if lastRun}
-          <div class="border-t border-indigo-deep pt-2">
-            <div class="flex items-center justify-between gap-2">
-              <p class="eyebrow whitespace-nowrap">last return</p>
-              <span class="mono truncate text-[9px] text-slate">{lastCounts.pages ?? 0}p · {lastCounts.endpoints ?? 0}e</span>
-            </div>
-            <div class="mt-1 grid grid-cols-3 gap-1.5">
-              <div>
-                <p class="num text-sm text-bone">{lastCounts.candidates ?? 0}</p>
-                <p class="mono text-[8px] uppercase tracking-[0.1em] text-slate">signals</p>
-              </div>
-              <div class="border-l border-indigo-deep pl-2">
-                <p class="num text-sm text-acid">{lastCounts.verified ?? 0}</p>
-                <p class="mono text-[8px] uppercase tracking-[0.1em] text-slate">proved</p>
-              </div>
-              <div class="border-l border-indigo-deep pl-2">
-                <p class="num text-sm text-gold">{lastCounts.review_loopholes ?? 0}</p>
-                <p class="mono text-[8px] uppercase tracking-[0.1em] text-slate">notes</p>
-              </div>
-            </div>
-          </div>
-        {/if}
-
-        <div class="rail-mini grid grid-cols-3 gap-2 border-t border-indigo-deep pt-2.5">
-          <div>
-            <p class="eyebrow">runs</p>
-            <p class="num mt-0.5 text-sm text-bone" use:countup={store.totals?.runs ?? 0}>0</p>
-          </div>
-          <div class="border-l border-indigo-deep pl-2">
-            <p class="eyebrow">findings</p>
-            <p class="num mt-0.5 text-sm text-acid" use:countup={store.totals?.findings ?? 0}>0</p>
-          </div>
-          <div class="border-l border-indigo-deep pl-2">
-            <p class="eyebrow">queue</p>
-            <p class="num mt-0.5 text-sm" style="color:{openCount > 0 ? 'var(--nc-violet)' : 'var(--nc-ash)'}">{openCount}</p>
-          </div>
-        </div>
-
-        <div class="mt-auto flex items-center gap-1.5 border-t border-indigo-deep pt-2">
-          <span class="sync-dot" class:live={!!running} class:error={store.syncState === 'error'} aria-hidden="true"></span>
-          <span class="mono text-[9px] tracking-[0.1em] text-slate">{syncLabel} // {store.lastSync ? 'control plane' : 'waiting'}</span>
-          {#if store.liveThought}
-            <span class="ml-auto h-1.5 w-1.5 rounded-full bg-violet pulse-live" title={store.liveThought} aria-hidden="true"></span>
-          {/if}
-        </div>
-      </div>
+  {#if store.runs.length > 0}
+    <div class="obs-sidebar-recent">
+      <div class="obs-nav-label">Recent casts</div>
+      {#each store.runs.slice(0, 5) as run (run.id)}
+        <button class="obs-sidebar-run" type="button" onclick={() => store.watch(run.id)} title={run.target}>
+          <span class="obs-sidebar-run-dot" style="background:{run.id === store.activeRunId ? 'var(--obs-acid)' : 'var(--obs-faint)'}" aria-hidden="true"></span>
+          <span class="obs-sidebar-run-copy">
+            <span class="obs-sidebar-run-target">{run.target}</span>
+            <span class="obs-sidebar-run-meta">{run.status} · {ago(run.created_at)}</span>
+          </span>
+          <Icon name="arrow-right" size={10} />
+        </button>
+      {/each}
     </div>
+  {/if}
+
+  <div class="obs-sidebar-stats">
+    <div><span>runs</span><strong>{store.totals?.runs ?? 0}</strong></div>
+    <div><span>findings</span><strong>{store.totals?.findings ?? 0}</strong></div>
+    <div><span>queue</span><strong class:hot={openCount > 0}>{openCount}</strong></div>
   </div>
 
-  <div class="mt-auto space-y-3 px-2 pt-4 [@media(min-height:680px)]:mt-0">
-    <button class="btn btn-acid w-full" type="button" onclick={() => go('new')}>
-      cast a net
+  <div class="obs-sidebar-foot">
+    <div class="obs-system-card">
+      <div class="obs-system-line">
+        <span class="obs-status-dot" class:idle={!running} class:violet={store.syncState === 'error'} aria-hidden="true"></span>
+        {#if running}
+          {stageName.toLowerCase()} · {elapsed}
+        {:else}
+          Control plane ready
+        {/if}
+      </div>
+      <div class="obs-system-meta">
+        {#if running}
+          {running.target}<br />
+        {:else if lastRun}
+          last cast {ago(lastRun.created_at)}<br />
+        {:else}
+          no casts recorded<br />
+        {/if}
+        {syncLabel} · v{store.meta?.version ?? '0.0.0'}
+      </div>
+    </div>
+
+    <button class="obs-btn obs-btn-primary" type="button" onclick={() => go('new')} style="width:100%">
+      <Icon name="crosshair" size={13} />
+      Cast a net
     </button>
-    <p class="border-t border-indigo-deep pt-3 text-[11px] leading-relaxed text-ash">
-      Authorized testing only. Point this at systems you are allowed to test.
+
+    <p class="obs-sidebar-legal">
+      Authorized testing only. You are responsible for the scope you point this at.
     </p>
-    <p class="mono text-[11px] text-slate">v{store.meta?.version ?? '0.0.0'}</p>
+    <p class="obs-sidebar-version">
+      {store.totals?.runs ?? 0} casts · {store.totals?.findings ?? 0} findings
+    </p>
   </div>
 </aside>

@@ -14,6 +14,7 @@
   import Palette from './lib/ui/Palette.svelte';
   import ToastHost from './lib/ui/ToastHost.svelte';
   import Unlock from './lib/ui/Unlock.svelte';
+  import Symbols from './lib/ui/Symbols.svelte';
 
   let railOpen = $state(false);
 
@@ -32,6 +33,16 @@
         event.preventDefault();
         store.palette = !store.palette;
         return;
+      }
+      if (event.key === 'Escape') {
+        if (store.palette) {
+          store.palette = false;
+          return;
+        }
+        if (railOpen) {
+          railOpen = false;
+          return;
+        }
       }
       if (store.palette) return;
       if (event.key === '/' && !typing) {
@@ -58,13 +69,14 @@
   <Unlock />
 {:else}
   <Backdrop />
-  <div class="flex min-h-screen lg:pl-[248px]">
+  <Symbols />
+  <div class="obs-app">
     <Rail open={railOpen} onNavigate={() => (railOpen = false)} />
 
-    <div class="flex min-w-0 flex-1 flex-col">
+    <div class="obs-main">
       <CommandBar onMenu={() => (railOpen = true)} />
 
-      <main class="flex-1 px-4 py-6 sm:px-6 lg:px-8">
+      <main class="obs-content">
         {#key store.screen === 'live' ? `live:${store.activeRunId}` : store.screen}
         <div class="screen-in">
           {#if store.screen === 'new'}

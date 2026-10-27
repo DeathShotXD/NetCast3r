@@ -31,7 +31,7 @@ ALLOWED_HOSTS = {"127.0.0.1", "localhost", "::1", "[::1]"}
 TOKEN_COOKIE = "netcast3r_token"
 APP_DIR = Path(__file__).resolve().parent.parent / "web"
 
-CSP = ("default-src 'self'; img-src 'self' data:; connect-src 'self'; "
+CSP = ("default-src 'self'; img-src 'self' data:; font-src 'self' data:; connect-src 'self'; "
        "style-src 'self' 'unsafe-inline'; script-src 'self'; base-uri 'none'; "
        "form-action 'self'; frame-ancestors 'none'")
 
@@ -50,7 +50,7 @@ def _script_hashes(html: str) -> list[str]:
 def _app_csp(html: str) -> str:
     hashes = _script_hashes(html)
     script_src = "script-src 'self' " + " ".join(hashes) if hashes else "script-src 'self'"
-    return ("default-src 'self'; img-src 'self' data:; connect-src 'self'; "
+    return ("default-src 'self'; img-src 'self' data:; font-src 'self' data:; connect-src 'self'; "
             f"style-src 'self' 'unsafe-inline'; {script_src}; base-uri 'none'; "
             "form-action 'self'; frame-ancestors 'none'; object-src 'none'")
 
