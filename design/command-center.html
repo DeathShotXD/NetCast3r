@@ -1,0 +1,1269 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>NetCast3r — Agentic Security OS</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23C8F81A'/%3E%3Ccircle cx='16' cy='16' r='8' fill='none' stroke='%23050608' stroke-width='3'/%3E%3Ccircle cx='16' cy='16' r='2' fill='%23050608'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;450;500;550;600;650;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="command-center.css">
+</head>
+<body>
+
+<svg aria-hidden="true" style="position:absolute;width:0;height:0;overflow:hidden">
+  <defs>
+    <linearGradient id="spark-fill" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#C8F81A" stop-opacity=".18"/>
+      <stop offset="1" stop-color="#C8F81A" stop-opacity="0"/>
+    </linearGradient>
+    <linearGradient id="brand-gradient" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#C8F81A"/>
+      <stop offset="1" stop-color="#9F23DD"/>
+    </linearGradient>
+  </defs>
+  <symbol id="i-grid" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></symbol>
+  <symbol id="i-target" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1"/></symbol>
+  <symbol id="i-bug" viewBox="0 0 24 24"><path d="M8 6a4 4 0 0 1 8 0"/><path d="M6 12h12"/><path d="M12 6v12"/><path d="M7 8 4 5"/><path d="M17 8l3-3"/><path d="M7 16l-3 3"/><path d="M17 16l3 3"/></symbol>
+  <symbol id="i-globe" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18"/><path d="M12 3a15 15 0 0 1 0 18a15 15 0 0 1 0-18"/></symbol>
+  <symbol id="i-graph" viewBox="0 0 24 24"><circle cx="5" cy="6" r="2"/><circle cx="19" cy="6" r="2"/><circle cx="12" cy="18" r="2"/><path d="M7 6h10M6 8l5 8M18 8l-5 8"/></symbol>
+  <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z"/><path d="m9 12 2 2 4-4"/></symbol>
+  <symbol id="i-file" viewBox="0 0 24 24"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M14 3v6h6"/></symbol>
+  <symbol id="i-bot" viewBox="0 0 24 24"><rect x="4" y="8" width="16" height="11" rx="3"/><path d="M12 4v4"/><circle cx="9" cy="13" r="1"/><circle cx="15" cy="13" r="1"/><path d="M9 17h6"/></symbol>
+  <symbol id="i-sparkles" viewBox="0 0 24 24"><path d="M12 3l1.5 4.5L18 9l-4.5 1.5L12 15l-1.5-4.5L6 9l4.5-1.5z"/><path d="M19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8z"/></symbol>
+  <symbol id="i-plug" viewBox="0 0 24 24"><path d="M9 7V3M15 7V3M7 7h10v5a5 5 0 0 1-10 0z"/><path d="M12 17v4"/></symbol>
+  <symbol id="i-users" viewBox="0 0 24 24"><circle cx="9" cy="8" r="3"/><path d="M3 20a6 6 0 0 1 12 0"/><circle cx="17" cy="9" r="2"/><path d="M15 20a4 4 0 0 1 6 0"/></symbol>
+  <symbol id="i-scroll" viewBox="0 0 24 24"><path d="M8 3h11a2 2 0 0 1 0 4H8"/><path d="M8 3a2 2 0 0 0 0 4v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7"/><path d="M12 11h5M12 15h5"/></symbol>
+  <symbol id="i-settings" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1-1.5 1.7 1.7 0 0 0-1.9.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1 1.7 1.7 0 0 0-.3-1.9l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.9.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.9-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.9V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></symbol>
+  <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/></symbol>
+  <symbol id="i-bell" viewBox="0 0 24 24"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9"/><path d="M10 21h4"/></symbol>
+  <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></symbol>
+  <symbol id="i-moon" viewBox="0 0 24 24"><path d="M21 12.8A9 9 0 1 1 11.2 3 7 7 0 0 0 21 12.8z"/></symbol>
+  <symbol id="i-play" viewBox="0 0 24 24"><path d="M6 4l14 8-14 8z"/></symbol>
+  <symbol id="i-pause" viewBox="0 0 24 24"><path d="M8 5v14M16 5v14"/></symbol>
+  <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+  <symbol id="i-arrow-right" viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></symbol>
+  <symbol id="i-x" viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></symbol>
+  <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></symbol>
+  <symbol id="i-dollar" viewBox="0 0 24 24"><path d="M12 2v20M17 6a4 4 0 0 0-4-2H9a3 3 0 0 0 0 6h6a3 3 0 0 1 0 6h-4a4 4 0 0 1-4-2"/></symbol>
+  <symbol id="i-activity" viewBox="0 0 24 24"><path d="M3 12h4l3-8 4 16 3-8h4"/></symbol>
+  <symbol id="i-layers" viewBox="0 0 24 24"><path d="M12 3l9 5-9 5-9-5z"/><path d="M3 12l9 5 9-5"/><path d="M3 16l9 5 9-5"/></symbol>
+  <symbol id="i-terminal" viewBox="0 0 24 24"><path d="M4 5h16v14H4z"/><path d="M8 9l3 3-3 3M14 15h3"/></symbol>
+  <symbol id="i-chevron-down" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></symbol>
+  <symbol id="i-more" viewBox="0 0 24 24"><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></symbol>
+  <symbol id="i-external" viewBox="0 0 24 24"><path d="M14 3h7v7M10 14 21 3"/><path d="M21 14v5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5"/></symbol>
+  <symbol id="i-zap" viewBox="0 0 24 24"><path d="M13 2 4 14h7l-1 8 9-12h-7z"/></symbol>
+  <symbol id="i-lock" viewBox="0 0 24 24"><rect x="4" y="10" width="16" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></symbol>
+  <symbol id="i-eye" viewBox="0 0 24 24"><path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></symbol>
+  <symbol id="i-filter" viewBox="0 0 24 24"><path d="M3 5h18l-7 8v6l-4 2v-8z"/></symbol>
+  <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 3v12M7 10l5 5 5-5M4 21h16"/></symbol>
+  <symbol id="i-send" viewBox="0 0 24 24"><path d="M22 2 11 13M22 2l-7 20-4-9-9-4z"/></symbol>
+  <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M21 12a9 9 0 1 1-3-6.7M21 3v6h-6"/></symbol>
+  <symbol id="i-key" viewBox="0 0 24 24"><circle cx="7.5" cy="15.5" r="4.5"/><path d="M11 12l9-9M17 4l3 3M14 7l3 3"/></symbol>
+  <symbol id="i-database" viewBox="0 0 24 24"><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v6c0 1.7 3.6 3 8 3s8-1.3 8-3V5"/><path d="M4 11v6c0 1.7 3.6 3 8 3s8-1.3 8-3v-6"/></symbol>
+  <symbol id="i-network" viewBox="0 0 24 24"><rect x="9" y="2" width="6" height="6" rx="1"/><rect x="2" y="16" width="6" height="6" rx="1"/><rect x="16" y="16" width="6" height="6" rx="1"/><path d="M12 8v4M5 16v-4h14v4"/></symbol>
+  <symbol id="i-crosshair" viewBox="0 0 24 24"><circle cx="12" cy="12" r="7"/><path d="M12 2v4M12 18v4M2 12h4M18 12h4"/></symbol>
+  <symbol id="i-code" viewBox="0 0 24 24"><path d="m8 6-6 6 6 6M16 6l6 6-6 6"/></symbol>
+  <symbol id="i-flow" viewBox="0 0 24 24"><rect x="2" y="4" width="6" height="5" rx="1"/><rect x="16" y="15" width="6" height="5" rx="1"/><path d="M8 6.5h4a4 4 0 0 1 4 4v4.5"/></symbol>
+</svg>
+
+<div class="app">
+  <aside class="sidebar">
+    <div class="brand">
+      <div class="brand-mark">
+        <svg viewBox="0 0 28 28" fill="none" aria-hidden="true">
+          <path d="M14 2.5 24.5 8.6v10.8L14 25.5 3.5 19.4V8.6z" stroke="url(#brand-gradient)" stroke-width="1.3"/>
+          <path d="M14 7.2 20 10.7v6.6L14 20.8l-6-3.5v-6.6z" stroke="#C8F81A" stroke-opacity=".55" stroke-width=".9"/>
+          <circle cx="14" cy="14" r="2.1" fill="#C8F81A"/>
+          <path d="M14 7.2v4.7M20 10.7l-3.9 2.2M20 17.3l-3.9-2.2M14 20.8v-4.7M8 17.3l3.9-2.2M8 10.7l3.9 2.2" stroke="#C8F81A" stroke-opacity=".42" stroke-width=".75"/>
+        </svg>
+      </div>
+      <div class="brand-copy">
+        <div class="brand-name">NETCAST3R</div>
+        <div class="brand-sub">Agentic Security OS</div>
+      </div>
+    </div>
+
+    <button class="workspace" type="button" data-stub="Workspace switcher">
+      <span class="workspace-avatar">AC</span>
+      <span class="workspace-copy">
+        <span class="workspace-name">Acme Security</span>
+        <span class="workspace-plan">Bug bounty · Pro</span>
+      </span>
+      <svg class="icon sm"><use href="#i-chevron-down"/></svg>
+    </button>
+
+    <nav class="nav" aria-label="Primary">
+      <div class="nav-group">
+        <div class="nav-label">Command</div>
+        <button class="nav-item active" type="button" data-view-link="command"><svg class="icon"><use href="#i-grid"/></svg><span>Command Center</span></button>
+        <button class="nav-item" type="button" data-view-link="missions"><svg class="icon"><use href="#i-crosshair"/></svg><span>Missions</span><span class="nav-badge">3</span></button>
+        <button class="nav-item" type="button" data-view-link="findings"><svg class="icon"><use href="#i-bug"/></svg><span>Findings</span><span class="nav-badge hot">12</span></button>
+        <button class="nav-item" type="button" data-stub="Programs"><svg class="icon"><use href="#i-globe"/></svg><span>Programs</span></button>
+      </div>
+      <div class="nav-group">
+        <div class="nav-label">Intelligence</div>
+        <button class="nav-item" type="button" data-stub="Target Graph"><svg class="icon"><use href="#i-graph"/></svg><span>Target Graph</span></button>
+        <button class="nav-item" type="button" data-stub="Evidence Vault"><svg class="icon"><use href="#i-shield"/></svg><span>Evidence Vault</span></button>
+        <button class="nav-item" type="button" data-stub="Reports"><svg class="icon"><use href="#i-file"/></svg><span>Reports</span></button>
+      </div>
+      <div class="nav-group">
+        <div class="nav-label">Build</div>
+        <button class="nav-item" type="button" data-view-link="studio"><svg class="icon"><use href="#i-bot"/></svg><span>Agent Studio</span></button>
+        <button class="nav-item" type="button" data-stub="Skills"><svg class="icon"><use href="#i-sparkles"/></svg><span>Skills</span></button>
+        <button class="nav-item" type="button" data-stub="Integrations"><svg class="icon"><use href="#i-plug"/></svg><span>Integrations</span></button>
+      </div>
+      <div class="nav-group">
+        <div class="nav-label">Govern</div>
+        <button class="nav-item" type="button" data-stub="Team"><svg class="icon"><use href="#i-users"/></svg><span>Team</span></button>
+        <button class="nav-item" type="button" data-stub="Audit Log"><svg class="icon"><use href="#i-scroll"/></svg><span>Audit Log</span></button>
+        <button class="nav-item" type="button" data-stub="Settings"><svg class="icon"><use href="#i-settings"/></svg><span>Settings</span></button>
+      </div>
+    </nav>
+
+    <div class="sidebar-foot">
+      <div class="system-card">
+        <div class="system-line"><span class="status-dot"></span> All systems nominal</div>
+        <div class="system-meta">NVIDIA NIM · 4 models<br>Scope shield active</div>
+      </div>
+      <button class="user-row" type="button" data-stub="Account">
+        <span class="user-avatar">DS</span>
+        <span class="user-copy">
+          <span class="user-name">DeathShot</span>
+          <span class="user-role">Owner</span>
+        </span>
+        <svg class="icon sm"><use href="#i-settings"/></svg>
+      </button>
+    </div>
+  </aside>
+
+  <div class="main">
+    <header class="topbar">
+      <div class="breadcrumb">
+        <span>Acme Security</span><span class="slash">/</span><strong id="crumb">Command Center</strong>
+      </div>
+      <button class="search-trigger" type="button" data-open-palette>
+        <svg class="icon"><use href="#i-search"/></svg>
+        <span>Search missions, assets, findings...</span>
+        <span class="kbd">Ctrl K</span>
+      </button>
+      <span class="status-pill acid"><span class="pulse"></span> 3 agents live</span>
+      <span class="status-pill violet"><svg class="icon sm"><use href="#i-shield"/></svg> Supervised</span>
+      <button class="btn btn-ghost btn-sm copilot-trigger" type="button" data-open-copilot><svg class="icon"><use href="#i-sparkles"/></svg><span>Copilot</span></button>
+      <button class="icon-btn" type="button" aria-label="Notifications" data-stub="Notifications"><svg class="icon"><use href="#i-bell"/></svg><span class="dot"></span></button>
+      <button class="icon-btn" type="button" aria-label="Toggle theme" id="theme-toggle">
+        <svg class="icon theme-icon-sun"><use href="#i-sun"/></svg>
+        <svg class="icon theme-icon-moon"><use href="#i-moon"/></svg>
+      </button>
+      <button class="icon-btn" type="button" aria-label="Help" data-stub="Help center"><svg class="icon"><use href="#i-terminal"/></svg></button>
+    </header>
+
+    <main class="content">
+
+      <!-- ================= COMMAND CENTER ================= -->
+      <section class="view screen-in" data-view="command">
+        <div class="page-head">
+          <div>
+            <div class="eyebrow"><span class="tick"></span> Operations / Command Center</div>
+            <h1>Command Center</h1>
+            <p class="page-sub">Your fleet is hunting. You stay in command. Every action is scoped, every proof is replayable.</p>
+          </div>
+          <div class="page-actions">
+            <div class="page-time"><strong id="clock">14:38:02 UTC</strong> Tue, 27 Oct 2026</div>
+            <button class="btn btn-ghost" type="button" data-stub="War room"><svg class="icon"><use href="#i-users"/></svg> War room</button>
+            <button class="btn btn-primary" type="button" data-open-mission><svg class="icon"><use href="#i-plus"/></svg> New mission</button>
+          </div>
+        </div>
+
+        <div class="kpi-grid">
+          <div class="card kpi">
+            <div class="kpi-label">Active missions</div>
+            <div class="kpi-value" data-count="3">3</div>
+            <div class="kpi-foot"><span class="kpi-delta">2 supervised · 1 autonomous</span><svg class="spark" viewBox="0 0 62 22"><path class="fill" d="M0 18 8 15 16 16 24 11 32 13 40 8 48 9 56 4 62 5V22H0Z"/><path d="M0 18 8 15 16 16 24 11 32 13 40 8 48 9 56 4 62 5"/></svg></div>
+          </div>
+          <div class="card kpi">
+            <div class="kpi-label">Verified findings</div>
+            <div class="kpi-value" data-count="28">28</div>
+            <div class="kpi-foot"><span class="kpi-delta up">+6 this week</span><svg class="spark" viewBox="0 0 62 22"><path class="fill" d="M0 20 8 17 16 18 24 13 32 14 40 9 48 10 56 5 62 3V22H0Z"/><path d="M0 20 8 17 16 18 24 13 32 14 40 9 48 10 56 5 62 3"/></svg></div>
+          </div>
+          <div class="card kpi">
+            <div class="kpi-label">Valid submission rate</div>
+            <div class="kpi-value" data-count="92.4" data-suffix="%">92.4%</div>
+            <div class="kpi-foot"><span class="kpi-delta up">+3.1 pts</span><svg class="spark" viewBox="0 0 62 22"><path class="fill" d="M0 19 8 18 16 15 24 16 32 12 40 13 48 8 56 7 62 4V22H0Z"/><path d="M0 19 8 18 16 15 24 16 32 12 40 13 48 8 56 7 62 4"/></svg></div>
+          </div>
+          <div class="card kpi">
+            <div class="kpi-label">Cost per proof</div>
+            <div class="kpi-value"><small>$</small>12.40</div>
+            <div class="kpi-foot"><span class="kpi-delta down">-18% vs last week</span><svg class="spark" viewBox="0 0 62 22"><path class="fill" d="M0 5 8 7 16 6 24 10 32 9 40 13 48 12 56 17 62 16V22H0Z"/><path d="M0 5 8 7 16 6 24 10 32 9 40 13 48 12 56 17 62 16"/></svg></div>
+          </div>
+          <div class="card kpi">
+            <div class="kpi-label">Coverage</div>
+            <div class="kpi-value" data-count="78" data-suffix="%">78%</div>
+            <div class="kpi-foot"><span class="kpi-delta">98 of 124 assets</span><svg class="spark" viewBox="0 0 62 22"><path class="fill" d="M0 20 8 19 16 17 24 18 32 14 40 12 48 13 56 9 62 8V22H0Z"/><path d="M0 20 8 19 16 17 24 18 32 14 40 12 48 13 56 9 62 8"/></svg></div>
+          </div>
+        </div>
+
+        <div class="command-grid">
+          <div class="command-main">
+
+            <div class="card mission-hero">
+              <svg class="mission-net" viewBox="0 0 460 250" fill="none" aria-hidden="true">
+                <g stroke="#A855F7" stroke-opacity=".24">
+                  <path d="M58 152 146 96 240 123 318 62 390 106"/>
+                  <path d="M58 152 156 190 240 123 306 176 390 106"/>
+                  <path d="M146 96 156 190M318 62 306 176M240 123 252 218"/>
+                </g>
+                <g fill="#C8F81A">
+                  <circle cx="146" cy="96" r="2.4"/><circle cx="240" cy="123" r="2.4"/><circle cx="390" cy="106" r="2.8"/><circle cx="306" cy="176" r="2"/>
+                </g>
+                <g fill="#A855F7" fill-opacity=".7">
+                  <circle cx="58" cy="152" r="1.8"/><circle cx="318" cy="62" r="1.8"/><circle cx="156" cy="190" r="1.8"/><circle cx="252" cy="218" r="1.8"/>
+                </g>
+              </svg>
+              <div class="mission-inner">
+                <div class="mission-top">
+                  <span class="live-tag"><span class="pulse"></span> Live mission</span>
+                  <span class="chip">HackerOne</span>
+                  <span class="chip acid"><svg class="icon"><use href="#i-shield"/></svg> In scope</span>
+                  <button class="icon-btn mission-menu" type="button" aria-label="Mission menu" data-stub="Mission menu"><svg class="icon"><use href="#i-more"/></svg></button>
+                </div>
+                <div class="mission-title-row">
+                  <div>
+                    <h2 class="mission-title">Operation Nightfall</h2>
+                    <p class="mission-objective">Hunt cross-tenant access and OAuth token theft across <span class="mono">app.acme.com</span>. Read-only until proof. Human approval before any state change.</p>
+                  </div>
+                </div>
+                <div class="mission-meta">
+                  <span class="chip"><svg class="icon"><use href="#i-target"/></svg> app.acme.com</span>
+                  <span class="chip"><svg class="icon"><use href="#i-clock"/></svg> Started 02:14:38 ago</span>
+                  <span class="chip"><svg class="icon"><use href="#i-bot"/></svg> 6 agents</span>
+                  <span class="chip"><svg class="icon"><use href="#i-database"/></svg> 124 assets · 38 endpoints</span>
+                </div>
+                <div class="mission-stats">
+                  <div class="mstat"><div class="mstat-label">Progress</div><div class="mstat-value">64<small>%</small></div></div>
+                  <div class="mstat"><div class="mstat-label">Verified</div><div class="mstat-value">3<small> findings</small></div></div>
+                  <div class="mstat"><div class="mstat-label">In flight</div><div class="mstat-value">2<small> hypotheses</small></div></div>
+                  <div class="mstat"><div class="mstat-label">Spend</div><div class="mstat-value">$38<small> / $60</small></div></div>
+                </div>
+                <div class="mission-actions">
+                  <button class="btn btn-ghost btn-sm" type="button" data-pause><svg class="icon"><use href="#i-pause"/></svg> Pause</button>
+                  <button class="btn btn-ghost btn-sm" type="button" data-stub="Inject instruction"><svg class="icon"><use href="#i-send"/></svg> Inject instruction</button>
+                  <button class="btn btn-sm" type="button" data-stub="Mission room"><svg class="icon"><use href="#i-external"/></svg> Open mission room</button>
+                  <div class="agent-stack" aria-label="Active agents">
+                    <span class="mini-avatar acid">PL</span><span class="mini-avatar">RC</span><span class="mini-avatar">&lt;&gt;</span><span class="mini-avatar">PR</span><span class="mini-avatar">AS</span><span class="mini-avatar more">+2</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div>
+              <div class="section-head">
+                <div class="section-title"><svg class="icon"><use href="#i-bot"/></svg> Agent fleet <span class="section-meta">6 active · 2 idle</span></div>
+                <button class="card-link" type="button" data-view-link="studio">Open Agent Studio <svg class="icon sm"><use href="#i-arrow-right"/></svg></button>
+              </div>
+              <div class="fleet-row">
+                <div class="agent-card active">
+                  <div class="agent-top"><span class="agent-avatar">PL</span><div><div class="agent-name">Planner</div><div class="agent-role">Orchestrator</div></div><span class="agent-state"><span class="status-dot"></span></span></div>
+                  <div class="agent-action">Rebalancing 7 tasks. 2 gates waiting on you.</div>
+                  <div class="agent-foot"><span>18.2k tok</span><span class="cost">$0.84</span></div>
+                </div>
+                <div class="agent-card active">
+                  <div class="agent-top"><span class="agent-avatar">RC</span><div><div class="agent-name">Recon</div><div class="agent-role">Surface mapper</div></div><span class="agent-state"><span class="status-dot"></span></span></div>
+                  <div class="agent-action">Mapping 12 new endpoints from bundle <span class="mono">app.7f2a.js</span>.</div>
+                  <div class="agent-foot"><span>42.8k tok</span><span class="cost">$1.20</span></div>
+                </div>
+                <div class="agent-card active">
+                  <div class="agent-top"><span class="agent-avatar">&lt;&gt;</span><div><div class="agent-name">Exegete</div><div class="agent-role">JS reader</div></div><span class="agent-state"><span class="status-dot violet"></span></span></div>
+                  <div class="agent-action">Reading auth flow in 4 bundles. 2 data-flow sinks found.</div>
+                  <div class="agent-foot"><span>61.4k tok</span><span class="cost">$2.08</span></div>
+                </div>
+                <div class="agent-card active">
+                  <div class="agent-top"><span class="agent-avatar">PR</span><div><div class="agent-name">Prospector</div><div class="agent-role">Hypothesis hunter</div></div><span class="agent-state"><span class="status-dot"></span></span></div>
+                  <div class="agent-action">Testing H-014: tenant boundary on <span class="mono">/api/v1/users/{id}</span>.</div>
+                  <div class="agent-foot"><span>33.1k tok</span><span class="cost">$1.44</span></div>
+                </div>
+                <div class="agent-card">
+                  <div class="agent-top"><span class="agent-avatar">AS</span><div><div class="agent-name">Assayer</div><div class="agent-role">Validator</div></div><span class="agent-state"><span class="status-dot idle"></span></span></div>
+                  <div class="agent-action">Idle. Next candidate in 40s. Read-only recipe ready.</div>
+                  <div class="agent-foot"><span>12.6k tok</span><span class="cost">$0.52</span></div>
+                </div>
+                <div class="agent-card">
+                  <div class="agent-top"><span class="agent-avatar">CH</span><div><div class="agent-name">Chiron</div><div class="agent-role">Critic</div></div><span class="agent-state"><span class="status-dot idle"></span></span></div>
+                  <div class="agent-action">Idle. Last challenge: severity downgraded to High.</div>
+                  <div class="agent-foot"><span>8.4k tok</span><span class="cost">$0.38</span></div>
+                </div>
+              </div>
+            </div>
+
+            <div class="lower-grid">
+              <div class="card timeline-card">
+                <div class="card-head">
+                  <div>
+                    <div class="card-title"><svg class="icon"><use href="#i-activity"/></svg> Live operation</div>
+                    <div class="card-sub">Append-only event stream · seq 1,842</div>
+                  </div>
+                  <div class="tabs" role="tablist">
+                    <button class="tab active" type="button">All</button>
+                    <button class="tab" type="button">Agents</button>
+                    <button class="tab" type="button">Tools</button>
+                    <button class="tab" type="button">Evidence</button>
+                  </div>
+                </div>
+                <div class="timeline">
+                  <div class="tl-item">
+                    <div class="tl-icon acid"><svg class="icon"><use href="#i-check"/></svg></div>
+                    <div class="tl-body">
+                      <div class="tl-meta"><span>14:32:08</span><span class="tl-agent">planner</span><span class="tl-badge chip acid">plan approved</span></div>
+                      <div class="tl-text"><strong>You approved the plan.</strong> 7 tasks, 2 gates, $60 budget cap.</div>
+                    </div>
+                  </div>
+                  <div class="tl-item">
+                    <div class="tl-icon"><svg class="icon"><use href="#i-network"/></svg></div>
+                    <div class="tl-body">
+                      <div class="tl-meta"><span>14:32:11</span><span class="tl-agent">recon</span><span class="tl-badge chip">124 assets</span></div>
+                      <div class="tl-text">Mapped <strong>124 assets</strong> and 38 new endpoints. 12 added to the evidence graph.</div>
+                    </div>
+                  </div>
+                  <div class="tl-item">
+                    <div class="tl-icon violet"><svg class="icon"><use href="#i-sparkles"/></svg></div>
+                    <div class="tl-body">
+                      <div class="tl-meta"><span>14:34:02</span><span class="tl-agent">prospector</span><span class="tl-badge chip violet">H-014</span></div>
+                      <div class="tl-text">Hypothesis <strong>H-014</strong>: tenant boundary missing on <span class="mono">/api/v1/users/{id}</span>. Confidence 0.81.</div>
+                    </div>
+                  </div>
+                  <div class="tl-item">
+                    <div class="tl-icon"><svg class="icon"><use href="#i-terminal"/></svg></div>
+                    <div class="tl-body">
+                      <div class="tl-meta"><span>14:35:19</span><span class="tl-agent">prober</span><span class="tl-badge chip">evidence</span></div>
+                      <div class="tl-text"><span class="mono">GET /api/v1/users/8842</span> returned a <strong>tenant beta record</strong>. Response hashed and stored.</div>
+                    </div>
+                  </div>
+                  <div class="tl-item">
+                    <div class="tl-icon acid"><svg class="icon"><use href="#i-shield"/></svg></div>
+                    <div class="tl-body">
+                      <div class="tl-meta"><span>14:36:40</span><span class="tl-agent">assayer</span><span class="tl-badge chip acid">verified 3/3</span></div>
+                      <div class="tl-text">Replayed with a fresh session and a second identity. <strong>Reproduced 3 of 3.</strong></div>
+                    </div>
+                  </div>
+                  <div class="tl-item">
+                    <div class="tl-icon"><svg class="icon"><use href="#i-eye"/></svg></div>
+                    <div class="tl-body">
+                      <div class="tl-meta"><span>14:37:02</span><span class="tl-agent">chiron</span><span class="tl-badge chip green">pass</span></div>
+                      <div class="tl-text">Scope confirmed. Duplicate check found no match. Severity held at <strong>Critical</strong>.</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="card graph-card">
+                <div class="card-head">
+                  <div>
+                    <div class="card-title"><svg class="icon"><use href="#i-graph"/></svg> Evidence graph</div>
+                    <div class="card-sub">Live attack path · 6 nodes</div>
+                  </div>
+                  <button class="card-link" type="button" data-stub="Evidence canvas">Open canvas <svg class="icon sm"><use href="#i-external"/></svg></button>
+                </div>
+                <div class="graph-wrap">
+                  <svg class="graph-svg" viewBox="0 0 430 238" role="img" aria-label="Attack path from asset to verified proof">
+                    <g class="graph-edge"><path d="M78 104 C110 104 116 74 146 74"/></g>
+                    <g class="graph-edge violet"><path d="M78 104 C110 104 116 160 146 160"/></g>
+                    <g class="graph-edge"><path d="M246 74 C278 74 286 104 310 104"/></g>
+                    <g class="graph-edge violet"><path d="M246 160 C278 160 286 104 310 104"/></g>
+                    <g class="graph-edge acid"><path d="M360 122 L360 168"/></g>
+                    <g class="graph-node">
+                      <rect x="12" y="86" width="68" height="36" rx="6"/>
+                      <text x="20" y="102" class="node-title">app.acme.com</text>
+                      <text x="20" y="113" class="node-meta">asset · 124</text>
+                    </g>
+                    <g class="graph-node violet">
+                      <rect x="146" y="56" width="100" height="36" rx="6"/>
+                      <text x="154" y="72" class="node-title">GET /users/{id}</text>
+                      <text x="154" y="83" class="node-meta">endpoint · auth</text>
+                    </g>
+                    <g class="graph-node">
+                      <rect x="146" y="142" width="100" height="36" rx="6"/>
+                      <text x="154" y="158" class="node-title">tenant: acme</text>
+                      <text x="154" y="169" class="node-meta">identity · session</text>
+                    </g>
+                    <g class="graph-node red">
+                      <rect x="310" y="86" width="72" height="36" rx="6"/>
+                      <text x="318" y="102" class="node-title">H-014 IDOR</text>
+                      <text x="318" y="113" class="node-meta">candidate · .81</text>
+                    </g>
+                    <g class="graph-node acid">
+                      <rect x="292" y="168" width="96" height="38" rx="6"/>
+                      <text x="300" y="184" class="node-title">proof · verified</text>
+                      <text x="300" y="195" class="node-meta">3 of 3 replays</text>
+                    </g>
+                    <circle cx="360" cy="122" r="2" fill="#FF5C7A"/>
+                  </svg>
+                </div>
+                <div class="graph-legend">
+                  <span class="legend-item"><span class="legend-dot"></span> observed</span>
+                  <span class="legend-item"><span class="legend-dot violet"></span> hypothesis</span>
+                  <span class="legend-item"><span class="legend-dot red"></span> candidate</span>
+                  <span class="legend-item"><span class="legend-dot acid"></span> verified proof</span>
+                </div>
+              </div>
+            </div>
+
+            <div class="card findings-card">
+              <div class="card-head">
+                <div>
+                  <div class="card-title"><svg class="icon"><use href="#i-bug"/></svg> Findings in flight</div>
+                  <div class="card-sub">6 surfaced · 3 verified · $7,400 estimated</div>
+                </div>
+                <div class="tabs" role="tablist">
+                  <button class="tab active" type="button">Open</button>
+                  <button class="tab" type="button">Verified</button>
+                  <button class="tab" type="button">Submitted</button>
+                </div>
+                <button class="card-link" type="button" data-view-link="findings">View all <svg class="icon sm"><use href="#i-arrow-right"/></svg></button>
+              </div>
+              <div class="table-wrap">
+                <table class="table">
+                  <thead><tr><th>Severity</th><th>Finding</th><th>Asset</th><th>Confidence</th><th>State</th><th>Bounty</th><th></th></tr></thead>
+                  <tbody>
+                    <tr data-finding="idor">
+                      <td><span class="sev critical">Critical</span></td>
+                      <td><div class="finding-title">IDOR exposes cross-tenant user records</div><div class="finding-sub">H-014 · CWE-639 · CVSS 9.1</div></td>
+                      <td class="mono">api.acme.com</td>
+                      <td><div class="conf"><div class="meter"><i style="width:96%"></i></div><span>96%</span></div></td>
+                      <td><span class="chip acid">verified</span></td>
+                      <td class="bounty">$3,500</td>
+                      <td><svg class="icon sm row-arrow"><use href="#i-arrow-right"/></svg></td>
+                    </tr>
+                    <tr data-finding="oauth">
+                      <td><span class="sev high">High</span></td>
+                      <td><div class="finding-title">OAuth redirect_uri allows authorization code theft</div><div class="finding-sub">H-019 · CWE-601 · CVSS 8.1</div></td>
+                      <td class="mono">auth.acme.com</td>
+                      <td><div class="conf"><div class="meter"><i style="width:91%"></i></div><span>91%</span></div></td>
+                      <td><span class="chip orange">verifying</span></td>
+                      <td class="bounty">$2,000</td>
+                      <td><svg class="icon sm row-arrow"><use href="#i-arrow-right"/></svg></td>
+                    </tr>
+                    <tr data-finding="s3">
+                      <td><span class="sev high">High</span></td>
+                      <td><div class="finding-title">S3 bucket allows anonymous listing</div><div class="finding-sub">H-021 · CWE-284 · CVSS 7.5</div></td>
+                      <td class="mono">assets.acme.com</td>
+                      <td><div class="conf"><div class="meter"><i style="width:88%"></i></div><span>88%</span></div></td>
+                      <td><span class="chip acid">verified</span></td>
+                      <td class="bounty">$1,500</td>
+                      <td><svg class="icon sm row-arrow"><use href="#i-arrow-right"/></svg></td>
+                    </tr>
+                    <tr data-finding="graphql">
+                      <td><span class="sev medium">Medium</span></td>
+                      <td><div class="finding-title">GraphQL introspection enabled in production</div><div class="finding-sub">H-024 · CWE-200 · CVSS 5.3</div></td>
+                      <td class="mono">api.acme.com</td>
+                      <td><div class="conf"><div class="meter"><i style="width:84%"></i></div><span>84%</span></div></td>
+                      <td><span class="chip">triaged</span></td>
+                      <td class="bounty">$750</td>
+                      <td><svg class="icon sm row-arrow"><use href="#i-arrow-right"/></svg></td>
+                    </tr>
+                    <tr data-finding="debug">
+                      <td><span class="sev medium">Medium</span></td>
+                      <td><div class="finding-title">Verbose stack traces on /debug endpoint</div><div class="finding-sub">H-027 · CWE-209 · CVSS 5.0</div></td>
+                      <td class="mono">staging.acme.com</td>
+                      <td><div class="conf"><div class="meter"><i style="width:79%"></i></div><span>79%</span></div></td>
+                      <td><span class="chip">new</span></td>
+                      <td class="bounty">$500</td>
+                      <td><svg class="icon sm row-arrow"><use href="#i-arrow-right"/></svg></td>
+                    </tr>
+                    <tr data-finding="headers">
+                      <td><span class="sev low">Low</span></td>
+                      <td><div class="finding-title">Missing security headers on marketing site</div><div class="finding-sub">H-030 · CWE-693 · CVSS 3.1</div></td>
+                      <td class="mono">www.acme.com</td>
+                      <td><div class="conf"><div class="meter"><i style="width:72%"></i></div><span>72%</span></div></td>
+                      <td><span class="chip">new</span></td>
+                      <td class="bounty">$150</td>
+                      <td><svg class="icon sm row-arrow"><use href="#i-arrow-right"/></svg></td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+
+          <aside class="rail">
+            <div class="card approval-card">
+              <div class="card-head">
+                <div>
+                  <div class="card-title"><svg class="icon"><use href="#i-lock"/></svg> Approval queue</div>
+                  <div class="card-sub">2 actions need you</div>
+                </div>
+                <span class="nav-badge hot">2</span>
+              </div>
+              <div class="approval-list">
+                <div class="approval urgent" data-approval>
+                  <div class="approval-top"><span class="approval-agent">prober</span><span class="approval-risk chip orange">risk · high</span></div>
+                  <div class="approval-title">Run active authz test on api.acme.com</div>
+                  <div class="approval-why"><strong>Why:</strong> H-014 has 3 supporting observations. Test crosses a tenant boundary with two controlled accounts.</div>
+                  <div class="approval-meta"><span class="chip"><svg class="icon"><use href="#i-shield"/></svg> in scope</span><span class="chip">read-only</span><span class="chip">~$0.40</span></div>
+                  <div class="approval-actions"><button class="btn btn-primary" type="button" data-approve>Approve</button><button class="btn btn-ghost" type="button" data-decline>Decline</button></div>
+                </div>
+                <div class="approval" data-approval>
+                  <div class="approval-top"><span class="approval-agent">scribe</span><span class="approval-risk chip">risk · medium</span></div>
+                  <div class="approval-title">Submit IDOR report to HackerOne</div>
+                  <div class="approval-why"><strong>Why:</strong> Draft is complete, evidence is attached, duplicate check is clean. Quality score 94.</div>
+                  <div class="approval-meta"><span class="chip">HackerOne</span><span class="chip">$3,500 est.</span><span class="chip green">dedup clean</span></div>
+                  <div class="approval-actions"><button class="btn" type="button" data-stub="Report preview">Review draft</button><button class="btn btn-ghost" type="button" data-decline>Hold</button></div>
+                </div>
+              </div>
+            </div>
+
+            <div class="card">
+              <div class="card-head no-border">
+                <div>
+                  <div class="card-title"><svg class="icon"><use href="#i-zap"/></svg> Next best actions</div>
+                  <div class="card-sub">Ranked by expected value</div>
+                </div>
+              </div>
+              <div class="next-actions">
+                <div class="next-item">
+                  <div class="next-icon"><svg class="icon"><use href="#i-target"/></svg></div>
+                  <div class="next-body"><div class="next-title">Pivot H-014 to the admin API</div><div class="next-why">Same object reference appears in 4 privileged endpoints.</div><div class="next-meta"><span>confidence 0.84</span><span>·</span><span>~12 min</span></div></div>
+                  <svg class="icon sm next-arrow"><use href="#i-arrow-right"/></svg>
+                </div>
+                <div class="next-item">
+                  <div class="next-icon"><svg class="icon"><use href="#i-globe"/></svg></div>
+                  <div class="next-body"><div class="next-title">Check OAuth state binding</div><div class="next-why">Two redirect_uri patterns are not bound to a nonce.</div><div class="next-meta"><span>confidence 0.71</span><span>·</span><span>~18 min</span></div></div>
+                  <svg class="icon sm next-arrow"><use href="#i-arrow-right"/></svg>
+                </div>
+                <div class="next-item">
+                  <div class="next-icon"><svg class="icon"><use href="#i-eye"/></svg></div>
+                  <div class="next-body"><div class="next-title">Review the staging surface</div><div class="next-why">42 endpoints are mapped but untested. 3 expose debug data.</div><div class="next-meta"><span>confidence 0.66</span><span>·</span><span>~25 min</span></div></div>
+                  <svg class="icon sm next-arrow"><use href="#i-arrow-right"/></svg>
+                </div>
+              </div>
+            </div>
+
+            <div class="card budget-card">
+              <div class="card-head no-border">
+                <div>
+                  <div class="card-title"><svg class="icon"><use href="#i-activity"/></svg> Budget &amp; risk</div>
+                  <div class="card-sub">Mission guardrails</div>
+                </div>
+              </div>
+              <div class="card-body">
+                <div class="rings">
+                  <div class="ring-wrap"><div class="ring" style="--p:64"><span>64%</span></div><div class="ring-label">Time</div></div>
+                  <div class="ring-wrap"><div class="ring violet" style="--p:41"><span>41%</span></div><div class="ring-label">Tokens</div></div>
+                  <div class="ring-wrap"><div class="ring orange" style="--p:38"><span>38%</span></div><div class="ring-label">Spend</div></div>
+                </div>
+                <div class="scope-shield"><svg class="icon"><use href="#i-shield"/></svg><div><strong>Scope shield active</strong><span>12 of 12 assets in scope · 0 violations</span></div></div>
+                <div class="kill-row"><button class="btn btn-danger btn-sm" type="button" data-kill><svg class="icon"><use href="#i-x"/></svg> Kill switch</button><span class="kill-note">always available</span></div>
+              </div>
+            </div>
+
+            <div class="handoff">
+              <svg class="icon"><use href="#i-eye"/></svg>
+              <div><strong>Human handoff requested</strong><span>Admin console needs a fresh login. The browser session is paused and waiting.</span><button class="btn btn-sm" type="button" data-stub="Take over browser">Take over browser</button></div>
+            </div>
+          </aside>
+        </div>
+      </section>
+
+      <!-- ================= MISSIONS ================= -->
+      <section class="view" data-view="missions" hidden>
+        <div class="page-head">
+          <div>
+            <div class="eyebrow"><span class="tick"></span> Operations / Missions</div>
+            <h1>Missions</h1>
+            <p class="page-sub">Every hunt in one portfolio. Scope, budget, evidence, and the next decision stay attached to the work.</p>
+          </div>
+          <div class="page-actions">
+            <div class="page-time"><strong>3 active</strong> 2 need you</div>
+            <button class="btn btn-ghost" type="button" data-stub="Portfolio export"><svg class="icon"><use href="#i-download"/></svg> Export</button>
+            <button class="btn btn-primary" type="button" data-open-mission><svg class="icon"><use href="#i-plus"/></svg> New mission</button>
+          </div>
+        </div>
+
+        <div class="filter-bar">
+          <button class="filter-pill active" type="button">All <span class="mono">6</span></button>
+          <button class="filter-pill" type="button">Active <span class="mono">3</span></button>
+          <button class="filter-pill" type="button">Waiting <span class="mono">2</span></button>
+          <button class="filter-pill" type="button">Done <span class="mono">1</span></button>
+          <span class="filter-spacer"></span>
+          <button class="filter-pill" type="button" data-stub="Portfolio filters"><svg class="icon sm"><use href="#i-filter"/></svg> Filters</button>
+          <button class="filter-pill" type="button" data-stub="Sort missions">Sort: expected value</button>
+        </div>
+
+        <div class="missions-layout">
+          <div class="mission-grid">
+            <article class="card mission-card is-live" data-view-link="command">
+              <div class="mission-card-top">
+                <span class="live-tag"><span class="pulse"></span> Live</span>
+                <span class="chip">HackerOne</span>
+                <span class="chip acid"><svg class="icon"><use href="#i-shield"/></svg> In scope</span>
+                <button class="icon-btn" type="button" aria-label="Mission menu" data-stub="Mission menu"><svg class="icon"><use href="#i-more"/></svg></button>
+              </div>
+              <h3 class="mission-card-title">Operation Nightfall</h3>
+              <div class="mission-card-target"><svg class="icon sm"><use href="#i-globe"/></svg> app.acme.com <span class="chip">12 assets</span></div>
+              <p class="mission-card-objective">Cross-tenant access and OAuth token theft. Read-only until proof; approval before any state change.</p>
+              <div class="mission-progress">
+                <div class="mission-progress-row"><span>Hunt progress</span><strong>64%</strong></div>
+                <div class="meter"><i style="width:64%"></i></div>
+              </div>
+              <div class="mission-card-stats">
+                <div><span>Verified</span><strong>3</strong></div>
+                <div><span>In flight</span><strong>2</strong></div>
+                <div><span>Spend</span><strong>$38<small> / $60</small></strong></div>
+                <div><span>Agents</span><strong>6</strong></div>
+              </div>
+              <div class="mission-card-foot">
+                <div class="agent-stack"><span class="mini-avatar acid">PL</span><span class="mini-avatar">RC</span><span class="mini-avatar">&lt;&gt;</span><span class="mini-avatar">PR</span><span class="mini-avatar more">+2</span></div>
+                <span class="mission-next"><svg class="icon sm"><use href="#i-lock"/></svg> 2 approvals waiting</span>
+                <button class="btn btn-sm" type="button" data-view-link="command">Open <svg class="icon"><use href="#i-arrow-right"/></svg></button>
+              </div>
+            </article>
+
+            <article class="card mission-card is-verifying" data-stub="Operation Glasswing room">
+              <div class="mission-card-top">
+                <span class="live-tag is-verifying"><span class="pulse"></span> Verifying</span>
+                <span class="chip">Bugcrowd</span>
+                <span class="chip acid"><svg class="icon"><use href="#i-shield"/></svg> In scope</span>
+                <button class="icon-btn" type="button" aria-label="Mission menu" data-stub="Mission menu"><svg class="icon"><use href="#i-more"/></svg></button>
+              </div>
+              <h3 class="mission-card-title">Operation Glasswing</h3>
+              <div class="mission-card-target"><svg class="icon sm"><use href="#i-globe"/></svg> auth.meridian.io <span class="chip">8 assets</span></div>
+              <p class="mission-card-objective">OAuth account-linking, state binding, and token audience confusion across the identity surface.</p>
+              <div class="mission-progress">
+                <div class="mission-progress-row"><span>Hunt progress</span><strong>38%</strong></div>
+                <div class="meter violet"><i style="width:38%"></i></div>
+              </div>
+              <div class="mission-card-stats">
+                <div><span>Verified</span><strong>1</strong></div>
+                <div><span>In flight</span><strong>1</strong></div>
+                <div><span>Spend</span><strong>$21<small> / $80</small></strong></div>
+                <div><span>Agents</span><strong>4</strong></div>
+              </div>
+              <div class="mission-card-foot">
+                <div class="agent-stack"><span class="mini-avatar">PL</span><span class="mini-avatar acid">AS</span><span class="mini-avatar">CH</span><span class="mini-avatar more">+1</span></div>
+                <span class="mission-next violet"><svg class="icon sm"><use href="#i-clock"/></svg> Second replay queued</span>
+                <button class="btn btn-sm" type="button" data-stub="Operation Glasswing room">Open <svg class="icon"><use href="#i-arrow-right"/></svg></button>
+              </div>
+            </article>
+
+            <article class="card mission-card is-planned" data-stub="Operation Tallow room">
+              <div class="mission-card-top">
+                <span class="live-tag is-planned"><span class="pulse"></span> Planning</span>
+                <span class="chip">Intigriti</span>
+                <span class="chip violet">Scope syncing</span>
+                <button class="icon-btn" type="button" aria-label="Mission menu" data-stub="Mission menu"><svg class="icon"><use href="#i-more"/></svg></button>
+              </div>
+              <h3 class="mission-card-title">Operation Tallow</h3>
+              <div class="mission-card-target"><svg class="icon sm"><use href="#i-globe"/></svg> api.northwind.dev <span class="chip">0 assets</span></div>
+              <p class="mission-card-objective">Payment-flow business logic, coupon races, and negative-quantity paths. Plan is ready for review.</p>
+              <div class="mission-progress">
+                <div class="mission-progress-row"><span>Hunt progress</span><strong>0%</strong></div>
+                <div class="meter violet"><i style="width:0%"></i></div>
+              </div>
+              <div class="mission-card-stats">
+                <div><span>Verified</span><strong>0</strong></div>
+                <div><span>In flight</span><strong>0</strong></div>
+                <div><span>Spend</span><strong>$0<small> / $40</small></strong></div>
+                <div><span>Agents</span><strong>0</strong></div>
+              </div>
+              <div class="mission-card-foot">
+                <span class="mission-next"><svg class="icon sm"><use href="#i-check"/></svg> Plan ready for you</span>
+                <button class="btn btn-sm" type="button" data-open-mission>Review plan <svg class="icon"><use href="#i-arrow-right"/></svg></button>
+              </div>
+            </article>
+
+            <article class="card mission-card is-done" data-view-link="findings">
+              <div class="mission-card-top">
+                <span class="live-tag is-done"><span class="pulse"></span> Done</span>
+                <span class="chip">HackerOne</span>
+                <span class="chip green">6 submitted</span>
+                <button class="icon-btn" type="button" aria-label="Mission menu" data-stub="Mission menu"><svg class="icon"><use href="#i-more"/></svg></button>
+              </div>
+              <h3 class="mission-card-title">Operation Sable</h3>
+              <div class="mission-card-target"><svg class="icon sm"><use href="#i-globe"/></svg> console.vega.app <span class="chip">31 assets</span></div>
+              <p class="mission-card-objective">Tenant isolation across the admin console. Six findings accepted, two payouts cleared.</p>
+              <div class="mission-progress">
+                <div class="mission-progress-row"><span>Hunt progress</span><strong>100%</strong></div>
+                <div class="meter"><i style="width:100%"></i></div>
+              </div>
+              <div class="mission-card-stats">
+                <div><span>Verified</span><strong>6</strong></div>
+                <div><span>In flight</span><strong>0</strong></div>
+                <div><span>Spend</span><strong>$48<small> / $60</small></strong></div>
+                <div><span>Paid</span><strong>$12.4k</strong></div>
+              </div>
+              <div class="mission-card-foot">
+                <span class="mission-next is-done"><svg class="icon sm"><use href="#i-check"/></svg> Closed 2d ago</span>
+                <button class="btn btn-sm" type="button" data-view-link="findings">View findings <svg class="icon"><use href="#i-arrow-right"/></svg></button>
+              </div>
+            </article>
+
+            <article class="card mission-card" data-stub="Operation Halo room">
+              <div class="mission-card-top">
+                <span class="live-tag is-queued"><span class="pulse"></span> Draft</span>
+                <span class="chip">YesWeHack</span>
+                <span class="chip orange">Scope pending</span>
+                <button class="icon-btn" type="button" aria-label="Mission menu" data-stub="Mission menu"><svg class="icon"><use href="#i-more"/></svg></button>
+              </div>
+              <h3 class="mission-card-title">Operation Halo</h3>
+              <div class="mission-card-target"><svg class="icon sm"><use href="#i-globe"/></svg> *.halo.eu <span class="chip">42 assets</span></div>
+              <p class="mission-card-objective">Asset discovery and surface mapping before the program opens its doors.</p>
+              <div class="mission-progress">
+                <div class="mission-progress-row"><span>Hunt progress</span><strong>0%</strong></div>
+                <div class="meter"><i style="width:0%"></i></div>
+              </div>
+              <div class="mission-card-stats">
+                <div><span>Verified</span><strong>0</strong></div>
+                <div><span>In flight</span><strong>0</strong></div>
+                <div><span>Spend</span><strong>$0<small> / $100</small></strong></div>
+                <div><span>Agents</span><strong>0</strong></div>
+              </div>
+              <div class="mission-card-foot">
+                <span class="mission-next orange"><svg class="icon sm"><use href="#i-clock"/></svg> Scope sync pending</span>
+                <button class="btn btn-sm" type="button" data-stub="Sync Halo scope">Sync scope <svg class="icon"><use href="#i-arrow-right"/></svg></button>
+              </div>
+            </article>
+
+            <article class="card mission-card" data-stub="Operation Quarry room">
+              <div class="mission-card-top">
+                <span class="live-tag is-queued"><span class="pulse"></span> Scheduled</span>
+                <span class="chip">Internal lab</span>
+                <span class="chip">Read-only</span>
+                <button class="icon-btn" type="button" aria-label="Mission menu" data-stub="Mission menu"><svg class="icon"><use href="#i-more"/></svg></button>
+              </div>
+              <h3 class="mission-card-title">Operation Quarry</h3>
+              <div class="mission-card-target"><svg class="icon sm"><use href="#i-globe"/></svg> staging.acme.com <span class="chip">6 assets</span></div>
+              <p class="mission-card-objective">Regression sweep on the staging debug surface. Deterministic checks only, no active testing.</p>
+              <div class="mission-progress">
+                <div class="mission-progress-row"><span>Hunt progress</span><strong>0%</strong></div>
+                <div class="meter"><i style="width:0%"></i></div>
+              </div>
+              <div class="mission-card-stats">
+                <div><span>Verified</span><strong>0</strong></div>
+                <div><span>In flight</span><strong>0</strong></div>
+                <div><span>Spend</span><strong>$0<small> / $20</small></strong></div>
+                <div><span>Agents</span><strong>0</strong></div>
+              </div>
+              <div class="mission-card-foot">
+                <span class="mission-next"><svg class="icon sm"><use href="#i-clock"/></svg> Starts in 6h</span>
+                <button class="btn btn-sm" type="button" data-stub="Operation Quarry room">View plan <svg class="icon"><use href="#i-arrow-right"/></svg></button>
+              </div>
+            </article>
+          </div>
+
+          <aside class="rail">
+            <div class="card">
+              <div class="card-head no-border">
+                <div>
+                  <div class="card-title"><svg class="icon"><use href="#i-activity"/></svg> Portfolio</div>
+                  <div class="card-sub">Last 7 days · all programs</div>
+                </div>
+                <span class="chip acid">on track</span>
+              </div>
+              <div class="portfolio-grid">
+                <div><span>Active</span><strong>3</strong><small>2 supervised · 1 auto</small></div>
+                <div><span>Verified</span><strong>6</strong><small>+3 this week</small></div>
+                <div><span>Valid rate</span><strong>92.4<small>%</small></strong><small>+3.1 pts</small></div>
+                <div><span>Earned</span><strong>$12.4<small>k</small></strong><small>2 payouts</small></div>
+              </div>
+              <div class="pipeline">
+                <div class="pipeline-label"><span>Pipeline</span><span class="mono">6 missions</span></div>
+                <div class="pipeline-bar">
+                  <i style="width:18%;background:var(--violet)"></i>
+                  <i style="width:14%;background:var(--acid)"></i>
+                  <i style="width:30%;background:var(--acid);opacity:.55"></i>
+                  <i style="width:20%;background:var(--gold)"></i>
+                  <i style="width:18%;background:var(--muted)"></i>
+                </div>
+                <div class="pipeline-legend">
+                  <span><i style="background:var(--violet)"></i> Scoping 1</span>
+                  <span><i style="background:var(--acid)"></i> Hunting 2</span>
+                  <span><i style="background:var(--gold)"></i> Verifying 1</span>
+                  <span><i style="background:var(--muted)"></i> Done 1</span>
+                </div>
+              </div>
+            </div>
+
+            <div class="card">
+              <div class="card-head no-border">
+                <div>
+                  <div class="card-title"><svg class="icon"><use href="#i-clock"/></svg> Deadlines</div>
+                  <div class="card-sub">Next 14 days</div>
+                </div>
+              </div>
+              <div class="deadline-list">
+                <div class="deadline">
+                  <div><strong>Acme Corp · HackerOne</strong><span>Report window closes</span></div>
+                  <span class="chip orange">3d 14h</span>
+                </div>
+                <div class="deadline">
+                  <div><strong>Meridian · Bugcrowd</strong><span>Scope refresh</span></div>
+                  <span class="chip">8d 02h</span>
+                </div>
+                <div class="deadline">
+                  <div><strong>Northwind · Intigriti</strong><span>Program opens</span></div>
+                  <span class="chip">21d</span>
+                </div>
+              </div>
+            </div>
+
+            <div class="card budget-card">
+              <div class="card-head no-border">
+                <div>
+                  <div class="card-title"><svg class="icon"><use href="#i-dollar"/></svg> Spend &amp; risk</div>
+                  <div class="card-sub">Portfolio guardrails</div>
+                </div>
+              </div>
+              <div class="card-body">
+                <div class="rings">
+                  <div class="ring-wrap"><div class="ring" style="--p:41"><span>41%</span></div><div class="ring-label">Week</div></div>
+                  <div class="ring-wrap"><div class="ring violet" style="--p:68"><span>68%</span></div><div class="ring-label">Budget</div></div>
+                  <div class="ring-wrap"><div class="ring orange" style="--p:12"><span>12%</span></div><div class="ring-label">Risk</div></div>
+                </div>
+                <div class="scope-shield"><svg class="icon"><use href="#i-shield"/></svg><div><strong>Scope shield active</strong><span>6 programs · 99 assets · 0 violations</span></div></div>
+              </div>
+            </div>
+
+            <div class="handoff">
+              <svg class="icon"><use href="#i-lock"/></svg>
+              <div><strong>2 decisions are waiting</strong><span>Nightfall is blocked on an active authz test and a HackerOne submission.</span><button class="btn btn-sm" type="button" data-view-link="command">Open approval queue</button></div>
+            </div>
+          </aside>
+        </div>
+      </section>
+
+      <!-- ================= FINDINGS ================= -->
+      <section class="view" data-view="findings" hidden>
+        <div class="page-head">
+          <div>
+            <div class="eyebrow"><span class="tick"></span> Intelligence / Findings</div>
+            <h1>Findings</h1>
+            <p class="page-sub">Proof-backed findings across every mission. Triage, verify, and turn evidence into a submission.</p>
+          </div>
+          <div class="page-actions">
+            <button class="btn btn-ghost" type="button" data-stub="Export findings"><svg class="icon"><use href="#i-download"/></svg> Export</button>
+            <button class="btn btn-primary" type="button" data-open-mission><svg class="icon"><use href="#i-plus"/></svg> New mission</button>
+          </div>
+        </div>
+
+        <div class="filter-bar">
+          <button class="filter-pill active" type="button">All findings <span class="mono">12</span></button>
+          <button class="filter-pill" type="button">Needs review <span class="mono">4</span></button>
+          <button class="filter-pill" type="button">Verified <span class="mono">6</span></button>
+          <button class="filter-pill" type="button">Submitted <span class="mono">2</span></button>
+          <span class="filter-spacer"></span>
+          <button class="filter-pill" type="button"><svg class="icon sm"><use href="#i-filter"/></svg> Filters</button>
+          <button class="filter-pill" type="button">Severity: all</button>
+        </div>
+
+        <div class="findings-layout">
+          <div class="card inbox">
+            <div class="inbox-head"><span class="card-title"><svg class="icon"><use href="#i-bug"/></svg> Inbox</span><span class="inbox-count">12 open · 6 verified</span></div>
+            <div class="inbox-list">
+              <div class="inbox-item active" data-finding="idor" data-open-drawer>
+                <div class="inbox-item-top"><span class="sev critical">Critical</span><span class="chip acid">verified</span></div>
+                <div class="inbox-item-title">IDOR exposes cross-tenant user records</div>
+                <div class="inbox-item-meta"><span>api.acme.com</span><span>H-014</span><span>CVSS 9.1</span></div>
+                <div class="inbox-item-foot"><span>Operation Nightfall</span><span>$3,500</span></div>
+              </div>
+              <div class="inbox-item" data-finding="oauth" data-open-drawer>
+                <div class="inbox-item-top"><span class="sev high">High</span><span class="chip orange">verifying</span></div>
+                <div class="inbox-item-title">OAuth redirect_uri allows authorization code theft</div>
+                <div class="inbox-item-meta"><span>auth.acme.com</span><span>H-019</span><span>CVSS 8.1</span></div>
+                <div class="inbox-item-foot"><span>Operation Nightfall</span><span>$2,000</span></div>
+              </div>
+              <div class="inbox-item" data-finding="s3" data-open-drawer>
+                <div class="inbox-item-top"><span class="sev high">High</span><span class="chip acid">verified</span></div>
+                <div class="inbox-item-title">S3 bucket allows anonymous listing</div>
+                <div class="inbox-item-meta"><span>assets.acme.com</span><span>H-021</span><span>CVSS 7.5</span></div>
+                <div class="inbox-item-foot"><span>Operation Nightfall</span><span>$1,500</span></div>
+              </div>
+              <div class="inbox-item" data-finding="graphql" data-open-drawer>
+                <div class="inbox-item-top"><span class="sev medium">Medium</span><span class="chip">triaged</span></div>
+                <div class="inbox-item-title">GraphQL introspection enabled in production</div>
+                <div class="inbox-item-meta"><span>api.acme.com</span><span>H-024</span><span>CVSS 5.3</span></div>
+                <div class="inbox-item-foot"><span>Operation Nightfall</span><span>$750</span></div>
+              </div>
+              <div class="inbox-item" data-finding="debug" data-open-drawer>
+                <div class="inbox-item-top"><span class="sev medium">Medium</span><span class="chip">new</span></div>
+                <div class="inbox-item-title">Verbose stack traces on /debug endpoint</div>
+                <div class="inbox-item-meta"><span>staging.acme.com</span><span>H-027</span><span>CVSS 5.0</span></div>
+                <div class="inbox-item-foot"><span>Operation Nightfall</span><span>$500</span></div>
+              </div>
+              <div class="inbox-item" data-finding="headers" data-open-drawer>
+                <div class="inbox-item-top"><span class="sev low">Low</span><span class="chip">new</span></div>
+                <div class="inbox-item-title">Missing security headers on marketing site</div>
+                <div class="inbox-item-meta"><span>www.acme.com</span><span>H-030</span><span>CVSS 3.1</span></div>
+                <div class="inbox-item-foot"><span>Operation Nightfall</span><span>$150</span></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="card detail">
+            <div class="detail-hero">
+              <div class="detail-top"><span class="sev critical">Critical</span><span class="chip acid">verified</span><span class="chip">CWE-639</span><span class="chip">CVSS 9.1</span><button class="icon-btn" style="margin-left:auto" type="button" data-stub="Finding menu"><svg class="icon"><use href="#i-more"/></svg></button></div>
+              <h2 class="detail-title">IDOR exposes cross-tenant user records</h2>
+              <div class="detail-sub">H-014 · api.acme.com · Operation Nightfall · first seen 14:35:19 UTC</div>
+              <div class="detail-meta">
+                <div><div class="detail-meta-label">Confidence</div><div class="detail-meta-value">96%</div></div>
+                <div><div class="detail-meta-label">Impact</div><div class="detail-meta-value">Cross-tenant read</div></div>
+                <div><div class="detail-meta-label">Bounty est.</div><div class="detail-meta-value">$3,500</div></div>
+                <div><div class="detail-meta-label">Duplicate</div><div class="detail-meta-value acid">No match</div></div>
+              </div>
+            </div>
+            <div class="detail-body">
+              <div class="detail-section">
+                <h3>Summary</h3>
+                <p>The endpoint accepts a numeric user id and returns the full user object without checking that the object belongs to the caller's tenant. A user in tenant <span class="mono">acme</span> can read records from tenant <span class="mono">beta</span> by iterating the id space. The response includes email, role, and MFA state.</p>
+              </div>
+              <div class="detail-section">
+                <h3>Reproduction</h3>
+                <pre class="code-block"><span class="c"># authenticated as tenant acme</span>
+<span class="k">GET</span> /api/v1/users/8842 <span class="k">HTTP/1.1</span>
+<span class="k">Host:</span> api.acme.com
+<span class="k">Authorization:</span> Bearer <span class="s">acme-user-token</span>
+
+<span class="c"># 200 OK · tenant beta object returned</span>
+{"id":8842,"tenant":"beta","email":"...","role":"admin"}</pre>
+              </div>
+              <div class="detail-section">
+                <h3>Evidence chain</h3>
+                <div class="evidence-row"><svg class="icon"><use href="#i-check"/></svg><div class="evidence-copy"><strong>Candidate observed</strong><span>seq 1712 · 14:35:19 · prober</span></div></div>
+                <div class="evidence-row"><svg class="icon"><use href="#i-check"/></svg><div class="evidence-copy"><strong>Independent replay 3/3</strong><span>seq 1798 · 14:36:40 · assayer</span></div></div>
+                <div class="evidence-row"><svg class="icon"><use href="#i-check"/></svg><div class="evidence-copy"><strong>Scope and duplicate check passed</strong><span>seq 1811 · 14:37:02 · chiron</span></div></div>
+                <div class="evidence-row"><svg class="icon"><use href="#i-file"/></svg><div class="evidence-copy"><strong>Report draft ready</strong><span>quality 94 · HackerOne template</span></div></div>
+              </div>
+              <div class="detail-section readiness">
+                <div class="readiness-head">
+                  <h3>Report readiness</h3>
+                  <span class="readiness-score"><strong id="readiness-score">94</strong><span>/100</span></span>
+                </div>
+                <div class="readiness-bar"><i id="readiness-fill" style="width:94%"></i></div>
+                <div class="readiness-grid">
+                  <div class="readiness-check"><span>Reproduction</span><strong id="readiness-repro">3/3</strong></div>
+                  <div class="readiness-check"><span>Impact</span><strong id="readiness-impact">Proven</strong></div>
+                  <div class="readiness-check"><span>Scope</span><strong id="readiness-scope">Verified</strong></div>
+                  <div class="readiness-check"><span>Duplicate</span><strong id="readiness-duplicate">Clear</strong></div>
+                </div>
+                <div class="readiness-note"><svg class="icon"><use href="#i-check"/></svg><span id="readiness-note">Ready to submit after your approval. Nothing else is blocking.</span></div>
+              </div>
+              <div class="detail-actions">
+                <button class="btn btn-primary" type="button" data-stub="Report editor"><svg class="icon"><use href="#i-file"/></svg> Open report draft</button>
+                <button class="btn" type="button" data-stub="Replay proof"><svg class="icon"><use href="#i-play"/></svg> Replay proof</button>
+                <button class="btn btn-ghost" type="button" data-stub="Assign finding"><svg class="icon"><use href="#i-users"/></svg> Assign</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ================= AGENT STUDIO ================= -->
+      <section class="view" data-view="studio" hidden>
+        <div class="page-head">
+          <div>
+            <div class="eyebrow"><span class="tick"></span> Build / Agent Studio</div>
+            <h1>Agent Studio</h1>
+            <p class="page-sub">Compose the fleet, load skills, constrain tools, and measure what actually works.</p>
+          </div>
+          <div class="page-actions">
+            <button class="btn btn-ghost" type="button" data-stub="Import skill"><svg class="icon"><use href="#i-download"/></svg> Import skill</button>
+            <button class="btn btn-primary" type="button" data-stub="New agent"><svg class="icon"><use href="#i-plus"/></svg> New agent</button>
+          </div>
+        </div>
+
+        <div class="studio-tabs" role="tablist">
+          <button class="studio-tab active" type="button" data-studio-tab="fleet">Fleet</button>
+          <button class="studio-tab" type="button" data-studio-tab="skills">Skills</button>
+          <button class="studio-tab" type="button" data-studio-tab="tools">Tools</button>
+          <button class="studio-tab" type="button" data-studio-tab="memory">Memory</button>
+          <button class="studio-tab" type="button" data-studio-tab="evals">Evals</button>
+        </div>
+
+        <div class="studio-panel" data-studio-panel="fleet">
+          <div class="agent-grid">
+            <div class="card roster-card">
+              <div class="roster-top"><span class="roster-avatar">PL</span><div><div class="roster-name">Planner</div><div class="roster-role">Orchestrator</div></div><span class="roster-state"><span class="status-dot"></span></span></div>
+              <div class="roster-desc">Decomposes the mission brief into a task DAG, assigns agents, and asks for approval at every risk boundary.</div>
+              <div class="roster-stats"><div><div class="roster-stat-label">Success</div><div class="roster-stat-value">94%</div></div><div><div class="roster-stat-label">Avg cost</div><div class="roster-stat-value">$0.84</div></div><div><div class="roster-stat-label">Runs</div><div class="roster-stat-value">128</div></div></div>
+              <div class="roster-foot"><span class="chip">nvidia / nemotron-3</span><span class="chip">7 tools</span><span class="chip acid">supervised</span></div>
+            </div>
+            <div class="card roster-card">
+              <div class="roster-top"><span class="roster-avatar">RC</span><div><div class="roster-name">Recon</div><div class="roster-role">Surface mapper</div></div><span class="roster-state"><span class="status-dot"></span></span></div>
+              <div class="roster-desc">Maps hosts, services, bundles, routes, and historical URLs. Writes every observation to the target graph.</div>
+              <div class="roster-stats"><div><div class="roster-stat-label">Success</div><div class="roster-stat-value">98%</div></div><div><div class="roster-stat-label">Avg cost</div><div class="roster-stat-value">$1.20</div></div><div><div class="roster-stat-label">Runs</div><div class="roster-stat-value">241</div></div></div>
+              <div class="roster-foot"><span class="chip">nvidia / lightning</span><span class="chip">12 tools</span><span class="chip">read-only</span></div>
+            </div>
+            <div class="card roster-card">
+              <div class="roster-top"><span class="roster-avatar">&lt;&gt;</span><div><div class="roster-name">Exegete</div><div class="roster-role">JS reader</div></div><span class="roster-state"><span class="status-dot violet"></span></span></div>
+              <div class="roster-desc">Reads bundles, maps data flow, surfaces sinks and hidden endpoints, and explains the logic to the planner.</div>
+              <div class="roster-stats"><div><div class="roster-stat-label">Success</div><div class="roster-stat-value">91%</div></div><div><div class="roster-stat-label">Avg cost</div><div class="roster-stat-value">$2.08</div></div><div><div class="roster-stat-label">Runs</div><div class="roster-stat-value">176</div></div></div>
+              <div class="roster-foot"><span class="chip">nvidia / ultra</span><span class="chip">5 tools</span><span class="chip">read-only</span></div>
+            </div>
+            <div class="card roster-card">
+              <div class="roster-top"><span class="roster-avatar">PR</span><div><div class="roster-name">Prospector</div><div class="roster-role">Hypothesis hunter</div></div><span class="roster-state"><span class="status-dot"></span></span></div>
+              <div class="roster-desc">Turns observations into testable hypotheses, ranks them by expected value, and requests the minimum tool access.</div>
+              <div class="roster-stats"><div><div class="roster-stat-label">Success</div><div class="roster-stat-value">87%</div></div><div><div class="roster-stat-label">Avg cost</div><div class="roster-stat-value">$1.44</div></div><div><div class="roster-stat-label">Runs</div><div class="roster-stat-value">203</div></div></div>
+              <div class="roster-foot"><span class="chip">nvidia / ultra</span><span class="chip">9 tools</span><span class="chip orange">approval gate</span></div>
+            </div>
+            <div class="card roster-card">
+              <div class="roster-top"><span class="roster-avatar">AS</span><div><div class="roster-name">Assayer</div><div class="roster-role">Validator</div></div><span class="roster-state"><span class="status-dot idle"></span></span></div>
+              <div class="roster-desc">Reproduces every candidate with a fresh session and a second identity. No proof, no finding.</div>
+              <div class="roster-stats"><div><div class="roster-stat-label">Success</div><div class="roster-stat-value">96%</div></div><div><div class="roster-stat-label">Avg cost</div><div class="roster-stat-value">$0.52</div></div><div><div class="roster-stat-label">Runs</div><div class="roster-stat-value">312</div></div></div>
+              <div class="roster-foot"><span class="chip">nvidia / nano</span><span class="chip">6 tools</span><span class="chip acid">deterministic</span></div>
+            </div>
+            <div class="card roster-card">
+              <div class="roster-top"><span class="roster-avatar">CH</span><div><div class="roster-name">Chiron</div><div class="roster-role">Critic</div></div><span class="roster-state"><span class="status-dot idle"></span></span></div>
+              <div class="roster-desc">Challenges severity, scope, duplicate risk, and report quality. The last line before a human sees a finding.</div>
+              <div class="roster-stats"><div><div class="roster-stat-label">Success</div><div class="roster-stat-value">89%</div></div><div><div class="roster-stat-label">Avg cost</div><div class="roster-stat-value">$0.38</div></div><div><div class="roster-stat-label">Runs</div><div class="roster-stat-value">147</div></div></div>
+              <div class="roster-foot"><span class="chip">nvidia / ultra</span><span class="chip">4 tools</span><span class="chip violet">adversarial</span></div>
+            </div>
+          </div>
+
+          <div class="studio-lower">
+            <div class="card routing-card">
+              <div class="card-head no-border">
+                <div>
+                  <div class="card-title"><svg class="icon"><use href="#i-flow"/></svg> Model routing</div>
+                  <div class="card-sub">Cost-aware · live mission traffic</div>
+                </div>
+                <button class="card-link" type="button" data-stub="Routing editor">Edit routing <svg class="icon sm"><use href="#i-arrow-right"/></svg></button>
+              </div>
+              <div class="routing-table">
+                <div class="routing-row routing-head"><span>Agent</span><span>Primary</span><span>P50</span><span>Cost / 1k</span><span>Fallback</span><span>Health</span></div>
+                <div class="routing-row"><span>Planner</span><span class="mono">nemotron-3</span><span>1.9s</span><span>$0.84</span><span class="mono">claude-sonnet</span><span class="routing-state live">live</span></div>
+                <div class="routing-row"><span>Recon</span><span class="mono">lightning</span><span>0.6s</span><span>$1.20</span><span class="mono">qwen3-32b</span><span class="routing-state live">live</span></div>
+                <div class="routing-row"><span>Exegete</span><span class="mono">ultra</span><span>1.2s</span><span>$2.08</span><span class="mono">deepseek-v3</span><span class="routing-state live">live</span></div>
+                <div class="routing-row"><span>Prospector</span><span class="mono">ultra</span><span>2.4s</span><span>$1.44</span><span class="mono">claude-sonnet</span><span class="routing-state gate">2 gates</span></div>
+                <div class="routing-row"><span>Assayer</span><span class="mono">nano</span><span>0.4s</span><span>$0.52</span><span class="mono">deterministic</span><span class="routing-state live">live</span></div>
+                <div class="routing-row"><span>Chiron</span><span class="mono">ultra</span><span>1.7s</span><span>$0.38</span><span class="mono">claude-opus</span><span class="routing-state idle">idle</span></div>
+              </div>
+            </div>
+
+            <div class="card quality-card">
+              <div class="card-head no-border">
+                <div>
+                  <div class="card-title"><svg class="icon"><use href="#i-activity"/></svg> Quality loop</div>
+                  <div class="card-sub">Last 14 days · every gate</div>
+                </div>
+                <span class="chip acid">+3.1 pts</span>
+              </div>
+              <div class="quality-top">
+                <div class="quality-hero"><strong>92.4<small>%</small></strong><span>valid findings</span></div>
+                <div class="quality-mini">
+                  <span>Duplicate rate</span><strong>3.8%</strong>
+                  <span>Approval latency</span><strong>4m 12s</strong>
+                </div>
+              </div>
+              <div class="quality-chart" aria-hidden="true">
+                <i style="height:42%"></i><i style="height:56%"></i><i style="height:49%"></i><i style="height:66%"></i><i style="height:58%"></i><i style="height:74%"></i><i style="height:69%"></i><i style="height:81%"></i><i style="height:76%"></i><i style="height:88%"></i><i style="height:83%"></i><i style="height:93%"></i><i style="height:89%"></i><i style="height:97%" class="now"></i>
+              </div>
+              <div class="quality-list">
+                <div><span class="status-dot"></span><div><strong>H-014 critic pass</strong><span>quality 94 · 2 min ago</span></div><span class="chip green">passed</span></div>
+                <div><span class="status-dot violet"></span><div><strong>H-019 awaiting replay</strong><span>approval gate · 6 min</span></div><span class="chip orange">hold</span></div>
+                <div><span class="status-dot idle"></span><div><strong>H-027 sanitizer queued</strong><span>read-only · next up</span></div><span class="chip">queued</span></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="studio-panel" data-studio-panel="skills" hidden>
+          <div class="skills-grid">
+            <div class="card skill-card">
+              <div class="skill-top"><span class="skill-icon"><svg class="icon"><use href="#i-crosshair"/></svg></span><div><div class="skill-name">IDOR / BOLA</div><div class="skill-source">agentskills.io · v2.3 · signed</div></div><span class="chip acid" style="margin-left:auto">enabled</span></div>
+              <div class="skill-desc">Object-level authorization playbook: enumerate references, swap ownership, confirm cross-tenant reads, and preserve the minimum proof.</div>
+              <div class="skill-meta"><span>Used 84 times</span><span class="meter"><i style="width:91%"></i></span><span>91%</span></div>
+            </div>
+            <div class="card skill-card">
+              <div class="skill-top"><span class="skill-icon"><svg class="icon"><use href="#i-globe"/></svg></span><div><div class="skill-name">OAuth / OIDC</div><div class="skill-source">agentskills.io · v1.8 · signed</div></div><span class="chip acid" style="margin-left:auto">enabled</span></div>
+              <div class="skill-desc">Redirect URI abuse, state binding, PKCE downgrade, token audience confusion, and account-linking races.</div>
+              <div class="skill-meta"><span>Used 42 times</span><span class="meter"><i style="width:87%"></i></span><span>87%</span></div>
+            </div>
+            <div class="card skill-card">
+              <div class="skill-top"><span class="skill-icon"><svg class="icon"><use href="#i-zap"/></svg></span><div><div class="skill-name">SSRF / IMDS</div><div class="skill-source">local · v3.1 · signed</div></div><span class="chip acid" style="margin-left:auto">enabled</span></div>
+              <div class="skill-desc">Cloud metadata paths, DNS rebinding, redirect chains, and egress allowlist verification with an OAST callback.</div>
+              <div class="skill-meta"><span>Used 67 times</span><span class="meter"><i style="width:94%"></i></span><span>94%</span></div>
+            </div>
+            <div class="card skill-card">
+              <div class="skill-top"><span class="skill-icon"><svg class="icon"><use href="#i-clock"/></svg></span><div><div class="skill-name">Race conditions</div><div class="skill-source">agentskills.io · v1.2 · signed</div></div><span class="chip" style="margin-left:auto">paused</span></div>
+              <div class="skill-desc">Single-packet attacks, limit-overrun, coupon stacking, and state-machine TOCTOU with controlled concurrency.</div>
+              <div class="skill-meta"><span>Used 18 times</span><span class="meter"><i style="width:78%"></i></span><span>78%</span></div>
+            </div>
+            <div class="card skill-card">
+              <div class="skill-top"><span class="skill-icon"><svg class="icon"><use href="#i-bug"/></svg></span><div><div class="skill-name">GraphQL</div><div class="skill-source">agentskills.io · v1.5 · signed</div></div><span class="chip acid" style="margin-left:auto">enabled</span></div>
+              <div class="skill-desc">Introspection, node IDOR, batching abuse, field-level authz, and query-cost bypass.</div>
+              <div class="skill-meta"><span>Used 31 times</span><span class="meter"><i style="width:85%"></i></span><span>85%</span></div>
+            </div>
+            <div class="card skill-card">
+              <div class="skill-top"><span class="skill-icon"><svg class="icon"><use href="#i-key"/></svg></span><div><div class="skill-name">Secret validation</div><div class="skill-source">netcast3r core · v4.0</div></div><span class="chip acid" style="margin-left:auto">enabled</span></div>
+              <div class="skill-desc">310 patterns, 135 read-only recipes, provider identity checks, and four-state verdicts.</div>
+              <div class="skill-meta"><span>Used 1,204 times</span><span class="meter"><i style="width:98%"></i></span><span>98%</span></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="studio-panel" data-studio-panel="tools" hidden>
+          <div class="card">
+            <div class="card-head"><div><div class="card-title"><svg class="icon"><use href="#i-terminal"/></svg> Tool registry</div><div class="card-sub">Typed contracts · risk tiers · scope requirements</div></div><button class="btn btn-sm" type="button" data-stub="Register tool"><svg class="icon"><use href="#i-plus"/></svg> Register tool</button></div>
+            <div class="table-wrap"><table class="table tool-table"><thead><tr><th>Tool</th><th>Risk</th><th>Scope</th><th>Rate</th><th>Approval</th><th>Last used</th></tr></thead><tbody>
+              <tr><td><div class="finding-title"><svg class="icon"><use href="#i-globe"/></svg> http.probe</div><div class="finding-sub">single request · hash response</div></td><td><span class="risk-tag read">read</span></td><td>required</td><td class="mono">20/s</td><td><span class="chip">none</span></td><td class="mono">2m ago</td></tr>
+              <tr><td><div class="finding-title"><svg class="icon"><use href="#i-eye"/></svg> browser.session</div><div class="finding-sub">headed Chromium · human handoff</div></td><td><span class="risk-tag write">write</span></td><td>required</td><td class="mono">1/s</td><td><span class="chip orange">human</span></td><td class="mono">14m ago</td></tr>
+              <tr><td><div class="finding-title"><svg class="icon"><use href="#i-code"/></svg> js.parse</div><div class="finding-sub">AST + data-flow map</div></td><td><span class="risk-tag read">read</span></td><td>artifact</td><td class="mono">50/s</td><td><span class="chip">none</span></td><td class="mono">just now</td></tr>
+              <tr><td><div class="finding-title"><svg class="icon"><use href="#i-key"/></svg> provider.validate</div><div class="finding-sub">135 recipes · read-only default</div></td><td><span class="risk-tag read">read</span></td><td>credential</td><td class="mono">5/s</td><td><span class="chip">none</span></td><td class="mono">6m ago</td></tr>
+              <tr><td><div class="finding-title"><svg class="icon"><use href="#i-graph"/></svg> graph.query</div><div class="finding-sub">target knowledge graph</div></td><td><span class="risk-tag read">read</span></td><td>mission</td><td class="mono">100/s</td><td><span class="chip">none</span></td><td class="mono">1m ago</td></tr>
+              <tr><td><div class="finding-title"><svg class="icon"><use href="#i-send"/></svg> platform.submit</div><div class="finding-sub">HackerOne / Bugcrowd draft</div></td><td><span class="risk-tag high">high</span></td><td>program</td><td class="mono">1/m</td><td><span class="chip red">two-person</span></td><td class="mono">never</td></tr>
+            </tbody></table></div>
+          </div>
+        </div>
+
+        <div class="studio-panel" data-studio-panel="memory" hidden>
+          <div class="card empty-panel"><svg class="icon"><use href="#i-database"/></svg><h3>Engagement memory</h3><p>Target facts, dead ends, user preferences, and skill corrections live here. Every durable write is reviewable and attributable.</p><button class="btn btn-sm" style="margin-top:12px" type="button" data-stub="Open memory inspector">Open memory inspector</button></div>
+        </div>
+
+        <div class="studio-panel" data-studio-panel="evals" hidden>
+          <div class="card empty-panel"><svg class="icon"><use href="#i-activity"/></svg><h3>Evaluation harness</h3><p>Replay a corpus, compare precision and cost against a baseline, and gate every release on a regression. XBOW-style suites and internal run archives are supported.</p><button class="btn btn-sm" style="margin-top:12px" type="button" data-stub="Run evaluation">Run evaluation</button></div>
+        </div>
+      </section>
+    </main>
+  </div>
+</div>
+
+<!-- ================= COMMAND PALETTE ================= -->
+<div class="overlay" id="palette-overlay" role="dialog" aria-modal="true" aria-label="Command palette">
+  <div class="palette">
+    <div class="palette-search"><svg class="icon"><use href="#i-search"/></svg><input id="palette-input" type="text" placeholder="Search or run a command..." autocomplete="off"><span class="kbd">Esc</span></div>
+    <div class="palette-results" id="palette-results">
+      <div class="palette-group">Actions</div>
+      <button class="palette-item" type="button" data-command="mission"><svg class="icon"><use href="#i-plus"/></svg> Launch a new mission <span class="hint">N</span></button>
+      <button class="palette-item" type="button" data-command="findings"><svg class="icon"><use href="#i-bug"/></svg> Open findings inbox <span class="hint">G F</span></button>
+      <button class="palette-item" type="button" data-command="studio"><svg class="icon"><use href="#i-bot"/></svg> Open Agent Studio <span class="hint">G A</span></button>
+      <button class="palette-item" type="button" data-command="copilot"><svg class="icon"><use href="#i-sparkles"/></svg> Ask the copilot <span class="hint">AI</span></button>
+      <button class="palette-item" type="button" data-command="pause"><svg class="icon"><use href="#i-pause"/></svg> Pause Operation Nightfall</button>
+      <button class="palette-item" type="button" data-command="theme"><svg class="icon"><use href="#i-sun"/></svg> Toggle theme</button>
+      <div class="palette-group">Findings</div>
+      <button class="palette-item" type="button" data-command="finding:idor"><svg class="icon"><use href="#i-bug"/></svg> IDOR exposes cross-tenant user records <span class="hint">H-014</span></button>
+      <button class="palette-item" type="button" data-command="finding:oauth"><svg class="icon"><use href="#i-bug"/></svg> OAuth redirect_uri allows code theft <span class="hint">H-019</span></button>
+      <button class="palette-item" type="button" data-command="finding:s3"><svg class="icon"><use href="#i-bug"/></svg> S3 bucket allows anonymous listing <span class="hint">H-021</span></button>
+      <button class="palette-item" type="button" data-command="finding:graphql"><svg class="icon"><use href="#i-bug"/></svg> GraphQL introspection enabled <span class="hint">H-024</span></button>
+      <button class="palette-item" type="button" data-command="finding:debug"><svg class="icon"><use href="#i-bug"/></svg> Verbose stack traces on /debug <span class="hint">H-027</span></button>
+      <button class="palette-item" type="button" data-command="finding:headers"><svg class="icon"><use href="#i-bug"/></svg> Missing security headers <span class="hint">H-030</span></button>
+      <div class="palette-group">Jump to</div>
+      <button class="palette-item" type="button" data-command="command"><svg class="icon"><use href="#i-grid"/></svg> Command Center <span class="hint">G C</span></button>
+      <button class="palette-item" type="button" data-command="missions"><svg class="icon"><use href="#i-crosshair"/></svg> Mission portfolio <span class="hint">G M</span></button>
+      <button class="palette-item" type="button" data-command="audit"><svg class="icon"><use href="#i-scroll"/></svg> Audit log <span class="hint">G L</span></button>
+      <div class="palette-empty hidden" id="palette-empty"><svg class="icon"><use href="#i-search"/></svg><strong>No matches</strong><span>Try “idor”, “mission”, or “theme”.</span></div>
+    </div>
+    <div class="palette-foot"><span><span class="kbd">↑↓</span> navigate</span><span><span class="kbd">↵</span> select</span><span><span class="kbd">Esc</span> close</span></div>
+  </div>
+</div>
+
+<!-- ================= MISSION COMPOSER ================= -->
+<div class="overlay center" id="mission-overlay" role="dialog" aria-modal="true" aria-label="New mission">
+  <div class="modal">
+    <div class="modal-head">
+      <div><h2 class="modal-title">New mission</h2><div class="modal-sub">Describe the outcome. The planner will propose the route, tools, gates, and budget.</div></div>
+      <button class="icon-btn" type="button" data-close-mission aria-label="Close"><svg class="icon"><use href="#i-x"/></svg></button>
+    </div>
+    <div class="modal-body">
+      <div class="modal-form">
+        <div class="field"><label for="m-target">Target or program</label><input id="m-target" type="text" value="app.acme.com" spellcheck="false"></div>
+        <div class="field"><label for="m-brief">Mission brief</label><textarea id="m-brief">Hunt cross-tenant access and OAuth token theft. Stay read-only until proof. Ask before any state change.</textarea></div>
+        <div class="field"><label>Autonomy</label><div class="segmented" id="autonomy"><button class="seg" type="button">Observe</button><button class="seg" type="button">Assist</button><button class="seg active" type="button">Supervised</button><button class="seg" type="button">Autonomous</button></div></div>
+        <div class="field-row">
+          <div class="field"><label for="m-scope">Scope preset</label><select id="m-scope"><option>Program scope · HackerOne</option><option>Custom scope file</option><option>Single host only</option></select></div>
+          <div class="field"><label for="m-budget">Budget cap</label><div class="range-row"><input id="m-budget" type="range" min="10" max="200" value="60"><span class="range-value" id="budget-value">$60</span></div></div>
+        </div>
+        <div class="field"><label>Allowed tools</label><div style="display:flex;flex-wrap:wrap;gap:5px"><span class="chip acid"><svg class="icon"><use href="#i-check"/></svg> http.probe</span><span class="chip acid"><svg class="icon"><use href="#i-check"/></svg> js.parse</span><span class="chip acid"><svg class="icon"><use href="#i-check"/></svg> provider.validate</span><span class="chip">browser.session</span><span class="chip">platform.submit</span></div></div>
+      </div>
+      <div class="modal-plan">
+        <div class="card-sub" style="margin-bottom:9px">Plan preview · 7 tasks · 2 gates</div>
+        <div class="plan-step"><span class="plan-num">1</span><div class="plan-copy"><div class="plan-title">Map surface and collect bundles</div><div class="plan-meta">recon · 12 min · read-only</div></div></div>
+        <div class="plan-step"><span class="plan-num">2</span><div class="plan-copy"><div class="plan-title">Read JS and map auth flows</div><div class="plan-meta">exegete · 8 min · read-only</div></div></div>
+        <div class="plan-step"><span class="plan-num">3</span><div class="plan-copy"><div class="plan-title">Rank hypotheses by expected value</div><div class="plan-meta">prospector · 4 min · read-only</div></div></div>
+        <div class="plan-step"><span class="plan-num">4</span><div class="plan-copy"><div class="plan-title">Test tenant boundary with two accounts</div><div class="plan-meta">prober · 10 min · read-only</div><span class="plan-gate"><svg class="icon" style="width:9px;height:9px"><use href="#i-lock"/></svg> approval gate · active test</span></div></div>
+        <div class="plan-step"><span class="plan-num">5</span><div class="plan-copy"><div class="plan-title">Reproduce in a fresh session</div><div class="plan-meta">assayer · 6 min · deterministic</div></div></div>
+        <div class="plan-step"><span class="plan-num">6</span><div class="plan-copy"><div class="plan-title">Challenge severity and duplicates</div><div class="plan-meta">chiron · 3 min · adversarial</div></div></div>
+        <div class="plan-step"><span class="plan-num">7</span><div class="plan-copy"><div class="plan-title">Draft and submit report</div><div class="plan-meta">scribe · 5 min · HackerOne</div><span class="plan-gate"><svg class="icon" style="width:9px;height:9px"><use href="#i-lock"/></svg> approval gate · submission</span></div></div>
+        <div class="plan-est" style="margin-top:10px">Estimated 48 min · $6.20 · 1 human gate before active test</div>
+      </div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-ghost" type="button" data-close-mission>Cancel</button>
+      <span class="spacer"></span>
+      <span class="plan-est">Scope shield will enforce 12 assets</span>
+      <button class="btn btn-primary" type="button" data-launch-mission><svg class="icon"><use href="#i-play"/></svg> Review plan &amp; launch</button>
+    </div>
+  </div>
+</div>
+
+<!-- ================= FINDING DRAWER ================= -->
+<div class="drawer-wrap" id="drawer-wrap" aria-hidden="true">
+  <div class="drawer-backdrop" data-close-drawer></div>
+  <aside class="drawer" role="dialog" aria-modal="true" aria-label="Finding detail">
+    <div class="drawer-head">
+      <div style="min-width:0"><span class="sev critical" id="drawer-sev">Critical</span><h2 class="drawer-title" id="drawer-title">IDOR exposes cross-tenant user records</h2><div class="drawer-sub" id="drawer-sub">H-014 · api.acme.com · verified</div>
+        <div class="drawer-meta">
+          <div><span>Confidence</span><strong id="drawer-confidence">96%</strong></div>
+          <div><span>Impact</span><strong id="drawer-impact">Cross-tenant read</strong></div>
+          <div><span>Bounty est.</span><strong id="drawer-bounty">$3,500</strong></div>
+          <div><span>Duplicate</span><strong class="acid" id="drawer-duplicate">No match</strong></div>
+        </div>
+      </div>
+      <button class="icon-btn" type="button" data-close-drawer aria-label="Close"><svg class="icon"><use href="#i-x"/></svg></button>
+    </div>
+    <div class="drawer-body">
+      <div class="detail-section"><h3>Why this matters</h3><p id="drawer-summary">A user in one tenant can read another tenant's full user object, including email, role, and MFA state. The proof was reproduced three times with a fresh session.</p></div>
+      <div class="detail-section"><h3>Evidence</h3><div class="evidence-row"><svg class="icon"><use href="#i-check"/></svg><div class="evidence-copy"><strong>Candidate observed</strong><span>seq 1712 · 14:35:19 · prober</span></div></div><div class="evidence-row"><svg class="icon"><use href="#i-check"/></svg><div class="evidence-copy"><strong>Independent replay 3/3</strong><span>seq 1798 · 14:36:40 · assayer</span></div></div><div class="evidence-row"><svg class="icon"><use href="#i-shield"/></svg><div class="evidence-copy"><strong>Scope and duplicate check</strong><span>seq 1811 · 14:37:02 · chiron</span></div></div></div>
+      <div class="detail-section"><h3>Request</h3><pre class="code-block"><span class="k">GET</span> /api/v1/users/8842 <span class="k">HTTP/1.1</span>
+<span class="k">Host:</span> api.acme.com
+<span class="k">Authorization:</span> Bearer <span class="s">acme-user-token</span>
+
+<span class="c"># 200 OK · tenant beta object returned</span></pre></div>
+      <div class="drawer-actions"><button class="btn btn-primary" type="button" data-stub="Report draft"><svg class="icon"><use href="#i-file"/></svg> Open report draft</button><button class="btn" type="button" data-stub="Replay proof"><svg class="icon"><use href="#i-play"/></svg> Replay proof</button><button class="btn btn-ghost" type="button" data-stub="Triage"><svg class="icon"><use href="#i-check"/></svg> Mark triaged</button></div>
+    </div>
+  </aside>
+</div>
+
+<!-- ================= COPILOT DRAWER ================= -->
+<div class="drawer-wrap copilot-wrap" id="copilot-wrap" aria-hidden="true">
+  <div class="drawer-backdrop" data-close-copilot></div>
+  <aside class="drawer copilot-drawer" role="dialog" aria-modal="true" aria-label="Copilot">
+    <div class="drawer-head">
+      <div style="min-width:0">
+        <span class="live-tag"><span class="pulse"></span> Mission context</span>
+        <h2 class="drawer-title">Copilot</h2>
+        <div class="drawer-sub">Operation Nightfall · 124 assets · read-only</div>
+      </div>
+      <button class="icon-btn" type="button" data-close-copilot aria-label="Close"><svg class="icon"><use href="#i-x"/></svg></button>
+    </div>
+    <div class="copilot-body">
+      <div class="copilot-context"><svg class="icon"><use href="#i-shield"/></svg><div><strong>Scope shield active</strong><span>Answers are grounded in mission events. No action runs without approval.</span></div></div>
+      <div class="chat" id="copilot-chat">
+        <div class="msg assistant">
+          <div class="msg-role"><span class="status-dot"></span> copilot</div>
+          <p>I have the full mission context: 124 assets, 38 endpoints, 6 findings, and the event stream through seq 1,842. Ask me to explain evidence, draft a report, or propose the next best test.</p>
+        </div>
+        <div class="msg user"><div class="msg-role">you</div><p>Why is H-014 critical?</p></div>
+        <div class="msg assistant">
+          <div class="msg-role"><span class="status-dot"></span> copilot</div>
+          <p>H-014 is a cross-tenant IDOR on <span class="mono">GET /api/v1/users/{id}</span>. Tenant <span class="mono">acme</span> can read tenant <span class="mono">beta</span> records including email, role, and MFA state. The proof was replayed 3/3 with a fresh session, the scope check passed, and duplicate scanning found no match.</p>
+          <div class="msg-cites"><span>seq 1712</span><span>seq 1798</span><span>seq 1811</span><span>CVSS 9.1</span></div>
+        </div>
+      </div>
+      <div class="copilot-suggestions">
+        <button type="button" class="copilot-chip" data-prompt="What should we test next?">What should we test next?</button>
+        <button type="button" class="copilot-chip" data-prompt="Draft the HackerOne report">Draft the report</button>
+        <button type="button" class="copilot-chip" data-prompt="Are we still in scope?">Check scope</button>
+      </div>
+      <form class="copilot-composer" id="copilot-form">
+        <input id="copilot-input" type="text" placeholder="Ask about evidence, scope, or next steps..." autocomplete="off">
+        <button class="btn btn-primary btn-sm" type="submit" aria-label="Send"><svg class="icon"><use href="#i-send"/></svg></button>
+      </form>
+      <div class="copilot-foot">Grounded in the append-only event store · nothing is submitted automatically</div>
+    </div>
+  </aside>
+</div>
+
+<div class="toasts" id="toasts" aria-live="polite"></div>
+<script src="command-center.js"></script>
+</body>
+</html>
