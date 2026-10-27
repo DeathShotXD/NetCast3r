@@ -198,6 +198,27 @@ class Index:
             self.conn.commit()
         return cur.rowcount > 0
 
+    def results_dir_in_use(self, results_dir: str, exclude_run_id: str = "") -> bool:
+        """Whether another run still points at the same evidence directory.
+
+        Resumed runs share the parent's directory, so deleting one history row
+        must not take the files another row still needs.
+        """
+        if not results_dir:
+            return False
+        with self._lock:
+            rows = self.conn.execute(
+                "SELECT id, results_dir, counts_json FROM runs WHERE id != ?",
+                (exclude_run_id,),
+            ).fetchall()
+        for row in rows:
+            counts = _loads(row["counts_json"], {})
+            effective = (counts.get("results_dir") if isinstance(counts, dict) else "") \
+                or row["results_dir"] or ""
+            if str(effective) == str(results_dir):
+                return True
+        return False
+
     @staticmethod
     def _run_row(row: sqlite3.Row) -> dict:
         run = dict(row)
@@ -292,8 +313,10 @@ class Index:
     @staticmethod
     def _fingerprint(finding: dict) -> str:
         import hashlib
+        # Hash the whole value: JWTs often share a header, so truncating at 64
+        # characters made different tokens inherit one another's triage.
         raw = "|".join([
-            str(finding.get("secret_type", "")), str(finding.get("value", ""))[:64],
+            str(finding.get("secret_type", "")), str(finding.get("value", "")),
         ])
         return hashlib.sha256(raw.encode("utf-8", "ignore")).hexdigest()
 

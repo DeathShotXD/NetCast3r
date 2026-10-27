@@ -18,7 +18,7 @@
   let railOpen = $state(false);
 
   onMount(() => {
-    void store.boot();
+    void store.boot().then(() => store.startHeartbeat());
 
     const onKey = (event: KeyboardEvent) => {
       const target = event.target as HTMLElement | null;
@@ -41,7 +41,10 @@
     };
 
     window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      store.stopHeartbeat();
+    };
   });
 </script>
 

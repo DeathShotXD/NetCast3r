@@ -68,7 +68,8 @@ export const api = {
   resumeRun: (id: string) => request<Run>('POST', `/runs/${id}/resume`),
   inventory: (id: string, kind: string, limit = 5000) =>
     request<Inventory>('GET', `/runs/${id}/inventory?kind=${encodeURIComponent(kind)}&limit=${limit}`),
-  deleteRun: (id: string) => request<{ deleted: boolean }>('DELETE', `/runs/${id}`),
+  deleteRun: (id: string) =>
+    request<{ deleted: boolean; files_removed?: boolean }>('DELETE', `/runs/${id}`),
   runSummary: (id: string) =>
     request<{ severity: Record<string, number>; triage: Record<string, number> }>(
       'GET', `/runs/${id}/summary`),
@@ -86,7 +87,8 @@ export const api = {
   addProvider: (body: Record<string, unknown>) => request<Provider>('POST', '/providers', body),
   patchProvider: (id: string, body: Record<string, unknown>) =>
     request<Provider>('PATCH', `/providers/${id}`, body),
-  deleteProvider: (id: string) => request<{ deleted: boolean }>('DELETE', `/providers/${id}`),
+  deleteProvider: (id: string) =>
+    request<{ deleted: boolean; key_removed?: boolean }>('DELETE', `/providers/${id}`),
   testProvider: (id: string) =>
     request<{ ok: boolean; reason: string; latency_ms?: number; models?: string[]; detail?: string }>(
       'POST', `/providers/${id}/test`),

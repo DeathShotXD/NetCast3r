@@ -57,7 +57,7 @@
   let currentStage = $state('');
   let follow = $state(true);
   let filter = $state('all');
-  let tab = $state('feed');
+  let tab = $state(store.liveTab || 'feed');
   let stopOpen = $state(false);
   let stop = $state<() => void>(() => {});
   let continuing = $state(false);
@@ -367,7 +367,7 @@
     return 'var(--nc-slate)';
   }
 
-  async function load() {
+  async function load(initialTab = '') {
     if (!store.activeRunId) return;
     try {
       run = await api.run(store.activeRunId);
@@ -393,7 +393,7 @@
     report = '';
     reportErr = '';
     filter = 'all';
-    tab = 'feed';
+    tab = initialTab || 'feed';
     if (run) {
       try {
         const page = await api.runEvents(run.id);
@@ -557,7 +557,9 @@
   });
 
   onMount(async () => {
-    await load();
+    const initialTab = store.liveTab;
+    store.liveTab = '';
+    await load(initialTab);
     if (destroyed) return;
     if (!finished) connect();
     poller = window.setInterval(() => void poll(), 2000);

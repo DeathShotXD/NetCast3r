@@ -1,5 +1,6 @@
 import { api } from './api';
-import type { Finding, Meta, Run, Screen, Toast, Totals } from './types';
+import { stageForAgent } from './format';
+import type { Finding, Meta, Run, RunEvent, Screen, Toast, Totals } from './types';
 
 class Store {
   meta = $state<Meta | null>(null);
@@ -9,6 +10,7 @@ class Store {
   screen = $state<Screen>('home');
   activeRunId = $state('');
   liveRun = $state<Run | null>(null);
+  liveTab = $state('');
   locked = $state(false);
   ready = $state(false);
   busy = $state('');
@@ -16,6 +18,14 @@ class Store {
   query = $state('');
   toasts = $state<Toast[]>([]);
   toastSeq = 0;
+  lastSync = $state(0);
+  syncState = $state<'idle' | 'syncing' | 'error'>('idle');
+  heartbeat: number | undefined;
+  liveRunId = $state('');
+  liveStage = $state('');
+  liveThought = $state('');
+  liveEventAt = $state(0);
+  source: EventSource | null = null;
 
   constructor() {
     if (typeof window !== 'undefined') {
@@ -83,8 +93,9 @@ class Store {
     window.scrollTo({ top: 0, behavior: 'instant' as ScrollBehavior });
   }
 
-  watch(runId: string): void {
+  watch(runId: string, tab = ''): void {
     this.activeRunId = runId;
+    this.liveTab = tab;
     this.screen = 'live';
     this.syncHash();
   }
@@ -98,7 +109,10 @@ class Store {
   async refreshTotals(): Promise<void> {
     try {
       this.totals = await api.totals();
+      this.lastSync = Date.now();
+      this.syncState = 'idle';
     } catch {
+      this.syncState = 'error';
       /* a refresh failure must not blank the screen */
     }
   }
@@ -107,8 +121,81 @@ class Store {
     try {
       const page = await api.runs('?size=25');
       this.runs = page.items;
+      this.lastSync = Date.now();
+      this.syncState = 'idle';
     } catch {
+      this.syncState = 'error';
       /* offline from the backend */
+    }
+  }
+
+  /** Poll the small control-plane endpoints so every screen feels alive.
+   *  Active runs get a faster cadence; an idle dashboard stays quiet. */
+  async refreshPulse(): Promise<void> {
+    if (this.syncState === 'syncing') return;
+    this.syncState = 'syncing';
+    try {
+      const [totals, page] = await Promise.all([api.totals(), api.runs('?size=25')]);
+      this.totals = totals;
+      this.runs = page.items;
+      const active = page.items.find((run) => run.status === 'running' || run.status === 'queued');
+      if (!active) {
+        this.liveRunId = '';
+        this.liveStage = '';
+        this.liveThought = '';
+      }
+      this.lastSync = Date.now();
+      this.syncState = 'idle';
+    } catch {
+      this.syncState = 'error';
+    }
+  }
+
+  startHeartbeat(): void {
+    if (this.heartbeat) return;
+    this.startLiveStream();
+    const tick = () => {
+      if (typeof document === 'undefined' || !document.hidden) void this.refreshPulse();
+      const active = this.runs.some((run) => run.status === 'running' || run.status === 'queued');
+      this.heartbeat = window.setTimeout(tick, active ? 2500 : 12000);
+    };
+    this.heartbeat = window.setTimeout(tick, 2500);
+  }
+
+  stopHeartbeat(): void {
+    if (this.heartbeat) window.clearTimeout(this.heartbeat);
+    this.heartbeat = undefined;
+    this.source?.close();
+    this.source = null;
+  }
+
+  /** One global SSE connection feeds the shell's live status rail. The
+   *  inspector opens its own run-scoped stream so history can replay. */
+  startLiveStream(): void {
+    if (this.source) return;
+    try {
+      const stream = new EventSource(api.eventsUrl());
+      stream.onmessage = (message) => {
+        try {
+          const event = JSON.parse(message.data) as RunEvent;
+          if (!event.run_id) return;
+          this.liveRunId = event.run_id;
+          this.liveEventAt = Math.round(event.ts * 1000);
+          const stage = event.stage || stageForAgent(event.agent);
+          if (stage) this.liveStage = stage;
+          if (event.type === 'reasoning' && event.payload?.text) {
+            this.liveThought = String(event.payload.text).replace(/\s+/g, ' ').slice(-280);
+          }
+          if (event.type === 'run.finished' || event.type === 'run.state') {
+            void this.refreshPulse();
+          }
+        } catch {
+          /* ignore a malformed frame */
+        }
+      };
+      this.source = stream;
+    } catch {
+      /* no EventSource in this browser; polling still works */
     }
   }
 

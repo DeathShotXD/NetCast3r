@@ -93,7 +93,7 @@ class Console:
 
     def finding(self, status: str, secret_type: str, value: str, detail: str) -> None:
         self._record({"kind": "finding", "status": status, "type": secret_type,
-                      "value": value, "detail": detail})
+                      "value": T.mask(value), "detail": detail})
         state = str(status or "").lower()
         label = T.paint(f"[{state}]", T.state_color(state), bold=True, color_on=self.color)
         kind = T.paint(secret_type, T.BONE, color_on=self.color)
@@ -244,7 +244,7 @@ class Dashboard(Console):
             Console.finding(self, status, secret_type, value, detail)
             return
         self._record({"kind": "finding", "status": status, "type": secret_type,
-                      "value": value, "detail": detail})
+                      "value": T.mask(value), "detail": detail})
         self._refresh()
 
     def counts(self, **values) -> None:

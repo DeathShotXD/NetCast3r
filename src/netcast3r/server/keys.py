@@ -155,6 +155,7 @@ def redact(text: str, extra: list[str] | None = None) -> str:
         r"sk-[A-Za-z0-9_\-]{16,}", r"sk_live_[A-Za-z0-9]{10,}", r"rk_live_[A-Za-z0-9]{10,}",
         r"AIza[0-9A-Za-z_\-]{20,}", r"xox[baprs]-[A-Za-z0-9\-]{10,}", r"gh[pousr]_[A-Za-z0-9]{20,}",
         r"github_pat_[A-Za-z0-9_]{20,}", r"glpat-[A-Za-z0-9_\-]{16,}", r"AKIA[0-9A-Z]{16}",
+        r"nvapi-[A-Za-z0-9_\-]{16,}",
         r"eyJ[A-Za-z0-9_\-]{10,}\.[A-Za-z0-9_\-]{10,}\.[A-Za-z0-9_\-]{6,}",
     ]
     for value in (extra or []):

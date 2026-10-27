@@ -44,18 +44,37 @@ def _fence(body, value: str = "") -> list[str]:
     return [ticks, body.strip(), ticks]
 
 
+def _scrub_tree(value, secrets: list[str]):
+    """Recursively scrub every string in a finding, including nested evidence."""
+    if isinstance(value, str):
+        for secret in secrets:
+            if secret:
+                value = _scrub(value, secret)
+        return value
+    if isinstance(value, dict):
+        return {key: _scrub_tree(item, secrets) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_scrub_tree(item, secrets) for item in value]
+    return value
+
+
 def public_finding(finding: dict) -> dict:
-    """A copy of a finding safe to write to a shared artifact: no raw secret."""
+    """A copy of a finding safe to write to a shared artifact: no raw secret.
+
+    Both halves of a credential pair are redacted, and the scrub walks nested
+    evidence (corroboration verdicts, reproduction steps) so a model quoting
+    the secret cannot smuggle it past the top-level fields.
+    """
     out = dict(finding)
-    value = str(out.get("value", ""))
+    value = str(out.get("value") or "")
+    pair = str(out.get("pair_value") or "")
+    secrets = sorted({secret for secret in (value, pair) if secret},
+                     key=len, reverse=True)
+    out = _scrub_tree(out, secrets)
     if value:
         out["value"] = redact(value)
-        for field in ("proof", "impact", "status", "title", "source", "narrative", "notes"):
-            if field in out and out[field]:
-                out[field] = _scrub(out[field], value)
-        for field in ("reproduction", "model_steps"):
-            if isinstance(out.get(field), list):
-                out[field] = [_scrub(step, value) for step in out[field]]
+    if pair:
+        out["pair_value"] = redact(pair)
     return out
 
 
@@ -205,7 +224,20 @@ def render(target: str, summary: dict, findings: list[dict],
         for url in out_of_scope[:50]:
             lines.append(f"- {url}")
         lines.append("")
-    return "\n".join(lines)
+    text = "\n".join(lines)
+    # Some findings carry a second credential half (a database password, a
+    # paired token). Scrub it from the whole report as well as the primary
+    # value, since a model-written proof may quote either one. Longest first,
+    # so a short value that is a substring of the pair cannot split it.
+    secrets = set()
+    for item in list(findings or []) + list(unverified or []):
+        for key in ("value", "pair_value"):
+            secret = str(item.get(key) or "")
+            if secret:
+                secrets.add(secret)
+    for secret in sorted(secrets, key=len, reverse=True):
+        text = _scrub(text, secret)
+    return text
 
 
 def save(target: str, summary: dict, findings: list[dict],
@@ -250,6 +282,11 @@ def save_sarif(out_dir: str | Path, findings: list[dict]) -> Path:
     for finding in findings:
         secret_type = finding.get("secret_type", "secret")
         value = str(finding.get("value", ""))
+        pair = str(finding.get("pair_value") or "")
+
+        def scrub(text):
+            return _scrub(_scrub(text, value), pair)
+
         rules.setdefault(secret_type, {
             "id": secret_type,
             "name": secret_type,
@@ -259,10 +296,10 @@ def save_sarif(out_dir: str | Path, findings: list[dict]) -> Path:
         results.append({
             "ruleId": secret_type,
             "level": LEVELS.get(str(finding.get("severity", "")).lower(), "warning"),
-            "message": {"text": _scrub(finding.get("title", "exposed credential"), value)},
+            "message": {"text": scrub(finding.get("title", "exposed credential"))},
             "locations": [{
                 "physicalLocation": {
-                    "artifactLocation": {"uri": _scrub(finding.get("source", ""), value)}
+                    "artifactLocation": {"uri": scrub(finding.get("source", ""))}
                 }
             }],
         })

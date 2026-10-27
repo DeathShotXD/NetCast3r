@@ -123,7 +123,13 @@ class Recon:
         self.config = config
         self.session = session or Session(config)
         self.max_depth = config.run.depth
-        self.max_pages = max(config.run.concurrency * 25, 100)
+        configured_pages = int(getattr(config.run, "max_pages", 0) or 0)
+        if configured_pages > 0:
+            self.max_pages = configured_pages
+        else:
+            # Older configs had no max_pages; keep a useful ceiling based on
+            # the request concurrency instead of ignoring the crawler limit.
+            self.max_pages = max(config.run.concurrency * 25, 100)
         # on_fetch(kind, url, status): kind is page | js | skip. The dashboard
         # feeds this straight into its live crawler panel.
         self.on_fetch = on_fetch
@@ -313,7 +319,11 @@ class Recon:
         known_endpoints = set(result.endpoints)
         fetched = 0
         tick = 0
-        self.max_pages = max(self.max_pages, len(seeds) * 20)
+        if int(getattr(self.config.run, "max_pages", 0) or 0) <= 0:
+            # Auto mode keeps the old behaviour of making room for every seed.
+            # An explicit max_pages is a hard cap, even when there are more
+            # seeds than pages.
+            self.max_pages = max(self.max_pages, len(seeds) * 20)
         while queue and len(seen) < self.max_pages:
             if should_stop is not None:
                 try:

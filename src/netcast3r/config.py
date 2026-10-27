@@ -30,6 +30,7 @@ class ProviderConfig:
     base_url: str
     api_key: str = ""
     api_key_env: str = ""
+    api_key_file: str = ""
     priority: int = 100
     rate_limit_rpm: int = 0
     proxy_policy: str = "rotate"
@@ -39,7 +40,17 @@ class ProviderConfig:
         if self.api_key:
             return self.api_key
         if self.api_key_env:
-            return os.environ.get(self.api_key_env, "")
+            value = os.environ.get(self.api_key_env, "")
+            if value:
+                return value.strip()
+        if self.api_key_file:
+            try:
+                value = Path(self.api_key_file).expanduser().read_text(
+                    encoding="utf-8").strip()
+            except OSError:
+                value = ""
+            if value:
+                return value
         return ""
 
 
@@ -49,7 +60,7 @@ class RouteConfig:
     model: str = ""
     provider: str = ""
     temperature: float = 0.2
-    max_tokens: int = 1024
+    max_tokens: int = 1536
     reasoning: bool = True
 
 
@@ -71,6 +82,7 @@ class ScopeConfig:
 @dataclass
 class RunConfig:
     concurrency: int = 20
+    max_pages: int = 0
     timeout: float = 15.0
     depth: int = 2
     action_tier: str = "read"
@@ -128,6 +140,18 @@ class Config:
 
 def default_config() -> Config:
     providers = [
+        ProviderConfig(
+            name="nvidia",
+            base_url="https://integrate.api.nvidia.com/v1",
+            api_key_env="NETCAST3R_NVIDIA_KEY",
+            priority=5,
+            models=[
+                "nvidia/nemotron-3-ultra-550b-a55b",
+                "nvidia/nemotron-3.5-lightning-30b-a3b",
+                "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning",
+                "minimaxai/minimax-m3.1-flash",
+            ],
+        ),
         ProviderConfig(
             name="openrouter",
             base_url="https://openrouter.ai/api/v1",

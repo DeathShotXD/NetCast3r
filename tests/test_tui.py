@@ -28,6 +28,7 @@ class ConsoleTests(unittest.TestCase):
         self.assertEqual(kinds, ["header", "line", "reason", "finding", "summary"])
         self.assertEqual(console.events[1]["agent"], "recon")
         self.assertEqual(console.events[3]["status"], "confirmed")
+        self.assertNotIn("AKIA" + "x" * 30, console.events[3]["value"])
         self.assertEqual(console.events[4]["data"]["pages"], 3)
 
     def test_console_masks_the_value_in_its_output(self):

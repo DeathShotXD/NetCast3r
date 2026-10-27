@@ -34,28 +34,64 @@ class RenderTests(unittest.TestCase):
         self.assertEqual(len(data["stages"]), 6)
 
     def test_close_script_in_a_value_cannot_break_out(self):
-        data = dash.build_data(target="x",
-                               findings=[{"value": "</script><b>&amp;<!--"}])
+        data = dash.build_data(target="</script><b>&amp;<!--",
+                               findings=[{"value": "a-test-secret"}])
         payload = DATA_RE.search(dash.render(data)).group(1)
         self.assertNotIn("</script", payload)
         self.assertNotIn("<", payload)
         self.assertNotIn(">", payload)
         self.assertNotIn("&", payload)
         parsed = json.loads(payload)
-        self.assertEqual(parsed["findings"][0]["value"], "</script><b>&amp;<!--")
+        self.assertEqual(parsed["target"], "</script><b>&amp;<!--")
 
     def test_line_separators_stay_ascii_and_read_back(self):
-        data = dash.build_data(target="x", findings=[{"value": "a\u2028b\u2029c"}])
+        data = dash.build_data(target="a\u2028b\u2029c", findings=[])
         payload = DATA_RE.search(dash.render(data)).group(1)
         self.assertTrue(payload.isascii())
-        self.assertEqual(json.loads(payload)["findings"][0]["value"], "a\u2028b\u2029c")
+        self.assertEqual(json.loads(payload)["target"], "a\u2028b\u2029c")
 
     def test_a_value_holding_a_token_is_not_substituted_again(self):
-        data = dash.build_data(target="x",
-                               findings=[{"value": "__NETCAST3R_LOGO__"}])
+        data = dash.build_data(target="__NETCAST3R_LOGO__", findings=[])
         payload = DATA_RE.search(dash.render(data)).group(1)
-        self.assertEqual(json.loads(payload)["findings"][0]["value"],
+        self.assertEqual(json.loads(payload)["target"],
                          "__NETCAST3R_LOGO__")
+
+    def test_findings_and_logs_are_redacted(self):
+        secret = "AKIA" + "IOSFODNN7EXAMPLE"
+        pair = "hunter2-pair-secret"
+        data = dash.build_data(
+            target="https://target.example",
+            findings=[{
+                "value": secret, "pair_value": pair,
+                "proof": f"curl -H 'Authorization: {secret}' {pair}",
+            }],
+            events=[
+                {"kind": "line", "agent": "recon", "text": f"found {secret}"},
+                {"kind": "finding", "status": "confirmed", "type": "aws",
+                 "value": "AKIA...MPLE", "detail": f"used {pair}"},
+            ],
+        )
+        blob = json.dumps(data)
+        self.assertNotIn(secret, blob)
+        self.assertNotIn(pair, blob)
+        self.assertNotIn(secret, data["findings"][0]["proof"])
+        self.assertNotIn(pair, data["findings"][0]["proof"])
+        self.assertNotIn(secret, data["log"][0]["text"])
+        self.assertNotIn(pair, data["log"][1]["detail"])
+
+    def test_event_values_are_masked_without_a_finding_row(self):
+        raw = "raw-event-secret-1234"
+        data = dash.build_data(events=[{"kind": "finding", "value": raw}])
+        self.assertNotIn(raw, json.dumps(data))
+        self.assertIn("...", data["log"][0]["value"])
+
+    def test_short_secrets_are_removed_from_logs_too(self):
+        data = dash.build_data(
+            findings=[{"value": "abcde"}],
+            events=[{"kind": "line", "text": "the pin abcde worked"}],
+        )
+        self.assertNotIn("abcde", json.dumps(data))
+        self.assertEqual(data["findings"][0]["value"], "ab***")
 
     def test_summary_and_counts_are_carried(self):
         data = dash.build_data(summary={"pages": 3}, counts={"secrets": 9},
@@ -90,6 +126,17 @@ class StoreTests(unittest.TestCase):
         self.assertTrue((self.tmp / "dashboard.json").exists())
         self.assertIn("NETCAST", path.read_text())
 
+    def test_save_redacts_a_raw_payload(self):
+        secret = "AKIA" + "IOSFODNN7EXAMPLE"
+        path = dash.save(self.tmp, {
+            "target": "https://target.example",
+            "findings": [{"value": secret, "proof": f"used {secret}"}],
+            "log": [{"kind": "line", "text": f"found {secret}"}],
+            "summary": {}, "counts": {}, "stages": [],
+        })
+        self.assertNotIn(secret, path.read_text())
+        self.assertNotIn(secret, (self.tmp / "dashboard.json").read_text())
+
     def test_save_honours_a_custom_file_name(self):
         path = dash.save(self.tmp, dash.demo_data(), name="report.html")
         self.assertEqual(path.name, "report.html")
@@ -106,7 +153,7 @@ class StoreTests(unittest.TestCase):
             {"summary": {"pages": 7}, "findings": [{"value": "abc"}]}))
         loaded = dash.load(self.tmp)
         self.assertEqual(loaded["summary"]["pages"], 7)
-        self.assertEqual(loaded["findings"][0]["value"], "abc")
+        self.assertEqual(loaded["findings"][0]["value"], "ab*")
 
 
 class ServerTests(unittest.TestCase):
@@ -114,6 +161,7 @@ class ServerTests(unittest.TestCase):
         handler = type("H", (dash._Handler,), {
             "path_file": path, "data_file": path.with_suffix(".json")})
         srv = ThreadingHTTPServer(("127.0.0.1", 0), handler)
+        self.addCleanup(srv.server_close)
         self.addCleanup(srv.shutdown)
         threading.Thread(target=srv.serve_forever, daemon=True).start()
         return srv
@@ -175,6 +223,26 @@ class ServerTests(unittest.TestCase):
 
         data = json.loads(urllib.request.urlopen(base + "/api/data").read())
         self.assertEqual(data["target"], "https://target.example")
+
+    def test_data_api_redacts_a_legacy_raw_payload(self):
+        tmp = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, tmp, True)
+        secret = "AKIA" + "IOSFODNN7EXAMPLE"
+        path = tmp / "dashboard.html"
+        path.write_text("<html></html>")
+        (tmp / "dashboard.json").write_text(json.dumps({
+            "target": "https://target.example",
+            "findings": [{"value": secret, "proof": f"used {secret}"}],
+            "log": [{"kind": "line", "text": f"found {secret}"}],
+            "summary": {}, "counts": {}, "stages": [],
+        }))
+        srv = self._server(path)
+        base = f"http://127.0.0.1:{srv.server_address[1]}"
+        data = json.loads(urllib.request.urlopen(base + "/api/data").read())
+        blob = json.dumps(data)
+        self.assertNotIn(secret, blob)
+        self.assertNotIn(secret, data["findings"][0]["proof"])
+        self.assertNotIn(secret, data["log"][0]["text"])
 
 
 class DemoTests(unittest.TestCase):

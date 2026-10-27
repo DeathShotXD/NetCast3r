@@ -7,6 +7,7 @@ import time
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from types import SimpleNamespace
 
 os.environ.setdefault("NETCAST3R_NO_KEYRING", "1")
 
@@ -102,6 +103,30 @@ class ServerTests(unittest.TestCase):
         self.assertEqual(run["status"], "done")
         self.assertEqual(run["counts"]["pages"], 2)
 
+    def test_create_run_records_its_results_dir_before_work_starts(self):
+        response = self.call("POST", "/api/v1/runs", body={"target": "example.com"})
+        run = self.data(response)
+        self.assertEqual(run["results_dir"], f"results/{run['id']}")
+        self.wait(run["id"])
+        self.assertEqual(self.index.get_run(run["id"])["results_dir"],
+                         f"results/{run['id']}")
+
+    def test_rerun_starts_fresh_without_resume_state(self):
+        parent = self.index.create_run("https://a.example", {
+            "resume": True, "resume_from": "run_old", "results_dir": "old", "depth": 3,
+        })
+        self.index.update_run(parent["id"], status="stopped")
+        response = self.call("POST", f"/api/v1/runs/{parent['id']}/rerun")
+        self.assertEqual(response.status, 201)
+        child = self.data(response)
+        self.assertEqual(child["parent_run_id"], parent["id"])
+        self.assertNotIn("resume", child["options"])
+        self.assertNotIn("resume_from", child["options"])
+        self.assertEqual(child["options"]["depth"], 3)
+        self.assertEqual(child["options"]["results_dir"], "results")
+        self.assertEqual(child["results_dir"], f"results/{child['id']}")
+        self.wait(child["id"])
+
     def test_run_listing_and_get(self):
         created = self.data(self.call("POST", "/api/v1/runs", body={"target": "a.com"}))["id"]
         self.wait(created)
@@ -122,6 +147,24 @@ class ServerTests(unittest.TestCase):
                                       body={"status": "confirmed", "tags": ["aws"]}))
         self.assertEqual(patched["triage_status"], "confirmed")
         self.assertEqual(patched["tags"], ["aws"])
+
+    def test_fingerprints_do_not_collide_when_tokens_share_a_prefix(self):
+        prefix = "same-header-" + "x" * 80
+        first = self.index.create_run("https://one.example")
+        second = self.index.create_run("https://two.example")
+        self.index.add_findings(first["id"], [{
+            "title": "token one", "severity": "high", "secret_type": "jwt",
+            "value": prefix + "-one", "status": "verified",
+        }])
+        one = self.index.list_findings(run_id=first["id"])[0][0]
+        self.index.patch_finding(one["id"], status="confirmed")
+        self.index.add_findings(second["id"], [{
+            "title": "token two", "severity": "high", "secret_type": "jwt",
+            "value": prefix + "-two", "status": "verified",
+        }])
+        two = self.index.list_findings(run_id=second["id"])[0][0]
+        self.assertNotEqual(one["fingerprint"], two["fingerprint"])
+        self.assertEqual(two["triage_status"], "new")
 
     def test_an_unknown_triage_status_is_refused(self):
         run_id = self.data(self.call("POST", "/api/v1/runs", body={"target": "b.com"}))["id"]
@@ -191,6 +234,127 @@ class ServerTests(unittest.TestCase):
         self.assertTrue(tested["ok"])
         self.assertTrue(self.data(self.call("DELETE", f"/api/v1/providers/{created['id']}"))["deleted"])
 
+    def test_provider_key_without_a_key_name_is_stored_by_provider_id(self):
+        created = self.data(self.call("POST", "/api/v1/providers", body={
+            "name": "local", "kind": "openai", "base_url": "http://127.0.0.1:11434/v1",
+            "api_key": "sk-local-abcdefghij"}))
+        self.assertEqual(self.keys.get(created["id"]), "sk-local-abcdefghij")
+        listing = self.data(self.call("GET", "/api/v1/providers"))["items"]
+        self.assertTrue(listing[0]["masked"].endswith("ghij"))
+
+    def test_provider_key_moves_when_the_key_name_changes(self):
+        created = self.data(self.call("POST", "/api/v1/providers", body={
+            "name": "custom", "kind": "openai", "base_url": "https://api.example/v1",
+            "key_name": "old-key", "api_key": "sk-move-abcdefghij"}))
+        patched = self.data(self.call(
+            "PATCH", f"/api/v1/providers/{created['id']}", body={"key_name": "new-key"}))
+        self.assertEqual(self.keys.get("old-key"), "")
+        self.assertEqual(self.keys.get("new-key"), "sk-move-abcdefghij")
+        self.assertTrue(patched["masked"].endswith("ghij"))
+
+        cleared = self.data(self.call(
+            "PATCH", f"/api/v1/providers/{created['id']}", body={"key_name": ""}))
+        self.assertEqual(self.keys.get("new-key"), "")
+        self.assertEqual(self.keys.get(created["id"]), "sk-move-abcdefghij")
+        self.assertTrue(cleared["masked"].endswith("ghij"))
+
+    def test_renaming_keeps_a_key_already_written_under_the_new_name(self):
+        created = self.data(self.call("POST", "/api/v1/providers", body={
+            "name": "custom", "kind": "openai", "base_url": "https://api.example/v1",
+            "key_name": "old-key", "api_key": "sk-old-abcdefghij"}))
+        self.keys.set("new-key", "sk-new-abcdefghij")
+        patched = self.data(self.call(
+            "PATCH", f"/api/v1/providers/{created['id']}", body={"key_name": "new-key"}))
+        self.assertEqual(self.keys.get("new-key"), "sk-new-abcdefghij")
+        self.assertEqual(self.keys.get("old-key"), "")
+        self.assertTrue(patched["masked"].endswith("ghij"))
+
+    def test_deleting_a_provider_keeps_a_key_another_provider_still_uses(self):
+        first = self.data(self.call("POST", "/api/v1/providers", body={
+            "name": "one", "kind": "openai", "base_url": "https://one.example/v1",
+            "key_name": "shared", "api_key": "sk-shared-abcdefghij"}))
+        second = self.data(self.call("POST", "/api/v1/providers", body={
+            "name": "two", "kind": "openai", "base_url": "https://two.example/v1",
+            "key_name": "shared", "api_key": "sk-shared-abcdefghij"}))
+        self.assertTrue(self.data(self.call(
+            "DELETE", f"/api/v1/providers/{first['id']}"))["deleted"])
+        self.assertEqual(self.keys.get("shared"), "sk-shared-abcdefghij")
+        removed = self.data(self.call("DELETE", f"/api/v1/providers/{second['id']}"))
+        self.assertTrue(removed["deleted"])
+        self.assertTrue(removed["key_removed"])
+        self.assertEqual(self.keys.get("shared"), "")
+
+    def test_deleting_a_provider_removes_a_legacy_key_stored_by_name(self):
+        provider = self.data(self.call("POST", "/api/v1/providers", body={
+            "name": "legacy", "kind": "openai", "base_url": "https://legacy.example/v1"}))
+        self.keys.set("legacy", "sk-legacy-abcdefghij")
+        removed = self.data(self.call("DELETE", f"/api/v1/providers/{provider['id']}"))
+        self.assertTrue(removed["key_removed"])
+        self.assertEqual(self.keys.get("legacy"), "")
+
+    def test_delete_run_removes_its_evidence_directory(self):
+        base = Path(self.tmp.name)
+        run_dir = base / "runs" / "run_evidence"
+        run_dir.mkdir(parents=True)
+        (run_dir / "netcast3r.db").write_text("evidence")
+        run = self.index.create_run("https://delete.example", results_dir=str(run_dir))
+        self.index.update_run(run["id"], status="done")
+        self.index.add_findings(run["id"], [{
+            "title": "t", "severity": "high", "secret_type": "x",
+            "value": "a-long-secret-value", "status": "verified",
+        }])
+        server = Server(self.index, self.bus, self.jobs, self.keys,
+                        config=SimpleNamespace(results_dir=str(base / "runs")),
+                        token=TOKEN)
+        response = server.route(
+            "DELETE", f"/api/v1/runs/{run['id']}", {},
+            {"host": "127.0.0.1", "x-netcast3r-token": TOKEN}, b"")
+        body = json.loads(response.body.decode())
+        self.assertTrue(body["deleted"])
+        self.assertTrue(body["files_removed"])
+        self.assertFalse(run_dir.exists())
+        self.assertIsNone(self.index.get_run(run["id"]))
+        self.assertEqual(self.index.list_findings(run_id=run["id"])[1], 0)
+
+    def test_delete_run_keeps_a_shared_evidence_directory(self):
+        base = Path(self.tmp.name)
+        run_dir = base / "runs" / "run_shared"
+        run_dir.mkdir(parents=True)
+        first = self.index.create_run("https://one.example", results_dir=str(run_dir))
+        second = self.index.create_run("https://two.example", results_dir=str(run_dir))
+        self.index.update_run(first["id"], status="done")
+        self.index.update_run(second["id"], status="done")
+        server = Server(self.index, self.bus, self.jobs, self.keys,
+                        config=SimpleNamespace(results_dir=str(base / "runs")),
+                        token=TOKEN)
+        response = server.route(
+            "DELETE", f"/api/v1/runs/{first['id']}", {},
+            {"host": "127.0.0.1", "x-netcast3r-token": TOKEN}, b"")
+        self.assertFalse(json.loads(response.body.decode())["files_removed"])
+        self.assertTrue(run_dir.exists())
+        response = server.route(
+            "DELETE", f"/api/v1/runs/{second['id']}", {},
+            {"host": "127.0.0.1", "x-netcast3r-token": TOKEN}, b"")
+        self.assertTrue(json.loads(response.body.decode())["files_removed"])
+        self.assertFalse(run_dir.exists())
+
+    def test_delete_run_never_removes_a_directory_outside_the_results_root(self):
+        base = Path(self.tmp.name)
+        outside = base / "outside" / "run_outside"
+        outside.mkdir(parents=True)
+        run = self.index.create_run("https://outside.example", results_dir=str(outside))
+        self.index.update_run(run["id"], status="done")
+        server = Server(self.index, self.bus, self.jobs, self.keys,
+                        config=SimpleNamespace(results_dir=str(base / "runs")),
+                        token=TOKEN)
+        response = server.route(
+            "DELETE", f"/api/v1/runs/{run['id']}", {},
+            {"host": "127.0.0.1", "x-netcast3r-token": TOKEN}, b"")
+        body = json.loads(response.body.decode())
+        self.assertTrue(body["deleted"])
+        self.assertFalse(body["files_removed"])
+        self.assertTrue(outside.exists())
+
     def test_readyz_and_metrics(self):
         self.assertEqual(self.call("GET", "/api/v1/healthz").status, 200)
         self.assertEqual(self.call("GET", "/api/v1/readyz").status, 200)
@@ -226,7 +390,9 @@ class ServerTests(unittest.TestCase):
         store.add_finding("AWS key", "high", "aws", "AKIAEXAMPLE", "impact", "proof")
         store.stage_end("crawl", detail="4 pages")
         store.close()
-        self.index.update_run(run["id"], counts_json={"results_dir": str(out)})
+        # Live runs have no counts yet; the inspector must use the directory
+        # recorded when the run was created.
+        self.index.update_run(run["id"], results_dir=str(out))
 
         response = self.call("GET", f"/api/v1/runs/{run_id}/inventory", query={"kind": "findings"})
         self.assertEqual(response.status, 200)
@@ -512,6 +678,17 @@ class DashboardBridgeTests(unittest.TestCase):
         DashboardBridge(self.index, self.keys).apply(config)
         self.assertEqual(config.provider("groq").resolve_key(), "gsk_secret")
 
+    def test_bridge_resolves_a_key_stored_under_the_provider_id(self):
+        from netcast3r.config import default_config
+        from netcast3r.server.runner import DashboardBridge
+
+        provider = self.index.add_provider(
+            name="custom", base_url="https://custom.example/v1", models=["m"])
+        self.keys.set(provider["id"], "custom-secret")
+        config = default_config()
+        DashboardBridge(self.index, self.keys).apply(config)
+        self.assertEqual(config.provider("custom").resolve_key(), "custom-secret")
+
 
 class KeyStoreTests(unittest.TestCase):
     def test_mask_and_redact(self):
@@ -520,6 +697,8 @@ class KeyStoreTests(unittest.TestCase):
         self.assertTrue(mask("sk-abcdefghijklmnop").startswith("sk-a"))
         text = redact("token is sk-proj-abcdefghijklmnopqrstuvwxyz here")
         self.assertNotIn("abcdefghijklmnopqrstuvwxyz", text)
+        nv = redact("key nvapi-abcdefghijklmnopqrstuvwxyz0123456789 here")
+        self.assertNotIn("abcdefghijklmnopqrstuvwxyz0123456789", nv)
 
     def test_store_roundtrip_and_permissions(self):
         with TemporaryDirectory() as tmp:

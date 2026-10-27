@@ -3,7 +3,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from netcast3r.report import redact, render, save_sarif
+from netcast3r.report import public_finding, redact, render, save_sarif
 
 AWS_KEY = "AKIA" + "IOSFODNN7EXAMPLE"
 STRIPE_KEY = "sk_" + "live_" + "abcdefghijklmnopqrstuvwx"
@@ -40,6 +40,30 @@ class RedactTests(unittest.TestCase):
         }]
         text = render("target", {}, findings)
         self.assertIn("````", text)
+
+    def test_report_scrubs_a_paired_credential_from_proof_text(self):
+        pair = "SuperSecretPair"
+        findings = [{
+            "title": "t", "severity": "high", "secret_type": "database_url",
+            "value": f"postgresql://app:{pair}@db.internal/app",
+            "pair_value": pair, "proof": f"login with {pair} succeeded",
+        }]
+        text = render("target", {}, findings)
+        self.assertNotIn(pair, text)
+
+    def test_public_finding_redacts_both_halves_of_a_pair(self):
+        secret = "postgresql://app:SuperSecretPair@db.internal/app"
+        pair = "SuperSecretPair"
+        public = public_finding({
+            "value": secret, "pair_value": pair,
+            "proof": f"psql {secret}",
+            "corroboration": {"verdicts": [{"reason": f"used {pair}"}]},
+        })
+        blob = json.dumps(public)
+        self.assertNotIn(secret, blob)
+        self.assertNotIn(pair, blob)
+        self.assertIn("...", public["value"])
+        self.assertIn("...", public["pair_value"])
 
 
 class RenderTests(unittest.TestCase):
@@ -114,6 +138,17 @@ class RenderTests(unittest.TestCase):
         self.assertEqual(document["version"], "2.1.0")
         self.assertEqual(document["runs"][0]["results"][0]["ruleId"], "stripe_live")
         self.assertEqual(document["runs"][0]["results"][0]["level"], "error")
+
+    def test_sarif_scrubs_a_paired_credential_from_title_and_source(self):
+        pair = "SuperSecretPair"
+        findings = [{
+            "title": f"leaked {pair}", "severity": "high", "secret_type": "db",
+            "value": f"postgresql://app:{pair}@db/app",
+            "pair_value": pair, "source": f"https://target/{pair}.txt",
+        }]
+        workdir = Path(tempfile.mkdtemp())
+        path = save_sarif(workdir, findings)
+        self.assertNotIn(pair, path.read_text())
 
 
 if __name__ == "__main__":

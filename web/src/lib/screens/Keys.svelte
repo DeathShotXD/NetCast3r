@@ -7,7 +7,7 @@
 
   const common = [
     'openai', 'anthropic', 'github', 'slack', 'stripe', 'twilio', 'sendgrid',
-    'huggingface', 'replicate', 'groq', 'deepseek', 'openrouter', 'ollama'
+    'huggingface', 'replicate', 'groq', 'deepseek', 'nvidia', 'openrouter', 'ollama'
   ];
 
   interface Preset {
@@ -31,10 +31,15 @@
       free: [':free']
     },
     {
-      id: 'nvidia', label: 'nvidia', hint: 'build.nvidia.com credits',
+      id: 'nvidia', label: 'nvidia', hint: 'nemotron reasoning models',
       base_url: 'https://integrate.api.nvidia.com/v1', key_name: 'nvidia',
       placeholder: 'nvapi-...', needsKey: true,
-      hinted: [], free: []
+      hinted: [
+        'nvidia/nemotron-3-ultra-550b-a55b',
+        'nvidia/nemotron-3.5-lightning-30b-a3b',
+        'nvidia/nemotron-3-nano-omni-30b-a3b-reasoning'
+      ],
+      free: []
     },
     {
       id: 'opencode', label: 'opencode zen', hint: 'opencode zen gateway',
@@ -748,7 +753,7 @@
 {#if deletingProvider}
   <Confirm
     title="Remove this provider?"
-    body="The provider leaves the pool. The key it referenced stays in the key store until you remove it separately."
+    body="The provider leaves the pool. Its stored key is removed too, unless another provider still references the same key name."
     confirmLabel="remove provider"
     danger
     onConfirm={() => dropProvider(deletingProvider)}

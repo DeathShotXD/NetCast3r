@@ -22,6 +22,7 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 from .. import theme as T
+from ..report import public_finding, redact
 
 TEMPLATE_NAME = "template.html"
 OUTPUT_NAME = "dashboard.html"
@@ -62,12 +63,70 @@ def _payload(data: dict) -> str:
     return raw.replace("<", "\\u003c").replace(">", "\\u003e").replace("&", "\\u0026")
 
 
+def _scrub_strings(value, replacements: list[tuple[str, str]]):
+    """Recursively replace raw credentials anywhere in the payload."""
+    if isinstance(value, str):
+        for secret, masked in replacements:
+            if secret in value:
+                value = value.replace(secret, masked)
+        return value
+    if isinstance(value, dict):
+        return {key: _scrub_strings(item, replacements) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_scrub_strings(item, replacements) for item in value]
+    return value
+
+
+def _sanitize_data(data: dict) -> dict:
+    """Return a copy safe to embed in HTML, JSON, or the legacy dashboard API.
+
+    Findings go through the same redaction as the report. Event logs are
+    scrubbed against every known credential too; finding events themselves are
+    masked by the console before they are recorded, so already-masked values
+    are left alone.
+    """
+    if not isinstance(data, dict):
+        return {}
+    out = dict(data)
+    findings = [item for item in (data.get("findings") or []) if isinstance(item, dict)]
+    events = [item for item in (data.get("log") or []) if isinstance(item, dict)]
+
+    secrets: list[str] = []
+    for finding in findings:
+        for key in ("value", "pair_value"):
+            secret = str(finding.get(key) or "")
+            if secret and secret not in secrets:
+                secrets.append(secret)
+
+    # Longest first, so one credential being a substring of another cannot
+    # leave a raw fragment behind in free-form log text.
+    secrets = sorted(set(secrets), key=len, reverse=True)
+    replacements = [(secret, redact(secret)) for secret in secrets]
+    out["findings"] = [public_finding(finding) for finding in findings]
+    safe_events = []
+    for event in events:
+        clean = _scrub_strings(event, replacements)
+        # Legacy event streams could carry the raw value without a matching
+        # finding row; the field is always a credential, so mask it anyway.
+        if isinstance(clean, dict) and clean.get("value"):
+            clean["value"] = redact(str(clean["value"]))
+        safe_events.append(clean)
+    out["log"] = safe_events
+    for key in ("summary", "counts"):
+        value = data.get(key)
+        out[key] = _scrub_strings(dict(value) if isinstance(value, dict) else {},
+                                  replacements)
+    out["target"] = _scrub_strings(str(data.get("target") or ""), replacements)
+    return out
+
+
 def render(data: dict) -> str:
     """Fill the template with the palette, the artwork, and the run data.
 
     The substitution is a single pass, so a value that contains one of the
     placeholder tokens cannot trigger a second round of replacement.
     """
+    data = _sanitize_data(data)
     values = {
         "__NETCAST3R_VARS__": T.css_vars(),
         "__NETCAST3R_LOGO__": _data_uri("logo.webp"),
@@ -83,7 +142,7 @@ def build_data(*, target: str = "", summary: dict | None = None,
                elapsed_ms: int = 0, running: bool = False,
                generated: str = "") -> dict:
     """Assemble the JSON the template expects."""
-    return {
+    return _sanitize_data({
         "target": target or "-",
         "generated": generated or time.strftime("%Y-%m-%d %H:%M:%S"),
         "elapsed_ms": int(elapsed_ms or 0),
@@ -93,13 +152,14 @@ def build_data(*, target: str = "", summary: dict | None = None,
         "findings": list(findings or []),
         "log": list(events or []),
         "stages": list(stages or []),
-    }
+    })
 
 
 def save(out_dir: str | Path, data: dict, name: str = OUTPUT_NAME) -> Path:
     """Write the dashboard next to the rest of the run output."""
     directory = Path(out_dir)
     directory.mkdir(parents=True, exist_ok=True)
+    data = _sanitize_data(data)
     path = directory / name
     path.write_text(render(data))
     (directory / path.with_suffix(".json").name).write_text(
@@ -113,7 +173,7 @@ def save_data(out_dir: str | Path, data: dict) -> Path:
     directory = Path(out_dir)
     directory.mkdir(parents=True, exist_ok=True)
     path = directory / "dashboard.json"
-    path.write_text(json.dumps(data, indent=2, default=str))
+    path.write_text(json.dumps(_sanitize_data(data), indent=2, default=str))
     return path
 
 
@@ -319,7 +379,7 @@ class _Handler(BaseHTTPRequestHandler):
         if self.data_file is None or not self.data_file.exists():
             return {}
         try:
-            return json.loads(self.data_file.read_text("utf-8"))
+            return _sanitize_data(json.loads(self.data_file.read_text("utf-8")))
         except (OSError, ValueError):
             return {}
 

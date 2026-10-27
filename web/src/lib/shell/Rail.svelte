@@ -1,5 +1,7 @@
 <script lang="ts">
   import { store } from '../state.svelte';
+  import { ago, isoMs } from '../format';
+  import { STAGES } from '../../tokens';
   import type { Screen } from '../types';
   import { countup } from '../actions';
   import Mark from '../ui/Mark.svelte';
@@ -24,13 +26,30 @@
     id === store.screen || (id === 'live' && store.screen === 'live');
 
   const running = $derived(
-    store.runs.find((run) => run.status === 'running') ?? store.liveRun ?? null
+    store.runs.find((run) => run.status === 'running' || run.status === 'queued') ??
+      (store.liveRun && ['running', 'queued'].includes(store.liveRun.status) ? store.liveRun : null)
   );
 
   const openCount = $derived(
     (store.totals?.triage?.new ?? 0) + (store.totals?.triage?.in_progress ?? 0)
   );
   const findingCount = $derived(store.totals?.findings ?? 0);
+  const lastRun = $derived(store.totals?.last_run ?? store.runs[0] ?? null);
+  const lastCounts = $derived((lastRun?.counts ?? {}) as Record<string, number>);
+  const stageName = $derived(
+    (STAGES as unknown as { key: string; label: string }[]).find((stage) => stage.key === store.liveStage)?.label ??
+      (store.liveStage ? store.liveStage.toUpperCase() : 'WARMING UP')
+  );
+  const elapsed = $derived.by(() => {
+    if (!running) return '';
+    const start = isoMs(running.started_at || running.created_at);
+    if (!Number.isFinite(start)) return '';
+    const seconds = Math.max(0, Math.floor((Date.now() - start) / 1000));
+    return `${String(Math.floor(seconds / 60)).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`;
+  });
+  const syncLabel = $derived(
+    store.syncState === 'error' ? 'sync lost' : store.syncState === 'syncing' ? 'syncing' : 'synced'
+  );
 
   function go(id: Screen) {
     store.go(id);
@@ -91,7 +110,7 @@
             >{findingCount}</span
           >
         {/if}
-        {#if item.id === 'live' && store.runs.some((run) => run.status === 'running')}
+        {#if item.id === 'live' && store.runs.some((run) => run.status === 'running' || run.status === 'queued')}
           <span class="pulse-live ml-auto h-1.5 w-1.5 rounded-full bg-acid" aria-hidden="true"></span>
         {/if}
       </button>
@@ -115,28 +134,61 @@
         </div>
         {#if running}
           <p class="mono truncate text-xs text-acid">{running.target}</p>
+          <p class="mono flex items-center gap-2 text-[10px] tracking-[0.06em] text-bone-dust">
+            <span class="text-violet">{stageName}</span>
+            <span class="text-slate">·</span>
+            <span>{elapsed}</span>
+          </p>
+        {:else if lastRun}
+          <p class="mono truncate text-xs text-bone-dust">{lastRun.target}</p>
+          <p class="mono text-[10px] tracking-[0.06em] text-slate">last cast {ago(lastRun.created_at)}</p>
         {/if}
 
         <!-- scope: the instrument well -->
         <div
-          class="scope-well relative min-h-[92px] flex-1 overflow-hidden rounded-md border bg-void transition-colors duration-300"
+          class="scope-well relative min-h-[120px] flex-1 overflow-hidden rounded-md border bg-void transition-colors duration-300"
           class:border-acid={!!running}
           class:border-indigo-deep={!running}
           aria-hidden="true"
         >
-          <NetScope class="absolute inset-0 h-full w-full" active={!!running} />
+          <div class="absolute inset-0 transition-opacity duration-500" class:opacity-60={!running}>
+            <NetScope class="h-full w-full" active={!!running} />
+          </div>
           <div class="pointer-events-none absolute inset-x-0 bottom-1.5 text-center">
             {#if running}
-              <span class="mono text-[10px] tracking-[0.08em] text-acid">casting // mesh live</span>
+              <span class="mono text-[10px] tracking-[0.08em] text-acid">{stageName.toLowerCase()} // mesh live</span>
             {:else}
-              <span class="mono text-[10px] tracking-[0.08em] text-slate">idle // no scan running</span>
+              <span class="mono text-[10px] tracking-[0.08em] text-slate">at rest // net armed</span>
               <span class="term-cursor ml-1 inline-block h-[9px] w-[5px] bg-acid align-[-1px]" aria-hidden="true"
               ></span>
             {/if}
           </div>
         </div>
 
-        <div class="grid grid-cols-2 gap-2 border-t border-indigo-deep pt-2.5">
+        {#if lastRun}
+          <div class="border-t border-indigo-deep pt-2">
+            <div class="flex items-center justify-between gap-2">
+              <p class="eyebrow whitespace-nowrap">last return</p>
+              <span class="mono truncate text-[9px] text-slate">{lastCounts.pages ?? 0}p · {lastCounts.endpoints ?? 0}e</span>
+            </div>
+            <div class="mt-1 grid grid-cols-3 gap-1.5">
+              <div>
+                <p class="num text-sm text-bone">{lastCounts.candidates ?? 0}</p>
+                <p class="mono text-[8px] uppercase tracking-[0.1em] text-slate">signals</p>
+              </div>
+              <div class="border-l border-indigo-deep pl-2">
+                <p class="num text-sm text-acid">{lastCounts.verified ?? 0}</p>
+                <p class="mono text-[8px] uppercase tracking-[0.1em] text-slate">proved</p>
+              </div>
+              <div class="border-l border-indigo-deep pl-2">
+                <p class="num text-sm text-gold">{lastCounts.review_loopholes ?? 0}</p>
+                <p class="mono text-[8px] uppercase tracking-[0.1em] text-slate">notes</p>
+              </div>
+            </div>
+          </div>
+        {/if}
+
+        <div class="rail-mini grid grid-cols-3 gap-2 border-t border-indigo-deep pt-2.5">
           <div>
             <p class="eyebrow">runs</p>
             <p class="num mt-0.5 text-sm text-bone" use:countup={store.totals?.runs ?? 0}>0</p>
@@ -145,6 +197,18 @@
             <p class="eyebrow">findings</p>
             <p class="num mt-0.5 text-sm text-acid" use:countup={store.totals?.findings ?? 0}>0</p>
           </div>
+          <div class="border-l border-indigo-deep pl-2">
+            <p class="eyebrow">queue</p>
+            <p class="num mt-0.5 text-sm" style="color:{openCount > 0 ? 'var(--nc-violet)' : 'var(--nc-ash)'}">{openCount}</p>
+          </div>
+        </div>
+
+        <div class="mt-auto flex items-center gap-1.5 border-t border-indigo-deep pt-2">
+          <span class="sync-dot" class:live={!!running} class:error={store.syncState === 'error'} aria-hidden="true"></span>
+          <span class="mono text-[9px] tracking-[0.1em] text-slate">{syncLabel} // {store.lastSync ? 'control plane' : 'waiting'}</span>
+          {#if store.liveThought}
+            <span class="ml-auto h-1.5 w-1.5 rounded-full bg-violet pulse-live" title={store.liveThought} aria-hidden="true"></span>
+          {/if}
         </div>
       </div>
     </div>

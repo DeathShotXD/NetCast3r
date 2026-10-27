@@ -12,6 +12,7 @@ import hashlib
 import json
 import re
 import secrets
+import shutil
 import threading
 import webbrowser
 from dataclasses import dataclass, field
@@ -163,6 +164,71 @@ class Server:
         self._csp = CSP
         self._routes = self._build_routes()
 
+    # -- run helpers ------------------------------------------------------
+    def _start_run(self, target: str, options: dict, parent_run_id: str = "") -> dict:
+        """Create a run, record where it writes, then hand it to the workers."""
+        from .runner import results_dir_for
+
+        options = dict(options or {})
+        run = self.index.create_run(target, options, parent_run_id=parent_run_id)
+        self.index.update_run(run["id"], results_dir=str(results_dir_for(run["id"], options)))
+        self.jobs.submit(run["id"], target, options)
+        return self.index.get_run(run["id"])
+
+    def _remove_run_output(self, run: dict, run_id: str) -> bool:
+        """Delete a finished run's evidence directory when it is safe to do so."""
+        raw = ((run.get("counts") or {}).get("results_dir")
+               or run.get("results_dir") or "")
+        if not raw:
+            return False
+        if self.index.results_dir_in_use(str(raw), exclude_run_id=run_id):
+            return False
+
+        root = Path(str(getattr(self.config, "results_dir", "results") or "results"))
+        target = Path(str(raw))
+        if not root.is_absolute():
+            root = Path.cwd() / root
+        if not target.is_absolute():
+            target = Path.cwd() / target
+        if target.is_symlink():
+            return False
+        try:
+            target = target.resolve()
+            root = root.resolve()
+            target.relative_to(root)
+        except (OSError, ValueError):
+            return False
+        if target == root or not target.name.startswith("run_"):
+            return False
+        if not target.is_dir():
+            return False
+        try:
+            shutil.rmtree(target)
+        except OSError:
+            return False
+        return True
+
+    # -- provider helpers -------------------------------------------------
+    @staticmethod
+    def _provider_key_names(provider: dict) -> list[str]:
+        names = []
+        for candidate in (provider.get("key_name"), provider.get("id"), provider.get("name")):
+            name = str(candidate or "").strip()
+            if name and name not in names:
+                names.append(name)
+        return names
+
+    def _provider_key(self, provider: dict) -> str:
+        for name in self._provider_key_names(provider):
+            value = self.keys.get(name)
+            if value:
+                return value
+        return ""
+
+    @staticmethod
+    def _canonical_provider_key(provider: dict) -> str:
+        return str(provider.get("key_name") or "").strip() or str(provider.get("id") or "")
+
     # -- routing ----------------------------------------------------------
     def _build_routes(self):
         routes = []
@@ -217,12 +283,10 @@ class Server:
             if not target:
                 return _problem(400, "target required")
             options = ctx.json().get("options")
-            options = options if isinstance(options, dict) else {}
+            options = dict(options) if isinstance(options, dict) else {}
             if self.config is not None:
                 options.setdefault("results_dir", str(getattr(self.config, "results_dir", "results")))
-            run = self.index.create_run(target, options)
-            self.jobs.submit(run["id"], target, options)
-            return _json(self.index.get_run(run["id"]), 201)
+            return _json(self._start_run(target, options), 201)
 
         @add("GET", r"/api/v1/runs/(?P<id>[A-Za-z0-9_]+)")
         def get_run(ctx):
@@ -232,8 +296,16 @@ class Server:
         @add("DELETE", r"/api/v1/runs/(?P<id>[A-Za-z0-9_]+)")
         def delete_run(ctx):
             run_id = ctx.params["id"]
-            self.jobs.cancel(run_id)
-            return _json({"deleted": self.index.delete_run(run_id)})
+            run = self.index.get_run(run_id)
+            if not run:
+                return _json({"deleted": False, "files_removed": False})
+            if self.jobs.is_running(run_id):
+                self.jobs.cancel(run_id)
+                return _problem(409, "run is still active",
+                                "stop it before deleting")
+            deleted = self.index.delete_run(run_id)
+            removed = self._remove_run_output(run, run_id) if deleted else False
+            return _json({"deleted": deleted, "files_removed": removed})
 
         @add("POST", r"/api/v1/runs/(?P<id>[A-Za-z0-9_]+)/stop")
         def stop_run(ctx):
@@ -244,10 +316,15 @@ class Server:
             parent = self.index.get_run(ctx.params["id"])
             if not parent:
                 return _problem(404, "run not found")
-            run = self.index.create_run(parent["target"], parent.get("options"),
-                                        parent_run_id=parent["id"])
-            self.jobs.submit(run["id"], parent["target"], parent.get("options") or {})
-            return _json(self.index.get_run(run["id"]), 201)
+            options = dict(parent.get("options") or {})
+            # A rerun is a fresh scan. Inheriting resume flags would make it
+            # continue the old run and write into the parent's directory.
+            options.pop("resume", None)
+            options.pop("resume_from", None)
+            if self.config is not None:
+                options["results_dir"] = str(getattr(self.config, "results_dir", "results"))
+            return _json(self._start_run(parent["target"], options,
+                                         parent_run_id=parent["id"]), 201)
 
         @add("POST", r"/api/v1/runs/(?P<id>[A-Za-z0-9_]+)/resume")
         def resume_run(ctx):
@@ -261,9 +338,8 @@ class Server:
             options["resume_from"] = parent["id"]
             if self.config is not None:
                 options.setdefault("results_dir", str(getattr(self.config, "results_dir", "results")))
-            run = self.index.create_run(parent["target"], options, parent_run_id=parent["id"])
-            self.jobs.submit(run["id"], parent["target"], options)
-            return _json(self.index.get_run(run["id"]), 201)
+            return _json(self._start_run(parent["target"], options,
+                                         parent_run_id=parent["id"]), 201)
 
         @add("GET", r"/api/v1/runs/(?P<id>[A-Za-z0-9_]+)/inventory")
         def run_inventory(ctx):
@@ -362,7 +438,6 @@ class Server:
         def providers_health(ctx):
             items = []
             for provider in self.index.list_providers():
-                key_name = provider.get("key_name") or provider.get("name") or ""
                 items.append({
                     "id": provider["id"],
                     "name": provider.get("name", ""),
@@ -372,7 +447,7 @@ class Server:
                     "priority": provider.get("priority", 100),
                     "healthy": provider.get("healthy", 0),
                     "last_checked": provider.get("last_checked", ""),
-                    "key_set": bool(self.keys.get(key_name)),
+                    "key_set": bool(self._provider_key(provider)),
                 })
             return _json({"items": items})
 
@@ -398,7 +473,7 @@ class Server:
         def list_providers(ctx):
             items = self.index.list_providers()
             for item in items:
-                item["masked"] = mask(self.keys.get(item.get("key_name", "")))
+                item["masked"] = mask(self._provider_key(item))
             return _json({"items": items})
 
         @add("POST", r"/api/v1/providers")
@@ -411,15 +486,17 @@ class Server:
                 models=_str_list(body.get("models")),
                 priority=_int_or(body.get("priority"), 100),
                 enabled=1 if body.get("enabled", True) in (True, 1, "1") else 0)
-            if body.get("api_key"):
-                self.keys.set(provider["key_name"] or provider["id"], body["api_key"])
-            provider["masked"] = mask(self.keys.get(provider.get("key_name", "")))
+            api_key = str(body.get("api_key") or "").strip()
+            if api_key:
+                self.keys.set(self._canonical_provider_key(provider), api_key)
+            provider["masked"] = mask(self._provider_key(provider))
             return _json(provider, 201)
 
         @add("PATCH", r"/api/v1/providers/(?P<id>[A-Za-z0-9_]+)")
         def patch_provider(ctx):
             body = ctx.json()
-            if not self.index.get_provider(ctx.params["id"]):
+            existing = self.index.get_provider(ctx.params["id"])
+            if not existing:
                 return _problem(404, "provider not found")
             fields = {}
             for key in ("name", "kind", "base_url", "model", "key_name", "last_checked"):
@@ -432,14 +509,43 @@ class Server:
             if "enabled" in body:
                 fields["enabled"] = 1 if body.get("enabled") in (True, 1, "1") else 0
             provider = self.index.update_provider(ctx.params["id"], **fields)
-            if body.get("api_key"):
-                self.keys.set(provider.get("key_name") or provider["id"], body["api_key"])
-            provider["masked"] = mask(self.keys.get(provider.get("key_name", "")))
+            old_name = self._canonical_provider_key(existing)
+            new_name = self._canonical_provider_key(provider)
+            api_key = str(body.get("api_key") or "").strip()
+            if api_key:
+                self.keys.set(new_name, api_key)
+                if old_name != new_name:
+                    self.keys.delete(old_name)
+            elif old_name != new_name:
+                # Renaming a key reference moves the secret with the row
+                # instead of orphaning it under the old name. If the new name
+                # already has a key (the UI writes it before the rename), keep
+                # that one and only drop the old alias.
+                existing_key = self.keys.get(old_name)
+                if existing_key:
+                    if not self.keys.get(new_name):
+                        self.keys.set(new_name, existing_key)
+                    self.keys.delete(old_name)
+            provider["masked"] = mask(self._provider_key(provider))
             return _json(provider)
 
         @add("DELETE", r"/api/v1/providers/(?P<id>[A-Za-z0-9_]+)")
         def delete_provider(ctx):
-            return _json({"deleted": self.index.delete_provider(ctx.params["id"])})
+            provider = self.index.get_provider(ctx.params["id"])
+            if not provider:
+                return _json({"deleted": False, "key_removed": False})
+            deleted = self.index.delete_provider(ctx.params["id"])
+            removed = False
+            if deleted:
+                used_names = set()
+                for row in self.index.list_providers():
+                    used_names.update(self._provider_key_names(row))
+                # Clean up the canonical key and any legacy aliases, but never
+                # a name another provider still resolves.
+                for name in self._provider_key_names(provider):
+                    if name not in used_names:
+                        removed = self.keys.delete(name) or removed
+            return _json({"deleted": deleted, "key_removed": removed})
 
         @add("POST", r"/api/v1/providers/(?P<id>[A-Za-z0-9_]+)/test")
         def test_provider(ctx):
@@ -576,8 +682,7 @@ class Server:
 
         import httpx
 
-        key_name = provider.get("key_name") or provider.get("id", "")
-        value = self.keys.get(key_name)
+        value = self._provider_key(provider)
         base_url = (provider.get("base_url") or "").rstrip("/")
         if not value:
             return {"ok": False, "reason": "no key", "detail": "paste a key first"}
@@ -602,7 +707,7 @@ class Server:
             models = []
             try:
                 payload = response.json()
-                models = [row.get("id") for row in (payload.get("data") or [])][:50]
+                models = [row.get("id") for row in (payload.get("data") or [])][:200]
             except Exception:
                 pass
             return {"ok": True, "reason": "ok", "latency_ms": latency, "models": models}

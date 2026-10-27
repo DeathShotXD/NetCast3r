@@ -1,5 +1,6 @@
 <script lang="ts">
   import { store } from '../state.svelte';
+  import { ago } from '../format';
   import type { Screen } from '../types';
 
   type Item = { label: string; hint: string; glyph: string; run: () => void };
@@ -25,7 +26,10 @@
   const actionItems = $derived.by<Item[]>(() => {
     const list: Item[] = [];
     const running =
-      store.runs.find((run) => run.status === 'running') ?? store.liveRun ?? null;
+      store.runs.find((run) => run.status === 'running' || run.status === 'queued') ??
+      store.liveRun ??
+      null;
+    const last = store.totals?.last_run ?? store.runs[0] ?? null;
     if (running) {
       list.push({
         label: `Watch ${running.target}`,
@@ -33,8 +37,32 @@
         glyph: '[*]',
         run: () => store.watch(running.id)
       });
+    } else if (last) {
+      list.push({
+        label: `Open ${last.target}`,
+        hint: `last cast ${ago(last.created_at)}`,
+        glyph: '[*]',
+        run: () => store.watch(last.id)
+      });
     }
-    if ((store.totals?.findings ?? 0) > 0) {
+    if (last?.counts?.report) {
+      list.push({
+        label: 'Open the latest report',
+        hint: 'submission markdown',
+        glyph: '¶',
+        run: () => store.watch(last.id, 'report')
+      });
+    }
+    const open =
+      (store.totals?.triage?.new ?? 0) + (store.totals?.triage?.in_progress ?? 0);
+    if (open > 0) {
+      list.push({
+        label: 'Review the human queue',
+        hint: `${open} waiting`,
+        glyph: '*',
+        run: () => store.go('findings')
+      });
+    } else if ((store.totals?.findings ?? 0) > 0) {
       list.push({
         label: 'Search findings',
         hint: `${store.totals?.findings} in the index`,
@@ -42,6 +70,24 @@
         run: () => store.go('findings')
       });
     }
+    list.push({
+      label: 'Refresh the control plane',
+      hint: 'summary + run ledger',
+      glyph: '↻',
+      run: () => {
+        void store.refreshPulse();
+        store.toast('ok', 'control plane refreshed');
+      }
+    });
+    list.push({
+      label: 'Copy this view',
+      hint: 'share the current screen',
+      glyph: '⧉',
+      run: () => {
+        void navigator.clipboard?.writeText(window.location.href);
+        store.toast('ok', 'view link copied');
+      }
+    });
     return list;
   });
 

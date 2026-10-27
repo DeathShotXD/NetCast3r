@@ -231,10 +231,17 @@ See [lab/README.md](lab/README.md).
 
 ## Model providers
 
-NetCast3r talks to any OpenAI-compatible endpoint. OpenCode Zen and OpenRouter
-are configured first by default; Ollama and custom endpoints are supported.
-Run `netcast3r providers` to see what is configured. The classifier is
-optional: detection and validation work without it.
+NetCast3r talks to any OpenAI-compatible endpoint. NVIDIA Nemotron reasoning
+models are configured first by default, followed by OpenRouter, Ollama, and
+OpenCode Zen. Run `netcast3r providers` to see what is configured. The
+classifier is optional: detection and validation work without it.
+
+The NVIDIA pool uses `nemotron-3-ultra-550b-a55b` for the strongest reasoning
+pass, with `nemotron-3.5-lightning-30b-a3b` and the nano omni model as fast
+fallbacks. Keys stay out of the config file: paste one in the dashboard, set
+`NETCAST3R_NVIDIA_KEY`, or point `api_key_file` at a 0600 file. On a rate limit
+the bus still rotates to the next provider, and a second provider is still
+required before a candidate is marked corroborated.
 
 <p align="center">
   <img src="assets/divider.svg" alt="" width="100%">

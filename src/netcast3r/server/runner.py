@@ -100,6 +100,23 @@ class EventConsole:
         self.emit(Event(type="run.state", run_id=self.run_id, payload={"summary": data}))
 
 
+def provider_key(keys, row: dict) -> str:
+    """Resolve a provider's key by its canonical name, then legacy fallbacks.
+
+    New keys are stored under ``key_name`` when one was supplied, otherwise
+    under the provider id. Older versions could only find keys stored under
+    the provider name, so keep that as a last resort.
+    """
+    for candidate in (row.get("key_name"), row.get("id"), row.get("name")):
+        name = str(candidate or "").strip()
+        if not name:
+            continue
+        value = keys.get(name)
+        if value:
+            return value
+    return ""
+
+
 class DashboardBridge:
     """Feeds dashboard-configured providers and stored keys into a run.
 
@@ -126,7 +143,7 @@ class DashboardBridge:
             models = [str(item) for item in (row.get("models") or []) if str(item).strip()]
             if not models and row.get("model"):
                 models = [str(row["model"])]
-            key = self.keys.get(row.get("key_name") or "") or self.keys.get(name)
+            key = provider_key(self.keys, row)
             priority = int(row.get("priority") or 100)
             existing = config.provider(name)
             if existing:
@@ -167,6 +184,57 @@ def _safe_results_dir(value) -> Path:
     return candidate
 
 
+def results_dir_for(run_id: str, options: dict | None = None) -> Path:
+    """The directory a run writes to, including the resume-parent case.
+
+    Both the server (to record live inventory) and the runner (to open the
+    store) use this, so the index never points at a directory the scan did not
+    actually write.
+    """
+    options = options or {}
+    results_root = _safe_results_dir(options.get("results_dir"))
+    resume = bool(options.get("resume"))
+    resume_from = str(options.get("resume_from") or "") if resume else ""
+    out = results_root / run_id
+    if resume and resume_from:
+        # Continue in the parent's results directory so the store keeps the
+        # pages, scripts, findings and stage markers the run already wrote.
+        parent_out = results_root / resume_from
+        if (parent_out / "netcast3r.db").is_file():
+            out = parent_out
+    return out
+
+
+def apply_run_options(run_config, options: dict) -> None:
+    """Merge API scan options into a RunConfig without truthiness traps."""
+    if options.get("tier"):
+        run_config.action_tier = str(options["tier"])
+    if options.get("depth") is not None:
+        try:
+            run_config.depth = max(0, int(options["depth"]))
+        except (TypeError, ValueError):
+            pass
+    if options.get("timeout"):
+        run_config.timeout = float(options["timeout"])
+    if options.get("rate"):
+        run_config.requests_per_second = float(options["rate"])
+    if options.get("delay"):
+        run_config.delay = float(options["delay"])
+    if options.get("retries") is not None and options.get("retries") != "":
+        run_config.retries = int(options["retries"])
+    if options.get("random_agent") is not None:
+        run_config.random_user_agent = bool(options["random_agent"])
+    if options.get("wayback") is not None:
+        run_config.wayback = bool(options["wayback"])
+    if options.get("subdomains") is not None:
+        run_config.subdomains = bool(options["subdomains"])
+    if options.get("max_pages") is not None:
+        try:
+            run_config.max_pages = max(0, int(options["max_pages"]))
+        except (TypeError, ValueError):
+            pass
+
+
 def run_scan(run_id: str, target: str, options: dict, emit: Callable[[Event], None],
              should_stop: Callable[[], bool]) -> dict:
     from ..config import load_config
@@ -184,37 +252,9 @@ def run_scan(run_id: str, target: str, options: dict, emit: Callable[[Event], No
         except Exception:  # noqa: BLE001 - a broken index must not kill the run
             pass
     run_config = config.run
-    if options.get("tier"):
-        run_config.action_tier = str(options["tier"])
-    if options.get("depth"):
-        run_config.depth = int(options["depth"])
-    if options.get("timeout"):
-        run_config.timeout = float(options["timeout"])
-    if options.get("rate"):
-        run_config.requests_per_second = float(options["rate"])
-    if options.get("delay"):
-        run_config.delay = float(options["delay"])
-    if options.get("retries") is not None and options.get("retries") != "":
-        run_config.retries = int(options["retries"])
-    if options.get("random_agent") is not None:
-        run_config.random_user_agent = bool(options["random_agent"])
-    if options.get("wayback") is not None:
-        run_config.wayback = bool(options["wayback"])
-    if options.get("subdomains") is not None:
-        run_config.subdomains = bool(options["subdomains"])
-    if options.get("max_pages"):
-        run_config.concurrency = max(1, int(options["max_pages"]) // 25)
-
-    results_root = _safe_results_dir(options.get("results_dir"))
+    apply_run_options(run_config, options)
     resume = bool(options.get("resume"))
-    resume_from = str(options.get("resume_from") or "") if resume else ""
-    out = results_root / run_id
-    if resume and resume_from:
-        # continue in the parent's results directory so the store keeps the
-        # pages, scripts, findings and stage markers the run already wrote
-        parent_out = results_root / resume_from
-        if (parent_out / "netcast3r.db").is_file():
-            out = parent_out
+    out = results_dir_for(run_id, options)
     out.mkdir(parents=True, exist_ok=True)
     store = Store(out / "netcast3r.db")
     scope = ScopeManager.from_files("", "", extra_in=[target])

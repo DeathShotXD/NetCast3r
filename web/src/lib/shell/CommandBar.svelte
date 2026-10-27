@@ -1,6 +1,7 @@
 <script lang="ts">
   import { store } from '../state.svelte';
-  import { statusColor, statusLabel } from '../format';
+  import { isoMs, statusColor, statusLabel } from '../format';
+  import { STAGES } from '../../tokens';
 
   let {
     onMenu = () => {}
@@ -19,12 +20,28 @@
     help: 'help'
   };
 
-  const running = $derived(store.runs.find((run) => run.status === 'running') ?? store.liveRun);
+  const running = $derived(
+    store.runs.find((run) => run.status === 'running' || run.status === 'queued') ?? store.liveRun ?? null
+  );
   const status = $derived(running?.status ?? '');
   const scanActive = $derived(status === 'running' || status === 'queued');
   const active = $derived(store.runs.find((run) => run.id === store.activeRunId) ?? store.liveRun ?? null);
   const crumb = $derived(
     store.screen === 'live' && active ? active.target : labels[store.screen] ?? ''
+  );
+  const stageName = $derived(
+    (STAGES as unknown as { key: string; label: string }[]).find((stage) => stage.key === store.liveStage)?.label ??
+      (store.liveStage ? store.liveStage.toUpperCase() : 'WARMING UP')
+  );
+  const elapsed = $derived.by(() => {
+    if (!running || !scanActive) return '';
+    const start = isoMs(running.started_at || running.created_at);
+    if (!Number.isFinite(start)) return '';
+    const seconds = Math.max(0, Math.floor((Date.now() - start) / 1000));
+    return `${String(Math.floor(seconds / 60)).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`;
+  });
+  const syncLabel = $derived(
+    store.syncState === 'error' ? 'sync lost' : store.syncState === 'syncing' ? 'syncing' : 'synced'
   );
 
   function submit(event: SubmitEvent) {
@@ -53,22 +70,38 @@
     <span class="truncate text-bone">{crumb}</span>
   </p>
 
-  <span
-    class="chip ml-1 hidden shrink-0 sm:inline-flex"
-    style="color:{statusColor(status)}"
-    role="status"
-    aria-live="polite"
-  >
-    <svg viewBox="0 0 8 8" class="h-[7px] w-[7px] fill-current" aria-hidden="true">
-      <circle cx="4" cy="4" r="3.4" />
-    </svg>
-    {status ? statusLabel(status) : 'idle'}
+  {#if scanActive && running}
+    <span class="chip live-capsule ml-1 hidden shrink-0 sm:inline-flex" role="status" aria-live="polite">
+      <span class="pulse-live h-[7px] w-[7px] rounded-full bg-acid" aria-hidden="true"></span>
+      live
+    </span>
+    <span class="mono hidden max-w-[190px] shrink-0 truncate text-xs text-bone lg:inline">{running.target}</span>
+    <span class="mono hidden shrink-0 text-[10px] tracking-[0.06em] text-ash xl:inline">{stageName} · {elapsed}</span>
+  {:else}
+    <span
+      class="chip ml-1 hidden shrink-0 sm:inline-flex"
+      style="color:{statusColor(status)}"
+      role="status"
+      aria-live="polite"
+    >
+      <svg viewBox="0 0 8 8" class="h-[7px] w-[7px] fill-current" aria-hidden="true">
+        <circle cx="4" cy="4" r="3.4" />
+      </svg>
+      {status ? statusLabel(status) : 'idle'}
+    </span>
+  {/if}
+
+  <span class="ml-auto hidden shrink-0 items-center gap-1.5 md:flex" title="control-plane freshness">
+    <span class="sync-dot" class:live={scanActive} class:error={store.syncState === 'error'} aria-hidden="true"></span>
+    <span class="mono text-[10px] tracking-[0.1em]" style="color:{store.syncState === 'error' ? 'var(--nc-violet)' : 'var(--nc-ash)'}">
+      {syncLabel}
+    </span>
   </span>
 
-  <form class="ml-auto flex shrink-0 items-center gap-2" onsubmit={submit} role="search">
+  <form class="flex shrink-0 items-center gap-2 md:ml-0 ml-auto" onsubmit={submit} role="search">
     <span class="relative inline-flex">
       <input
-        class="field w-[clamp(96px,26vw,260px)]! py-1.5! text-sm!"
+        class="field w-[clamp(108px,30vw,260px)]! py-1.5! text-sm!"
         type="search"
         placeholder="search findings"
         aria-label="search findings"

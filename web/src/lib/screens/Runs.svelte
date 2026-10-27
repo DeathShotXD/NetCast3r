@@ -144,6 +144,7 @@
                     <button
                       class="btn btn-quiet btn-danger px-2! py-1! text-xs"
                       type="button"
+                      disabled={run.status === 'running' || run.status === 'queued'}
                       onclick={() => (pendingDelete = run.id)}
                     >
                       delete
@@ -162,7 +163,7 @@
 {#if pendingDelete}
   <Confirm
     title="Delete this run?"
-    body="Run {pendingDelete.slice(-6)} and every event recorded for it are removed from the index. The report files already written to your results folder are kept."
+    body="Run {pendingDelete.slice(-6)}, its findings, and its events are removed from the index. The run's evidence files in the results folder are deleted too, unless another run still uses them."
     confirmLabel="delete run"
     danger
     onConfirm={() => remove(pendingDelete!)}

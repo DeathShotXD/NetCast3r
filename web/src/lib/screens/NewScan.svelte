@@ -215,7 +215,7 @@
                 type="number"
                 min="25"
                 max="2000"
-                placeholder="default 100"
+                placeholder="auto"
                 bind:value={maxPages}
               />
             </div>

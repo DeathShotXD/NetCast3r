@@ -27,8 +27,10 @@ class _StubSession:
 class _PageSession:
     def __init__(self, pages):
         self.pages = pages
+        self.requested = []
 
     def get(self, url, **kwargs):
+        self.requested.append(url)
         if url in self.pages:
             return _Response(self.pages[url])
         return None
@@ -134,6 +136,43 @@ class FetchTests(unittest.TestCase):
         recon = Recon(scope, default_config(), session=session)
         result = recon.crawl(["https://app.example.com/"], should_stop=lambda: True)
         self.assertEqual(result.pages, [])
+
+    def test_default_max_pages_keeps_the_auto_floor(self):
+        scope = ScopeManager(in_scope=["*.example.com"])
+        config = default_config()
+        config.run.max_pages = 0
+        config.run.concurrency = 4
+        recon = Recon(scope, config, session=_PageSession({}))
+        self.assertEqual(recon.max_pages, 100)
+
+    def test_explicit_max_pages_is_a_hard_cap(self):
+        scope = ScopeManager(in_scope=["*.example.com"])
+        config = default_config()
+        config.run.max_pages = 1
+        pages = {
+            "https://app.example.com/": "<a href='/a'>a</a><a href='/b'>b</a>",
+            "https://app.example.com/a": "<p>a</p>",
+            "https://app.example.com/b": "<p>b</p>",
+        }
+        session = _PageSession(pages)
+        recon = Recon(scope, config, session=session)
+        result = recon.crawl(["https://app.example.com/"])
+        self.assertEqual(session.requested, ["https://app.example.com/"])
+        self.assertEqual(result.pages, ["https://app.example.com/"])
+
+    def test_zero_depth_fetches_only_the_seed(self):
+        scope = ScopeManager(in_scope=["*.example.com"])
+        config = default_config()
+        config.run.depth = 0
+        pages = {
+            "https://app.example.com/": "<a href='/child'>child</a>",
+            "https://app.example.com/child": "<p>child</p>",
+        }
+        session = _PageSession(pages)
+        recon = Recon(scope, config, session=session)
+        result = recon.crawl(["https://app.example.com/"])
+        self.assertEqual(session.requested, ["https://app.example.com/"])
+        self.assertEqual(result.pages, ["https://app.example.com/"])
 
     def test_non_http_links_are_ignored(self):
         scope = ScopeManager(in_scope=["*.example.com"])
