@@ -60,6 +60,23 @@ def _atomic_json(path: Path, payload: dict) -> None:
             pass
 
 
+def write_private_json(path: str | Path, payload: dict) -> Path:
+    """Atomically write a 0600 JSON file for local credential material."""
+    target = Path(path).expanduser()
+    target.parent.mkdir(parents=True, exist_ok=True)
+    _atomic_json(target, payload)
+    return target
+
+
+def read_private_json(path: str | Path) -> dict | None:
+    """Read a local JSON file, returning None when it is missing or corrupt."""
+    try:
+        data = json.loads(Path(path).expanduser().read_text("utf-8"))
+    except (OSError, ValueError):
+        return None
+    return data if isinstance(data, dict) else None
+
+
 def write_control_plane(base: str | Path | None, payload: dict) -> Path:
     path = control_plane_path(base)
     _atomic_json(path, payload)
