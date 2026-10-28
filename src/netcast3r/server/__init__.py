@@ -985,6 +985,22 @@ def _version() -> str:
         return "0.0.0"
 
 
+def _restore_session_token(server: Server) -> bool:
+    """Keep a live MCP client connected across a clean UI restart.
+
+    The token is already stored in a 0600 state file. Reusing it is safer than
+    minting a new one and silently breaking every connected agent; a state
+    file owned by a still-running process is never reused.
+    """
+    previous = control.read_control_plane(server.base)
+    if not previous or not previous.get("token"):
+        return False
+    if control.pid_alive(int(previous.get("pid") or 0)):
+        return False
+    server.token = str(previous["token"])
+    return True
+
+
 def _utc() -> str:
     import time
     return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
@@ -1084,6 +1100,7 @@ def serve(host: str = "127.0.0.1", port: int = 7857, *, open_browser: bool = Tru
           results_dir: str | Path = "results", base: Path | None = None,
           runner=None, config=None, auth_required: bool = True) -> Server:
     server = build_server(results_dir=results_dir, base=base, runner=runner, config=config)
+    _restore_session_token(server)
     server.auth_required = auth_required
     httpd = ThreadingHTTPServer((host, port), _Handler)
     httpd.app = server  # type: ignore[attr-defined]

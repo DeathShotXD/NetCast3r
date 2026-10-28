@@ -80,6 +80,10 @@ Discovery is deliberately simple and local:
 Auto mode never trusts a stale file. It probes `/api/v1/healthz` with the
 published token. If that fails, it starts embedded and says so on stderr.
 
+A clean UI restart reuses the token from the state file, so a connected MCP
+client keeps working. If a token still changes (a crash or a fresh base), the
+API transport re-reads the state file once on `401` and retries the call.
+
 **Caveat:** live SSE is per-process. A run started in embedded mode is visible
 in the shared database to the UI, but its live event stream belongs to the MCP
 process. Start the UI first for the full dashboard experience.

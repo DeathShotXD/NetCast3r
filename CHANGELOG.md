@@ -98,6 +98,9 @@ Notable changes to NetCast3r, newest first.
   OpenCode `mcp.servers` block. See `docs/MCP.md`. The UI publishes its
   endpoint and token in a `0600` state file, and the MCP process publishes a
   heartbeat the dashboard can read. No bounty result is claimed by this.
+- A UI restart keeps connected MCP clients alive: `netcast3r ui` reuses the
+  token from its `0600` control-plane state file when the previous owner is
+  gone, and the API transport re-reads the file once on `401` and retries.
 - A providers panel on the home screen backed by `GET /api/v1/providers/health`:
   each provider shows its model count, whether a key is set, when it was last
   checked, and a one-click reachability test.

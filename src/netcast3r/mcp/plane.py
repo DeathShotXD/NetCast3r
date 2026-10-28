@@ -57,7 +57,8 @@ def _query_value(value) -> str:
 class ApiPlane:
     kind = "api"
 
-    def __init__(self, url: str, token: str = "", timeout: float = 30.0):
+    def __init__(self, url: str, token: str = "", timeout: float = 30.0,
+                 base: Path | None = None):
         url = url.rstrip("/")
         if not _allowed_url(url):
             raise PlaneError(
@@ -67,10 +68,25 @@ class ApiPlane:
             )
         self.url = url
         self.token = token
+        self.base = base
         self._client = httpx.Client(
             base_url=url, timeout=timeout, trust_env=False,
             headers={"x-netcast3r-token": token, "accept": "application/json"},
         )
+
+    def _refresh_token(self) -> bool:
+        """Pick up a new token after the UI restarts on the same URL."""
+        state = control.read_control_plane(self.base)
+        if not state or not state.get("token"):
+            return False
+        if str(state.get("url") or "").rstrip("/") != self.url:
+            return False
+        token = str(state["token"])
+        if token == self.token:
+            return False
+        self.token = token
+        self._client.headers["x-netcast3r-token"] = token
+        return True
 
     def request(self, method: str, path: str, query: dict | None = None, body=None):
         params = {key: _query_value(value) for key, value in (query or {}).items()
@@ -80,6 +96,8 @@ class ApiPlane:
             kwargs["json"] = body
         try:
             response = self._client.request(method, path, **kwargs)
+            if response.status_code == 401 and self._refresh_token():
+                response = self._client.request(method, path, **kwargs)
         except httpx.HTTPError as exc:
             raise PlaneError(f"control plane unreachable: {type(exc).__name__}", 0, str(exc))
         content_type = response.headers.get("content-type", "")
@@ -185,7 +203,7 @@ def build_plane(backend: str = "auto", base: Path | None = None,
         if found:
             url, resolved = found
             if _probe(url, resolved):
-                return ApiPlane(url, resolved)
+                return ApiPlane(url, resolved, base=base)
             if backend == "api":
                 raise PlaneError(f"control plane did not answer at {url}")
             _note(f"no control plane at {url}; starting an embedded one")

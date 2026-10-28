@@ -24,7 +24,15 @@ from netcast3r.server.events import Event
 
 
 def fake_runner(run_id, target, options, emit, should_stop):
+    from netcast3r.store import Store
+
     emit(Event(type="log", agent="recon", payload={"text": "crawling"}))
+    out = Path(str(options.get("results_dir") or "results")) / run_id
+    out.mkdir(parents=True, exist_ok=True)
+    (out / "report.md").write_text("# NetCast3r test report\n\n- target: " + target + "\n")
+    store = Store(out / "netcast3r.db")
+    store.add_endpoint("https://example.com/api/v1", "js")
+    store.close()
     return {
         "target": target, "pages": 2, "js_files": 1, "endpoints": 3,
         "candidates": 1, "verified": 0, "findings": 0,
@@ -165,6 +173,13 @@ class MCPIntegrationTests(unittest.TestCase):
         summary = self.call("findings_summary", run_id=run["id"])[0]
         self.assertEqual(summary["summary"]["triage"]["in_progress"], 1)
 
+        report = self.call("runs_report", run_id=run["id"])[0]
+        self.assertIn("# NetCast3r test report", report["report"])
+        inventory = self.call("runs_inventory", run_id=run["id"],
+                              kind="endpoints")[0]
+        self.assertEqual(inventory["total"], 1)
+        self.assertEqual(inventory["items"][0]["url"], "https://example.com/api/v1")
+
     def test_delete_requires_approved_bound_approval_and_is_single_use(self):
         mission = self.create_mission()
         run = self.call("mission_start_run", mission_id=mission["id"])[0]["run"]
@@ -233,6 +248,57 @@ class MCPIntegrationTests(unittest.TestCase):
             "missions_delete", {"mission_id": mission["id"], "confirm": True}, actor="test")
         self.assertFalse(is_error, payload)
 
+    def test_full_policy_can_decide_an_approval_with_confirmation(self):
+        ctx = ToolContext(plane=self.plane, policy="full", base=self.tmp)
+        registry = ToolRegistry(ctx)
+        mission = self.create_mission()
+        approval = registry.call("approval_request", {
+            "mission_id": mission["id"], "action": "Delete the mission", "risk": "high",
+            "tool": "missions_delete", "arguments": {"mission_id": mission["id"]},
+        }, actor="test")[0]
+        payload, is_error = registry.call(
+            "approval_decide", {"approval_id": approval["id"], "decision": "approved"},
+            actor="test")
+        self.assertTrue(is_error)
+        self.assertEqual(payload["error"]["code"], "confirm_required")
+        payload, is_error = registry.call(
+            "approval_decide", {"approval_id": approval["id"], "decision": "approved",
+                                "confirm": True}, actor="test")
+        self.assertFalse(is_error, payload)
+        self.assertEqual(payload["status"], "approved")
+
+    def test_http_probe_reaches_an_in_scope_local_server(self):
+        import threading
+        from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+        class Handler(BaseHTTPRequestHandler):
+            def do_GET(self):
+                body = b"probe-ok"
+                self.send_response(200)
+                self.send_header("Content-Type", "text/plain")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+
+            def log_message(self, *args):
+                pass
+
+        httpd = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        thread = threading.Thread(target=httpd.serve_forever, daemon=True)
+        thread.start()
+        try:
+            mission = self.create_mission(target=f"http://127.0.0.1:{httpd.server_port}/")
+            payload, is_error = self.call(
+                "http_probe", target=f"http://127.0.0.1:{httpd.server_port}/",
+                mission_id=mission["id"])
+            self.assertFalse(is_error, payload)
+            self.assertEqual(payload["status"], 200)
+            self.assertEqual(payload["body"], "probe-ok")
+        finally:
+            httpd.shutdown()
+            httpd.server_close()
+
+
     # -- protocol ----------------------------------------------------------
     def test_protocol_initialize_tools_resources_and_prompts(self):
         server = MCPServer(plane=self.plane, policy=DEFAULT_POLICY, base=self.tmp)
@@ -264,6 +330,27 @@ class MCPIntegrationTests(unittest.TestCase):
         prompts = server.handle({"jsonrpc": "2.0", "id": 5,
                                  "method": "prompts/list"})["result"]
         self.assertEqual(len(prompts["prompts"]), 4)
+
+        prompt_args = {
+            "recon-mission": {"mission_id": "msn_test"},
+            "triage-findings": {"mission_id": "msn_test"},
+            "write-report": {"run_id": "run_test"},
+            "review-approval": {"approval_id": "apr_test"},
+        }
+        for index, name in enumerate(prompt_args, start=20):
+            got = server.handle({"jsonrpc": "2.0", "id": index, "method": "prompts/get",
+                                 "params": {"name": name,
+                                            "arguments": prompt_args[name]}})["result"]
+            self.assertEqual(got["messages"][0]["role"], "user")
+            self.assertTrue(got["messages"][0]["content"]["text"])
+
+        for index, uri in enumerate((
+                "netcast3r://status", "netcast3r://missions", "netcast3r://runs",
+                "netcast3r://findings", "netcast3r://approvals",
+                "netcast3r://tool-calls", "netcast3r://policy"), start=30):
+            got = server.handle({"jsonrpc": "2.0", "id": index, "method": "resources/read",
+                                 "params": {"uri": uri}})["result"]
+            self.assertTrue(got["contents"][0]["text"])
 
         notifications = server.handle({
             "jsonrpc": "2.0", "method": "notifications/initialized", "params": {}})
@@ -329,6 +416,26 @@ class MCPIntegrationTests(unittest.TestCase):
         self.assertEqual(server["type"], "local")
         self.assertIn("mcp", server["command"])
         self.assertEqual(server["environment"]["NETCAST3R_MCP_POLICY"], "supervised")
+        self.assertNotIn("enabled", server)
+
+    def test_ui_restart_reuses_token_and_api_plane_refreshes(self):
+        from netcast3r import control
+        from netcast3r.mcp.plane import ApiPlane
+        from netcast3r.server import _restore_session_token
+
+        url = "http://127.0.0.1:7857"
+        control.write_control_plane(self.tmp, {"pid": 999999, "url": url,
+                                               "token": "old-token"})
+        self.plane.server.token = "new-token"
+        self.assertTrue(_restore_session_token(self.plane.server))
+        self.assertEqual(self.plane.server.token, "old-token")
+
+        plane = ApiPlane(url, "new-token", base=self.tmp)
+        control.write_control_plane(self.tmp, {"pid": 1, "url": url, "token": "fresh-token"})
+        self.assertTrue(plane._refresh_token())
+        self.assertEqual(plane.token, "fresh-token")
+        plane.close()
+
 
 
 
