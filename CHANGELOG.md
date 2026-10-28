@@ -88,6 +88,11 @@ Notable changes to NetCast3r, newest first.
 
 ### Added
 
+- An Agent Studio screen that renders the live MCP control surface instead of a
+  static diagram: the heartbeat and attached client, the active policy, all 29
+  typed tools with their JSON schemas and exact risk gate, the pending approval
+  queue with decisions, and a filterable, expandable tool-call audit. Idle is
+  labelled as idle; only a live heartbeat is called connected.
 - An MCP control plane: `netcast3r mcp` serves 29 typed tools over local stdio,
   auto-discovers a running UI (or falls back to an embedded workspace), and
   exposes missions, scoped scans, runs, events, evidence slices, findings,

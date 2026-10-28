@@ -12,6 +12,7 @@
     { id: 'live', label: 'Live runs', glyph: '[*]', hint: 'watch a scan, inspect everything it found' },
     { id: 'findings', label: 'Findings', glyph: '*', hint: 'triage what came back' },
     { id: 'runs', label: 'Runs', glyph: '//', hint: 'history, rerun, delete' },
+    { id: 'agent', label: 'Agent Studio', glyph: '::', hint: 'MCP tools, policy, audit' },
     { id: 'keys', label: 'Providers', glyph: '^', hint: 'keys, models, health' },
     { id: 'help', label: 'Help', glyph: '?', hint: 'what every state means' }
   ];

@@ -3,6 +3,7 @@
   import { store } from './lib/state.svelte';
   import CommandBar from './lib/shell/CommandBar.svelte';
   import Rail from './lib/shell/Rail.svelte';
+  import AgentStudio from './lib/screens/AgentStudio.svelte';
   import Findings from './lib/screens/Findings.svelte';
   import Help from './lib/screens/Help.svelte';
   import Home from './lib/screens/Home.svelte';
@@ -90,6 +91,8 @@
             <Findings />
           {:else if store.screen === 'runs'}
             <Runs />
+          {:else if store.screen === 'agent'}
+            <AgentStudio />
           {:else if store.screen === 'keys'}
             <Keys />
           {:else if store.screen === 'help'}

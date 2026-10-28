@@ -157,6 +157,7 @@ export type Screen =
   | 'live'
   | 'findings'
   | 'runs'
+  | 'agent'
   | 'keys'
   | 'help';
 
@@ -164,6 +165,92 @@ export interface Inventory {
   kind: string;
   items: Record<string, any>[];
   total: number;
+}
+
+export type ToolRisk = 'low' | 'medium' | 'high';
+
+export type ToolCallStatus =
+  | 'ok'
+  | 'error'
+  | 'denied'
+  | 'approval_required'
+  | 'confirm_required';
+
+export interface McpTool {
+  name: string;
+  title: string;
+  description: string;
+  risk: ToolRisk;
+  category: string;
+  read_only: boolean;
+  destructive: boolean;
+  open_world: boolean;
+  operator_only: boolean;
+  input_schema: {
+    type: string;
+    properties?: Record<string, Record<string, unknown>>;
+    required?: string[];
+    additionalProperties?: boolean;
+  };
+}
+
+export interface McpServerState {
+  schema?: number;
+  pid?: number;
+  transport?: string;
+  policy?: 'readonly' | 'supervised' | 'full';
+  backend?: string;
+  plane_url?: string;
+  started_at?: string;
+  last_call_at?: string;
+  calls?: number;
+  tools?: number;
+  protocol_version?: string;
+  client?: { name?: string; version?: string };
+  initialized?: boolean;
+  version?: string;
+  base?: string;
+  path?: string;
+  alive?: boolean;
+}
+
+export interface ControlPlaneInfo {
+  schema?: number;
+  pid?: number;
+  host?: string;
+  port?: number;
+  url?: string;
+  base?: string;
+  results_dir?: string;
+  started_at?: string;
+  version?: string;
+  path?: string;
+  alive?: boolean;
+}
+
+export interface McpInfo {
+  server: McpServerState | null;
+  connected: boolean;
+  control_plane: ControlPlaneInfo | null;
+  state_file: string;
+  tools: McpTool[];
+  registry_error: string;
+}
+
+export interface ToolCall {
+  id: string;
+  tool: string;
+  risk: ToolRisk;
+  status: ToolCallStatus;
+  actor: string;
+  mission_id: string;
+  run_id: string;
+  approval_id: string;
+  args: Record<string, unknown>;
+  result: unknown;
+  error: string;
+  duration_ms: number;
+  created_at: string;
 }
 
 export interface Toast {

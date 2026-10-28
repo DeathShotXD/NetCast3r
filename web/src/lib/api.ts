@@ -1,4 +1,4 @@
-import type { Approval, Finding, Inventory, KeyEntry, Meta, Mission, Paged, Provider, ProviderHealth, Run, RunEvent, Totals } from './types';
+import type { Approval, Finding, Inventory, KeyEntry, McpInfo, Meta, Mission, Paged, Provider, ProviderHealth, Run, RunEvent, ToolCall, Totals } from './types';
 
 const BASE = '/api/v1';
 
@@ -110,6 +110,9 @@ export const api = {
   settings: () => request<{ items: Record<string, unknown> }>('GET', '/settings'),
   patchSettings: (patch: Record<string, unknown>) =>
     request<{ items: Record<string, unknown> }>('PATCH', '/settings', patch),
+  mcpInfo: () => request<McpInfo>('GET', '/mcp'),
+  toolCalls: (q = '') => request<Paged<ToolCall>>('GET', `/tool-calls${q}`),
+  toolCall: (id: string) => request<ToolCall>('GET', `/tool-calls/${id}`),
   eventsUrl: (runId?: string) =>
     runId ? `${BASE}/runs/${runId}/events/stream` : `${BASE}/events/stream`
 };
