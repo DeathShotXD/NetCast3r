@@ -38,6 +38,7 @@
     findings: 'Findings',
     governance: 'Governance',
     providers: 'Providers',
+    reports: 'Reports',
     scope: 'Scope'
   };
 
