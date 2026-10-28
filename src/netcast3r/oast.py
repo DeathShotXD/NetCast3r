@@ -154,6 +154,8 @@ class OastClient:
             raise OastError("callback service returned an unreadable response") from exc
         token = str((payload or {}).get("uuid") or (payload or {}).get("token") or "")
         url = str((payload or {}).get("url") or "")
+        if token and not url:
+            url = f"{self.base_url}/{token}"
         if not token or not url:
             raise OastError("callback service did not return a token and url")
         session = OastSession(

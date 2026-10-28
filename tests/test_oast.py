@@ -28,8 +28,8 @@ class OastTests(unittest.TestCase):
 
     def handler(self, request: httpx.Request) -> httpx.Response:
         if request.method == "POST" and request.url.path == "/token":
-            return httpx.Response(200, json={
-                "uuid": "tok-1", "url": "https://webhook.site/tok-1"})
+            return httpx.Response(201, json={
+                "uuid": "tok-1", "redirect": True})
         if request.method == "GET" and request.url.path == "/token/tok-1/requests":
             self.requests += 1
             return httpx.Response(200, json={"data": [{
