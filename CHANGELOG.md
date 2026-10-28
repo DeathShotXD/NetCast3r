@@ -88,6 +88,16 @@ Notable changes to NetCast3r, newest first.
 
 ### Added
 
+- An MCP control plane: `netcast3r mcp` serves 29 typed tools over local stdio,
+  auto-discovers a running UI (or falls back to an embedded workspace), and
+  exposes missions, scoped scans, runs, events, evidence slices, findings,
+  triage, approvals, providers, scope checks, and bounded HTTP probes. Three
+  policies (`readonly`, `supervised`, `full`), scope enforcement, single-use
+  argument-bound approvals, per-bucket rate limits, resources, prompts, and a
+  complete `tool_calls` audit table are included. `--print-config` emits an
+  OpenCode `mcp.servers` block. See `docs/MCP.md`. The UI publishes its
+  endpoint and token in a `0600` state file, and the MCP process publishes a
+  heartbeat the dashboard can read. No bounty result is claimed by this.
 - A providers panel on the home screen backed by `GET /api/v1/providers/health`:
   each provider shows its model count, whether a key is set, when it was last
   checked, and a one-click reachability test.

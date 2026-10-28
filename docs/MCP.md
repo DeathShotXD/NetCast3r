@@ -1,0 +1,295 @@
+# MCP Control Plane
+
+NetCast3r exposes its real workspace to any MCP client: OpenCode, Claude Code,
+Codex, or an agent runtime you write yourself. The MCP server is a local stdio
+process that drives the same HTTP API the Svelte UI uses. A scan started by an
+agent appears in the dashboard. A human decision in the dashboard is visible to
+the agent. There is one database and one audit trail.
+
+Status: implemented and tested · 2026-10-29 · MCP protocol `2025-06-18`
+
+---
+
+## 1. Run it
+
+Start the UI/control plane first so both processes share one workspace:
+
+```sh
+netcast3r ui --no-open --port 7857
+```
+
+Then check the MCP transport from another terminal:
+
+```sh
+netcast3r mcp --print-config
+```
+
+That prints a ready-to-paste OpenCode block:
+
+```jsonc
+{
+  "mcp": {
+    "servers": {
+      "netcast3r": {
+        "type": "local",
+        "command": [
+          "/path/to/.venv/bin/python",
+          "-m", "netcast3r.cli", "mcp",
+          "--policy", "supervised",
+          "--backend", "auto",
+          "--out", "/path/to/NetCast3r/results"
+        ],
+        "cwd": "/path/to/NetCast3r",
+        "environment": {
+          "NETCAST3R_RESULTS": "/path/to/NetCast3r/results",
+          "NETCAST3R_MCP_POLICY": "supervised"
+        }
+      }
+    }
+  }
+}
+```
+
+V2 uses `disabled: true` to keep a configured server disconnected; there is no
+`enabled` field. The generated block omits both.
+
+Verify the handshake:
+
+```sh
+opencode mcp list
+```
+
+MCP tool names are namespaced by OpenCode (for example
+`netcast3r_status`). The server itself exposes the unqualified names.
+
+### Backends
+
+| Backend | When it is used | What it means |
+| --- | --- | --- |
+| `api` | A running UI/control plane is discovered | One shared workspace, live SSE in the dashboard, all writes go through the UI process |
+| `embedded` | No UI is running, or `--backend embedded` | The MCP process opens the same SQLite index and runs scans in-process |
+| `auto` (default) | Always | Probe the discovered UI; use it if healthy, otherwise embedded |
+
+Discovery is deliberately simple and local:
+
+1. `--api-url` / `--token` flags;
+2. `NETCAST3R_API_URL` / `NETCAST3R_API_TOKEN`;
+3. `~/.netcast3r/control-plane.json`, written by `netcast3r ui` with mode `0600`
+   and removed on clean shutdown.
+
+Auto mode never trusts a stale file. It probes `/api/v1/healthz` with the
+published token. If that fails, it starts embedded and says so on stderr.
+
+**Caveat:** live SSE is per-process. A run started in embedded mode is visible
+in the shared database to the UI, but its live event stream belongs to the MCP
+process. Start the UI first for the full dashboard experience.
+
+---
+
+## 2. The risk model
+
+Three policies, selected by `--policy` or `NETCAST3R_MCP_POLICY`:
+
+| Policy | Low | Medium | High (delete, decide) |
+| --- | --- | --- | --- |
+| `readonly` | allowed | denied | denied |
+| `supervised` (default) | allowed | allowed | requires an approved `approval_id` |
+| `full` | allowed | allowed | requires `confirm: true` |
+
+Critical actions are not registered. Approval decisions are operator-only in
+`supervised`; the agent cannot approve its own escalation. `full` is for an
+operator who explicitly trusts the client process.
+
+### Scope is an authorization, not a suggestion
+
+Active tools (`scan_start`, `mission_start_run`, `http_probe`) require either a
+`mission_id` or an explicit `scope` list. A bare target is refused. The target
+must match the scope, and exclusions (`!host`, or a mission scope entry starting
+with `!`) win. Mission targets are automatically part of their own scope.
+
+`http_probe` additionally refuses cloud metadata hosts and link-local addresses
+even when a scope rule names them. It supports `GET` and `HEAD` only, sends no
+custom headers, does not follow redirects, and caps the body at 256 KiB.
+
+### Approvals are single-use capabilities
+
+`approval_request` stores the requesting actor, risk, reason, tool name, and a
+SHA-256 digest of the exact arguments (excluding `approval_id` and `confirm`).
+A human approves in the UI or through the API. The high-risk tool then:
+
+1. verifies the approval is `approved` and unused;
+2. verifies the mission and tool name;
+3. recomputes the argument digest;
+4. spends the approval (`used_at`) before executing.
+
+An approval granted for one run cannot delete another. A replayed approval
+fails. The audit row keeps the approval id.
+
+### Rate limits
+
+Per MCP process, sliding windows:
+
+| Bucket | Limit |
+| --- | --- |
+| default reads | 180 / minute |
+| mutations | 40 / minute |
+| scans | 6 / hour |
+| probes | 60 / minute |
+
+Denied calls are audited with status `denied`.
+
+---
+
+## 3. Tools
+
+29 tools, grouped by job. Every tool publishes a JSON schema with
+`additionalProperties: false`; unknown arguments are rejected rather than
+silently ignored.
+
+### Workspace
+
+| Tool | Risk | Purpose |
+| --- | --- | --- |
+| `status` | low | Version, policy, counters, active runs |
+| `tool_calls_list` | low | Read the audit trail |
+
+### Missions
+
+| Tool | Risk | Purpose |
+| --- | --- | --- |
+| `missions_list` / `missions_get` | low | Read the portfolio |
+| `missions_create` | medium | Create a scoped mission |
+| `missions_update` | medium | Change fields or status |
+| `missions_attach_run` | medium | Link an existing run |
+| `mission_start_run` | medium | Start a scoped scan and link it |
+| `missions_delete` | high | Delete mission, links, approvals |
+
+### Runs and scans
+
+| Tool | Risk | Purpose |
+| --- | --- | --- |
+| `runs_list` / `runs_get` / `runs_events` | low | Read runs and persisted events |
+| `runs_report` / `runs_inventory` | low | Read the Markdown report and evidence slices |
+| `scan_start` | medium | Scoped ad-hoc scan |
+| `runs_stop` | medium | Cooperative stop |
+| `runs_resume` | medium | Resume from a checkpoint |
+| `runs_delete` | high | Delete run, findings, events, safe output |
+
+### Findings
+
+| Tool | Risk | Purpose |
+| --- | --- | --- |
+| `findings_list` / `findings_get` / `findings_summary` | low | Read findings and counts |
+| `finding_triage` | medium | Status, notes, tags, severity override |
+
+Values are masked at the index boundary. Tools cannot reconstruct a secret.
+
+### Governance
+
+| Tool | Risk | Purpose |
+| --- | --- | --- |
+| `approvals_list` | low | Pending and decided requests |
+| `approval_request` | medium | Ask for a bound high-risk approval |
+| `approval_decide` | high | Operator decision (denied in supervised) |
+
+### Providers and scope
+
+| Tool | Risk | Purpose |
+| --- | --- | --- |
+| `providers_list` | low | Health and model list, never keys |
+| `provider_test` | medium | One real provider completion |
+| `scope_check` | low | Classify a target without traffic |
+| `http_probe` | medium | One scoped GET/HEAD, bounded |
+
+---
+
+## 4. Resources and prompts
+
+Resources (read-only, JSON):
+
+- `netcast3r://status`
+- `netcast3r://missions`
+- `netcast3r://runs`
+- `netcast3r://findings`
+- `netcast3r://approvals`
+- `netcast3r://tool-calls`
+- `netcast3r://policy` (the active policy, catalogue, and operating rules)
+
+Prompts:
+
+- `recon-mission` — scoped recon with evidence discipline.
+- `triage-findings` — cross-check validations before changing status.
+- `write-report` — draft only from a real run; stop if nothing is verified.
+- `review-approval` — summarize a high-risk action for a human.
+
+Prompts are instructions, not data. They tell the model which tools to call;
+they do not fabricate the result.
+
+---
+
+## 5. Audit and visibility
+
+Every tool call writes one row to `tool_calls`:
+
+```
+id, tool, risk, status, actor, mission_id, run_id, approval_id,
+args_json, result_json, error, duration_ms, created_at
+```
+
+Statuses: `ok`, `error`, `denied`, `approval_required`, `confirm_required`.
+Credential-shaped argument keys are redacted before storage; payloads are
+capped at 64 KiB with an explicit truncation marker.
+
+Read it through:
+
+- `GET /api/v1/tool-calls?tool=&status=&mission_id=&run_id=`
+- `GET /api/v1/tool-calls/{id}`
+- `GET /api/v1/mcp` — heartbeat, policy, backend, client, tool catalogue
+
+The MCP process writes `~/.netcast3r/mcp-state.json` on start and after each
+tool call. The UI can show whether an MCP client is alive without guessing.
+
+---
+
+## 6. Security boundary
+
+- The control plane refuses non-loopback `Host` headers and requires the
+  session token minted by the UI. The state file is `0600`.
+- `ApiPlane` refuses non-local URLs unless `NETCAST3R_MCP_ALLOW_REMOTE=1`.
+- Secret values stay masked in findings, search results, and audit rows.
+- No tool exposes key management, provider key values, arbitrary HTTP headers,
+  or arbitrary request bodies.
+- The registry fails closed: an unknown policy, unknown tool, unknown argument,
+  out-of-scope target, missing scope, or unspent approval is an error.
+- Embedded mode deliberately does **not** call `jobs.recover()`, so an MCP
+  process cannot mark a UI-run scan as interrupted.
+
+---
+
+## 7. Tests
+
+`tests/test_mcp.py` covers:
+
+- schema/catalogue consistency and 29 handlers;
+- readonly denial and audit status;
+- scope refusal, exclusion rules, and mission run linking;
+- metadata-address probe refusal;
+- real run execution through the embedded plane;
+- finding triage and summary;
+- single-use approvals, argument binding, and cross-mission refusal;
+- operator-only decisions in supervised mode;
+- full-policy confirmation;
+- MCP initialize, tools, resources, prompts, notifications, and errors;
+- newline and `Content-Length` framing;
+- stdio round-trip and heartbeat cleanup;
+- OpenCode config generation.
+
+Run:
+
+```sh
+NETCAST3R_NO_KEYRING=1 .venv/bin/python -m pytest tests/test_mcp.py -q
+```
+
+The release gate is unchanged: MCP makes the platform usable, it does not by
+itself produce a bounty. Real submissions and payouts must exist before a
+release is claimed.

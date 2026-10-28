@@ -33,11 +33,16 @@ the tested engine.
 instructions in [`../design/README.md`](../design/README.md). It is static and
 mock-driven; the blueprint below is the source of truth for production.
 
-**Implementation status (2026-10-28):** Command Center v1 runs on real
-runs/events/findings. The shell uses the Obsidian Signal system. Mission and
-Approval entities, their SQLite tables, APIs, and the Missions portfolio screen
-exist. The agent runtime, planner, policy engine, budget enforcement, and
-cost ledger are still proposed; no synthetic approvals or spend are shown.
+**Implementation status (2026-10-29):** Command Center v1 runs on real
+runs/events/findings. The shell uses the Obsidian Signal system. Mission,
+Approval, and ToolCall entities, their SQLite tables, APIs, and the Missions
+portfolio screen exist. The MCP control plane is implemented: a local stdio
+server, 29 typed tools, scope and approval gates, single-use approvals, rate
+limits, resources, prompts, and a complete tool-call audit. See
+[`MCP.md`](MCP.md). The planner, autonomous agent loop, budget enforcement,
+cost ledger, and submission ledger are still proposed; no synthetic approvals,
+spend, or bounty results are shown. The release gate (real bounty submissions)
+is not met.
 
 ---
 

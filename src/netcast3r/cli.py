@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import argparse
+import json
+import os
 import sys
 import time
 from pathlib import Path
@@ -223,6 +225,63 @@ def cmd_ui(args) -> int:
     return 0
 
 
+def _mcp_config(args) -> dict:
+    from .mcp.tools import DEFAULT_POLICY
+
+    repo = Path(__file__).resolve().parents[2]
+    results = Path(args.out or "results")
+    if not results.is_absolute():
+        results = (Path.cwd() / results).resolve()
+    policy = args.policy or os.environ.get("NETCAST3R_MCP_POLICY") or DEFAULT_POLICY
+    command = [sys.executable, "-m", "netcast3r.cli", "mcp",
+               "--policy", policy, "--backend", args.backend, "--out", str(results)]
+    if args.base:
+        command.extend(["--base", str(Path(args.base).expanduser())])
+    if args.api_url:
+        command.extend(["--api-url", args.api_url])
+    return {
+        "mcp": {
+            "servers": {
+                "netcast3r": {
+                    "type": "local",
+                    "command": command,
+                    "cwd": str(repo),
+                    "environment": {
+                        "NETCAST3R_RESULTS": str(results),
+                        "NETCAST3R_MCP_POLICY": policy,
+                    },
+                }
+            }
+        }
+    }
+
+
+def cmd_mcp(args) -> int:
+    from .mcp.plane import PlaneError, build_plane
+    from .mcp.server import run_stdio
+    from .mcp.tools import DEFAULT_POLICY, POLICIES
+
+    policy = args.policy or os.environ.get("NETCAST3R_MCP_POLICY") or DEFAULT_POLICY
+    if policy not in POLICIES:
+        print(f"netcast3r mcp: unknown policy: {policy}", file=sys.stderr)
+        return 2
+    if args.print_config:
+        print(json.dumps(_mcp_config(args), indent=2))
+        return 0
+    try:
+        plane = build_plane(backend=args.backend, base=Path(args.base).expanduser() if args.base else None,
+                            results_dir=str(Path(args.out or "results")),
+                            api_url=args.api_url or "", token=args.token or "")
+    except PlaneError as exc:
+        print(f"netcast3r mcp: {exc}", file=sys.stderr)
+        return 2
+    try:
+        run_stdio(plane, policy=policy, base=Path(args.base).expanduser() if args.base else None)
+    finally:
+        plane.close()
+    return 0
+
+
 def cmd_dashboard(args) -> int:
     out = Path(args.out or "results")
     if args.demo or not args.results:
@@ -307,6 +366,21 @@ def build_parser() -> argparse.ArgumentParser:
     ui_parser.add_argument("--no-open", action="store_true", help="do not open a browser")
     ui_parser.add_argument("--no-auth", action="store_true", help="disable the session token")
     ui_parser.set_defaults(func=cmd_ui)
+
+    mcp_parser = sub.add_parser("mcp", help="run the stdio MCP control plane")
+    mcp_parser.add_argument("--policy", choices=["readonly", "supervised", "full"],
+                            help="tool risk policy (default: supervised)")
+    mcp_parser.add_argument("--backend", choices=["auto", "api", "embedded"], default="auto",
+                            help="control plane transport (default: auto)")
+    mcp_parser.add_argument("--api-url", help="control plane URL (default: discover)")
+    mcp_parser.add_argument("--token", help="session token (default: discover)")
+    mcp_parser.add_argument("--base", help="state directory (default: ~/.netcast3r)")
+    mcp_parser.add_argument("--out", help="results directory for embedded scans")
+    mcp_parser.add_argument("--transport", choices=["stdio"], default="stdio",
+                            help="MCP transport (stdio only)")
+    mcp_parser.add_argument("--print-config", action="store_true",
+                            help="print an OpenCode mcp.servers block and exit")
+    mcp_parser.set_defaults(func=cmd_mcp)
 
     return parser
 

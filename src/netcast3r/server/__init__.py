@@ -10,6 +10,7 @@ from __future__ import annotations
 import base64
 import hashlib
 import json
+import os
 import re
 import secrets
 import shutil
@@ -25,6 +26,7 @@ from .events import EventBus
 from .index import Index
 from .jobs import JobManager
 from .keys import KeyStore, mask
+from .. import control
 
 API_VERSION = "v1"
 ALLOWED_HOSTS = {"127.0.0.1", "localhost", "::1", "[::1]"}
@@ -145,12 +147,13 @@ a{color:#9F23DD}
 class Server:
     def __init__(self, index: Index, bus: EventBus, jobs: JobManager, keys: KeyStore,
                  config=None, token: str = "", auth_required: bool = True,
-                 static_dir: Path | None = None):
+                 static_dir: Path | None = None, base: Path | None = None):
         self.index = index
         self.bus = bus
         self.jobs = jobs
         self.keys = keys
         self.config = config
+        self.base = Path(base) if base else None
         if self.config is None:
             # A bare server still needs an output root for runs it starts.
             from types import SimpleNamespace
@@ -245,7 +248,8 @@ class Server:
             return _json({"name": "netcast3r", "version": _version(), "api_version": API_VERSION,
                           "auth_required": self.auth_required,
                           "capabilities": ["runs", "findings", "events", "providers", "keys",
-                                           "settings", "triage", "missions", "approvals"]})
+                                           "settings", "triage", "missions", "approvals",
+                                           "tool_calls", "mcp"]})
 
         @add("GET", r"/api/v1/healthz")
         def healthz(ctx):
@@ -516,6 +520,78 @@ class Server:
             except ValueError as exc:
                 return _problem(409 if "already" in str(exc) else 400, str(exc))
             return _json(approval) if approval else _problem(404, "approval not found")
+
+        @add("GET", r"/api/v1/approvals/(?P<id>[A-Za-z0-9_]+)")
+        def get_approval(ctx):
+            approval = self.index.get_approval(ctx.params["id"])
+            return _json(approval) if approval else _problem(404, "approval not found")
+
+        @add("POST", r"/api/v1/approvals/(?P<id>[A-Za-z0-9_]+)/consume")
+        def consume_approval(ctx):
+            try:
+                approval = self.index.consume_approval(ctx.params["id"])
+            except ValueError as exc:
+                return _problem(409, str(exc))
+            return _json(approval) if approval else _problem(404, "approval not found")
+
+        @add("GET", r"/api/v1/tool-calls")
+        def list_tool_calls(ctx):
+            try:
+                items, total = self.index.list_tool_calls(
+                    tool=ctx.query.get("tool", ""), status=ctx.query.get("status", ""),
+                    mission_id=ctx.query.get("mission_id", ""),
+                    run_id=ctx.query.get("run_id", ""),
+                    limit=ctx.limit, offset=ctx.offset)
+            except ValueError as exc:
+                return _problem(400, str(exc))
+            return _json({"items": items, "total": total, "page": ctx.page, "size": ctx.limit})
+
+        @add("POST", r"/api/v1/tool-calls")
+        def create_tool_call(ctx):
+            body = ctx.json()
+            body = body if isinstance(body, dict) else {}
+            try:
+                call = self.index.add_tool_call(
+                    tool=str(body.get("tool", "")), risk=str(body.get("risk", "low")),
+                    status=str(body.get("status", "ok")), actor=str(body.get("actor", "")),
+                    mission_id=str(body.get("mission_id", "")),
+                    run_id=str(body.get("run_id", "")),
+                    approval_id=str(body.get("approval_id", "")),
+                    args=body.get("args") if isinstance(body.get("args"), dict) else {},
+                    result=body.get("result"), error=str(body.get("error", "")),
+                    duration_ms=_int_or(body.get("duration_ms"), 0))
+            except ValueError as exc:
+                return _problem(400, str(exc))
+            return _json(call, 201)
+
+        @add("GET", r"/api/v1/tool-calls/(?P<id>[A-Za-z0-9_]+)")
+        def get_tool_call(ctx):
+            call = self.index.get_tool_call(ctx.params["id"])
+            return _json(call) if call else _problem(404, "tool call not found")
+
+        @add("GET", r"/api/v1/mcp")
+        def mcp_info(ctx):
+            state = control.read_mcp_state(getattr(self, "base", None))
+            public = {key: value for key, value in (state or {}).items() if key != "token"}
+            if public:
+                public["alive"] = control.pid_alive(int(state.get("pid") or 0))
+            plane = control.public_control_plane(getattr(self, "base", None))
+            try:
+                from ..mcp.tools import catalog
+                tools = catalog()
+            except Exception as exc:  # noqa: BLE001 - informational endpoint
+                tools = []
+                registry_error = f"{type(exc).__name__}: {exc}"
+            else:
+                registry_error = ""
+            return _json({
+                "server": public or None,
+                "connected": bool(public and public.get("alive")),
+                "control_plane": plane,
+                "state_file": str(control.mcp_state_path(getattr(self, "base", None))),
+                "tools": tools,
+                "registry_error": registry_error,
+            })
 
         @add("GET", r"/api/v1/keys")
         def list_keys(ctx):
@@ -982,7 +1058,8 @@ class _Handler(BaseHTTPRequestHandler):
 
 
 def build_server(results_dir: str | Path = "results", base: Path | None = None,
-                 runner=None, config=None, workers: int = 2) -> Server:
+                 runner=None, config=None, workers: int = 2,
+                 recover: bool = True) -> Server:
     from types import SimpleNamespace
 
     from . import runner as runner_module
@@ -996,8 +1073,10 @@ def build_server(results_dir: str | Path = "results", base: Path | None = None,
     keys = KeyStore(base)
     runner_module.set_dashboard_bridge(DashboardBridge(index, keys))
     jobs = JobManager(index, bus, runner or run_scan, workers=workers)
-    server = Server(index, bus, jobs, keys, config=config, token=secrets.token_urlsafe(24))
-    jobs.recover()
+    server = Server(index, bus, jobs, keys, config=config, token=secrets.token_urlsafe(24),
+                    base=base)
+    if recover:
+        jobs.recover()
     return server
 
 
@@ -1011,6 +1090,18 @@ def serve(host: str = "127.0.0.1", port: int = 7857, *, open_browser: bool = Tru
     httpd.daemon_threads = True
     url = f"http://{host}:{httpd.server_address[1]}/?token={server.token}"
     print(f"NetCast3r API on {url}")
+    control.write_control_plane(server.base, {
+        "schema": 1,
+        "pid": os.getpid(),
+        "url": f"http://{host}:{httpd.server_address[1]}",
+        "host": host,
+        "port": httpd.server_address[1],
+        "token": server.token,
+        "base": str(server.base),
+        "results_dir": str(getattr(server.config, "results_dir", results_dir)),
+        "started_at": _utc(),
+        "version": _version(),
+    })
     server.started.set()
     if open_browser:
         try:
@@ -1025,4 +1116,5 @@ def serve(host: str = "127.0.0.1", port: int = 7857, *, open_browser: bool = Tru
         server.jobs.shutdown(wait=True)
         server.index.close()
         httpd.server_close()
+        control.remove_control_plane(server.base, pid=os.getpid())
     return server

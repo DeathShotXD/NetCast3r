@@ -127,10 +127,31 @@ CREATE TABLE IF NOT EXISTS approvals (
     payload_json TEXT DEFAULT '{}',
     nonce TEXT,
     created_at TEXT,
-    decided_at TEXT
+    decided_at TEXT,
+    used_at TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_approvals_status ON approvals(status, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_approvals_mission ON approvals(mission_id, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS tool_calls (
+    id TEXT PRIMARY KEY,
+    tool TEXT,
+    risk TEXT DEFAULT 'low',
+    status TEXT DEFAULT 'ok',
+    actor TEXT,
+    mission_id TEXT,
+    run_id TEXT,
+    approval_id TEXT,
+    args_json TEXT DEFAULT '{}',
+    result_json TEXT DEFAULT '{}',
+    error TEXT,
+    duration_ms INTEGER DEFAULT 0,
+    created_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_tool_calls_created ON tool_calls(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_tool_calls_tool ON tool_calls(tool, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_tool_calls_mission ON tool_calls(mission_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_tool_calls_status ON tool_calls(status, created_at DESC);
 """
 
 SEVERITY_ORDER = {"critical": 0, "high": 1, "medium": 2, "low": 3, "info": 4, "unknown": 5}
@@ -140,6 +161,7 @@ MISSION_STATUSES = {"draft", "active", "paused", "done", "archived"}
 AUTONOMY_LEVELS = {"manual", "supervised", "autonomous"}
 APPROVAL_RISKS = {"low", "medium", "high", "critical"}
 APPROVAL_DECISIONS = {"approved", "rejected"}
+TOOL_CALL_STATUSES = {"ok", "error", "denied", "approval_required", "confirm_required"}
 
 
 def _now() -> str:
@@ -180,6 +202,9 @@ class Index:
         ):
             if column not in have:
                 self.conn.execute(ddl)
+        approvals = {row["name"] for row in self.conn.execute("PRAGMA table_info(approvals)")}
+        if "used_at" not in approvals:
+            self.conn.execute("ALTER TABLE approvals ADD COLUMN used_at TEXT")
 
     def close(self) -> None:
         with self._lock:
@@ -475,11 +500,12 @@ class Index:
             pending_approvals = self.conn.execute(
                 "SELECT COUNT(*) FROM approvals WHERE status = 'pending'"
             ).fetchone()[0]
+            tool_calls = self.conn.execute("SELECT COUNT(*) FROM tool_calls").fetchone()[0]
         recent, _ = self.list_runs(limit=1)
         return {"runs": runs, "active_runs": active, "findings": findings,
                 "triage": triage, "severity": severity,
                 "missions": missions, "active_missions": active_missions,
-                "pending_approvals": pending_approvals,
+                "pending_approvals": pending_approvals, "tool_calls": tool_calls,
                 "last_run": recent[0] if recent else None}
 
     # -- missions ---------------------------------------------------------
@@ -716,10 +742,102 @@ class Index:
             self.conn.commit()
         return self.get_approval(approval_id)
 
+    def consume_approval(self, approval_id: str) -> dict | None:
+        """Mark an approved action as used, exactly once.
+
+        Approval is a capability, not a mood: a gate that can be replayed is
+        not a gate. The UI keeps showing the decision and when it was spent.
+        """
+        with self._lock:
+            row = self.conn.execute(
+                "SELECT status, used_at FROM approvals WHERE id = ?", (approval_id,)
+            ).fetchone()
+            if not row:
+                return None
+            if row["status"] != "approved":
+                raise ValueError("approval is not approved")
+            if row["used_at"]:
+                raise ValueError("approval already used")
+            self.conn.execute(
+                "UPDATE approvals SET used_at = ? WHERE id = ?", (_now(), approval_id)
+            )
+            self.conn.commit()
+        return self.get_approval(approval_id)
+
     @staticmethod
     def _approval_row(row: sqlite3.Row) -> dict:
         item = dict(row)
         item["payload"] = _loads(item.pop("payload_json"), {})
+        return item
+
+    # -- tool-call audit --------------------------------------------------
+    def add_tool_call(self, tool: str, risk: str = "low", status: str = "ok",
+                      actor: str = "", mission_id: str = "", run_id: str = "",
+                      approval_id: str = "", args: dict | None = None,
+                      result=None, error: str = "", duration_ms: int = 0) -> dict:
+        if status not in TOOL_CALL_STATUSES:
+            raise ValueError(f"unknown tool-call status: {status}")
+        call_id = _new_id("tcl")
+        args_json = json.dumps(args or {}, default=str)
+        result_json = json.dumps(result, default=str)
+        # An audit row is not a data warehouse. Keep pathological tool output
+        # bounded while preserving the fact that it was truncated.
+        if len(args_json) > 65536:
+            args_json = json.dumps({"_truncated": True, "preview": args_json[:65000]})
+        if len(result_json) > 65536:
+            result_json = json.dumps({"_truncated": True, "preview": result_json[:65000]})
+        with self._lock:
+            self.conn.execute(
+                "INSERT INTO tool_calls (id, tool, risk, status, actor, mission_id, run_id, "
+                "approval_id, args_json, result_json, error, duration_ms, created_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (call_id, tool, risk, status, actor, mission_id, run_id, approval_id,
+                 args_json, result_json, error, int(duration_ms), _now()),
+            )
+            self.conn.commit()
+        return self.get_tool_call(call_id) or {}
+
+    def list_tool_calls(self, tool: str = "", status: str = "", mission_id: str = "",
+                        run_id: str = "", limit: int = 50,
+                        offset: int = 0) -> tuple[list[dict], int]:
+        where, params = [], []
+        if tool:
+            where.append("tool = ?")
+            params.append(tool)
+        if status:
+            if status not in TOOL_CALL_STATUSES:
+                raise ValueError(f"unknown tool-call status: {status}")
+            where.append("status = ?")
+            params.append(status)
+        if mission_id:
+            where.append("mission_id = ?")
+            params.append(mission_id)
+        if run_id:
+            where.append("run_id = ?")
+            params.append(run_id)
+        clause = ("WHERE " + " AND ".join(where)) if where else ""
+        with self._lock:
+            total = self.conn.execute(
+                f"SELECT COUNT(*) FROM tool_calls {clause}", params
+            ).fetchone()[0]
+            rows = self.conn.execute(
+                f"SELECT * FROM tool_calls {clause} ORDER BY created_at DESC LIMIT ? OFFSET ?",
+                [*params, limit, offset],
+            ).fetchall()
+        return [self._tool_call_row(row) for row in rows], total
+
+    def get_tool_call(self, call_id: str) -> dict | None:
+        with self._lock:
+            row = self.conn.execute(
+                "SELECT * FROM tool_calls WHERE id = ?", (call_id,)
+            ).fetchone()
+        return self._tool_call_row(row) if row else None
+
+    @staticmethod
+    def _tool_call_row(row: sqlite3.Row) -> dict:
+        item = dict(row)
+        item["args"] = _loads(item.pop("args_json"), {})
+        item["result"] = _loads(item.pop("result_json"), None)
         return item
 
     # -- providers --------------------------------------------------------

@@ -196,6 +196,21 @@ to stay on the host you named.
 `--tier` selects the action tier, `--resume` reuses earlier validations, and
 `--fail` exits non-zero when findings exist.
 
+### Agent control (MCP)
+
+NetCast3r exposes its real workspace to OpenCode and any other MCP client:
+
+```bash
+netcast3r ui --no-open
+netcast3r mcp --print-config   # paste into opencode.jsonc under mcp.servers
+opencode mcp list
+```
+
+The server has 29 typed tools with risk tiers, scope enforcement, single-use
+approvals, rate limits, and a full tool-call audit. See
+[docs/MCP.md](docs/MCP.md). It is a real control surface, not an autonomous
+scanner: findings and bounty results still come from verified runs.
+
 ### Exit codes
 
 | Code | Meaning |
@@ -250,6 +265,7 @@ required before a candidate is marked corroborated.
 ## Docs
 
 - [Architecture](docs/architecture.md) - stages, scope, tiers, and the fallback path
+- [MCP control plane](docs/MCP.md) - tools, policies, approvals, and OpenCode setup
 - [Design](docs/DESIGN.md) - palette, type, and the validation ladder
 - [Contributing](CONTRIBUTING.md) - the ground rules for a pull request
 - [Security policy](SECURITY.md) - how to report a problem in NetCast3r
