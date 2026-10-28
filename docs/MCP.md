@@ -146,7 +146,7 @@ Denied calls are audited with status `denied`.
 
 ## 3. Tools
 
-35 tools, grouped by job. Every tool publishes a JSON schema with
+40 tools, grouped by job. Every tool publishes a JSON schema with
 `additionalProperties: false`; unknown arguments are rejected rather than
 silently ignored.
 
@@ -166,6 +166,9 @@ silently ignored.
 | `missions_update` | medium | Change fields or status |
 | `missions_attach_run` | medium | Link an existing run |
 | `mission_start_run` | medium | Start a scoped scan and link it |
+| `agent_status` | low | Read the runtime plan, tasks, budget, and model calls |
+| `agent_start` | medium | Plan and run the bounded mission agent |
+| `agent_pause` / `agent_resume` / `agent_stop` | low | Control a live run |
 | `missions_delete` | high | Delete mission, links, approvals |
 
 ### Runs and scans
@@ -218,6 +221,30 @@ never converted into a single invented number.
 | `provider_test` | medium | One real provider completion |
 | `scope_check` | low | Classify a target without traffic |
 | `http_probe` | medium | One scoped GET/HEAD, bounded |
+
+### Mission agent
+
+`agent_start` runs a bounded, deterministic plan on one mission:
+
+1. `scope_check` the mission target.
+2. One real `http_probe` (GET, bounded body).
+3. A read-only inventory of linked runs, related runs, and findings.
+4. Optional model analysis, stored as `unverified` and advisory only.
+5. An independent verifier that clears only evidence-backed tasks.
+
+The runtime calls the same typed tools through the same registry as an external
+client, with actor `agent:runtime`, so every step lands in `tool_calls` under
+the mission. It defaults to 8 tasks, 600 seconds, and 2 model calls, clamped to
+4–20 tasks, 30–7200 seconds, and 0–20 calls. `agent_pause` stops before the next
+task, `agent_resume` continues from the first unfinished one, and `agent_stop`
+marks pending tasks skipped. A database row whose worker died reads as
+`interrupted` instead of pretending to be live.
+
+The runtime cannot create a finding, change triage, widen scope, run a
+destructive tool, or spend an approval. Reachability is reported as
+reachability. Provider token counts are recorded; `cost_cents` stays empty
+unless a provider reports a price, so the mission's USD cap is a recorded
+ceiling, never an estimate.
 
 ---
 
@@ -289,7 +316,7 @@ tool call. The UI can show whether an MCP client is alive without guessing.
 
 `tests/test_mcp.py` covers:
 
-- schema/catalogue consistency and 35 handlers;
+- schema/catalogue consistency and 40 handlers;
 - readonly denial and audit status;
 - scope refusal, exclusion rules, and mission run linking;
 - metadata-address probe refusal;

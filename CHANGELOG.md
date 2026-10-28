@@ -88,17 +88,31 @@ Notable changes to NetCast3r, newest first.
 
 ### Added
 
+- A bounded mission agent runtime. `agent_start` plans five deterministic steps
+  (scope, probe, inventory, optional advisory analysis, verify), runs them
+  against a local mission with the same typed tools an external MCP client
+  uses, and keeps the task timeline, evidence, and verifier notes in SQLite.
+  Pause, resume, and stop are recorded in the same rows, an orphaned run reads
+  as `interrupted` instead of pretending a thread exists, and budgets cap
+  tasks, wall clock, and model calls. The separate verifier never treats
+  reachability as a finding and the runtime creates zero findings; it cannot
+  widen scope, change triage, or spend an approval. `agent_status`,
+  `agent_start`, `agent_pause`, `agent_resume`, and `agent_stop` expose it over
+  MCP, and the mission Agent tab shows live state, budget meters, the task
+  timeline, and model calls. Provider-reported tokens and prices are recorded;
+  a provider that reports no price leaves spend as "not reported" rather than
+  inventing a cost.
 - A submission ledger for reports actually filed: platform, program, severity,
   status, external report id, award, and paid time, with a Reports screen,
   REST routes, MCP tools, and a summary that groups money by currency. A row
   is written only by an operator or agent; the ledger never infers a
   submission from a finding and never estimates a bounty.
 - An Agent Studio screen that renders the live MCP control surface instead of a
-  static diagram: the heartbeat and attached client, the active policy, all 35
+  static diagram: the heartbeat and attached client, the active policy, all 40
   typed tools with their JSON schemas and exact risk gate, the pending approval
   queue with decisions, and a filterable, expandable tool-call audit. Idle is
   labelled as idle; only a live heartbeat is called connected.
-- An MCP control plane: `netcast3r mcp` serves 35 typed tools over local stdio,
+- An MCP control plane: `netcast3r mcp` serves 40 typed tools over local stdio,
   auto-discovers a running UI (or falls back to an embedded workspace), and
   exposes missions, scoped scans, runs, events, evidence slices, findings,
   triage, submissions, approvals, providers, scope checks, and bounded HTTP probes.

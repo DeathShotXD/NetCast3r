@@ -1,4 +1,4 @@
-import type { Approval, Finding, Inventory, KeyEntry, McpInfo, Meta, Mission, Paged, Provider, ProviderHealth, Run, RunEvent, Submission, SubmissionSummary, ToolCall, Totals } from './types';
+import type { Approval, Finding, Inventory, KeyEntry, McpInfo, Meta, Mission, MissionAgent, Paged, Provider, ProviderHealth, Run, RunEvent, Submission, SubmissionSummary, ToolCall, Totals } from './types';
 
 const BASE = '/api/v1';
 
@@ -88,6 +88,16 @@ export const api = {
     request<{ deleted: boolean }>('DELETE', `/missions/${id}`),
   startMissionRun: (id: string, body: Record<string, unknown>) =>
     request<{ mission: Mission; run: Run }>('POST', `/missions/${id}/runs`, body),
+  missionAgent: (id: string) =>
+    request<MissionAgent>('GET', `/missions/${id}/agent`),
+  startMissionAgent: (id: string, body: Record<string, unknown>) =>
+    request<MissionAgent>('POST', `/missions/${id}/agent/start`, body),
+  pauseMissionAgent: (id: string) =>
+    request<MissionAgent>('POST', `/missions/${id}/agent/pause`, {}),
+  resumeMissionAgent: (id: string) =>
+    request<MissionAgent>('POST', `/missions/${id}/agent/resume`, {}),
+  stopMissionAgent: (id: string) =>
+    request<MissionAgent>('POST', `/missions/${id}/agent/stop`, {}),
   approvals: (q = '') => request<Paged<Approval>>('GET', `/approvals${q}`),
   createApproval: (body: Record<string, unknown>) =>
     request<Approval>('POST', '/approvals', body),

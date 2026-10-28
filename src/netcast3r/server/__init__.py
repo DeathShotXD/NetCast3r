@@ -165,7 +165,21 @@ class Server:
         self._app_stamp: tuple[int, int] | None = None
         self._app_cache: str | None = None
         self._csp = CSP
+        self._agent_lock = threading.Lock()
+        self.agent_runtime = None
         self._routes = self._build_routes()
+
+    # -- mission agent ----------------------------------------------------
+    def _agent(self):
+        runtime = self.agent_runtime
+        if runtime is None:
+            with self._agent_lock:
+                runtime = self.agent_runtime
+                if runtime is None:
+                    from .agent_runtime import AgentRuntime
+                    runtime = AgentRuntime(self)
+                    self.agent_runtime = runtime
+        return runtime
 
     # -- run helpers ------------------------------------------------------
     def _start_run(self, target: str, options: dict, parent_run_id: str = "") -> dict:
@@ -249,7 +263,7 @@ class Server:
                           "auth_required": self.auth_required,
                           "capabilities": ["runs", "findings", "events", "providers", "keys",
                                            "settings", "triage", "missions", "approvals",
-                                           "tool_calls", "mcp"]})
+                                           "tool_calls", "mcp", "agent"]})
 
         @add("GET", r"/api/v1/healthz")
         def healthz(ctx):
@@ -456,6 +470,45 @@ class Server:
         @add("DELETE", r"/api/v1/missions/(?P<id>[A-Za-z0-9_]+)")
         def delete_mission(ctx):
             return _json({"deleted": self.index.delete_mission(ctx.params["id"])})
+
+        @add("GET", r"/api/v1/missions/(?P<id>[A-Za-z0-9_]+)/agent")
+        def get_mission_agent(ctx):
+            payload = self._agent().status(ctx.params["id"])
+            return _json(payload) if payload else _problem(404, "mission not found")
+
+        @add("POST", r"/api/v1/missions/(?P<id>[A-Za-z0-9_]+)/agent/start")
+        def start_mission_agent(ctx):
+            body = ctx.json()
+            body = body if isinstance(body, dict) else {}
+            try:
+                payload = self._agent().start(ctx.params["id"], body)
+            except ValueError as exc:
+                return _problem(400, str(exc))
+            return _json(payload, 202)
+
+        @add("POST", r"/api/v1/missions/(?P<id>[A-Za-z0-9_]+)/agent/pause")
+        def pause_mission_agent(ctx):
+            try:
+                payload = self._agent().pause(ctx.params["id"])
+            except ValueError as exc:
+                return _problem(400, str(exc))
+            return _json(payload)
+
+        @add("POST", r"/api/v1/missions/(?P<id>[A-Za-z0-9_]+)/agent/resume")
+        def resume_mission_agent(ctx):
+            try:
+                payload = self._agent().resume(ctx.params["id"])
+            except ValueError as exc:
+                return _problem(400, str(exc))
+            return _json(payload)
+
+        @add("POST", r"/api/v1/missions/(?P<id>[A-Za-z0-9_]+)/agent/stop")
+        def stop_mission_agent(ctx):
+            try:
+                payload = self._agent().stop(ctx.params["id"])
+            except ValueError as exc:
+                return _problem(400, str(exc))
+            return _json(payload)
 
         @add("POST", r"/api/v1/missions/(?P<id>[A-Za-z0-9_]+)/runs")
         def start_mission_run(ctx):
@@ -1196,6 +1249,8 @@ def serve(host: str = "127.0.0.1", port: int = 7857, *, open_browser: bool = Tru
     except KeyboardInterrupt:
         pass
     finally:
+        if server.agent_runtime is not None:
+            server.agent_runtime.shutdown()
         server.jobs.shutdown(wait=True)
         server.index.close()
         httpd.server_close()

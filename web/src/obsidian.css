@@ -5123,3 +5123,317 @@ body {
     transition: none !important;
   }
 }
+
+/* -- mission agent ------------------------------------------------------ */
+
+.obs-mission-agent-head {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.obs-mission-agent-state {
+  display: inline-flex;
+  height: 22px;
+  align-items: center;
+  gap: 6px;
+  padding: 0 8px;
+  border: 1px solid var(--obs-line);
+  border-radius: 999px;
+  background: var(--obs-panel);
+  color: var(--obs-muted);
+  font-family: var(--mono);
+  font-size: 7.5px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.obs-mission-agent-state .obs-pulse {
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.obs-mission-agent-state.is-planning,
+.obs-mission-agent-state.is-running {
+  border-color: var(--obs-line-acid);
+  color: var(--obs-acid);
+}
+
+.obs-mission-agent-state.is-paused,
+.obs-mission-agent-state.is-stopping,
+.obs-mission-agent-state.is-interrupted {
+  border-color: rgba(167, 139, 250, 0.35);
+  color: var(--obs-violet);
+}
+
+.obs-mission-agent-state.is-done {
+  border-color: var(--obs-line-acid);
+  color: var(--obs-acid);
+}
+
+.obs-mission-agent-state.is-error {
+  border-color: rgba(255, 92, 122, 0.35);
+  color: var(--obs-red);
+}
+
+.obs-mission-agent-summary {
+  margin: 9px 0 0;
+  color: var(--obs-muted);
+  font-size: 9.5px;
+  line-height: 1.6;
+}
+
+.obs-mission-agent-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.obs-mission-agent-model {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  margin-top: 10px;
+  color: var(--obs-muted);
+  font-size: 8.5px;
+  line-height: 1.5;
+  cursor: pointer;
+}
+
+.obs-mission-agent-model input {
+  margin: 2px 0 0;
+  accent-color: var(--obs-acid);
+}
+
+.obs-mission-agent-meters {
+  display: grid;
+  gap: 8px;
+}
+
+.obs-mission-agent-meter-label {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.obs-mission-agent-meter-label span {
+  color: var(--obs-faint);
+  font-family: var(--mono);
+  font-size: 6.5px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.obs-mission-agent-meter-label strong {
+  color: var(--obs-text-2);
+  font-family: var(--mono);
+  font-size: 8px;
+  font-weight: 500;
+}
+
+.obs-mission-agent-meter {
+  height: 3px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--obs-line);
+}
+
+.obs-mission-agent-meter > span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--obs-acid), rgba(200, 248, 26, 0.45));
+}
+
+.obs-mission-agent-spend {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.obs-mission-agent-spend > span {
+  color: var(--obs-faint);
+  font-family: var(--mono);
+  font-size: 6.5px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.obs-mission-agent-spend > strong {
+  color: var(--obs-text-2);
+  font-family: var(--mono);
+  font-size: 9px;
+  font-weight: 500;
+}
+
+.obs-mission-agent-spend > small {
+  width: 100%;
+  color: var(--obs-faint);
+  font-size: 8px;
+  line-height: 1.5;
+}
+
+.obs-mission-agent-tasks {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.obs-mission-agent-task {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 8px;
+  padding: 9px 0;
+  border-bottom: 1px solid var(--obs-line);
+}
+
+.obs-mission-agent-task:last-child {
+  border-bottom: 0;
+  padding-bottom: 0;
+}
+
+.obs-mission-agent-seq {
+  display: grid;
+  width: 18px;
+  height: 18px;
+  place-items: center;
+  border: 1px solid var(--obs-line);
+  border-radius: 5px;
+  color: var(--obs-faint);
+  font-family: var(--mono);
+  font-size: 7px;
+}
+
+.obs-mission-agent-task.is-verified .obs-mission-agent-seq {
+  border-color: var(--obs-line-acid);
+  color: var(--obs-acid);
+}
+
+.obs-mission-agent-task.is-failed .obs-mission-agent-seq {
+  border-color: rgba(255, 92, 122, 0.4);
+  color: var(--obs-red);
+}
+
+.obs-mission-agent-task.is-running .obs-mission-agent-seq {
+  border-color: rgba(167, 139, 250, 0.45);
+  color: var(--obs-violet);
+}
+
+.obs-mission-agent-task-copy {
+  min-width: 0;
+}
+
+.obs-mission-agent-task-title {
+  color: var(--obs-text-2);
+  font-size: 9.5px;
+  line-height: 1.35;
+}
+
+.obs-mission-agent-task-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px;
+  margin-top: 3px;
+  color: var(--obs-faint);
+  font-family: var(--mono);
+  font-size: 6.5px;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+.obs-mission-agent-task-copy p {
+  margin: 5px 0 0;
+  color: var(--obs-muted);
+  font-size: 8px;
+  line-height: 1.5;
+}
+
+.obs-mission-agent-task-copy blockquote {
+  margin: 6px 0 0;
+  padding: 6px 8px;
+  border-left: 1px solid rgba(167, 139, 250, 0.45);
+  background: rgba(167, 139, 250, 0.05);
+  color: var(--obs-text-2);
+  font-size: 8.5px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+}
+
+.obs-mission-agent-verdict {
+  height: 18px;
+  padding: 0 6px;
+  font-size: 6.5px;
+  white-space: nowrap;
+}
+
+.obs-mission-agent-calls {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.obs-mission-agent-call {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+}
+
+.obs-mission-agent-call > div {
+  min-width: 0;
+}
+
+.obs-mission-agent-call strong {
+  display: block;
+  overflow: hidden;
+  color: var(--obs-text-2);
+  font-family: var(--mono);
+  font-size: 8px;
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.obs-mission-agent-call small {
+  display: block;
+  margin-top: 2px;
+  color: var(--obs-faint);
+  font-family: var(--mono);
+  font-size: 6.5px;
+}
+
+.obs-mission-agent-note {
+  margin: 12px 0 0;
+  padding-top: 10px;
+  border-top: 1px solid var(--obs-line);
+  color: var(--obs-faint);
+  font-size: 8px;
+  line-height: 1.55;
+}
+
+@media (max-width: 560px) {
+  .obs-mission-agent-task {
+    grid-template-columns: 16px minmax(0, 1fr);
+  }
+
+  .obs-mission-agent-seq {
+    width: 16px;
+    height: 16px;
+  }
+
+  .obs-mission-agent-verdict {
+    grid-column: 2;
+    justify-self: start;
+  }
+}

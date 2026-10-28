@@ -179,6 +179,66 @@ CREATE TABLE IF NOT EXISTS submissions (
 CREATE INDEX IF NOT EXISTS idx_submissions_status ON submissions(status, updated_at DESC);
 CREATE INDEX IF NOT EXISTS idx_submissions_mission ON submissions(mission_id, updated_at DESC);
 CREATE INDEX IF NOT EXISTS idx_submissions_finding ON submissions(finding_id);
+
+CREATE TABLE IF NOT EXISTS agent_state (
+    mission_id TEXT PRIMARY KEY,
+    status TEXT DEFAULT 'idle',
+    phase TEXT DEFAULT '',
+    budget_json TEXT DEFAULT '{}',
+    options_json TEXT DEFAULT '{}',
+    summary TEXT DEFAULT '',
+    current_task_id TEXT,
+    stop_requested INTEGER DEFAULT 0,
+    tasks_total INTEGER DEFAULT 0,
+    tasks_done INTEGER DEFAULT 0,
+    tasks_verified INTEGER DEFAULT 0,
+    model_calls INTEGER DEFAULT 0,
+    last_error TEXT,
+    started_at TEXT,
+    updated_at TEXT,
+    finished_at TEXT
+);
+
+CREATE TABLE IF NOT EXISTS agent_tasks (
+    id TEXT PRIMARY KEY,
+    mission_id TEXT,
+    seq INTEGER DEFAULT 0,
+    kind TEXT,
+    title TEXT,
+    tool TEXT,
+    risk TEXT DEFAULT 'low',
+    status TEXT DEFAULT 'pending',
+    args_json TEXT DEFAULT '{}',
+    result_json TEXT DEFAULT '{}',
+    evidence_json TEXT DEFAULT '{}',
+    verification TEXT DEFAULT '',
+    verifier_notes TEXT DEFAULT '',
+    started_at TEXT,
+    finished_at TEXT,
+    created_at TEXT,
+    updated_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_agent_tasks_mission ON agent_tasks(mission_id, seq);
+
+CREATE TABLE IF NOT EXISTS agent_model_calls (
+    id TEXT PRIMARY KEY,
+    mission_id TEXT,
+    task_id TEXT,
+    agent TEXT,
+    provider TEXT,
+    model TEXT,
+    status TEXT DEFAULT 'ok',
+    prompt_chars INTEGER DEFAULT 0,
+    completion_chars INTEGER DEFAULT 0,
+    prompt_tokens INTEGER,
+    completion_tokens INTEGER,
+    cost_cents INTEGER,
+    duration_ms INTEGER DEFAULT 0,
+    error TEXT,
+    created_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_agent_model_calls_mission
+    ON agent_model_calls(mission_id, created_at DESC);
 """
 
 SEVERITY_ORDER = {"critical": 0, "high": 1, "medium": 2, "low": 3, "info": 4, "unknown": 5}
@@ -186,6 +246,12 @@ TRIAGE_STATUSES = {"new", "in_progress", "confirmed", "escalated", "rejected", "
 SORTS = {"created_at", "severity", "confidence", "title"}
 MISSION_STATUSES = {"draft", "active", "paused", "done", "archived"}
 AUTONOMY_LEVELS = {"manual", "supervised", "autonomous"}
+AGENT_STATUSES = {"idle", "planning", "running", "paused", "stopping",
+                  "stopped", "done", "error"}
+AGENT_TASK_STATUSES = {"pending", "running", "verified", "unverified",
+                       "failed", "skipped", "blocked"}
+AGENT_TASK_KINDS = {"scope", "probe", "inventory", "analysis", "verify"}
+MODEL_CALL_STATUSES = {"ok", "error", "unavailable", "budget"}
 APPROVAL_RISKS = {"low", "medium", "high", "critical"}
 APPROVAL_DECISIONS = {"approved", "rejected"}
 TOOL_CALL_STATUSES = {"ok", "error", "denied", "approval_required", "confirm_required"}
@@ -664,6 +730,10 @@ class Index:
             cur = self.conn.execute("DELETE FROM missions WHERE id = ?", (mission_id,))
             self.conn.execute("DELETE FROM mission_runs WHERE mission_id = ?", (mission_id,))
             self.conn.execute("DELETE FROM approvals WHERE mission_id = ?", (mission_id,))
+            self.conn.execute("DELETE FROM agent_tasks WHERE mission_id = ?", (mission_id,))
+            self.conn.execute("DELETE FROM agent_state WHERE mission_id = ?", (mission_id,))
+            self.conn.execute(
+                "DELETE FROM agent_model_calls WHERE mission_id = ?", (mission_id,))
             self.conn.commit()
         return cur.rowcount > 0
 
@@ -692,6 +762,223 @@ class Index:
         item["budget"] = _loads(item.pop("budget_json"), {})
         item["scope"] = _loads(item.pop("scope_json"), [])
         item["plan"] = _loads(item.pop("plan_json"), [])
+        return item
+
+    # -- mission agent runtime --------------------------------------------
+    def ensure_agent_state(self, mission_id: str) -> dict:
+        now = _now()
+        with self._lock:
+            self.conn.execute(
+                "INSERT OR IGNORE INTO agent_state (mission_id, status, phase, "
+                "budget_json, options_json, summary, stop_requested, tasks_total, "
+                "tasks_done, tasks_verified, model_calls, last_error, updated_at) "
+                "VALUES (?, 'idle', '', '{}', '{}', '', 0, 0, 0, 0, 0, '', ?)",
+                (mission_id, now),
+            )
+            self.conn.commit()
+        return self.get_agent_state(mission_id) or {}
+
+    def get_agent_state(self, mission_id: str) -> dict | None:
+        with self._lock:
+            row = self.conn.execute(
+                "SELECT * FROM agent_state WHERE mission_id = ?", (mission_id,)
+            ).fetchone()
+        return self._agent_state_row(row) if row else None
+
+    def patch_agent_state(self, mission_id: str, **fields) -> dict | None:
+        allowed = {"status", "phase", "summary", "current_task_id", "stop_requested",
+                   "tasks_total", "tasks_done", "tasks_verified", "model_calls",
+                   "last_error", "started_at", "finished_at"}
+        sets, values = [], []
+        for key in allowed:
+            if key in fields and fields[key] is not None:
+                value = int(fields[key]) if key in {
+                    "stop_requested", "tasks_total", "tasks_done", "tasks_verified",
+                    "model_calls"} else str(fields[key])
+                if key == "status" and value not in AGENT_STATUSES:
+                    raise ValueError(f"unknown agent status: {value}")
+                sets.append(f"{key} = ?")
+                values.append(value)
+        for key, column in (("budget", "budget_json"), ("options", "options_json")):
+            if key in fields and fields[key] is not None:
+                sets.append(f"{column} = ?")
+                values.append(json.dumps(fields[key], default=str))
+        if "current_task_id" in fields and fields["current_task_id"] is None:
+            sets.append("current_task_id = NULL")
+        if sets:
+            sets.append("updated_at = ?")
+            values.extend([_now(), mission_id])
+            with self._lock:
+                self.conn.execute(
+                    f"UPDATE agent_state SET {', '.join(sets)} WHERE mission_id = ?",
+                    values,
+                )
+                self.conn.commit()
+        return self.get_agent_state(mission_id)
+
+    def reset_agent_run(self, mission_id: str) -> None:
+        with self._lock:
+            self.conn.execute("DELETE FROM agent_tasks WHERE mission_id = ?", (mission_id,))
+            self.conn.execute(
+                "DELETE FROM agent_model_calls WHERE mission_id = ?", (mission_id,))
+            self.conn.execute(
+                "UPDATE agent_state SET status = 'idle', phase = '', summary = '', "
+                "current_task_id = NULL, stop_requested = 0, tasks_total = 0, "
+                "tasks_done = 0, tasks_verified = 0, model_calls = 0, last_error = '', "
+                "started_at = NULL, finished_at = NULL, updated_at = ? "
+                "WHERE mission_id = ?",
+                (_now(), mission_id),
+            )
+            self.conn.commit()
+
+    def create_agent_task(self, mission_id: str, seq: int, kind: str, title: str,
+                          tool: str = "", risk: str = "low",
+                          args: dict | None = None) -> dict:
+        if kind not in AGENT_TASK_KINDS:
+            raise ValueError(f"unknown agent task kind: {kind}")
+        now = _now()
+        task_id = _new_id("atk")
+        with self._lock:
+            self.conn.execute(
+                "INSERT INTO agent_tasks (id, mission_id, seq, kind, title, tool, risk, "
+                "status, args_json, result_json, evidence_json, created_at, updated_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', ?, '{}', '{}', ?, ?)",
+                (task_id, mission_id, int(seq), kind, title, tool, risk,
+                 json.dumps(args or {}, default=str), now, now),
+            )
+            self.conn.commit()
+        return self.get_agent_task(task_id) or {}
+
+    def get_agent_task(self, task_id: str) -> dict | None:
+        with self._lock:
+            row = self.conn.execute(
+                "SELECT * FROM agent_tasks WHERE id = ?", (task_id,)
+            ).fetchone()
+        return self._agent_task_row(row) if row else None
+
+    def list_agent_tasks(self, mission_id: str) -> list[dict]:
+        with self._lock:
+            rows = self.conn.execute(
+                "SELECT * FROM agent_tasks WHERE mission_id = ? ORDER BY seq, created_at",
+                (mission_id,),
+            ).fetchall()
+        return [self._agent_task_row(row) for row in rows]
+
+    def patch_agent_task(self, task_id: str, **fields) -> dict | None:
+        allowed = {"status", "result", "evidence", "verification", "verifier_notes",
+                   "started_at", "finished_at", "tool", "risk", "title"}
+        sets, values = [], []
+        for key in allowed:
+            if key in fields and fields[key] is not None:
+                value = fields[key]
+                if key == "status":
+                    value = str(value)
+                    if value not in AGENT_TASK_STATUSES:
+                        raise ValueError(f"unknown agent task status: {value}")
+                elif key in {"result", "evidence"}:
+                    sets.append(f"{key}_json = ?")
+                    values.append(json.dumps(value, default=str))
+                    continue
+                sets.append(f"{key} = ?")
+                values.append(str(value) if key != "status" else value)
+        if sets:
+            sets.append("updated_at = ?")
+            values.extend([_now(), task_id])
+            with self._lock:
+                self.conn.execute(
+                    f"UPDATE agent_tasks SET {', '.join(sets)} WHERE id = ?", values
+                )
+                self.conn.commit()
+        return self.get_agent_task(task_id)
+
+    def agent_task_counts(self, mission_id: str) -> dict:
+        with self._lock:
+            rows = self.conn.execute(
+                "SELECT status, COUNT(*) AS n FROM agent_tasks WHERE mission_id = ? "
+                "GROUP BY status", (mission_id,)
+            ).fetchall()
+        counts = {row["status"]: row["n"] for row in rows}
+        return {"total": sum(counts.values()), "by_status": counts,
+                "verified": counts.get("verified", 0),
+                "done": sum(count for status, count in counts.items()
+                            if status != "pending")}
+
+    def add_agent_model_call(self, mission_id: str, task_id: str = "", agent: str = "",
+                             provider: str = "", model: str = "", status: str = "ok",
+                             prompt_chars: int = 0, completion_chars: int = 0,
+                             prompt_tokens: int | None = None,
+                             completion_tokens: int | None = None,
+                             cost_cents: float | None = None,
+                             duration_ms: int = 0, error: str = "") -> dict:
+        if status not in MODEL_CALL_STATUSES:
+            raise ValueError(f"unknown model call status: {status}")
+        call_id = _new_id("amc")
+        with self._lock:
+            self.conn.execute(
+                "INSERT INTO agent_model_calls (id, mission_id, task_id, agent, provider, "
+                "model, status, prompt_chars, completion_chars, prompt_tokens, "
+                "completion_tokens, cost_cents, duration_ms, error, created_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (call_id, mission_id, task_id, agent, provider, model, status,
+                 int(prompt_chars), int(completion_chars), prompt_tokens,
+                 completion_tokens, cost_cents, int(duration_ms), error, _now()),
+            )
+            self.conn.commit()
+        return self.get_agent_model_call(call_id) or {}
+
+    def get_agent_model_call(self, call_id: str) -> dict | None:
+        with self._lock:
+            row = self.conn.execute(
+                "SELECT * FROM agent_model_calls WHERE id = ?", (call_id,)
+            ).fetchone()
+        return dict(row) if row else None
+
+    def list_agent_model_calls(self, mission_id: str, limit: int = 50) -> list[dict]:
+        with self._lock:
+            rows = self.conn.execute(
+                "SELECT * FROM agent_model_calls WHERE mission_id = ? "
+                "ORDER BY created_at DESC LIMIT ?", (mission_id, int(limit))
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+    def agent_model_usage(self, mission_id: str) -> dict:
+        """Report only what providers actually returned.
+
+        ``cost_cents`` stays null when no provider reported a price. The
+        runtime never multiplies tokens by an invention.
+        """
+        with self._lock:
+            row = self.conn.execute(
+                "SELECT COUNT(*) AS calls, "
+                "SUM(CASE WHEN status = 'ok' THEN 1 ELSE 0 END) AS ok_calls, "
+                "SUM(prompt_tokens) AS prompt_tokens, "
+                "SUM(completion_tokens) AS completion_tokens, "
+                "SUM(cost_cents) AS cost_cents, "
+                "COUNT(cost_cents) AS priced_calls "
+                "FROM agent_model_calls WHERE mission_id = ?", (mission_id,)
+            ).fetchone()
+        return {
+            "calls": int(row["calls"] or 0),
+            "ok_calls": int(row["ok_calls"] or 0),
+            "prompt_tokens": row["prompt_tokens"],
+            "completion_tokens": row["completion_tokens"],
+            "cost_cents": row["cost_cents"] if row["priced_calls"] else None,
+            "cost_reported": bool(row["priced_calls"]),
+        }
+
+    @staticmethod
+    def _agent_state_row(row: sqlite3.Row) -> dict:
+        item = dict(row)
+        item["budget"] = _loads(item.pop("budget_json"), {})
+        item["options"] = _loads(item.pop("options_json"), {})
+        return item
+
+    @staticmethod
+    def _agent_task_row(row: sqlite3.Row) -> dict:
+        item = dict(row)
+        item["args"] = _loads(item.pop("args_json"), {})
+        item["result"] = _loads(item.pop("result_json"), {})
+        item["evidence"] = _loads(item.pop("evidence_json"), {})
         return item
 
     # -- approvals --------------------------------------------------------

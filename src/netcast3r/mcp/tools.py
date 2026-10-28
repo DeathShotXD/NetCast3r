@@ -215,6 +215,7 @@ class ToolContext:
     limiter: RateLimiter = field(default_factory=RateLimiter)
     actor: str = "agent"
     tool_count: int = 0
+    mission_id: str = ""
 
 
 def _call(ctx: ToolContext, method: str, path: str, query: dict | None = None, body=None):
@@ -392,6 +393,34 @@ def mission_start_run(ctx: ToolContext, args: dict) -> dict:
     _require_scope(ctx, target, args["mission_id"])
     body = {"target": target, "options": _scan_options(args.get("options"))}
     return _call(ctx, "POST", f"/api/v1/missions/{mission['id']}/runs", body=body)
+
+
+def agent_status(ctx: ToolContext, args: dict) -> dict:
+    return _call(ctx, "GET", f"/api/v1/missions/{args['mission_id']}/agent")
+
+
+def agent_start(ctx: ToolContext, args: dict) -> dict:
+    mission = _mission(ctx, args["mission_id"])
+    target = str(mission.get("target") or "").strip()
+    if not target:
+        raise ToolError("invalid_arguments", "mission has no target")
+    _require_scope(ctx, target, mission["id"])
+    body = {key: args[key] for key in
+            ("use_model", "max_tasks", "max_seconds", "max_model_calls",
+             "allow_manual", "restart") if key in args}
+    return _call(ctx, "POST", f"/api/v1/missions/{mission['id']}/agent/start", body=body)
+
+
+def agent_pause(ctx: ToolContext, args: dict) -> dict:
+    return _call(ctx, "POST", f"/api/v1/missions/{args['mission_id']}/agent/pause")
+
+
+def agent_resume(ctx: ToolContext, args: dict) -> dict:
+    return _call(ctx, "POST", f"/api/v1/missions/{args['mission_id']}/agent/resume")
+
+
+def agent_stop(ctx: ToolContext, args: dict) -> dict:
+    return _call(ctx, "POST", f"/api/v1/missions/{args['mission_id']}/agent/stop")
 
 
 def scan_start(ctx: ToolContext, args: dict) -> dict:
@@ -642,6 +671,11 @@ _HANDLERS.update({
     "missions_delete": missions_delete,
     "missions_attach_run": missions_attach_run,
     "mission_start_run": mission_start_run,
+    "agent_status": agent_status,
+    "agent_start": agent_start,
+    "agent_pause": agent_pause,
+    "agent_resume": agent_resume,
+    "agent_stop": agent_stop,
     "scan_start": scan_start,
     "runs_list": runs_list,
     "runs_get": runs_get,
@@ -738,6 +772,42 @@ TOOLS: tuple[Tool, ...] = (
                   "target": _string("optional target override, must be in scope"),
                   "options": _object("scan options: depth, tier, rate, timeout, ...")},
                  ["mission_id"]), "mission_start_run", open_world=True),
+    Tool("agent_status", "Mission agent status",
+         "Read the bounded mission runtime: state, plan, task timeline, independent "
+         "verification, budget use, and model calls. Read-only.",
+         "low", "missions",
+         _schema({"mission_id": _string("mission id")}, ["mission_id"]),
+         "agent_status", read_only=True),
+    Tool("agent_start", "Start mission agent",
+         "Plan and run the bounded mission agent: scope check, one live probe, an "
+         "inventory of existing evidence, an optional model analysis, and an "
+         "independent verifier. Every action is a typed, audited tool call. The "
+         "runtime never creates a finding, widens scope, or spends an approval.",
+         "medium", "missions",
+         _schema({"mission_id": _string("mission id"),
+                  "use_model": _boolean("ask a model for one advisory analysis"),
+                  "max_tasks": _integer("task cap", 4, 20, 8),
+                  "max_seconds": _integer("wall-clock cap in seconds", 30, 7200, 600),
+                  "max_model_calls": _integer("model call cap", 0, 20, 2),
+                  "allow_manual": _boolean("allow a manual-autonomy mission to run"),
+                  "restart": _boolean("replace an interrupted or finished plan")},
+                 ["mission_id"]), "agent_start", open_world=True),
+    Tool("agent_pause", "Pause mission agent",
+         "Pause after the current task. The durable task list and evidence stay put.",
+         "low", "missions",
+         _schema({"mission_id": _string("mission id")}, ["mission_id"]),
+         "agent_pause"),
+    Tool("agent_resume", "Resume mission agent",
+         "Continue a paused or interrupted plan from its first unfinished task.",
+         "low", "missions",
+         _schema({"mission_id": _string("mission id")}, ["mission_id"]),
+         "agent_resume"),
+    Tool("agent_stop", "Stop mission agent",
+         "Cooperatively stop the mission runtime. Pending tasks are marked skipped and "
+         "the stop is audited. Always low risk so any policy can kill a run.",
+         "low", "missions",
+         _schema({"mission_id": _string("mission id")}, ["mission_id"]),
+         "agent_stop"),
     Tool("scan_start", "Start ad-hoc scan",
          "Start a scan. Requires a mission_id or an explicit scope list; a bare target "
          "is refused. Options are whitelisted and bounded.",
@@ -1099,7 +1169,7 @@ class ToolRegistry:
             return payload, True
         finally:
             duration = int((time.monotonic() - started) * 1000)
-            mission_id = str(args.get("mission_id") or "")
+            mission_id = str(args.get("mission_id") or self.ctx.mission_id or "")
             run_id = str(args.get("run_id") or "")
             result_value = locals().get("payload", {"ok": status == "ok"})
             try:

@@ -3,7 +3,7 @@
   import { api } from '../api';
   import { store } from '../state.svelte';
   import { ago, sevColor, statusLabel } from '../format';
-  import type { Approval, Autonomy, Mission, MissionStatus } from '../types';
+  import type { AgentStatus, Approval, Autonomy, Mission, MissionAgent, MissionStatus } from '../types';
   import Icon from '../ui/Icon.svelte';
   import Sparkline from '../ui/Sparkline.svelte';
 
@@ -12,10 +12,14 @@
   let missions = $state<Mission[]>([]);
   let approvals = $state<Approval[]>([]);
   let selected = $state<Mission | null>(null);
+  let agent = $state<MissionAgent | null>(null);
+  let agentLoading = $state(false);
+  let agentBusy = $state('');
+  let agentModel = $state(false);
   let loading = $state(true);
   let error = $state('');
   let filter = $state<Filter>('all');
-  let detailTab = $state<'overview' | 'runs' | 'approvals'>('overview');
+  let detailTab = $state<'overview' | 'runs' | 'approvals' | 'agent'>('overview');
   let composer = $state(false);
   let busy = $state('');
   let form = $state({
@@ -39,6 +43,17 @@
     manual: 'Manual',
     supervised: 'Supervised',
     autonomous: 'Autonomous'
+  };
+  const agentCopy: Record<AgentStatus, string> = {
+    idle: 'Idle',
+    planning: 'Planning',
+    running: 'Running',
+    paused: 'Paused',
+    stopping: 'Stopping',
+    stopped: 'Stopped',
+    done: 'Done',
+    error: 'Error',
+    interrupted: 'Interrupted'
   };
 
   const filtered = $derived(
@@ -74,7 +89,7 @@
       approvals = approvalPage.items;
       if (selected) {
         const fresh = missions.find((mission) => mission.id === selected?.id);
-        if (fresh) await open(fresh, false);
+        if (fresh) await open(fresh, false, true);
         else selected = null;
       }
     } catch (exc) {
@@ -84,11 +99,14 @@
     }
   }
 
-  async function open(mission: Mission, scroll = true) {
+  async function open(mission: Mission, scroll = true, preserveTab = false) {
     busy = `open:${mission.id}`;
+    const tab = detailTab;
     try {
       selected = await api.mission(mission.id);
-      detailTab = 'overview';
+      agent = null;
+      detailTab = preserveTab ? tab : 'overview';
+      if (preserveTab && tab === 'agent') void loadAgent();
       if (scroll && window.innerWidth < 1180) {
         requestAnimationFrame(() => document.querySelector('.obs-mission-detail')?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
       }
@@ -97,6 +115,76 @@
     } finally {
       busy = '';
     }
+  }
+
+  async function loadAgent(silent = false) {
+    if (!selected) return;
+    const missionId = selected.id;
+    if (!silent) agentLoading = true;
+    try {
+      const data = await api.missionAgent(missionId);
+      if (selected?.id === missionId) agent = data;
+    } catch (exc) {
+      if (!silent) store.fail(exc instanceof Error ? exc.message : 'could not read the mission agent');
+    } finally {
+      if (!silent) agentLoading = false;
+    }
+  }
+
+  async function startAgent() {
+    if (!selected) return;
+    agentBusy = 'start';
+    try {
+      agent = await api.startMissionAgent(selected.id, {
+        use_model: agentModel,
+        restart: agent?.status === 'interrupted'
+      });
+      if (selected.status === 'draft' || selected.status === 'paused') {
+        selected = { ...selected, status: 'active' };
+        missions = missions.map((mission) =>
+          mission.id === selected?.id ? { ...mission, status: 'active' } : mission
+        );
+      }
+      store.toast('ok', 'mission agent planned and started');
+      void store.refreshTotals();
+    } catch (exc) {
+      store.fail(exc instanceof Error ? exc.message : 'could not start the mission agent');
+    } finally {
+      agentBusy = '';
+    }
+  }
+
+  async function controlAgent(action: 'pause' | 'resume' | 'stop') {
+    if (!selected) return;
+    agentBusy = action;
+    try {
+      const call = action === 'pause'
+        ? api.pauseMissionAgent
+        : action === 'resume'
+          ? api.resumeMissionAgent
+          : api.stopMissionAgent;
+      agent = await call(selected.id);
+      store.toast('ok', `mission agent ${action === 'pause' ? 'paused' : action === 'resume' ? 'resumed' : 'stopped'}`);
+    } catch (exc) {
+      store.fail(exc instanceof Error ? exc.message : `could not ${action} the mission agent`);
+    } finally {
+      agentBusy = '';
+    }
+  }
+
+  function selectTab(tab: typeof detailTab) {
+    detailTab = tab;
+    if (tab === 'agent') void loadAgent();
+  }
+
+  function formatCost(cents: number | null): string {
+    if (cents == null) return 'not reported';
+    return `$${(cents / 100).toFixed(4)}`;
+  }
+
+  function agentPercent(value: number, cap: number): number {
+    if (!cap || cap <= 0) return 0;
+    return Math.max(0, Math.min(100, Math.round((value / cap) * 100)));
   }
 
   function resetForm() {
@@ -208,6 +296,13 @@
   onMount(() => {
     void load();
     void store.refreshTotals();
+    const poll = window.setInterval(() => {
+      if (detailTab !== 'agent' || !selected || !agent) return;
+      if (['planning', 'running', 'paused', 'stopping'].includes(agent.status)) {
+        void loadAgent(true);
+      }
+    }, 1200);
+    return () => window.clearInterval(poll);
   });
 </script>
 
@@ -369,7 +464,7 @@
                 {statusCopy[selected.status]}
               </span>
               <span class="obs-chip">{autonomyCopy[selected.autonomy]}</span>
-              <button class="obs-icon-btn" type="button" aria-label="close mission" onclick={() => (selected = null)} style="margin-left:auto">
+              <button class="obs-icon-btn" type="button" aria-label="close mission" onclick={() => { selected = null; agent = null; }} style="margin-left:auto">
                 <Icon name="x" size={13} />
               </button>
             </div>
@@ -412,7 +507,8 @@
             {#each [
               ['overview', 'Overview'],
               ['runs', `Runs ${selected.run_count}`],
-              ['approvals', `Approvals ${selected.pending_approvals}`]
+              ['approvals', `Approvals ${selected.pending_approvals}`],
+              ['agent', `Agent${agent && ['planning', 'running', 'paused', 'stopping'].includes(agent.status) ? ' •' : ''}`]
             ] as [id, label] (id)}
               <button
                 class="obs-detail-tab"
@@ -420,7 +516,7 @@
                 type="button"
                 role="tab"
                 aria-selected={detailTab === id}
-                onclick={() => (detailTab = id as typeof detailTab)}
+                onclick={() => selectTab(id as typeof detailTab)}
               >
                 {label}
               </button>
@@ -450,15 +546,15 @@
                   <div><span>Findings</span><strong>{selected.finding_count}</strong></div>
                 </div>
                 <p style="margin-top:7px">
-                  Recorded on the mission. The current scan engine does not enforce autonomy, scope or budget yet; the policy gate and planner are still being built.
+                  The mission agent enforces these as runtime caps: a scope check, a task cap, a wall-clock cap, and a model-call cap. It never runs a destructive tool, creates a finding, or spends an approval.
                 </p>
               </section>
               <section class="obs-detail-section">
                 <h3>Plan</h3>
                 <p>
                   {selected.plan.length
-                    ? 'A plan is attached to this mission. The agent runtime will execute it behind the approval gates.'
-                    : 'No plan attached yet. The planner is not connected, so this mission can only hold casts and decisions for now.'}
+                    ? 'A plan is attached to this mission. Starting the agent stores its own bounded task plan and verifier alongside it.'
+                    : 'The agent builds the plan when you start it: scope check, one live probe, a read-only inventory, an optional advisory analysis, and an independent verifier. The tasks and their evidence are kept on the mission.'}
                 </p>
               </section>
               <section class="obs-detail-section">
@@ -497,6 +593,152 @@
                   <p class="obs-empty-copy">Launching a cast starts a real scan with this mission's target and links it here.</p>
                   <button class="obs-btn" type="button" onclick={() => void launch()}>Launch the first cast</button>
                 </div>
+              {/if}
+            {:else if detailTab === 'agent'}
+              <section class="obs-detail-section">
+                <div class="obs-mission-agent-head">
+                  <span class="obs-mission-agent-state is-{agent?.status ?? 'idle'}">
+                    <span class="obs-pulse" aria-hidden="true"></span>
+                    {agentCopy[agent?.status ?? 'idle']}
+                  </span>
+                  {#if agent?.live}<span class="obs-chip acid">live</span>{/if}
+                  {#if agent?.phase && ['scope', 'probe', 'inventory', 'analysis', 'verify'].includes(agent.phase)}
+                    <span class="obs-chip">{agent.phase}</span>
+                  {/if}
+                  {#if agent?.stale}<span class="obs-chip violet">orphaned thread</span>{/if}
+                </div>
+                <p class="obs-mission-agent-summary">
+                  {#if agentLoading}
+                    Reading the runtime state...
+                  {:else if agent}
+                    {agent.summary || agent.last_error || 'No summary yet. Start the agent to run the bounded plan.'}
+                  {:else}
+                    No runtime state yet. The agent plans, executes, and verifies on this mission only.
+                  {/if}
+                </p>
+                <div class="obs-mission-agent-controls">
+                  {#if !agent || ['idle', 'stopped', 'error', 'interrupted', 'done'].includes(agent.status)}
+                    <button class="obs-btn obs-btn-primary" type="button" disabled={agentBusy === 'start'} onclick={() => void startAgent()}>
+                      <Icon name="play" size={12} />
+                      {agentBusy === 'start' ? 'Planning...' : agent?.status === 'done' ? 'Run again' : 'Start agent'}
+                    </button>
+                  {:else if agent.status === 'paused'}
+                    <button class="obs-btn obs-btn-primary" type="button" disabled={agentBusy === 'resume'} onclick={() => void controlAgent('resume')}>
+                      <Icon name="play" size={12} />
+                      {agentBusy === 'resume' ? 'Resuming...' : 'Resume'}
+                    </button>
+                    <button class="obs-btn obs-btn-ghost" type="button" disabled={agentBusy === 'stop'} onclick={() => void controlAgent('stop')}>
+                      <Icon name="stop" size={11} />
+                      Stop
+                    </button>
+                  {:else if agent.status === 'running' || agent.status === 'planning'}
+                    <button class="obs-btn" type="button" disabled={agentBusy === 'pause'} onclick={() => void controlAgent('pause')}>
+                      <Icon name="pause" size={12} />
+                      {agentBusy === 'pause' ? 'Pausing...' : 'Pause'}
+                    </button>
+                    <button class="obs-btn obs-btn-ghost" type="button" disabled={agentBusy === 'stop'} onclick={() => void controlAgent('stop')}>
+                      <Icon name="stop" size={11} />
+                      Stop
+                    </button>
+                  {:else if agent.status === 'stopping'}
+                    <span class="obs-chip">stopping after the current task...</span>
+                  {/if}
+                  <button class="obs-btn obs-btn-ghost" type="button" disabled={agentLoading} onclick={() => void loadAgent()}>
+                    <Icon name="refresh" size={11} />
+                    Refresh
+                  </button>
+                </div>
+                {#if !agent || ['idle', 'done', 'stopped', 'error'].includes(agent.status)}
+                  <label class="obs-mission-agent-model">
+                    <input type="checkbox" bind:checked={agentModel} />
+                    <span>Ask a model for one advisory analysis. It sees the evidence and cannot change it.</span>
+                  </label>
+                {/if}
+              </section>
+
+              {#if agent}
+                <section class="obs-detail-section">
+                  <h3>Budget</h3>
+                  <div class="obs-mission-agent-meters">
+                    <div>
+                      <div class="obs-mission-agent-meter-label"><span>Tasks</span><strong>{agent.usage.tasks_done}/{agent.budget.max_tasks}</strong></div>
+                      <div class="obs-mission-agent-meter"><span style="width:{agentPercent(agent.usage.tasks_done, agent.budget.max_tasks)}%"></span></div>
+                    </div>
+                    <div>
+                      <div class="obs-mission-agent-meter-label"><span>Wall clock</span><strong>{agent.usage.elapsed_seconds}s / {agent.budget.max_seconds}s</strong></div>
+                      <div class="obs-mission-agent-meter"><span style="width:{agentPercent(agent.usage.elapsed_seconds, agent.budget.max_seconds)}%"></span></div>
+                    </div>
+                    <div>
+                      <div class="obs-mission-agent-meter-label"><span>Model calls</span><strong>{agent.usage.calls}/{agent.budget.max_model_calls}</strong></div>
+                      <div class="obs-mission-agent-meter"><span style="width:{agentPercent(agent.usage.calls, agent.budget.max_model_calls)}%"></span></div>
+                    </div>
+                  </div>
+                  <div class="obs-mission-agent-spend">
+                    <span>Recorded spend</span>
+                    <strong>{agent.usage.cost_reported ? formatCost(agent.usage.cost_cents) : 'not reported'}</strong>
+                    <small>
+                      {agent.budget.max_usd ? `Mission cap $${agent.budget.max_usd.toLocaleString()}. ` : ''}
+                      {agent.usage.cost_reported
+                        ? 'Price reported by the provider.'
+                        : 'Providers returned no price. Token counts are recorded; no cost is invented.'}
+                    </small>
+                  </div>
+                </section>
+
+                <section class="obs-detail-section">
+                  <h3>Task timeline</h3>
+                  <ol class="obs-mission-agent-tasks">
+                    {#each agent.tasks as task (task.id)}
+                      <li class="obs-mission-agent-task is-{task.status}">
+                        <span class="obs-mission-agent-seq">{task.seq + 1}</span>
+                        <div class="obs-mission-agent-task-copy">
+                          <div class="obs-mission-agent-task-title">{task.title}</div>
+                          <div class="obs-mission-agent-task-meta">
+                            <span>{task.kind}</span>
+                            <span>·</span>
+                            <span>{task.risk}</span>
+                            {#if task.tool}<span>·</span><span>{task.tool}</span>{/if}
+                            <span>·</span>
+                            <span>{task.status}</span>
+                          </div>
+                          {#if task.verifier_notes}<p>{task.verifier_notes}</p>{/if}
+                          {#if task.kind === 'analysis' && typeof task.result.advisory === 'string'}
+                            <blockquote>{task.result.advisory}</blockquote>
+                          {/if}
+                        </div>
+                        <span
+                          class="obs-chip obs-mission-agent-verdict"
+                          class:acid={task.verification === 'verified'}
+                          class:violet={task.verification === 'advisory'}
+                          style={task.status === 'failed' ? 'color:var(--obs-red)' : ''}
+                        >
+                          {task.verification || task.status}
+                        </span>
+                      </li>
+                    {/each}
+                  </ol>
+                </section>
+
+                {#if agent.model_calls.length}
+                  <section class="obs-detail-section">
+                    <h3>Model calls</h3>
+                    <div class="obs-mission-agent-calls">
+                      {#each agent.model_calls as call (call.id)}
+                        <div class="obs-mission-agent-call">
+                          <span class="obs-ledger-signal" style="background:{call.status === 'ok' ? 'var(--obs-acid)' : 'var(--obs-red)'}" aria-hidden="true"></span>
+                          <div>
+                            <strong>{call.provider || 'no provider'} / {call.model || 'none'}</strong>
+                            <small>{call.status} · {call.prompt_tokens ?? '?'} in · {call.completion_tokens ?? '?'} out · {formatCost(call.cost_cents)}</small>
+                          </div>
+                        </div>
+                      {/each}
+                    </div>
+                  </section>
+                {/if}
+
+                <p class="obs-mission-agent-note">
+                  Every task above is one typed tool call or one recorded model call. The verifier is independent of the executor: reachability is not a finding, and the runtime never writes one.
+                </p>
               {/if}
             {:else}
               {#if selectedApprovals.length}
@@ -623,7 +865,7 @@
       </div>
 
       <footer class="obs-modal-foot">
-        <span class="obs-modal-note">Draft only. Scope and budget are recorded, not enforced by the current scan engine.</span>
+        <span class="obs-modal-note">The mission agent enforces scope, task count, wall clock, and model-call caps. The USD figure is a recorded ceiling, not a spend estimate.</span>
         <button class="obs-btn obs-btn-ghost" type="button" onclick={() => (composer = false)}>Cancel</button>
         <button class="obs-btn obs-btn-primary" type="button" disabled={busy === 'create'} onclick={() => void createMission()}>
           <Icon name="plus" size={13} />

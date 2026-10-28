@@ -160,6 +160,9 @@ class EmbeddedPlane:
 
     def close(self) -> None:
         try:
+            runtime = getattr(self.server, "agent_runtime", None)
+            if runtime is not None:
+                runtime.shutdown()
             self.server.jobs.shutdown(wait=False)
         finally:
             self.server.index.close()

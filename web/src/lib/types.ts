@@ -110,6 +110,108 @@ export interface Approval {
   mission_target?: string;
 }
 
+export type AgentStatus =
+  | 'idle'
+  | 'planning'
+  | 'running'
+  | 'paused'
+  | 'stopping'
+  | 'stopped'
+  | 'done'
+  | 'error'
+  | 'interrupted';
+
+export type AgentTaskStatus =
+  | 'pending'
+  | 'running'
+  | 'verified'
+  | 'unverified'
+  | 'failed'
+  | 'skipped'
+  | 'blocked';
+
+export interface AgentTask {
+  id: string;
+  mission_id: string;
+  seq: number;
+  kind: 'scope' | 'probe' | 'inventory' | 'analysis' | 'verify';
+  title: string;
+  tool: string;
+  risk: 'low' | 'medium' | 'high' | 'critical';
+  status: AgentTaskStatus;
+  args: Record<string, unknown>;
+  result: Record<string, unknown>;
+  evidence: Record<string, unknown>;
+  verification: string;
+  verifier_notes: string;
+  started_at?: string;
+  finished_at?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AgentModelCall {
+  id: string;
+  mission_id: string;
+  task_id: string;
+  agent: string;
+  provider: string;
+  model: string;
+  status: 'ok' | 'error' | 'unavailable' | 'budget';
+  prompt_chars: number;
+  completion_chars: number;
+  prompt_tokens: number | null;
+  completion_tokens: number | null;
+  cost_cents: number | null;
+  duration_ms: number;
+  error: string;
+  created_at: string;
+}
+
+export interface MissionAgent {
+  mission_id: string;
+  mission: {
+    id: string;
+    title: string;
+    target: string;
+    status: MissionStatus;
+    autonomy: Autonomy;
+    scope: string[];
+    budget: Record<string, unknown>;
+  };
+  status: AgentStatus;
+  stored_status: AgentStatus;
+  phase: string;
+  live: boolean;
+  stale: boolean;
+  summary: string;
+  last_error: string;
+  current_task_id: string;
+  budget: {
+    max_tasks: number;
+    max_seconds: number;
+    max_model_calls: number;
+    max_usd: number | null;
+  };
+  usage: {
+    tasks_total: number;
+    tasks_done: number;
+    tasks_verified: number;
+    elapsed_seconds: number;
+    calls: number;
+    ok_calls: number;
+    prompt_tokens: number | null;
+    completion_tokens: number | null;
+    cost_cents: number | null;
+    cost_reported: boolean;
+  };
+  tasks: AgentTask[];
+  model_calls: AgentModelCall[];
+  started_at?: string;
+  finished_at?: string;
+  updated_at?: string;
+}
+
 export interface KeyEntry {
   name: string;
   masked: string;

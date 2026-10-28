@@ -11,7 +11,7 @@ from __future__ import annotations
 import json
 import threading
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from urllib.parse import urlsplit
 
 import httpx
@@ -31,6 +31,21 @@ def _local_endpoint(base_url: str) -> bool:
 class Chunk:
     kind: str
     text: str = ""
+
+
+@dataclass
+class Completion:
+    """One non-streaming completion plus whatever usage the provider sent.
+
+    Token counts and cost stay empty when the provider does not report them;
+    the runtime never estimates a price.
+    """
+    text: str = ""
+    provider: str = ""
+    model: str = ""
+    usage: dict = field(default_factory=dict)
+    error: str = ""
+    duration_ms: int = 0
 
 
 def _redact(text: str, key: str) -> str:
@@ -262,3 +277,105 @@ class ProviderBus:
         if on_chunk:
             on_chunk(Chunk("error", last_error))
         return "", "", ""
+
+    def complete(self, agent: str, messages: list[dict], timeout: float = 45.0,
+                 exclude_providers=None) -> Completion:
+        """One non-streaming call that keeps the provider's usage block.
+
+        The mission runtime needs a bounded call that cannot stream forever and
+        that tells it how many tokens a provider reported. Every failure is
+        returned, never raised, so a dead provider becomes a recorded error
+        instead of a hung agent.
+        """
+        route = self.config.route_for(agent)
+        budget = max(1.0, min(float(timeout),
+                              float(getattr(self.config.run, "max_call_seconds", 90))))
+        started = time.monotonic()
+        last_error = "no provider available"
+        for provider, model, key in self._candidates(
+                agent, exclude_providers=exclude_providers):
+            attempt = time.monotonic()
+            proxy = self.egress.get() if self.egress else None
+            headers = {"Content-Type": "application/json"}
+            if key:
+                headers["Authorization"] = f"Bearer {key}"
+            if provider.name == "openrouter":
+                headers["X-Title"] = "NetCast3r"
+            payload = {
+                "model": model,
+                "messages": messages,
+                "temperature": route.temperature,
+                "max_tokens": route.max_tokens,
+                "stream": False,
+            }
+            self._observe({"kind": "call", "agent": agent,
+                           "provider": provider.name, "model": model})
+            try:
+                with httpx.Client(timeout=budget, proxy=proxy) as client:
+                    response = client.post(f"{provider.base_url}/chat/completions",
+                                           headers=headers, json=payload)
+                    if response.status_code in (403, 429):
+                        if self.egress and proxy:
+                            self.egress.mark_failed(proxy)
+                        self._penalize(provider.name)
+                        self._strike(provider.name, model)
+                        last_error = f"{provider.name} returned {response.status_code}"
+                        self._observe({"kind": "done", "agent": agent,
+                                       "provider": provider.name, "model": model,
+                                       "ok": False, "ms": _ms(attempt),
+                                       "error": f"HTTP {response.status_code}"})
+                        continue
+                    if response.status_code >= 400:
+                        self._strike(provider.name, model,
+                                     fatal=response.status_code in (400, 404))
+                        last_error = f"{provider.name} returned {response.status_code}"
+                        self._observe({"kind": "done", "agent": agent,
+                                       "provider": provider.name, "model": model,
+                                       "ok": False, "ms": _ms(attempt),
+                                       "error": f"HTTP {response.status_code}"})
+                        continue
+                    data = response.json()
+                    if not isinstance(data, dict):
+                        last_error = f"{provider.name} returned a non-object body"
+                        self._strike(provider.name, model)
+                        continue
+                    if data.get("error"):
+                        last_error = f"{provider.name}: {str(data['error'])[:140]}"
+                        self._strike(provider.name, model)
+                        continue
+                    choices = data.get("choices") or []
+                    first = choices[0] if choices and isinstance(choices[0], dict) else {}
+                    message = first.get("message") or {}
+                    content = message.get("content")
+                    if isinstance(content, list):
+                        content = "".join(
+                            str(part.get("text", "")) for part in content
+                            if isinstance(part, dict))
+                    text = str(content or "").strip()
+                    if not text:
+                        last_error = f"{provider.name}/{model} returned no content"
+                        self._strike(provider.name, model)
+                        self._observe({"kind": "done", "agent": agent,
+                                       "provider": provider.name, "model": model,
+                                       "ok": False, "ms": _ms(attempt),
+                                       "error": last_error[:140]})
+                        continue
+                    usage = data.get("usage")
+                    self._settle(provider.name)
+                    self._observe({"kind": "done", "agent": agent,
+                                   "provider": provider.name, "model": model,
+                                   "ok": True, "ms": _ms(attempt)})
+                    return Completion(text=text, provider=provider.name, model=model,
+                                      usage=usage if isinstance(usage, dict) else {},
+                                      duration_ms=_ms(started))
+            except Exception as exc:
+                last_error = _redact(f"{provider.name}: {type(exc).__name__}", key)
+                self._strike(provider.name, model)
+                self._observe({"kind": "done", "agent": agent,
+                               "provider": provider.name, "model": model,
+                               "ok": False, "ms": _ms(attempt),
+                               "error": type(exc).__name__})
+                if self.egress and proxy:
+                    self.egress.mark_failed(proxy)
+                continue
+        return Completion(error=last_error, duration_ms=_ms(started))
