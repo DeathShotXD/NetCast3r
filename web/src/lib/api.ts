@@ -1,4 +1,4 @@
-import type { Approval, Finding, Inventory, KeyEntry, McpInfo, Meta, Mission, Paged, Provider, ProviderHealth, Run, RunEvent, ToolCall, Totals } from './types';
+import type { Approval, Finding, Inventory, KeyEntry, McpInfo, Meta, Mission, Paged, Provider, ProviderHealth, Run, RunEvent, Submission, SubmissionSummary, ToolCall, Totals } from './types';
 
 const BASE = '/api/v1';
 
@@ -93,6 +93,15 @@ export const api = {
     request<Approval>('POST', '/approvals', body),
   decideApproval: (id: string, body: Record<string, unknown>) =>
     request<Approval>('POST', `/approvals/${id}/decision`, body),
+  submissions: (q = '') => request<Paged<Submission>>('GET', `/submissions${q}`),
+  submission: (id: string) => request<Submission>('GET', `/submissions/${id}`),
+  submissionSummary: () => request<SubmissionSummary>('GET', '/submissions/summary'),
+  createSubmission: (body: Record<string, unknown>) =>
+    request<Submission>('POST', '/submissions', body),
+  patchSubmission: (id: string, body: Record<string, unknown>) =>
+    request<Submission>('PATCH', `/submissions/${id}`, body),
+  deleteSubmission: (id: string) =>
+    request<{ deleted: boolean }>('DELETE', `/submissions/${id}`),
   keys: () => request<{ items: KeyEntry[] }>('GET', '/keys'),
   putKey: (name: string, value: string) =>
     request<{ name: string; masked: string }>('PUT', `/keys/${name}`, { value }),

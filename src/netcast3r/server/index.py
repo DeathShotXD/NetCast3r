@@ -152,6 +152,33 @@ CREATE INDEX IF NOT EXISTS idx_tool_calls_created ON tool_calls(created_at DESC)
 CREATE INDEX IF NOT EXISTS idx_tool_calls_tool ON tool_calls(tool, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_tool_calls_mission ON tool_calls(mission_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_tool_calls_status ON tool_calls(status, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS submissions (
+    id TEXT PRIMARY KEY,
+    mission_id TEXT,
+    finding_id TEXT,
+    run_id TEXT,
+    platform TEXT,
+    program TEXT,
+    target TEXT,
+    title TEXT,
+    severity TEXT DEFAULT 'medium',
+    status TEXT DEFAULT 'draft',
+    bounty_cents INTEGER DEFAULT 0,
+    currency TEXT DEFAULT 'USD',
+    external_id TEXT,
+    url TEXT,
+    report_path TEXT,
+    notes TEXT,
+    submitted_at TEXT,
+    decided_at TEXT,
+    paid_at TEXT,
+    created_at TEXT,
+    updated_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_submissions_status ON submissions(status, updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_submissions_mission ON submissions(mission_id, updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_submissions_finding ON submissions(finding_id);
 """
 
 SEVERITY_ORDER = {"critical": 0, "high": 1, "medium": 2, "low": 3, "info": 4, "unknown": 5}
@@ -162,6 +189,11 @@ AUTONOMY_LEVELS = {"manual", "supervised", "autonomous"}
 APPROVAL_RISKS = {"low", "medium", "high", "critical"}
 APPROVAL_DECISIONS = {"approved", "rejected"}
 TOOL_CALL_STATUSES = {"ok", "error", "denied", "approval_required", "confirm_required"}
+SUBMISSION_PLATFORMS = {"hackerone", "bugcrowd", "intigriti", "yeswehack", "immunefi", "other"}
+SUBMISSION_STATUSES = {"draft", "ready", "submitted", "triaged", "accepted",
+                       "informative", "duplicate", "rejected", "paid", "withdrawn"}
+SUBMISSION_SEVERITIES = {"critical", "high", "medium", "low", "info"}
+OUTCOME_STATUSES = {"accepted", "informative", "duplicate", "rejected", "paid"}
 
 
 def _now() -> str:
@@ -838,6 +870,254 @@ class Index:
         item = dict(row)
         item["args"] = _loads(item.pop("args_json"), {})
         item["result"] = _loads(item.pop("result_json"), None)
+        return item
+
+    # -- submissions ------------------------------------------------------
+    def create_submission(self, title: str, platform: str = "other", program: str = "",
+                          target: str = "", severity: str = "medium",
+                          status: str = "draft", mission_id: str = "",
+                          finding_id: str = "", run_id: str = "",
+                          bounty_cents: int = 0, currency: str = "USD",
+                          external_id: str = "", url: str = "",
+                          report_path: str = "", notes: str = "") -> dict | None:
+        title = (title or "").strip()
+        if not title:
+            raise ValueError("title required")
+        platform = (platform or "other").strip().lower()
+        if platform not in SUBMISSION_PLATFORMS:
+            raise ValueError(f"unknown submission platform: {platform}")
+        severity = (severity or "medium").strip().lower()
+        if severity not in SUBMISSION_SEVERITIES:
+            raise ValueError(f"unknown severity: {severity}")
+        status = (status or "draft").strip().lower()
+        if status not in SUBMISSION_STATUSES:
+            raise ValueError(f"unknown submission status: {status}")
+        bounty_cents = self._bounty_cents(bounty_cents)
+        currency = self._currency(currency)
+        url = self._submission_url(url)
+        mission_id, finding_id, run_id = self._submission_links(
+            mission_id, finding_id, run_id)
+        now = _now()
+        submission_id = _new_id("sub")
+        submitted_at = now if status not in {"draft", "ready"} else None
+        decided_at = now if status in OUTCOME_STATUSES else None
+        paid_at = now if status == "paid" else None
+        with self._lock:
+            self.conn.execute(
+                "INSERT INTO submissions (id, mission_id, finding_id, run_id, platform, "
+                "program, target, title, severity, status, bounty_cents, currency, "
+                "external_id, url, report_path, notes, submitted_at, decided_at, paid_at, "
+                "created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, "
+                "?, ?, ?, ?, ?, ?, ?)",
+                (submission_id, mission_id, finding_id, run_id, platform, program.strip(),
+                 target.strip(), title, severity, status, bounty_cents, currency,
+                 external_id.strip(), url, report_path.strip(), notes.strip(),
+                 submitted_at, decided_at, paid_at, now, now),
+            )
+            self.conn.commit()
+        return self.get_submission(submission_id)
+
+    def list_submissions(self, status: str = "", mission_id: str = "",
+                         finding_id: str = "", platform: str = "",
+                         limit: int = 50, offset: int = 0) -> tuple[list[dict], int]:
+        where, params = [], []
+        if status:
+            if status not in SUBMISSION_STATUSES:
+                raise ValueError(f"unknown submission status: {status}")
+            where.append("s.status = ?")
+            params.append(status)
+        if platform:
+            if platform not in SUBMISSION_PLATFORMS:
+                raise ValueError(f"unknown submission platform: {platform}")
+            where.append("s.platform = ?")
+            params.append(platform)
+        if mission_id:
+            where.append("s.mission_id = ?")
+            params.append(mission_id)
+        if finding_id:
+            where.append("s.finding_id = ?")
+            params.append(finding_id)
+        clause = ("WHERE " + " AND ".join(where)) if where else ""
+        with self._lock:
+            total = self.conn.execute(
+                f"SELECT COUNT(*) FROM submissions s {clause}", params
+            ).fetchone()[0]
+            rows = self.conn.execute(
+                f"""SELECT s.*, m.title AS mission_title, f.title AS finding_title,
+                    r.target AS run_target
+                    FROM submissions s
+                    LEFT JOIN missions m ON m.id = s.mission_id
+                    LEFT JOIN findings f ON f.id = s.finding_id
+                    LEFT JOIN runs r ON r.id = s.run_id
+                    {clause} ORDER BY s.updated_at DESC LIMIT ? OFFSET ?""",
+                [*params, limit, offset],
+            ).fetchall()
+        return [self._submission_row(row) for row in rows], total
+
+    def get_submission(self, submission_id: str) -> dict | None:
+        with self._lock:
+            row = self.conn.execute(
+                """SELECT s.*, m.title AS mission_title, f.title AS finding_title,
+                   r.target AS run_target
+                   FROM submissions s
+                   LEFT JOIN missions m ON m.id = s.mission_id
+                   LEFT JOIN findings f ON f.id = s.finding_id
+                   LEFT JOIN runs r ON r.id = s.run_id
+                   WHERE s.id = ?""",
+                (submission_id,),
+            ).fetchone()
+        return self._submission_row(row) if row else None
+
+    def patch_submission(self, submission_id: str, **fields) -> dict | None:
+        current = self.get_submission(submission_id)
+        if not current:
+            return None
+        sets, values = [], []
+        for column in ("title", "program", "target", "external_id", "url",
+                       "report_path", "notes"):
+            if column in fields and fields[column] is not None:
+                value = str(fields[column]).strip()
+                if column == "title" and not value:
+                    raise ValueError("title required")
+                if column == "url":
+                    value = self._submission_url(value)
+                sets.append(f"{column} = ?")
+                values.append(value)
+        if "platform" in fields and fields["platform"] is not None:
+            platform = str(fields["platform"]).strip().lower()
+            if platform not in SUBMISSION_PLATFORMS:
+                raise ValueError(f"unknown submission platform: {platform}")
+            sets.append("platform = ?")
+            values.append(platform)
+        if "severity" in fields and fields["severity"] is not None:
+            severity = str(fields["severity"]).strip().lower()
+            if severity not in SUBMISSION_SEVERITIES:
+                raise ValueError(f"unknown severity: {severity}")
+            sets.append("severity = ?")
+            values.append(severity)
+        if "bounty_cents" in fields and fields["bounty_cents"] is not None:
+            sets.append("bounty_cents = ?")
+            values.append(self._bounty_cents(fields["bounty_cents"]))
+        if "currency" in fields and fields["currency"] is not None:
+            sets.append("currency = ?")
+            values.append(self._currency(fields["currency"]))
+        if any(key in fields for key in ("mission_id", "finding_id", "run_id")):
+            mission_id, finding_id, run_id = self._submission_links(
+                fields.get("mission_id", current.get("mission_id") or ""),
+                fields.get("finding_id", current.get("finding_id") or ""),
+                fields.get("run_id", current.get("run_id") or ""))
+            for column, value in (("mission_id", mission_id), ("finding_id", finding_id),
+                                  ("run_id", run_id)):
+                if column in fields:
+                    sets.append(f"{column} = ?")
+                    values.append(value)
+        if "status" in fields and fields["status"] is not None:
+            status = str(fields["status"]).strip().lower()
+            if status not in SUBMISSION_STATUSES:
+                raise ValueError(f"unknown submission status: {status}")
+            sets.append("status = ?")
+            values.append(status)
+            now = _now()
+            if status not in {"draft", "ready"} and not current.get("submitted_at"):
+                sets.append("submitted_at = ?")
+                values.append(now)
+            if status in OUTCOME_STATUSES and not current.get("decided_at"):
+                sets.append("decided_at = ?")
+                values.append(now)
+            if status == "paid" and not current.get("paid_at"):
+                sets.append("paid_at = ?")
+                values.append(now)
+        if sets:
+            sets.append("updated_at = ?")
+            values.append(_now())
+            values.append(submission_id)
+            with self._lock:
+                self.conn.execute(
+                    f"UPDATE submissions SET {', '.join(sets)} WHERE id = ?", values)
+                self.conn.commit()
+        return self.get_submission(submission_id)
+
+    def delete_submission(self, submission_id: str) -> bool:
+        with self._lock:
+            cur = self.conn.execute(
+                "DELETE FROM submissions WHERE id = ?", (submission_id,))
+            self.conn.commit()
+        return cur.rowcount > 0
+
+    def submission_summary(self) -> dict:
+        """Aggregate only what was recorded. No estimate is invented here."""
+        with self._lock:
+            rows = self.conn.execute(
+                "SELECT status, bounty_cents, currency, paid_at FROM submissions"
+            ).fetchall()
+        by_status: dict[str, int] = {}
+        currencies: dict[str, dict[str, int]] = {
+            "USD": {"awarded_cents": 0, "paid_cents": 0}}
+        for row in rows:
+            status = str(row["status"] or "draft")
+            by_status[status] = by_status.get(status, 0) + 1
+            currency = self._currency(row["currency"])
+            bucket = currencies.setdefault(
+                currency, {"awarded_cents": 0, "paid_cents": 0})
+            amount = int(row["bounty_cents"] or 0)
+            if status in {"accepted", "paid"}:
+                bucket["awarded_cents"] += amount
+            if status == "paid" or row["paid_at"]:
+                bucket["paid_cents"] += amount
+        return {
+            "total": len(rows),
+            "by_status": by_status,
+            "awaiting": by_status.get("submitted", 0) + by_status.get("triaged", 0),
+            "accepted": by_status.get("accepted", 0) + by_status.get("paid", 0),
+            "paid": by_status.get("paid", 0),
+            "by_currency": currencies,
+        }
+
+    def _submission_links(self, mission_id, finding_id, run_id):
+        mission_id = str(mission_id or "").strip()
+        finding_id = str(finding_id or "").strip()
+        run_id = str(run_id or "").strip()
+        with self._lock:
+            if mission_id and not self.conn.execute(
+                    "SELECT id FROM missions WHERE id = ?", (mission_id,)).fetchone():
+                raise ValueError("mission not found")
+            if finding_id and not self.conn.execute(
+                    "SELECT id FROM findings WHERE id = ?", (finding_id,)).fetchone():
+                raise ValueError("finding not found")
+            if run_id and not self.conn.execute(
+                    "SELECT id FROM runs WHERE id = ?", (run_id,)).fetchone():
+                raise ValueError("run not found")
+        return mission_id, finding_id, run_id
+
+    @staticmethod
+    def _bounty_cents(value) -> int:
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            raise ValueError("bounty_cents must be a number")
+        amount = int(value)
+        if amount < 0:
+            raise ValueError("bounty_cents cannot be negative")
+        if amount > 10_000_000_000:
+            raise ValueError("bounty_cents is implausibly large")
+        return amount
+
+    @staticmethod
+    def _currency(value) -> str:
+        currency = (str(value or "USD")).strip().upper()
+        if len(currency) != 3 or not currency.isalpha():
+            raise ValueError("currency must be a three-letter code")
+        return currency
+
+    @staticmethod
+    def _submission_url(value) -> str:
+        url = str(value or "").strip()
+        if url and not (url.startswith("https://") or url.startswith("http://")):
+            raise ValueError("url must start with http:// or https://")
+        return url
+
+    @staticmethod
+    def _submission_row(row: sqlite3.Row) -> dict:
+        item = dict(row)
+        item["bounty_cents"] = int(item.get("bounty_cents") or 0)
         return item
 
     # -- providers --------------------------------------------------------

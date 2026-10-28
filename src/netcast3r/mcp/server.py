@@ -55,6 +55,8 @@ RESOURCES = (
      "Missions with run, finding, and approval counts.", "application/json"),
     ("netcast3r://runs", "Runs", "Recent scans and their counters.", "application/json"),
     ("netcast3r://findings", "Findings", "Recent findings with masked values.", "application/json"),
+    ("netcast3r://submissions", "Submissions",
+     "Filed reports, platform outcomes, and recorded payouts.", "application/json"),
     ("netcast3r://approvals", "Approvals", "Pending and decided approval requests.",
      "application/json"),
     ("netcast3r://tool-calls", "Tool calls", "The MCP audit trail.", "application/json"),
@@ -264,6 +266,7 @@ class MCPServer:
             "netcast3r://missions": ("/api/v1/missions", {"size": 50}),
             "netcast3r://runs": ("/api/v1/runs", {"size": 50}),
             "netcast3r://findings": ("/api/v1/findings", {"size": 50}),
+            "netcast3r://submissions": ("/api/v1/submissions", {"size": 50}),
             "netcast3r://approvals": ("/api/v1/approvals", {"size": 50}),
             "netcast3r://tool-calls": ("/api/v1/tool-calls", {"size": 50}),
         }

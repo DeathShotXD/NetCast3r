@@ -146,7 +146,7 @@ Denied calls are audited with status `denied`.
 
 ## 3. Tools
 
-29 tools, grouped by job. Every tool publishes a JSON schema with
+35 tools, grouped by job. Every tool publishes a JSON schema with
 `additionalProperties: false`; unknown arguments are rejected rather than
 silently ignored.
 
@@ -188,6 +188,20 @@ silently ignored.
 
 Values are masked at the index boundary. Tools cannot reconstruct a secret.
 
+### Reports and submissions
+
+| Tool | Risk | Purpose |
+| --- | --- | --- |
+| `submissions_list` / `submissions_get` | low | Read filed reports and outcomes |
+| `submissions_summary` | low | Counts and recorded award/payout totals by currency |
+| `submissions_create` | medium | Record a report that was actually filed |
+| `submissions_update` | medium | Change status, evidence links, award, or notes |
+| `submissions_delete` | high | Remove a ledger row, not the report file |
+
+A submission is never inferred from a finding. The ledger only holds what an
+operator or agent wrote down; summary totals are grouped by currency and are
+never converted into a single invented number.
+
 ### Governance
 
 | Tool | Risk | Purpose |
@@ -215,6 +229,7 @@ Resources (read-only, JSON):
 - `netcast3r://missions`
 - `netcast3r://runs`
 - `netcast3r://findings`
+- `netcast3r://submissions`
 - `netcast3r://approvals`
 - `netcast3r://tool-calls`
 - `netcast3r://policy` (the active policy, catalogue, and operating rules)
@@ -274,7 +289,7 @@ tool call. The UI can show whether an MCP client is alive without guessing.
 
 `tests/test_mcp.py` covers:
 
-- schema/catalogue consistency and 29 handlers;
+- schema/catalogue consistency and 35 handlers;
 - readonly denial and audit status;
 - scope refusal, exclusion rules, and mission run linking;
 - metadata-address probe refusal;

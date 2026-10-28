@@ -158,6 +158,7 @@ export type Screen =
   | 'findings'
   | 'runs'
   | 'agent'
+  | 'reports'
   | 'keys'
   | 'help';
 
@@ -251,6 +252,62 @@ export interface ToolCall {
   error: string;
   duration_ms: number;
   created_at: string;
+}
+
+export type SubmissionPlatform =
+  | 'hackerone'
+  | 'bugcrowd'
+  | 'intigriti'
+  | 'yeswehack'
+  | 'immunefi'
+  | 'other';
+
+export type SubmissionStatus =
+  | 'draft'
+  | 'ready'
+  | 'submitted'
+  | 'triaged'
+  | 'accepted'
+  | 'informative'
+  | 'duplicate'
+  | 'rejected'
+  | 'paid'
+  | 'withdrawn';
+
+export interface Submission {
+  id: string;
+  mission_id: string;
+  finding_id: string;
+  run_id: string;
+  platform: SubmissionPlatform;
+  program: string;
+  target: string;
+  title: string;
+  severity: string;
+  status: SubmissionStatus;
+  bounty_cents: number;
+  currency: string;
+  external_id: string;
+  url: string;
+  report_path: string;
+  notes: string;
+  submitted_at?: string | null;
+  decided_at?: string | null;
+  paid_at?: string | null;
+  created_at: string;
+  updated_at: string;
+  mission_title?: string | null;
+  finding_title?: string | null;
+  run_target?: string | null;
+}
+
+export interface SubmissionSummary {
+  total: number;
+  by_status: Partial<Record<SubmissionStatus, number>>;
+  awaiting: number;
+  accepted: number;
+  paid: number;
+  by_currency: Record<string, { awarded_cents: number; paid_cents: number }>;
 }
 
 export interface Toast {

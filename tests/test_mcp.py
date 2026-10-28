@@ -180,6 +180,43 @@ class MCPIntegrationTests(unittest.TestCase):
         self.assertEqual(inventory["total"], 1)
         self.assertEqual(inventory["items"][0]["url"], "https://example.com/api/v1")
 
+    def test_submission_ledger_tools_record_real_rows(self):
+        mission = self.create_mission()
+        payload, is_error = self.call(
+            "submissions_create", title="IDOR in invoice export",
+            platform="hackerone", program="acme", target="example.com",
+            severity="high", mission_id=mission["id"], bounty_cents=50000)
+        self.assertFalse(is_error, payload)
+        submission = payload
+        self.assertEqual(submission["mission_id"], mission["id"])
+        self.assertEqual(submission["bounty_cents"], 50000)
+
+        listed = self.call("submissions_list", mission_id=mission["id"])[0]
+        self.assertEqual(listed["total"], 1)
+        self.assertEqual(listed["items"][0]["id"], submission["id"])
+
+        updated = self.call("submissions_update", submission_id=submission["id"],
+                            status="paid")[0]
+        self.assertEqual(updated["status"], "paid")
+        self.assertIsNotNone(updated["paid_at"])
+
+        summary = self.call("submissions_summary")[0]
+        self.assertEqual(summary["total"], 1)
+        self.assertEqual(summary["paid"], 1)
+        self.assertEqual(summary["by_currency"]["USD"]["paid_cents"], 50000)
+
+        refused, is_error = self.call("submissions_delete", submission_id=submission["id"])
+        self.assertTrue(is_error)
+        self.assertEqual(refused["error"]["code"], "approval_required")
+
+        full = ToolRegistry(ToolContext(plane=self.plane, policy="full", base=self.tmp))
+        deleted, is_error = full.call(
+            "submissions_delete", {"submission_id": submission["id"], "confirm": True},
+            actor="test/1")
+        self.assertFalse(is_error, deleted)
+        self.assertTrue(deleted["deleted"])
+        self.assertEqual(self.call("submissions_get", submission_id=submission["id"])[1], True)
+
     def test_delete_requires_approved_bound_approval_and_is_single_use(self):
         mission = self.create_mission()
         run = self.call("mission_start_run", mission_id=mission["id"])[0]["run"]
@@ -321,7 +358,7 @@ class MCPIntegrationTests(unittest.TestCase):
 
         resources = server.handle({"jsonrpc": "2.0", "id": 3,
                                    "method": "resources/list"})["result"]
-        self.assertEqual(len(resources["resources"]), 7)
+        self.assertEqual(len(resources["resources"]), 8)
         read = server.handle({"jsonrpc": "2.0", "id": 4, "method": "resources/read",
                               "params": {"uri": "netcast3r://policy"}})["result"]
         policy = json.loads(read["contents"][0]["text"])

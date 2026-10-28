@@ -88,16 +88,21 @@ Notable changes to NetCast3r, newest first.
 
 ### Added
 
+- A submission ledger for reports actually filed: platform, program, severity,
+  status, external report id, award, and paid time, with a Reports screen,
+  REST routes, MCP tools, and a summary that groups money by currency. A row
+  is written only by an operator or agent; the ledger never infers a
+  submission from a finding and never estimates a bounty.
 - An Agent Studio screen that renders the live MCP control surface instead of a
-  static diagram: the heartbeat and attached client, the active policy, all 29
+  static diagram: the heartbeat and attached client, the active policy, all 35
   typed tools with their JSON schemas and exact risk gate, the pending approval
   queue with decisions, and a filterable, expandable tool-call audit. Idle is
   labelled as idle; only a live heartbeat is called connected.
-- An MCP control plane: `netcast3r mcp` serves 29 typed tools over local stdio,
+- An MCP control plane: `netcast3r mcp` serves 35 typed tools over local stdio,
   auto-discovers a running UI (or falls back to an embedded workspace), and
   exposes missions, scoped scans, runs, events, evidence slices, findings,
-  triage, approvals, providers, scope checks, and bounded HTTP probes. Three
-  policies (`readonly`, `supervised`, `full`), scope enforcement, single-use
+  triage, submissions, approvals, providers, scope checks, and bounded HTTP probes.
+  Three policies (`readonly`, `supervised`, `full`), scope enforcement, single-use
   argument-bound approvals, per-bucket rate limits, resources, prompts, and a
   complete `tool_calls` audit table are included. `--print-config` emits an
   OpenCode `mcp.servers` block. See `docs/MCP.md`. The UI publishes its

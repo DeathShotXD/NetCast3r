@@ -534,6 +534,72 @@ class Server:
                 return _problem(409, str(exc))
             return _json(approval) if approval else _problem(404, "approval not found")
 
+        @add("GET", r"/api/v1/submissions")
+        def list_submissions(ctx):
+            try:
+                items, total = self.index.list_submissions(
+                    status=ctx.query.get("status", ""),
+                    mission_id=ctx.query.get("mission_id", ""),
+                    finding_id=ctx.query.get("finding_id", ""),
+                    platform=ctx.query.get("platform", ""),
+                    limit=ctx.limit, offset=ctx.offset)
+            except ValueError as exc:
+                return _problem(400, str(exc))
+            return _json({"items": items, "total": total, "page": ctx.page,
+                          "size": ctx.limit})
+
+        @add("POST", r"/api/v1/submissions")
+        def create_submission(ctx):
+            body = ctx.json()
+            body = body if isinstance(body, dict) else {}
+            try:
+                submission = self.index.create_submission(
+                    title=str(body.get("title", "")),
+                    platform=str(body.get("platform", "other")),
+                    program=str(body.get("program", "")),
+                    target=str(body.get("target", "")),
+                    severity=str(body.get("severity", "medium")),
+                    status=str(body.get("status", "draft")),
+                    mission_id=str(body.get("mission_id", "")),
+                    finding_id=str(body.get("finding_id", "")),
+                    run_id=str(body.get("run_id", "")),
+                    bounty_cents=body.get("bounty_cents", 0),
+                    currency=str(body.get("currency", "USD")),
+                    external_id=str(body.get("external_id", "")),
+                    url=str(body.get("url", "")),
+                    report_path=str(body.get("report_path", "")),
+                    notes=str(body.get("notes", "")))
+            except ValueError as exc:
+                return _problem(400, str(exc))
+            return _json(submission, 201)
+
+        @add("GET", r"/api/v1/submissions/summary")
+        def submission_summary(ctx):
+            return _json(self.index.submission_summary())
+
+        @add("GET", r"/api/v1/submissions/(?P<id>[A-Za-z0-9_]+)")
+        def get_submission(ctx):
+            submission = self.index.get_submission(ctx.params["id"])
+            return _json(submission) if submission else _problem(404, "submission not found")
+
+        @add("PATCH", r"/api/v1/submissions/(?P<id>[A-Za-z0-9_]+)")
+        def patch_submission(ctx):
+            body = ctx.json()
+            body = body if isinstance(body, dict) else {}
+            fields = {key: body.get(key) for key in
+                      ("title", "platform", "program", "target", "severity", "status",
+                       "bounty_cents", "currency", "external_id", "url", "report_path",
+                       "notes", "mission_id", "finding_id", "run_id") if key in body}
+            try:
+                submission = self.index.patch_submission(ctx.params["id"], **fields)
+            except ValueError as exc:
+                return _problem(400, str(exc))
+            return _json(submission) if submission else _problem(404, "submission not found")
+
+        @add("DELETE", r"/api/v1/submissions/(?P<id>[A-Za-z0-9_]+)")
+        def delete_submission(ctx):
+            return _json({"deleted": self.index.delete_submission(ctx.params["id"])})
+
         @add("GET", r"/api/v1/tool-calls")
         def list_tool_calls(ctx):
             try:

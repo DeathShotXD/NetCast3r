@@ -206,7 +206,7 @@ netcast3r mcp --print-config   # paste into opencode.jsonc under mcp.servers
 opencode mcp list
 ```
 
-The server has 29 typed tools with risk tiers, scope enforcement, single-use
+The server has 35 typed tools with risk tiers, scope enforcement, single-use
 approvals, rate limits, and a full tool-call audit. See
 [docs/MCP.md](docs/MCP.md). It is a real control surface, not an autonomous
 scanner: findings and bounty results still come from verified runs.

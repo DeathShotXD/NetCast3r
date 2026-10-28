@@ -485,6 +485,41 @@ def finding_triage(ctx: ToolContext, args: dict) -> dict:
     return _call(ctx, "PATCH", f"/api/v1/findings/{args['finding_id']}", body=body)
 
 
+def submissions_list(ctx: ToolContext, args: dict) -> dict:
+    return _call(ctx, "GET", "/api/v1/submissions", {
+        "status": args.get("status", ""),
+        "mission_id": args.get("mission_id", ""),
+        "finding_id": args.get("finding_id", ""),
+        "platform": args.get("platform", ""),
+        "size": args.get("limit", 50), "page": args.get("page", 1)})
+
+
+def submissions_get(ctx: ToolContext, args: dict) -> dict:
+    return _call(ctx, "GET", f"/api/v1/submissions/{args['submission_id']}")
+
+
+def submissions_summary(ctx: ToolContext, args: dict) -> dict:
+    return _call(ctx, "GET", "/api/v1/submissions/summary")
+
+
+def submissions_create(ctx: ToolContext, args: dict) -> dict:
+    body = {key: value for key, value in args.items()
+            if key in {"title", "platform", "program", "target", "severity", "status",
+                       "mission_id", "finding_id", "run_id", "bounty_cents", "currency",
+                       "external_id", "url", "report_path", "notes"}}
+    return _call(ctx, "POST", "/api/v1/submissions", body=body)
+
+
+def submissions_update(ctx: ToolContext, args: dict) -> dict:
+    body = {key: value for key, value in args.items()
+            if key not in {"submission_id", "approval_id", "confirm"}}
+    return _call(ctx, "PATCH", f"/api/v1/submissions/{args['submission_id']}", body=body)
+
+
+def submissions_delete(ctx: ToolContext, args: dict) -> dict:
+    return _call(ctx, "DELETE", f"/api/v1/submissions/{args['submission_id']}")
+
+
 def approvals_list(ctx: ToolContext, args: dict) -> dict:
     return _call(ctx, "GET", "/api/v1/approvals", {
         "status": args.get("status", ""), "mission_id": args.get("mission_id", ""),
@@ -620,6 +655,12 @@ _HANDLERS.update({
     "findings_get": findings_get,
     "findings_summary": findings_summary,
     "finding_triage": finding_triage,
+    "submissions_list": submissions_list,
+    "submissions_get": submissions_get,
+    "submissions_summary": submissions_summary,
+    "submissions_create": submissions_create,
+    "submissions_update": submissions_update,
+    "submissions_delete": submissions_delete,
     "approvals_list": approvals_list,
     "approval_request": approval_request,
     "approval_decide": approval_decide,
@@ -780,6 +821,85 @@ TOOLS: tuple[Tool, ...] = (
                   "tags": _array("tags"),
                   "severity_override": _string("override severity")},
                  ["finding_id"]), "finding_triage"),
+    Tool("submissions_list", "List submissions",
+         "List filed reports and their platform outcomes. This is a ledger of real "
+         "submissions, not a prediction; the workspace does not create rows for you.",
+         "low", "reports",
+         _schema({"status": _string("submission status", enum=[
+                     "draft", "ready", "submitted", "triaged", "accepted", "informative",
+                     "duplicate", "rejected", "paid", "withdrawn"]),
+                  "platform": _string("hacking platform", enum=[
+                      "hackerone", "bugcrowd", "intigriti", "yeswehack", "immunefi", "other"]),
+                  "mission_id": _string("mission id"),
+                  "finding_id": _string("finding id"),
+                  "limit": _integer("page size", 1, 200, 50),
+                  "page": _integer("page number", 1)}), "submissions_list", read_only=True),
+    Tool("submissions_get", "Get submission",
+         "Fetch one submission with its mission, finding, and run context.",
+         "low", "reports",
+         _schema({"submission_id": _string("submission id")}, ["submission_id"]),
+         "submissions_get", read_only=True),
+    Tool("submissions_summary", "Submission summary",
+         "Counts by status and recorded award/payout totals, grouped by currency. "
+         "Only rows you recorded are counted.",
+         "low", "reports", _schema({}), "submissions_summary", read_only=True),
+    Tool("submissions_create", "Record submission",
+         "Record a report you filed or are preparing. A submission is never inferred "
+         "from a finding; it exists only when an operator or agent writes it down.",
+         "medium", "reports",
+         _schema({"title": _string("report title"),
+                  "platform": _string("hacking platform", enum=[
+                      "hackerone", "bugcrowd", "intigriti", "yeswehack", "immunefi", "other"]),
+                  "program": _string("program handle or name"),
+                  "target": _string("affected target"),
+                  "severity": _string("reported severity", enum=[
+                      "critical", "high", "medium", "low", "info"]),
+                  "status": _string("submission status", enum=[
+                      "draft", "ready", "submitted", "triaged", "accepted", "informative",
+                      "duplicate", "rejected", "paid", "withdrawn"]),
+                  "mission_id": _string("mission id"),
+                  "finding_id": _string("finding id"),
+                  "run_id": _string("run id"),
+                  "bounty_cents": _integer("recorded award in cents", 0),
+                  "currency": _string("three-letter currency code"),
+                  "external_id": _string("platform report id"),
+                  "url": _string("https report url"),
+                  "report_path": _string("local report path"),
+                  "notes": _string("private notes")},
+                 ["title"]), "submissions_create"),
+    Tool("submissions_update", "Update submission",
+         "Change a submission's status, outcome, award, links, or notes. Status changes "
+         "stamp submitted, decided, and paid times on first entry.",
+         "medium", "reports",
+         _schema({"submission_id": _string("submission id"),
+                  "title": _string("report title"),
+                  "platform": _string("hacking platform", enum=[
+                      "hackerone", "bugcrowd", "intigriti", "yeswehack", "immunefi", "other"]),
+                  "program": _string("program handle or name"),
+                  "target": _string("affected target"),
+                  "severity": _string("reported severity", enum=[
+                      "critical", "high", "medium", "low", "info"]),
+                  "status": _string("submission status", enum=[
+                      "draft", "ready", "submitted", "triaged", "accepted", "informative",
+                      "duplicate", "rejected", "paid", "withdrawn"]),
+                  "mission_id": _string("mission id"),
+                  "finding_id": _string("finding id"),
+                  "run_id": _string("run id"),
+                  "bounty_cents": _integer("recorded award in cents", 0),
+                  "currency": _string("three-letter currency code"),
+                  "external_id": _string("platform report id"),
+                  "url": _string("https report url"),
+                  "report_path": _string("local report path"),
+                  "notes": _string("private notes")},
+                 ["submission_id"]), "submissions_update"),
+    Tool("submissions_delete", "Delete submission",
+         "Delete a ledger entry. High risk: needs an approved approval in supervised "
+         "mode, and confirm=true under full policy. This does not delete the report file.",
+         "high", "reports",
+         _schema({"submission_id": _string("submission id"),
+                  "approval_id": _string("approved approval id"),
+                  "confirm": _boolean("explicit confirmation (full policy)")},
+                 ["submission_id"]), "submissions_delete", destructive=True),
     Tool("approvals_list", "List approvals",
          "List approval requests, optionally pending only or by mission.",
          "low", "governance",

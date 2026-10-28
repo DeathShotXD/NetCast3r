@@ -148,6 +148,40 @@ class ServerTests(unittest.TestCase):
         self.assertEqual(patched["triage_status"], "confirmed")
         self.assertEqual(patched["tags"], ["aws"])
 
+    def test_submission_ledger_routes(self):
+        mission = self.data(self.call("POST", "/api/v1/missions", body={
+            "title": "Operation Ledger", "target": "example.com"}))
+        response = self.call("POST", "/api/v1/submissions", body={
+            "title": "Stored XSS in admin console", "platform": "hackerone",
+            "program": "acme", "target": "app.example.com", "severity": "high",
+            "mission_id": mission["id"], "notes": "drafting"})
+        self.assertEqual(response.status, 201)
+        submission = self.data(response)
+        self.assertEqual(submission["mission_id"], mission["id"])
+        self.assertEqual(submission["mission_title"], "Operation Ledger")
+
+        listing = self.data(self.call("GET", "/api/v1/submissions",
+                                      query={"platform": "hackerone"}))
+        self.assertEqual(listing["total"], 1)
+        self.assertEqual(listing["items"][0]["id"], submission["id"])
+
+        patched = self.data(self.call("PATCH", f"/api/v1/submissions/{submission['id']}",
+                                      body={"status": "submitted", "url": "https://hackerone.com/reports/1"}))
+        self.assertEqual(patched["status"], "submitted")
+        self.assertIsNotNone(patched["submitted_at"])
+
+        summary = self.data(self.call("GET", "/api/v1/submissions/summary"))
+        self.assertEqual(summary["total"], 1)
+        self.assertEqual(summary["awaiting"], 1)
+
+        bad = self.call("POST", "/api/v1/submissions", body={
+            "title": "Bad link", "platform": "hackerone", "url": "javascript:alert(1)"})
+        self.assertEqual(bad.status, 400)
+
+        deleted = self.data(self.call("DELETE", f"/api/v1/submissions/{submission['id']}"))
+        self.assertTrue(deleted["deleted"])
+        self.assertEqual(self.call("GET", f"/api/v1/submissions/{submission['id']}").status, 404)
+
     def test_fingerprints_do_not_collide_when_tokens_share_a_prefix(self):
         prefix = "same-header-" + "x" * 80
         first = self.index.create_run("https://one.example")

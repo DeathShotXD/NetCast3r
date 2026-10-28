@@ -11,6 +11,7 @@
   import LiveScan from './lib/screens/LiveScan.svelte';
   import Missions from './lib/screens/Missions.svelte';
   import NewScan from './lib/screens/NewScan.svelte';
+  import Reports from './lib/screens/Reports.svelte';
   import Runs from './lib/screens/Runs.svelte';
   import Backdrop from './lib/ui/Backdrop.svelte';
   import Palette from './lib/ui/Palette.svelte';
@@ -93,6 +94,8 @@
             <Runs />
           {:else if store.screen === 'agent'}
             <AgentStudio />
+          {:else if store.screen === 'reports'}
+            <Reports />
           {:else if store.screen === 'keys'}
             <Keys />
           {:else if store.screen === 'help'}
