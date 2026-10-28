@@ -139,6 +139,8 @@ Per MCP process, sliding windows:
 | mutations | 40 / minute |
 | scans | 6 / hour |
 | probes | 60 / minute |
+| authenticated requests | 90 / minute |
+| inbox waits | 6 / minute |
 
 Denied calls are audited with status `denied`.
 
@@ -146,7 +148,7 @@ Denied calls are audited with status `denied`.
 
 ## 3. Tools
 
-40 tools, grouped by job. Every tool publishes a JSON schema with
+53 tools, grouped by job. Every tool publishes a JSON schema with
 `additionalProperties: false`; unknown arguments are rejected rather than
 silently ignored.
 
@@ -221,6 +223,38 @@ never converted into a single invented number.
 | `provider_test` | medium | One real provider completion |
 | `scope_check` | low | Classify a target without traffic |
 | `http_probe` | medium | One scoped GET/HEAD, bounded |
+
+### Identity and callbacks
+
+| Tool | Risk | Purpose |
+| --- | --- | --- |
+| `inbox_create` | low | Disposable mail.tm inbox; credentials stay in a 0600 file |
+| `inbox_list` / `inbox_read` | low | Masked mailbox list and message contents |
+| `inbox_wait` | low | Block for a verification mail, optionally matched |
+| `oast_create` | medium | Unique webhook.site callback URL |
+| `oast_list` / `oast_poll` | low | Read callbacks and a polling cursor |
+| `oast_delete` | medium | Remove the remote endpoint and local record |
+| `auth_profile_set` | medium | Store named headers and cookies |
+| `auth_profile_list` | low | Names only, never values |
+| `auth_profile_delete` | medium | Remove a profile |
+| `auth_profile_import` | medium | Import cookies from a Playwright storage state |
+
+Inbox passwords, bearer tokens, and callback tokens are written to
+`~/.netcast3r/mailboxes.json`, `oast.json`, and `auth-profiles.json` with mode
+`0600`. Tool responses mask them; audit rows redact `cookies`, `headers`,
+`authorization`, and `set-cookie`.
+
+### Authenticated testing
+
+`http_request` is the authenticated counterpart to `http_probe`. It accepts a
+method, extra headers, a named auth profile, and a raw, JSON, or form body.
+Active work still needs a mission or explicit scope, and every redirect hop is
+resolved and re-checked against that scope before the next request is sent. A
+redirect to an out-of-scope host is returned with `blocked_redirect` instead of
+being followed, and session headers are dropped when a redirect crosses to a
+different host. Metadata and link-local addresses are refused at every hop.
+Bodies are capped at 512 KiB and the response returns `set_cookie` separately
+so cookie flags can be reviewed.
 
 ### Mission agent
 

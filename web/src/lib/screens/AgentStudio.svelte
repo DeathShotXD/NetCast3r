@@ -39,7 +39,10 @@
     governance: 'Governance',
     providers: 'Providers',
     reports: 'Reports',
-    scope: 'Scope'
+    scope: 'Scope',
+    identity: 'Identity',
+    callbacks: 'Callbacks',
+    web: 'Authenticated web'
   };
 
   let info = $state<McpInfo | null>(null);

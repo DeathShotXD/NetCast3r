@@ -335,6 +335,122 @@ class MCPIntegrationTests(unittest.TestCase):
             httpd.shutdown()
             httpd.server_close()
 
+    def test_http_request_uses_auth_profile_and_redirect_checks(self):
+        import threading
+        from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+        class Handler(BaseHTTPRequestHandler):
+            def do_GET(self):
+                if self.path.startswith("/redirect"):
+                    self.send_response(302)
+                    self.send_header("Location", "/echo")
+                    self.end_headers()
+                    return
+                if self.path.startswith("/offsite"):
+                    self.send_response(302)
+                    self.send_header("Location", "http://localhost:9/echo")
+                    self.end_headers()
+                    return
+                self._echo(b"")
+
+            def do_POST(self):
+                length = int(self.headers.get("content-length") or 0)
+                self._echo(self.rfile.read(length))
+
+            def _echo(self, body):
+                payload = json.dumps({
+                    "method": self.command, "path": self.path,
+                    "headers": {key.lower(): value for key, value in self.headers.items()},
+                    "body": body.decode("utf-8", "replace"),
+                }).encode()
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(payload)))
+                self.send_header("Set-Cookie", "seen=1; Secure")
+                self.end_headers()
+                self.wfile.write(payload)
+
+            def log_message(self, *args):
+                pass
+
+        httpd = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        thread = threading.Thread(target=httpd.serve_forever, daemon=True)
+        thread.start()
+        try:
+            base = f"http://127.0.0.1:{httpd.server_port}"
+            mission = self.create_mission(target=base + "/")
+            profile, is_error = self.registry.call(
+                "auth_profile_set",
+                {"name": "test-session",
+                 "cookies": {"sid": "top-secret-cookie"},
+                 "headers": {"X-CSRF": "csrf-value"}}, actor="test")
+            self.assertFalse(is_error, profile)
+
+            payload, is_error = self.call(
+                "http_request", target=f"{base}/echo", mission_id=mission["id"],
+                method="POST", auth_profile="test-session", json={"hello": "world"})
+            self.assertFalse(is_error, payload)
+            self.assertEqual(payload["status"], 200)
+            self.assertEqual(payload["set_cookie"], ["seen=1; Secure"])
+            echoed = json.loads(payload["body"])
+            self.assertEqual(echoed["method"], "POST")
+            self.assertEqual(echoed["headers"]["cookie"], "sid=top-secret-cookie")
+            self.assertEqual(echoed["headers"]["x-csrf"], "csrf-value")
+            self.assertEqual(echoed["body"], '{"hello": "world"}')
+
+            follow, is_error = self.call(
+                "http_request", target=f"{base}/redirect", mission_id=mission["id"],
+                follow_redirects=True)
+            self.assertFalse(is_error, follow)
+            self.assertEqual(follow["status"], 200)
+            self.assertEqual(len(follow["redirects"]), 1)
+
+            blocked, is_error = self.call(
+                "http_request", target=f"{base}/offsite", mission_id=mission["id"],
+                follow_redirects=True)
+            self.assertFalse(is_error, blocked)
+            self.assertEqual(blocked["status"], 302)
+            self.assertIn("outside the declared scope", blocked["blocked_redirect"])
+
+            audit = self.plane.request("GET", "/api/v1/tool-calls")
+            serialized = json.dumps(audit)
+            self.assertNotIn("top-secret-cookie", serialized)
+            self.assertNotIn("csrf-value", serialized)
+        finally:
+            httpd.shutdown()
+            httpd.server_close()
+
+    def test_readonly_denies_http_request(self):
+        ctx = ToolContext(plane=self.plane, policy="readonly", base=self.tmp)
+        registry = ToolRegistry(ctx)
+        payload, is_error = registry.call(
+            "http_request", {"target": "https://example.com/"}, actor="test")
+        self.assertTrue(is_error)
+        self.assertEqual(payload["error"]["code"], "policy_denied")
+
+    def test_identity_tools_are_masked_and_registered(self):
+        from unittest.mock import patch
+
+        from netcast3r import oast, tempmail
+
+        box = tempmail.Mailbox(id="box-1", address="box@maxxspace.com",
+                               password="pw", token="tok", created_at=1.0)
+        with patch.object(tempmail, "create_mailbox", return_value=box):
+            payload, is_error = self.call("inbox_create")
+            self.assertFalse(is_error, payload)
+            self.assertEqual(payload["mailbox"]["address"], "box@maxxspace.com")
+            self.assertNotIn("token", payload["mailbox"])
+            self.assertNotIn("password", payload["mailbox"])
+
+        session = oast.OastSession(id="tok-1", provider="webhook.site", token="tok-1",
+                                   url="https://webhook.site/tok-1", created_at=1.0)
+        with patch.object(oast, "create_session", return_value=session):
+            payload, is_error = self.call("oast_create", label="ssrf")
+            self.assertFalse(is_error, payload)
+            self.assertEqual(payload["session"]["url"], "https://webhook.site/tok-1")
+            self.assertNotIn("token", payload["session"])
+
+
 
     # -- protocol ----------------------------------------------------------
     def test_protocol_initialize_tools_resources_and_prompts(self):

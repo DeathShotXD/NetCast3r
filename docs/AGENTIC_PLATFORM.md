@@ -37,8 +37,11 @@ mock-driven; the blueprint below is the source of truth for production.
 runs/events/findings. The shell uses the Obsidian Signal system. Mission,
 Approval, and ToolCall entities, their SQLite tables, APIs, and the Missions
 portfolio screen exist. The MCP control plane is implemented: a local stdio
-server, 40 typed tools, scope and approval gates, single-use approvals, rate
-limits, resources, prompts, and a complete tool-call audit. The submission
+server, 53 typed tools, scope and approval gates, single-use approvals, rate
+limits, resources, prompts, and a complete tool-call audit. Disposable inboxes,
+OAST callbacks, named auth profiles, and a scoped authenticated request tool
+support account-gated testing without putting credentials in prompts or audit
+rows. The submission
 ledger records filed reports, platform outcomes, and payouts by currency; it
 never infers a submission from a finding. See [`MCP.md`](MCP.md).
 

@@ -4,6 +4,22 @@ Notable changes to NetCast3r, newest first.
 
 ## Unreleased
 
+### Added
+
+- Disposable inboxes (`inbox_create`, `inbox_list`, `inbox_read`,
+  `inbox_wait`) backed by mail.tm. Mailbox passwords and bearer tokens live in
+  a 0600 state file and never appear in a tool response or audit row.
+- OAST callbacks (`oast_create`, `oast_list`, `oast_poll`, `oast_delete`) for
+  blind SSRF and blind injection testing, with a polling cursor.
+- Named auth profiles (`auth_profile_set`, `auth_profile_list`,
+  `auth_profile_delete`, `auth_profile_import`) for cookies and headers, with
+  header-injection validation and masked listings.
+- `http_request`, a scoped authenticated request tool that carries a profile,
+  supports JSON, form, and raw bodies, caps the response, and re-checks every
+  redirect hop against the mission scope. Session headers do not cross a host
+  boundary.
+- `write_private_json` and `read_private_json` helpers for 0600 local state.
+
 ### Security
 
 - The Scribe prompt no longer carries the raw credential: the value is masked

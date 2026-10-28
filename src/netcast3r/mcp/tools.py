@@ -23,18 +23,21 @@ import socket
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from urllib.parse import urlsplit
+from urllib.parse import urlencode, urljoin, urlsplit
 
 import httpx
 
+from .. import authstore, oast, tempmail
 from ..scope import ScopeManager
 
 POLICIES = ("readonly", "supervised", "full")
 RISK_LEVELS = {"low": 0, "medium": 1, "high": 2, "critical": 3}
 DEFAULT_POLICY = "supervised"
 
-REDACT_KEYS = {"api_key", "apikey", "authorization", "cookie", "password",
-               "secret", "token", "private_key", "session"}
+REDACT_KEYS = {"api_key", "apikey", "authorization", "cookie", "cookies", "password",
+               "secret", "token", "private_key", "session", "set-cookie",
+               "set_cookie", "x-api-key", "x-auth-token", "proxy-authorization",
+               "body", "json", "form", "headers"}
 
 METADATA_HOSTS = {"metadata.google.internal", "metadata.goog"}
 METADATA_IPS = {"169.254.169.254", "100.100.100.200", "fd00:ec2::254"}
@@ -191,6 +194,8 @@ class RateLimiter:
         "mutation": (40, 60.0),
         "scan": (6, 3600.0),
         "probe": (60, 60.0),
+        "request": (90, 60.0),
+        "wait": (6, 60.0),
     }
 
     def __init__(self):
@@ -653,6 +658,278 @@ def http_probe(ctx: ToolContext, args: dict) -> dict:
         raise ToolError("probe_failed", f"probe failed: {type(exc).__name__}", str(exc))
 
 
+def http_request(ctx: ToolContext, args: dict) -> dict:
+    """One scoped HTTP request with a named auth profile and manual redirects.
+
+    This is the authenticated counterpart to ``http_probe``: it can carry a
+    session, a JSON or form body, and any method a web application accepts.
+    Every hop is re-checked against the same scope, so a redirect cannot walk
+    the request onto an out-of-scope or metadata host.
+    """
+    target = args["target"].strip()
+    url = target if "://" in target else "https://" + target
+    parts = urlsplit(url)
+    if parts.scheme not in {"http", "https"} or not parts.hostname:
+        raise ToolError("invalid_arguments", "target must be an http(s) URL or hostname")
+    method = str(args.get("method", "GET")).upper()
+    if method not in {"GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"}:
+        raise ToolError("invalid_arguments", "unsupported method")
+    mission_id = str(args.get("mission_id") or "")
+    scope = args.get("scope")
+    _require_scope(ctx, target, mission_id, scope, probe=True)
+
+    headers: dict[str, str] = {"user-agent": "NetCast3r-MCP/0.1",
+                               "accept": "*/*"}
+    profile_name = str(args.get("auth_profile") or "").strip()
+    if profile_name:
+        profile = authstore.get_profile(profile_name, base=ctx.base)
+        if profile is None:
+            raise ToolError("invalid_arguments", f"unknown auth profile: {profile_name}")
+        headers.update(profile.request_headers())
+
+    supplied = args.get("headers") or {}
+    if not isinstance(supplied, dict):
+        raise ToolError("invalid_arguments", "headers must be an object")
+    has_cookie = any(str(name).lower() == "cookie" for name in supplied)
+    for raw_name, raw_value in supplied.items():
+        name = str(raw_name).strip()
+        value = str(raw_value)
+        if not name or any(char in name for char in "\r\n:") or "\r" in value or "\n" in value:
+            raise ToolError("invalid_arguments", f"invalid header: {name[:40]!r}")
+        headers[name] = value
+    if has_cookie:
+        headers.pop("Cookie", None)
+
+    body = args.get("body")
+    payload_json = args.get("json")
+    payload_form = args.get("form")
+    chosen = [item for item in (body, payload_json, payload_form) if item is not None]
+    if len(chosen) > 1:
+        raise ToolError("invalid_arguments", "use only one of body, json, or form")
+    content: bytes | None = None
+    if payload_json is not None:
+        if not isinstance(payload_json, dict):
+            raise ToolError("invalid_arguments", "json must be an object")
+        content = json.dumps(payload_json).encode("utf-8")
+        headers.setdefault("content-type", "application/json")
+    elif payload_form is not None:
+        if not isinstance(payload_form, dict):
+            raise ToolError("invalid_arguments", "form must be an object")
+        content = urlencode(payload_form, doseq=True).encode("utf-8")
+        headers.setdefault("content-type", "application/x-www-form-urlencoded")
+    elif body is not None:
+        if not isinstance(body, str):
+            raise ToolError("invalid_arguments", "body must be a string")
+        content = body.encode("utf-8")
+
+    maximum = int(args.get("max_bytes", 65536))
+    maximum = max(1024, min(maximum, 524288))
+    timeout = float(args.get("timeout", 15))
+    timeout = max(1.0, min(timeout, 60.0))
+    follow = bool(args.get("follow_redirects", False))
+    max_hops = int(args.get("max_redirects", 5)) if follow else 0
+    max_hops = max(0, min(max_hops, 5))
+
+    redirects: list[dict] = []
+    blocked = ""
+    started = time.monotonic()
+    current = url
+    current_method = method
+    current_content = content
+    status = 0
+    response_headers: dict[str, str] = {}
+    set_cookie: list[str] = []
+    text = ""
+    size = 0
+    truncated = False
+
+    try:
+        with httpx.Client(timeout=timeout, trust_env=False, follow_redirects=False) as client:
+            for hop in range(max_hops + 1):
+                with client.stream(current_method, current, headers=headers,
+                                   content=current_content) as response:
+                    chunks, read = [], 0
+                    for chunk in response.iter_bytes():
+                        if read + len(chunk) > maximum:
+                            chunks.append(chunk[: maximum - read])
+                            read = maximum
+                            truncated = True
+                            break
+                        chunks.append(chunk)
+                        read += len(chunk)
+                    raw = b"".join(chunks)
+                    status = response.status_code
+                    response_headers = {}
+                    for key, value in response.headers.multi_items():
+                        lower = key.lower()
+                        if lower == "set-cookie":
+                            set_cookie.append(value)
+                        elif lower in response_headers:
+                            response_headers[lower] += ", " + value
+                        else:
+                            response_headers[lower] = value
+                    text = raw.decode("utf-8", "replace")
+                    size = len(raw)
+                    location = response.headers.get("location", "")
+                if not (follow and status in {301, 302, 303, 307, 308} and location):
+                    break
+                if hop >= max_hops:
+                    break
+                next_url = urljoin(current, location)
+                next_parts = urlsplit(next_url)
+                if next_parts.scheme not in {"http", "https"}:
+                    blocked = f"redirect scheme is not http(s): {next_parts.scheme}"
+                    break
+                try:
+                    _require_scope(ctx, next_url, mission_id, scope, probe=True)
+                except ToolError as exc:
+                    blocked = exc.message
+                    break
+                redirects.append({"status": status, "from": current, "to": next_url})
+                if urlsplit(current).hostname != next_parts.hostname:
+                    # never carry a session across a host boundary
+                    for key in list(headers):
+                        if key.lower() in {"cookie", "authorization"}:
+                            headers.pop(key, None)
+                if status in {301, 302, 303} and current_method not in {"GET", "HEAD"}:
+                    current_method = "GET"
+                    current_content = None
+                    headers.pop("content-type", None)
+                    headers.pop("Content-Type", None)
+                current = next_url
+    except httpx.HTTPError as exc:
+        raise ToolError("request_failed", f"request failed: {type(exc).__name__}", str(exc))
+
+    return {
+        "target": target,
+        "url": current,
+        "method": current_method,
+        "status": status,
+        "headers": response_headers,
+        "set_cookie": set_cookie,
+        "body": text,
+        "bytes": size,
+        "truncated": truncated,
+        "redirects": redirects,
+        "blocked_redirect": blocked,
+        "elapsed_ms": int((time.monotonic() - started) * 1000),
+    }
+
+
+def inbox_create(ctx: ToolContext, args: dict) -> dict:
+    try:
+        box = tempmail.create_mailbox(
+            base=ctx.base, domain=str(args.get("domain") or ""),
+            prefix=str(args.get("prefix") or "nc3r"))
+    except tempmail.MailError as exc:
+        raise ToolError("mailbox_failed", str(exc))
+    return {"mailbox": box.public()}
+
+
+def inbox_list(ctx: ToolContext, args: dict) -> dict:
+    items = tempmail.list_mailboxes(base=ctx.base)
+    return {"items": items, "total": len(items)}
+
+
+def inbox_read(ctx: ToolContext, args: dict) -> dict:
+    box = tempmail.get_mailbox(args["mailbox_id"], base=ctx.base)
+    if box is None:
+        raise ToolError("not_found", "mailbox not found")
+    try:
+        if args.get("message_id"):
+            return {"message": tempmail.MailClient(base_url=box.base_url).read(
+                box, str(args["message_id"]), base=ctx.base)}
+        client = tempmail.MailClient(base_url=box.base_url)
+        return {"mailbox": box.public(), "items": client.messages(box, base=ctx.base)}
+    except tempmail.MailError as exc:
+        raise ToolError("mailbox_failed", str(exc))
+
+
+def inbox_wait(ctx: ToolContext, args: dict) -> dict:
+    box = tempmail.get_mailbox(args["mailbox_id"], base=ctx.base)
+    if box is None:
+        raise ToolError("not_found", "mailbox not found")
+    try:
+        message = tempmail.MailClient(base_url=box.base_url).wait(
+            box, base=ctx.base, timeout=args.get("timeout", 180),
+            interval=args.get("interval", 4), match=str(args.get("match") or ""),
+            since_id=str(args.get("since_id") or ""))
+    except tempmail.MailError as exc:
+        raise ToolError("mailbox_failed", str(exc))
+    return {"found": message is not None, "message": message}
+
+
+def oast_create(ctx: ToolContext, args: dict) -> dict:
+    try:
+        session = oast.create_session(base=ctx.base, label=str(args.get("label") or ""))
+    except oast.OastError as exc:
+        raise ToolError("callback_failed", str(exc))
+    return {"session": session.public()}
+
+
+def oast_list(ctx: ToolContext, args: dict) -> dict:
+    items = oast.list_sessions(base=ctx.base)
+    return {"items": items, "total": len(items)}
+
+
+def oast_poll(ctx: ToolContext, args: dict) -> dict:
+    session = oast.get_session(args["session_id"], base=ctx.base)
+    if session is None:
+        raise ToolError("not_found", "callback session not found")
+    try:
+        items = oast.OastClient(base_url=session.base_url).poll(
+            session, base=ctx.base, since=args.get("since"),
+            limit=args.get("limit", 50))
+    except oast.OastError as exc:
+        raise ToolError("callback_failed", str(exc))
+    cursor = max((item.get("created_at") or 0) for item in items) if items else args.get("since", 0)
+    return {"session": session.public(), "items": items, "total": len(items),
+            "cursor": cursor}
+
+
+def oast_delete(ctx: ToolContext, args: dict) -> dict:
+    session = oast.get_session(args["session_id"], base=ctx.base)
+    if session is None:
+        raise ToolError("not_found", "callback session not found")
+    try:
+        removed = oast.OastClient(base_url=session.base_url).delete(session, base=ctx.base)
+    except oast.OastError as exc:
+        raise ToolError("callback_failed", str(exc))
+    return {"session_id": session.id, "deleted": removed}
+
+
+def auth_profile_set(ctx: ToolContext, args: dict) -> dict:
+    try:
+        profile = authstore.set_profile(
+            args["name"], headers=args.get("headers"), cookies=args.get("cookies"),
+            note=str(args.get("note") or ""), base=ctx.base)
+    except authstore.AuthError as exc:
+        raise ToolError("invalid_arguments", str(exc))
+    return {"profile": profile}
+
+
+def auth_profile_list(ctx: ToolContext, args: dict) -> dict:
+    items = authstore.list_profiles(base=ctx.base)
+    return {"items": items, "total": len(items)}
+
+
+def auth_profile_delete(ctx: ToolContext, args: dict) -> dict:
+    removed = authstore.delete_profile(args["name"], base=ctx.base)
+    if not removed:
+        raise ToolError("not_found", "auth profile not found")
+    return {"name": args["name"], "deleted": True}
+
+
+def auth_profile_import(ctx: ToolContext, args: dict) -> dict:
+    try:
+        profile = authstore.from_storage_state(
+            args["path"], args["name"], domain=str(args.get("domain") or ""),
+            base=ctx.base)
+    except authstore.AuthError as exc:
+        raise ToolError("invalid_arguments", str(exc))
+    return {"profile": profile}
+
+
 def tool_calls_list(ctx: ToolContext, args: dict) -> dict:
     return _call(ctx, "GET", "/api/v1/tool-calls", {
         "tool": args.get("tool", ""), "status": args.get("status", ""),
@@ -702,6 +979,19 @@ _HANDLERS.update({
     "provider_test": provider_test,
     "scope_check": scope_check,
     "http_probe": http_probe,
+    "http_request": http_request,
+    "inbox_create": inbox_create,
+    "inbox_list": inbox_list,
+    "inbox_read": inbox_read,
+    "inbox_wait": inbox_wait,
+    "oast_create": oast_create,
+    "oast_list": oast_list,
+    "oast_poll": oast_poll,
+    "oast_delete": oast_delete,
+    "auth_profile_set": auth_profile_set,
+    "auth_profile_list": auth_profile_list,
+    "auth_profile_delete": auth_profile_delete,
+    "auth_profile_import": auth_profile_import,
     "tool_calls_list": tool_calls_list,
     "status": tool_status,
 })
@@ -1028,6 +1318,101 @@ TOOLS: tuple[Tool, ...] = (
                   "max_bytes": _integer("response body cap", 1024, 262144, 65536),
                   "timeout": _integer("timeout in seconds", 1, 60, 15)},
                  ["target"]), "http_probe", open_world=True),
+    Tool("http_request", "Authenticated HTTP request",
+         "Send one scoped request with a named auth profile, custom headers, and a "
+         "JSON, form, or raw body. Every redirect hop is re-checked against the same "
+         "scope; metadata and link-local hosts are always refused. Use low volume and "
+         "only against an authorized target.",
+         "medium", "web",
+         _schema({"target": _string("in-scope host or URL"),
+                  "mission_id": _string("mission whose scope authorizes the request"),
+                  "scope": _array("explicit scope entries when no mission is used"),
+                  "method": _string("HTTP method", enum=[
+                      "GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"]),
+                  "headers": _object("extra request headers"),
+                  "auth_profile": _string("stored auth profile name"),
+                  "body": _string("raw request body"),
+                  "json": _object("JSON request body"),
+                  "form": _object("form request body"),
+                  "follow_redirects": _boolean("follow up to max_redirects hops", False),
+                  "max_redirects": _integer("redirect hop limit", 0, 5, 5),
+                  "max_bytes": _integer("response body cap", 1024, 524288, 65536),
+                  "timeout": _integer("timeout in seconds", 1, 60, 15)},
+                 ["target"]), "http_request", open_world=True),
+    Tool("inbox_create", "Create inbox",
+         "Create a disposable mail.tm inbox for authorized account verification. "
+         "The password and bearer token stay in a 0600 file and are never returned.",
+         "low", "identity",
+         _schema({"domain": _string("optional mail.tm domain"),
+                  "prefix": _string("local-part prefix")}), "inbox_create",
+         open_world=True),
+    Tool("inbox_list", "List inboxes",
+         "List the disposable inboxes created on this workspace. Credentials are masked.",
+         "low", "identity", _schema({}), "inbox_list", read_only=True),
+    Tool("inbox_read", "Read inbox",
+         "List messages in an inbox, or read one message with its text, html, and links.",
+         "low", "identity",
+         _schema({"mailbox_id": _string("mailbox id or address"),
+                  "message_id": _string("optional message id")},
+                 ["mailbox_id"]), "inbox_read", read_only=True),
+    Tool("inbox_wait", "Wait for mail",
+         "Block until a matching message arrives or the timeout expires. Use after "
+         "triggering a verification email; pass since_id to skip older mail.",
+         "low", "identity",
+         _schema({"mailbox_id": _string("mailbox id or address"),
+                  "timeout": _integer("seconds to wait", 5, 300, 180),
+                  "interval": _integer("poll interval in seconds", 2, 30, 4),
+                  "match": _string("case-insensitive subject/body substring"),
+                  "since_id": _string("last message id already triaged")},
+                 ["mailbox_id"]), "inbox_wait", read_only=True),
+    Tool("oast_create", "Create callback URL",
+         "Create a unique webhook.site URL for out-of-band testing. The token stays "
+         "in a 0600 file; only the callback URL is returned.",
+         "medium", "callbacks",
+         _schema({"label": _string("short label for this callback")}),
+         "oast_create", open_world=True),
+    Tool("oast_list", "List callback sessions",
+         "List callback sessions created on this workspace.", "low", "callbacks",
+         _schema({}), "oast_list", read_only=True),
+    Tool("oast_poll", "Poll callbacks",
+         "Read the requests that reached a callback URL, newest first. Pass the "
+         "previous cursor as since to fetch only new hits.",
+         "low", "callbacks",
+         _schema({"session_id": _string("callback session id"),
+                  "since": {"type": "number", "minimum": 0,
+                            "description": "unix timestamp cursor"},
+                  "limit": _integer("maximum hits", 1, 200, 50)},
+                 ["session_id"]), "oast_poll", read_only=True),
+    Tool("oast_delete", "Delete callback session",
+         "Delete the remote callback endpoint and its local record. Medium risk.",
+         "medium", "callbacks",
+         _schema({"session_id": _string("callback session id")},
+                 ["session_id"]), "oast_delete", destructive=True, open_world=True),
+    Tool("auth_profile_set", "Store auth profile",
+         "Store named headers and cookies for authenticated testing. Values are kept "
+         "in a 0600 file and are never returned by a listing call.",
+         "medium", "identity",
+         _schema({"name": _string("profile name"),
+                  "headers": _object("request headers"),
+                  "cookies": _object("cookies"),
+                  "note": _string("operator note")},
+                 ["name"]), "auth_profile_set"),
+    Tool("auth_profile_list", "List auth profiles",
+         "List stored auth profile names and the header/cookie names they carry. "
+         "No values are returned.", "low", "identity",
+         _schema({}), "auth_profile_list", read_only=True),
+    Tool("auth_profile_delete", "Delete auth profile",
+         "Delete a stored auth profile.", "medium", "identity",
+         _schema({"name": _string("profile name")}, ["name"]),
+         "auth_profile_delete", destructive=True),
+    Tool("auth_profile_import", "Import browser session",
+         "Import cookies from a Playwright storage-state JSON file, optionally "
+         "filtered to one domain, into a named auth profile.",
+         "medium", "identity",
+         _schema({"path": _string("path to storage-state JSON"),
+                  "name": _string("profile name"),
+                  "domain": _string("cookie domain filter")},
+                 ["path", "name"]), "auth_profile_import"),
     Tool("tool_calls_list", "List tool calls",
          "Read the MCP audit trail: tool, risk, status, actor, mission, run, and timing.",
          "low", "governance",
@@ -1134,6 +1519,10 @@ class ToolRegistry:
             return "scan"
         if tool.name == "http_probe":
             return "probe"
+        if tool.name == "http_request":
+            return "request"
+        if tool.name == "inbox_wait":
+            return "wait"
         if tool.risk == "high" or not tool.read_only:
             return "mutation"
         return "default"
