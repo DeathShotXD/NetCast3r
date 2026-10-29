@@ -344,9 +344,9 @@
       <strong class:acid={paidUsd > 0}>{money(paidUsd, 'USD')}</strong>
       <small>
         {#if otherCurrencies.length}
-          USD recorded · {otherCurrencies.join(', ')} kept separate
+          USD recorded - {otherCurrencies.join(', ')} kept separate
         {:else}
-          USD recorded · awarded {money(awardedUsd, 'USD')}
+          USD recorded - awarded {money(awardedUsd, 'USD')}
         {/if}
       </small>
     </article>
@@ -451,7 +451,7 @@
       <strong>Payouts are kept by currency.</strong>
       <span>
         {#if paidByCurrency.length}
-          Paid to date: {paidByCurrency.join(' · ')}. Amounts are never converted or added across currencies.
+          Paid to date: {paidByCurrency.join(' - ')}. Amounts are never converted or added across currencies.
         {:else}
           No payout recorded yet. USD is the default view. Other currencies are stored separately and never converted or added into the USD total.
         {/if}
@@ -613,7 +613,7 @@
         <div>
           <div class="obs-eyebrow"><span class="tick"></span> {platformCopy[editing.platform] ?? editing.platform}</div>
           <h2>{editing.title}</h2>
-          <p>{editing.program || 'No program recorded'} · {editing.target || 'No target recorded'}</p>
+          <p>{editing.program || 'No program recorded'} - {editing.target || 'No target recorded'}</p>
         </div>
         <button class="obs-icon-btn" type="button" aria-label="close" onclick={() => (editing = null)}>
           <Icon name="x" size={14} />

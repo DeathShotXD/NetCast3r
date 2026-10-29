@@ -66,7 +66,7 @@
       expanded = '';
       saved = new Set();
       const total = result.summary.observations;
-      store.toast(total > 0 ? 'ok' : 'info', `${total} observation${total === 1 ? '' : 's'} from ${result.kind} analysis`);
+      store.toast(total > 0 ? 'ok' : 'warn', `${total} observation${total === 1 ? '' : 's'} from ${result.kind} analysis`);
     } catch (exc) {
       result = null;
       error = exc instanceof Error ? exc.message : 'the analyzer could not read that artifact';
@@ -87,7 +87,7 @@
         title: item.title,
         severity: item.severity,
         impact: item.recommendation,
-        evidence: `${location} — ${item.evidence}`,
+        evidence: `${location} - ${item.evidence}`,
         source: `reveng:${result?.kind ?? kind}`,
         secret_type: `reveng_${item.category}`,
         confidence: item.confidence,
@@ -169,7 +169,7 @@
         </label>
         <button class="obs-btn obs-btn-primary h-[38px]" type="button" onclick={() => void analyze()} disabled={busy}>
           <Icon name={busy ? 'refresh' : 'code'} size={13} />
-          {busy ? 'reading…' : 'Analyze'}
+          {busy ? 'reading...' : 'Analyze'}
         </button>
       </div>
 
@@ -265,7 +265,7 @@
                   <span class="min-w-0 flex-1">
                     <span class="block truncate text-[13px] text-bone">{item.title}</span>
                     <span class="mono block truncate text-[10px] text-ash">
-                      {item.file}{item.line ? `:${item.line}` : ''} · {item.category}
+                      {item.file}{item.line ? `:${item.line}` : ''} - {item.category}
                     </span>
                   </span>
                   <span class="mono hidden text-[10px] text-ash sm:block">{Math.round(item.confidence * 100)}%</span>
@@ -278,7 +278,7 @@
                       void saveFinding(item);
                     }}
                   >
-                    {saved.has(item.id) ? 'recorded' : saving === item.id ? 'saving…' : 'save'}
+                    {saved.has(item.id) ? 'recorded' : saving === item.id ? 'saving...' : 'save'}
                   </button>
                 </div>
                 {#if expanded === item.id}

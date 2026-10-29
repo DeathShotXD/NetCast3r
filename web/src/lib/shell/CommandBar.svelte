@@ -102,7 +102,7 @@
   </button>
 
   {#if scanActive && running}
-    <span class="obs-status acid" role="status" aria-live="polite" title="{running.target} · {stageName}">
+    <span class="obs-status acid" role="status" aria-live="polite" title="{running.target} - {stageName}">
       <span class="obs-pulse" aria-hidden="true"></span>
       <span class="hidden xl:inline">{running.target}</span>
       <span class="hidden lg:inline">{elapsed}</span>

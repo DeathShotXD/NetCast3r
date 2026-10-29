@@ -127,7 +127,7 @@
     <span class="obs-workspace-avatar">NC</span>
     <span class="obs-workspace-copy">
       <span class="obs-workspace-name">Local control plane</span>
-      <span class="obs-workspace-plan">single operator · SQLite</span>
+      <span class="obs-workspace-plan">single operator - SQLite</span>
     </span>
     <Icon name="lock" size={12} />
   </div>
@@ -177,7 +177,7 @@
           <span class="obs-sidebar-run-dot" style="background:{run.id === store.activeRunId ? 'var(--obs-acid)' : 'var(--obs-faint)'}" aria-hidden="true"></span>
           <span class="obs-sidebar-run-copy">
             <span class="obs-sidebar-run-target">{run.target}</span>
-            <span class="obs-sidebar-run-meta">{run.status} · {ago(run.created_at)}</span>
+            <span class="obs-sidebar-run-meta">{run.status} - {ago(run.created_at)}</span>
           </span>
           <Icon name="arrow-right" size={10} />
         </button>
@@ -196,7 +196,7 @@
       <div class="obs-system-line">
         <span class="obs-status-dot" class:idle={!running} class:violet={store.syncState === 'error'} aria-hidden="true"></span>
         {#if running}
-          {stageName.toLowerCase()} · {elapsed}
+          {stageName.toLowerCase()} - {elapsed}
         {:else}
           Control plane ready
         {/if}
@@ -209,7 +209,7 @@
         {:else}
           no casts recorded<br />
         {/if}
-        {syncLabel} · v{store.meta?.version ?? '0.0.0'}
+        {syncLabel} - v{store.meta?.version ?? '0.0.0'}
       </div>
     </div>
 
@@ -222,7 +222,7 @@
       Authorized testing only. You are responsible for the scope you point this at.
     </p>
     <p class="obs-sidebar-version">
-      {store.totals?.runs ?? 0} casts · {store.totals?.findings ?? 0} findings
+      {store.totals?.runs ?? 0} casts - {store.totals?.findings ?? 0} findings
     </p>
   </div>
 </aside>

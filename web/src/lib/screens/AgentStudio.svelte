@@ -112,7 +112,7 @@
         type: String(value.type ?? 'any'),
         description: String(value.description ?? ''),
         required: required.has(name),
-        bounds: bounds.join(' · ')
+        bounds: bounds.join(' - ')
       };
     });
   });
@@ -184,7 +184,7 @@
   function shortContext(call: ToolCall): string {
     if (call.mission_id) return call.mission_id;
     if (call.run_id) return call.run_id;
-    return '—';
+    return '-';
   }
 
   function pretty(value: unknown, limit = 3200): string {
@@ -194,7 +194,7 @@
     } catch {
       text = String(value);
     }
-    return text.length > limit ? `${text.slice(0, limit)}\n… truncated for display` : text;
+    return text.length > limit ? `${text.slice(0, limit)}\n... truncated for display` : text;
   }
 
   function approvalTool(approval: Approval): string {
@@ -346,12 +346,12 @@
           <div class="obs-card-body">
             <div class="obs-agent-facts">
               <div><span>Client</span><strong title={clientLabel}>{clientLabel}</strong></div>
-              <div><span>Policy</span><strong class="acid">{policy || '—'}</strong></div>
-              <div><span>Transport</span><strong>{server?.transport ?? '—'}</strong></div>
-              <div><span>Backend</span><strong>{server?.backend ?? '—'}</strong></div>
-              <div><span>Protocol</span><strong>{server?.protocol_version ?? '—'}</strong></div>
+              <div><span>Policy</span><strong class="acid">{policy || '-'}</strong></div>
+              <div><span>Transport</span><strong>{server?.transport ?? '-'}</strong></div>
+              <div><span>Backend</span><strong>{server?.backend ?? '-'}</strong></div>
+              <div><span>Protocol</span><strong>{server?.protocol_version ?? '-'}</strong></div>
               <div><span>Calls this process</span><strong>{server?.calls ?? 0}</strong></div>
-              <div><span>Started</span><strong>{server?.started_at ? ago(server.started_at) : '—'}</strong></div>
+              <div><span>Started</span><strong>{server?.started_at ? ago(server.started_at) : '-'}</strong></div>
               <div>
                 <span>Last call</span>
                 <strong>{server?.last_call_at ? ago(server.last_call_at) : 'no calls yet'}</strong>
@@ -378,7 +378,7 @@
                   </span>
                 </div>
               {/if}
-              <div>State file <code>{info?.state_file ?? '—'}</code></div>
+              <div>State file <code>{info?.state_file ?? '-'}</code></div>
             </div>
           </div>
         </section>
@@ -704,10 +704,10 @@
                 <span class="obs-agent-call-when" title={call.created_at}>{ago(call.created_at)}</span>
                 <span class="obs-agent-call-tool">{call.tool}</span>
                 <span class="obs-call-status {statusClass(call.status)}">{statusCopy[call.status]}</span>
-                <span class="obs-agent-call-actor col-actor" title={call.actor}>{call.actor || '—'}</span>
+                <span class="obs-agent-call-actor col-actor" title={call.actor}>{call.actor || '-'}</span>
                 <span class="obs-agent-call-context col-context" title={shortContext(call)}>{shortContext(call)}</span>
                 <span class="obs-agent-call-approval col-approval">
-                  {call.approval_id ? 'bound' : '—'}
+                  {call.approval_id ? 'bound' : '-'}
                 </span>
                 <span class="obs-agent-call-ms">{call.duration_ms}</span>
                 <span class="obs-agent-call-chevron" class:is-open={expanded === call.id}>

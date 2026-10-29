@@ -52,7 +52,7 @@
       list.push({
         label: 'Open the latest report',
         hint: 'submission markdown',
-        glyph: '¶',
+        glyph: 'R',
         run: () => store.watch(last.id, 'report')
       });
     }
@@ -76,7 +76,7 @@
     list.push({
       label: 'Refresh the control plane',
       hint: 'summary + run ledger',
-      glyph: '↻',
+      glyph: '~',
       run: () => {
         void store.refreshPulse();
         store.toast('ok', 'control plane refreshed');
@@ -85,7 +85,7 @@
     list.push({
       label: 'Copy this view',
       hint: 'share the current screen',
-      glyph: '⧉',
+      glyph: '#',
       run: () => {
         void navigator.clipboard?.writeText(window.location.href);
         store.toast('ok', 'view link copied');

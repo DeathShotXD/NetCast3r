@@ -388,8 +388,8 @@
       label: 'Active casts',
       value: live ? 1 : 0,
       note: live
-        ? `${target} in flight · ${stageLabel.toLowerCase()}`
-        : `${totals?.active_runs ?? 0} queued · control plane idle`,
+        ? `${target} in flight - ${stageLabel.toLowerCase()}`
+        : `${totals?.active_runs ?? 0} queued - control plane idle`,
       tone: live ? 'acid' : '',
       spark: false
     },
@@ -398,7 +398,7 @@
       icon: 'bug',
       label: 'Findings',
       value: totals?.findings ?? 0,
-      note: `${openFindings} awaiting triage · ${confirmed} confirmed`,
+      note: `${openFindings} awaiting triage - ${confirmed} confirmed`,
       tone: 'violet',
       spark: false
     },
@@ -407,7 +407,7 @@
       icon: 'crosshair',
       label: 'Signals',
       value: rawSignals,
-      note: `${verified} proved · ${viewCounts.review_loopholes ?? 0} code notes`,
+      note: `${verified} proved - ${viewCounts.review_loopholes ?? 0} code notes`,
       tone: 'gold',
       spark: false
     },
@@ -416,7 +416,7 @@
       icon: 'globe',
       label: 'Surface mapped',
       value: viewCounts.pages ?? 0,
-      note: `${viewCounts.js_files ?? 0} scripts · ${viewCounts.endpoints ?? 0} endpoints`,
+      note: `${viewCounts.js_files ?? 0} scripts - ${viewCounts.endpoints ?? 0} endpoints`,
       tone: '',
       spark: true
     },
@@ -425,7 +425,7 @@
       icon: 'crosshair',
       label: 'Missions',
       value: totals?.missions ?? 0,
-      note: `${totals?.active_missions ?? 0} active · ${totals?.pending_approvals ?? 0} approvals`,
+      note: `${totals?.active_missions ?? 0} active - ${totals?.pending_approvals ?? 0} approvals`,
       tone: '',
       spark: false
     }
@@ -922,7 +922,7 @@
               <span class="obs-hero-elapsed">
                 <span class="obs-status-dot" class:idle={!live} aria-hidden="true"></span>
                 {#if live}
-                  {stageLabel.toLowerCase()} · {elapsed}
+                  {stageLabel.toLowerCase()} - {elapsed}
                 {:else if focusRun}
                   last event {events.length ? clock(events[events.length - 1].ts) : 'not recorded'}
                 {:else}
@@ -941,9 +941,9 @@
             </div>
             <div class="obs-hero-side-meta">
               <strong>{focusRun ? stageLabel : 'STANDBY'}</strong>
-              {events.length} events · {fleet.ok}/{fleet.total} replies
+              {events.length} events - {fleet.ok}/{fleet.total} replies
               <br />
-              {runOptions.length ? runOptions.slice(0, 2).join(' · ') : 'no options recorded'}
+              {runOptions.length ? runOptions.slice(0, 2).join(' - ') : 'no options recorded'}
             </div>
           </aside>
         </div>
@@ -955,7 +955,7 @@
           <div class="obs-section-title">
             <Icon name="bot" size={14} />
             Agent fleet
-            <span class="obs-section-meta">{agentsSeen} seen · {roster.length} in roster</span>
+            <span class="obs-section-meta">{agentsSeen} seen - {roster.length} in roster</span>
           </div>
           <button class="obs-link" type="button" onclick={() => store.go('keys')}>
             Model mesh <Icon name="arrow-right" size={11} />
@@ -991,7 +991,7 @@
               <div class="obs-agent-foot">
                 <span>{agent.lastLabel}</span>
                 <span class:acid={agent.live} class:violet={agent.events > 0 && !agent.live}>
-                  {agent.events} ev{agent.stage ? ` · ${agent.stage}` : ''}
+                  {agent.events} ev{agent.stage ? ` - ${agent.stage}` : ''}
                 </span>
               </div>
             </article>
@@ -1004,7 +1004,7 @@
         <header class="obs-card-head">
           <div>
             <div class="obs-card-title"><Icon name="activity" size={13} />Agent transmission</div>
-            <div class="obs-card-sub">Append-only event log · {events.length} frames on the wire</div>
+            <div class="obs-card-sub">Append-only event log - {events.length} frames on the wire</div>
           </div>
           <div class="obs-tabs" role="tablist" aria-label="transmission feed">
             {#each [
@@ -1144,9 +1144,9 @@
           <span class="obs-pulse" class:live aria-hidden="true"></span>
           <span>{live ? 'streaming from the live cast' : 'replay of the last cast'}</span>
           <span class="spacer"></span>
-          <span>{thoughts.length} thoughts · {calls.length} calls · {signals.length} signals</span>
+          <span>{thoughts.length} thoughts - {calls.length} calls - {signals.length} signals</span>
           <button class="obs-btn obs-btn-sm obs-btn-ghost" type="button" onclick={toggleFollow}>
-            {autoFollow ? 'Pause feed' : pausedCount ? `Resume · ${pausedCount}` : 'Resume feed'}
+            {autoFollow ? 'Pause feed' : pausedCount ? `Resume - ${pausedCount}` : 'Resume feed'}
           </button>
         </footer>
       </article>
@@ -1157,7 +1157,7 @@
           <div>
             <div class="obs-card-title"><Icon name="bug" size={13} />Findings in flight</div>
             <div class="obs-card-sub">
-              {recent.length} persisted · {pendingCount} waiting · {confirmed} confirmed
+              {recent.length} persisted - {pendingCount} waiting - {confirmed} confirmed
             </div>
           </div>
           <button class="obs-link" type="button" onclick={() => store.go('findings')}>
@@ -1224,7 +1224,7 @@
                     <td>
                       <div class="obs-finding-title">{finding.title}</div>
                       <div class="obs-finding-sub">
-                        {finding.secret_type} · {ago(finding.created_at)}
+                        {finding.secret_type} - {ago(finding.created_at)}
                       </div>
                     </td>
                     <td class="obs-mono" style="font-size:8px;color:var(--obs-muted)">{findingSource(finding)}</td>
@@ -1372,7 +1372,7 @@
               <span class="obs-next-body">
                 <span class="obs-next-title">{action.title}</span>
                 <span class="obs-next-why">{action.body}</span>
-                <span class="obs-next-cta">{action.cta} →</span>
+                <span class="obs-next-cta">{action.cta} -></span>
               </span>
               <Icon name="arrow-right" size={11} />
             </button>
@@ -1390,7 +1390,7 @@
           <div>
             <div class="obs-card-title"><Icon name="crosshair" size={13} />Scope &amp; surface</div>
             <div class="obs-card-sub">
-              {focusRun ? `${focusRun.id.slice(-6)} · ${statusLabel(focusRun.status)}` : 'No cast recorded'}
+              {focusRun ? `${focusRun.id.slice(-6)} - ${statusLabel(focusRun.status)}` : 'No cast recorded'}
             </div>
           </div>
           <span class="obs-chip" style="color:var(--obs-acid)">{Math.round(proofRate * 100)}% proof</span>
@@ -1449,7 +1449,7 @@
         <header class="obs-card-head">
           <div>
             <div class="obs-card-title"><Icon name="plug" size={13} />Model mesh</div>
-            <div class="obs-card-sub">{providers.length} provider{providers.length === 1 ? '' : 's'} · {fleet.total} calls this cast</div>
+            <div class="obs-card-sub">{providers.length} provider{providers.length === 1 ? '' : 's'} - {fleet.total} calls this cast</div>
           </div>
           <button class="obs-link" type="button" onclick={() => store.go('keys')}>
             Manage <Icon name="arrow-right" size={11} />
@@ -1467,7 +1467,7 @@
               <span class="obs-provider-dot" class:ok={provider.healthy} aria-hidden="true"></span>
               <span class="obs-provider-name">{provider.name}</span>
               <span class="obs-provider-meta">
-                {provider.models.length} models · {provider.key_set ? 'key set' : 'no key'}
+                {provider.models.length} models - {provider.key_set ? 'key set' : 'no key'}
               </span>
               <button
                 class="obs-btn obs-btn-ghost"
@@ -1534,9 +1534,9 @@
               <span class="obs-ledger-target">{run.target}</span>
               <span class="obs-ledger-sub">
                 <span>{statusLabel(run.status)}</span>
-                <span>·</span>
+                <span>-</span>
                 <span>{duration(run)}</span>
-                <span>·</span>
+                <span>-</span>
                 <span>{ago(run.created_at)}</span>
               </span>
             </span>

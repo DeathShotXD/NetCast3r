@@ -508,7 +508,7 @@
               ['overview', 'Overview'],
               ['runs', `Runs ${selected.run_count}`],
               ['approvals', `Approvals ${selected.pending_approvals}`],
-              ['agent', `Agent${agent && ['planning', 'running', 'paused', 'stopping'].includes(agent.status) ? ' •' : ''}`]
+              ['agent', `Agent${agent && ['planning', 'running', 'paused', 'stopping'].includes(agent.status) ? ' *' : ''}`]
             ] as [id, label] (id)}
               <button
                 class="obs-detail-tab"
@@ -576,9 +576,9 @@
                         <span class="obs-ledger-target">{run.target}</span>
                         <span class="obs-ledger-sub">
                           <span>{statusLabel(run.status)}</span>
-                          <span>·</span>
+                          <span>-</span>
                           <span>{run.counts?.pages ?? 0} pages</span>
-                          <span>·</span>
+                          <span>-</span>
                           <span>{run.counts?.candidates ?? 0} signals</span>
                         </span>
                       </span>
@@ -695,10 +695,10 @@
                           <div class="obs-mission-agent-task-title">{task.title}</div>
                           <div class="obs-mission-agent-task-meta">
                             <span>{task.kind}</span>
-                            <span>·</span>
+                            <span>-</span>
                             <span>{task.risk}</span>
-                            {#if task.tool}<span>·</span><span>{task.tool}</span>{/if}
-                            <span>·</span>
+                            {#if task.tool}<span>-</span><span>{task.tool}</span>{/if}
+                            <span>-</span>
                             <span>{task.status}</span>
                           </div>
                           {#if task.verifier_notes}<p>{task.verifier_notes}</p>{/if}
@@ -728,7 +728,7 @@
                           <span class="obs-ledger-signal" style="background:{call.status === 'ok' ? 'var(--obs-acid)' : 'var(--obs-red)'}" aria-hidden="true"></span>
                           <div>
                             <strong>{call.provider || 'no provider'} / {call.model || 'none'}</strong>
-                            <small>{call.status} · {call.prompt_tokens ?? '?'} in · {call.completion_tokens ?? '?'} out · {formatCost(call.cost_cents)}</small>
+                            <small>{call.status} - {call.prompt_tokens ?? '?'} in - {call.completion_tokens ?? '?'} out - {formatCost(call.cost_cents)}</small>
                           </div>
                         </div>
                       {/each}

@@ -339,7 +339,7 @@ def _scan_text(text: str, rel: str, observations: list, endpoints: list,
                              "undefined", "true", "false", "none"}:
             continue
         if any(token in value for token in ("${", "{{", "<", ">", "process.env", "os.environ",
-                                            "your_", "xxxx", "****", "…")):
+                                            "your_", "xxxx", "****", "...")):
             continue
         if len(value) < 12 or _entropy(value) < 3.1:
             continue
@@ -771,7 +771,7 @@ def analyze(kind: str, path: str, **options) -> dict:
 def render_markdown(result: dict, limit: int = 80) -> str:
     """A compact operator-facing summary for a report or a chat reply."""
     summary = result.get("summary", {})
-    lines = [f"# {result.get('kind', 'analysis')} — {result.get('path', '')}", ""]
+    lines = [f"# {result.get('kind', 'analysis')} - {result.get('path', '')}", ""]
     lines.append("## Summary")
     lines.append("")
     lines.append(f"- observations: {summary.get('observations', 0)}")
@@ -792,7 +792,7 @@ def render_markdown(result: dict, limit: int = 80) -> str:
         location = item.get("file", "")
         if item.get("line"):
             location += f":{item['line']}"
-        lines.append(f"### {item.get('severity', '').upper()} — {item.get('title', '')}")
+        lines.append(f"### {item.get('severity', '').upper()} - {item.get('title', '')}")
         lines.append("")
         lines.append(f"`{location}`")
         lines.append("")
