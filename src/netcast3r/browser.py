@@ -431,12 +431,22 @@ def screenshot(profile: str, base: str | Path | None = None,
     return _run(profile, base, action)
 
 
+JWT_RE = re.compile(r"^eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+")
+TOKEN_KEYS = {"token", "access_token", "accesstoken", "id_token", "jwt",
+              "auth_token", "authorization"}
+
+
 def capture(profile: str, name: str, base: str | Path | None = None,
-            domain: str = "") -> dict:
-    """Copy the live cookie jar into a named auth profile (values stay sealed)."""
+            domain: str = "", storage_key: str = "", header: str = "") -> dict:
+    """Copy cookies and one local-storage token into a sealed auth profile.
+
+    Cookie and storage values are written to ``auth-profiles.json`` and are
+    never returned. The response names the storage keys it saw so an operator
+    can confirm which key became the Authorization header.
+    """
     from . import authstore
 
-    async def cookies_action(_page, context):
+    async def cookies_action(page, context):
         cookies = await context.cookies()
         selected = {}
         wanted = domain.lower().lstrip(".")
@@ -447,11 +457,47 @@ def capture(profile: str, name: str, base: str | Path | None = None,
             value = str(cookie.get("value") or "")
             if cookie.get("name") and value:
                 selected[str(cookie["name"])] = value
-        if not selected:
-            raise BrowserError("no cookies matched", f"domain filter: {domain or '(any)'}")
-        profile = authstore.set_profile(name, cookies=selected, base=base,
-                                        note=f"captured from browser profile {profile}")
-        return {"profile": profile, "cookies": len(selected), "domain": domain}
+        storage = await page.evaluate("""() => {
+          const out = {};
+          for (let i = 0; i < localStorage.length; i++) {
+            const k = localStorage.key(i); out[k] = localStorage.getItem(k) || '';
+          }
+          return out;
+        }""")
+        keys = sorted(storage)
+        token = ""
+        used_key = ""
+        if storage_key:
+            token = str(storage.get(storage_key) or "")
+            used_key = storage_key if token else ""
+        else:
+            for key in keys:
+                value = str(storage.get(key) or "")
+                if key.lower() in TOKEN_KEYS and value:
+                    token, used_key = value, key
+                    break
+            if not token:
+                for key in keys:
+                    value = str(storage.get(key) or "")
+                    if JWT_RE.match(value):
+                        token, used_key = value, key
+                        break
+        headers = {}
+        if token:
+            header_name = (header or "Authorization").strip()
+            headers[header_name] = (f"Bearer {token}"
+                                    if header_name.lower() == "authorization"
+                                    else token)
+        if not selected and not headers:
+            raise BrowserError("nothing to capture",
+                               f"domain filter: {domain or '(any)'}")
+        saved = authstore.set_profile(
+            name, headers=headers or None,
+            cookies=selected or None, base=base,
+            note=f"captured from browser profile {_check_profile(profile)}")
+        return {"profile": saved, "cookies": len(selected), "domain": domain,
+                "storage_keys": keys, "token_key": used_key,
+                "header_set": bool(headers)}
 
     return _run(profile, base, cookies_action)
 

@@ -1056,7 +1056,9 @@ def browser_screenshot(ctx: ToolContext, args: dict) -> dict:
 
 def browser_capture(ctx: ToolContext, args: dict) -> dict:
     return _browser_call(browser.capture, args["profile"], args["name"],
-                         base=ctx.base, domain=str(args.get("domain") or ""))
+                         base=ctx.base, domain=str(args.get("domain") or ""),
+                         storage_key=str(args.get("storage_key") or ""),
+                         header=str(args.get("header") or ""))
 
 
 def browser_eval(ctx: ToolContext, args: dict) -> dict:
@@ -1671,7 +1673,9 @@ TOOLS: tuple[Tool, ...] = (
          "medium", "browser",
          _schema({"profile": _string("browser profile"),
                   "name": _string("auth profile name"),
-                  "domain": _string("optional cookie domain filter")},
+                  "domain": _string("optional cookie domain filter"),
+                  "storage_key": _string("localStorage key holding the token"),
+                  "header": _string("header for the token, default Authorization")},
                  ["profile", "name"]), "browser_capture"),
     Tool("browser_eval", "Evaluate JavaScript",
          "Evaluate one JavaScript expression in the page and return its JSON value. "
