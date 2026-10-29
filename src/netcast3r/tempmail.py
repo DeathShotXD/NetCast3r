@@ -26,6 +26,8 @@ import httpx
 from .control import base_dir, read_private_json, write_private_json
 
 DEFAULT_BASE_URL = "https://api.mail.tm"
+GUERRILLA_URL = "https://api.guerrillamail.com/ajax.php"
+PROVIDERS = ("mail.tm", "guerrillamail")
 STORE_NAME = "mailboxes.json"
 LOCAL_ALPHABET = string.ascii_lowercase + string.digits
 LINK_RE = re.compile(r"https?://[^\s<>\"']+", re.IGNORECASE)
@@ -343,10 +345,149 @@ class MailClient:
         return None
 
 
+class GuerrillaClient:
+    """GuerrillaMail adapter with the same small surface as MailClient.
+
+    GuerrillaMail has no password: the session id returned at creation is the
+    credential. It is stored in the sealed mailbox record and never returned.
+    """
+
+    provider = "guerrillamail"
+
+    def __init__(self, timeout: float = 20.0,
+                 transport: httpx.BaseTransport | None = None):
+        self.timeout = timeout
+        self.transport = transport
+
+    def _get(self, **params) -> dict:
+        query = {"lang": "en", **params}
+        try:
+            with httpx.Client(timeout=self.timeout, transport=self.transport,
+                              trust_env=False) as client:
+                response = client.get(GUERRILLA_URL, params=query)
+        except httpx.HTTPError as exc:
+            raise MailError(f"guerrillamail request failed: {type(exc).__name__}") from exc
+        if response.status_code != 200:
+            raise MailError(f"guerrillamail returned HTTP {response.status_code}: "
+                            f"{response.text[:200]}")
+        try:
+            payload = response.json()
+        except ValueError as exc:
+            raise MailError("guerrillamail returned unreadable JSON") from exc
+        if not isinstance(payload, dict):
+            raise MailError("guerrillamail returned an unexpected shape")
+        return payload
+
+    def create(self, base: str | Path | None = None, domain: str = "",
+               prefix: str = "nc3r") -> Mailbox:
+        created = self._get(f="get_email_address")
+        address = str(created.get("email_addr") or "")
+        token = str(created.get("sid_token") or "")
+        if not address or not token:
+            raise MailError("guerrillamail did not return a mailbox")
+        local = re.sub(r"[^a-z0-9]", "", (prefix or "nc3r").lower())[:10] or "nc3r"
+        local += "".join(secrets.choice(LOCAL_ALPHABET) for _ in range(6))
+        renamed = self._get(f="set_email_user", email_user=local, sid_token=token)
+        address = str(renamed.get("email_addr") or address)
+        box = Mailbox(id=address, address=address, password="", token=token,
+                      provider=self.provider, base_url=GUERRILLA_URL,
+                      created_at=time.time())
+        save_mailbox(box, base)
+        return box
+
+    def messages(self, box: Mailbox, base: str | Path | None = None,
+                 page: int = 1) -> list[dict]:
+        payload = self._get(f="get_email_list", offset=max(0, (int(page) - 1) * 20),
+                            sid_token=box.token)
+        rows = payload.get("list") or []
+        items = []
+        for raw in rows if isinstance(rows, list) else []:
+            if not isinstance(raw, dict):
+                continue
+            stamp = raw.get("mail_timestamp")
+            try:
+                created = time.strftime("%Y-%m-%dT%H:%M:%SZ",
+                                        time.gmtime(float(stamp))) if stamp else ""
+            except (TypeError, ValueError, OSError):
+                created = ""
+            items.append({
+                "id": str(raw.get("mail_id") or ""),
+                "from": str(raw.get("mail_from") or ""),
+                "from_name": "",
+                "subject": str(raw.get("mail_subject") or ""),
+                "intro": str(raw.get("mail_excerpt") or ""),
+                "created_at": created,
+                "seen": str(raw.get("mail_read") or "0") != "0",
+            })
+        return items
+
+    def read(self, box: Mailbox, message_id: str, base: str | Path | None = None) -> dict:
+        raw = self._get(f="fetch_email", email_id=message_id, sid_token=box.token)
+        body_html = str(raw.get("mail_body") or "")
+        text = re.sub(r"<[^>]+>", " ", body_html)
+        text = html_lib.unescape(re.sub(r"\s+", " ", text)).strip()
+        try:
+            created = time.strftime("%Y-%m-%dT%H:%M:%SZ",
+                                    time.gmtime(float(raw.get("mail_timestamp"))))
+        except (TypeError, ValueError, OSError):
+            created = ""
+        message = {
+            "id": str(raw.get("mail_id") or message_id),
+            "from": str(raw.get("mail_from") or ""),
+            "from_name": "",
+            "to": [box.address],
+            "subject": str(raw.get("mail_subject") or ""),
+            "created_at": created,
+            "text": text[:20000],
+            "html": body_html[:20000],
+            "attachments": [],
+        }
+        message["links"] = extract_links(message)
+        return message
+
+    def wait(self, box: Mailbox, base: str | Path | None = None, timeout: float = 180.0,
+             interval: float = 4.0, match: str = "", since_id: str = "") -> dict | None:
+        timeout = max(5.0, min(float(timeout), 300.0))
+        interval = max(2.0, min(float(interval), 30.0))
+        needle = (match or "").strip().lower()
+        deadline = time.monotonic() + timeout
+        baseline = {row["id"] for row in self.messages(box, base)}
+        seen: set[str] = set()
+        while time.monotonic() < deadline:
+            for row in self.messages(box, base):
+                if row["id"] in seen:
+                    continue
+                seen.add(row["id"])
+                if not since_id and row["id"] in baseline:
+                    continue
+                haystack = " ".join(str(row.get(key) or "")
+                                    for key in ("subject", "from", "intro")).lower()
+                if needle and needle not in haystack:
+                    continue
+                message = self.read(box, row["id"], base)
+                if needle and needle not in (message.get("text") or "").lower() \
+                        and needle not in (message.get("subject") or "").lower():
+                    continue
+                return message
+            time.sleep(interval)
+        return None
+
+
+def client_for(box: Mailbox):
+    if (box.provider or "").lower() == "guerrillamail":
+        return GuerrillaClient()
+    return MailClient(base_url=box.base_url)
+
+
 def create_mailbox(base: str | Path | None = None, domain: str = "",
                    prefix: str = "nc3r", base_url: str = DEFAULT_BASE_URL,
                    timeout: float = 20.0,
-                   transport: httpx.BaseTransport | None = None) -> Mailbox:
+                   transport: httpx.BaseTransport | None = None,
+                   provider: str = "mail.tm") -> Mailbox:
+    name = (provider or "mail.tm").strip().lower()
+    if name == "guerrillamail":
+        return GuerrillaClient(timeout=timeout, transport=transport).create(
+            base=base, domain=domain, prefix=prefix)
     return MailClient(base_url=base_url, timeout=timeout, transport=transport).create(
         base=base, domain=domain, prefix=prefix)
 

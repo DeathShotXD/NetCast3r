@@ -259,6 +259,24 @@ class AgentMCPTests(unittest.TestCase):
         self.assertIn("agent_start", audited)
         self.assertIn("http_probe", audited)
 
+    def test_agent_role_builds_a_role_specific_plan(self):
+        payload, is_error = self.call(
+            "missions_create", title="Role plan", target="https://runtime.example.test",
+            status="active", autonomy="supervised",
+            scope=["https://runtime.example.test"])
+        self.assertFalse(is_error, payload)
+        mission_id = payload["id"]
+        started, is_error = self.call(
+            "agent_start", mission_id=mission_id, role="auth", max_seconds=30)
+        self.assertFalse(is_error, started)
+        self.assertEqual(started["role"], "auth")
+        status, is_error = self.call("agent_status", mission_id=mission_id)
+        self.assertFalse(is_error, status)
+        kinds = [task["kind"] for task in status["tasks"]]
+        self.assertIn("auth_inventory", kinds)
+        self.assertIn("verify", kinds)
+        self.call("agent_stop", mission_id=mission_id)
+
     def test_agent_start_refuses_an_out_of_scope_target(self):
         payload, is_error = self.call(
             "missions_create", title="Scope gate", target="https://outside.example.test",

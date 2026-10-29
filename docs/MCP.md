@@ -148,7 +148,7 @@ Denied calls are audited with status `denied`.
 
 ## 3. Tools
 
-53 tools, grouped by job. Every tool publishes a JSON schema with
+67 tools, grouped by job. Every tool publishes a JSON schema with
 `additionalProperties: false`; unknown arguments are rejected rather than
 silently ignored.
 
@@ -228,7 +228,8 @@ never converted into a single invented number.
 
 | Tool | Risk | Purpose |
 | --- | --- | --- |
-| `inbox_create` | low | Disposable mail.tm inbox; credentials stay in a 0600 file |
+| `inbox_create` | low | Disposable mail.tm or GuerrillaMail inbox; credentials stay in a 0600 file |
+| `inbox_providers` | low | List the mailbox providers this workspace can use |
 | `inbox_list` / `inbox_read` | low | Masked mailbox list and message contents |
 | `inbox_wait` | low | Block for a verification mail, optionally matched |
 | `oast_create` | medium | Unique webhook.site callback URL |
@@ -256,6 +257,45 @@ different host. Metadata and link-local addresses are refused at every hop.
 Bodies are capped at 512 KiB and the response returns `set_cookie` separately
 so cookie flags can be reviewed.
 
+### Browser
+
+The browser is a real, persistent Chromium profile, not a headless fetcher.
+`browser_open` launches a detached process with a loopback DevTools port and
+keeps the user-data directory under `~/.netcast3r/browsers/`. The process
+survives an MCP restart, so a human can take over the visible window to solve
+a challenge or finish an OAuth consent screen, and the agent can keep driving
+the same session afterwards.
+
+| Tool | Risk | Purpose |
+| --- | --- | --- |
+| `browser_open` | medium | Launch/reuse a profile and open a scoped URL |
+| `browser_status` / `browser_list` | low | Live process, URL, title, profile state |
+| `browser_goto` | medium | Navigate an existing profile |
+| `browser_snapshot` | low | Visible text and interactive elements with refs |
+| `browser_click` | medium | Click by snapshot ref or CSS selector |
+| `browser_type` | medium | Fill an input; typed text is redacted from the audit |
+| `browser_press` | medium | Press a key on an element or the page |
+| `browser_wait` | low | Wait for time, URL, text, selector, or navigation |
+| `browser_screenshot` | low | PNG under `~/.netcast3r/screenshots/` |
+| `browser_capture` | medium | Copy the cookie jar into a named auth profile |
+| `browser_eval` | high | Evaluate one JS expression; needs approval in supervised |
+| `browser_close` | medium | Terminate the profile process |
+
+Target navigation is scope-checked. `purpose="identity"` is the only bypass,
+and it is restricted to a fixed list of identity providers (GitHub, Google,
+Microsoft, Apple, Auth0, Okta, and similar) so an SSO consent screen can be
+completed without widening the mission. Browser cookies never leave the sealed
+profile until `browser_capture` writes them to `auth-profiles.json`.
+
+Install the optional driver once:
+
+```sh
+pip install 'netcast3r[browser]'
+```
+
+NetCast3r uses the system Chromium/Chrome/Edge binary. Set
+`NETCAST3R_CHROMIUM` when it is not on `PATH`.
+
 ### Mission agent
 
 `agent_start` runs a bounded, deterministic plan on one mission:
@@ -263,8 +303,14 @@ so cookie flags can be reviewed.
 1. `scope_check` the mission target.
 2. One real `http_probe` (GET, bounded body).
 3. A read-only inventory of linked runs, related runs, and findings.
-4. Optional model analysis, stored as `unverified` and advisory only.
-5. An independent verifier that clears only evidence-backed tasks.
+4. A role-specific read-only inventory: `auth` profiles and browsers, `api`
+   endpoints, `validator` findings, or `reporter` ledger rows.
+5. Optional model analysis, stored as `unverified` and advisory only.
+6. An independent verifier that clears only evidence-backed tasks.
+
+`role` is one of `recon`, `auth`, `api`, `validator`, or `reporter`. The role
+changes the inventory step and the advisory prompt; it never widens the tool
+surface or the scope.
 
 The runtime calls the same typed tools through the same registry as an external
 client, with actor `agent:runtime`, so every step lands in `tool_calls` under

@@ -27,7 +27,7 @@ from urllib.parse import urlencode, urljoin, urlsplit
 
 import httpx
 
-from .. import authstore, oast, tempmail
+from .. import authstore, browser, oast, tempmail
 from ..scope import ScopeManager
 
 POLICIES = ("readonly", "supervised", "full")
@@ -41,6 +41,12 @@ REDACT_KEYS = {"api_key", "apikey", "authorization", "cookie", "cookies", "passw
 
 METADATA_HOSTS = {"metadata.google.internal", "metadata.goog"}
 METADATA_IPS = {"169.254.169.254", "100.100.100.200", "fd00:ec2::254"}
+IDENTITY_HOSTS = {
+    "github.com", "gitlab.com", "bitbucket.org",
+    "accounts.google.com", "login.microsoftonline.com", "login.live.com",
+    "appleid.apple.com", "auth0.com", "okta.com", "onelogin.com",
+    "duosecurity.com", "pingidentity.com",
+}
 
 
 class ToolError(Exception):
@@ -166,6 +172,18 @@ def _validate(value, schema: dict, path: str = "arguments") -> None:
         raise ToolError("invalid_arguments", f"{path} must be >= {schema['minimum']}")
     if "maximum" in schema and isinstance(value, (int, float)) and value > schema["maximum"]:
         raise ToolError("invalid_arguments", f"{path} must be <= {schema['maximum']}")
+
+
+SENSITIVE_TOOL_ARGS = {("browser_type", "text")}
+
+
+def audit_args(tool_name: str, arguments: dict) -> dict:
+    """Redact credentials and typed text before the audit write."""
+    clean = redact_payload(arguments)
+    for name, key in SENSITIVE_TOOL_ARGS:
+        if name == tool_name and isinstance(clean, dict) and key in clean:
+            clean[key] = "[redacted]"
+    return clean
 
 
 def redact_payload(value, key: str = ""):
@@ -412,7 +430,7 @@ def agent_start(ctx: ToolContext, args: dict) -> dict:
     _require_scope(ctx, target, mission["id"])
     body = {key: args[key] for key in
             ("use_model", "max_tasks", "max_seconds", "max_model_calls",
-             "allow_manual", "restart") if key in args}
+             "allow_manual", "restart", "role") if key in args}
     return _call(ctx, "POST", f"/api/v1/missions/{mission['id']}/agent/start", body=body)
 
 
@@ -820,10 +838,23 @@ def inbox_create(ctx: ToolContext, args: dict) -> dict:
     try:
         box = tempmail.create_mailbox(
             base=ctx.base, domain=str(args.get("domain") or ""),
-            prefix=str(args.get("prefix") or "nc3r"))
+            prefix=str(args.get("prefix") or "nc3r"),
+            provider=str(args.get("provider") or "mail.tm"))
     except tempmail.MailError as exc:
         raise ToolError("mailbox_failed", str(exc))
     return {"mailbox": box.public()}
+
+
+def inbox_providers(ctx: ToolContext, args: dict) -> dict:
+    return {
+        "items": [
+            {"provider": "mail.tm", "mode": "password", "custom_domain": True},
+            {"provider": "guerrillamail", "mode": "session", "custom_domain": False},
+        ],
+        "default": "mail.tm",
+        "note": "Some programs reject disposable domains; record the block and use "
+                "the browser session for a human-owned address instead.",
+    }
 
 
 def inbox_list(ctx: ToolContext, args: dict) -> dict:
@@ -836,10 +867,9 @@ def inbox_read(ctx: ToolContext, args: dict) -> dict:
     if box is None:
         raise ToolError("not_found", "mailbox not found")
     try:
+        client = tempmail.client_for(box)
         if args.get("message_id"):
-            return {"message": tempmail.MailClient(base_url=box.base_url).read(
-                box, str(args["message_id"]), base=ctx.base)}
-        client = tempmail.MailClient(base_url=box.base_url)
+            return {"message": client.read(box, str(args["message_id"]), base=ctx.base)}
         return {"mailbox": box.public(), "items": client.messages(box, base=ctx.base)}
     except tempmail.MailError as exc:
         raise ToolError("mailbox_failed", str(exc))
@@ -850,7 +880,7 @@ def inbox_wait(ctx: ToolContext, args: dict) -> dict:
     if box is None:
         raise ToolError("not_found", "mailbox not found")
     try:
-        message = tempmail.MailClient(base_url=box.base_url).wait(
+        message = tempmail.client_for(box).wait(
             box, base=ctx.base, timeout=args.get("timeout", 180),
             interval=args.get("interval", 4), match=str(args.get("match") or ""),
             since_id=str(args.get("since_id") or ""))
@@ -930,6 +960,115 @@ def auth_profile_import(ctx: ToolContext, args: dict) -> dict:
     return {"profile": profile}
 
 
+# -- browser --------------------------------------------------------------
+
+def _browser_call(fn, *args, **kwargs):
+    try:
+        return fn(*args, **kwargs)
+    except browser.BrowserError as exc:
+        raise ToolError("browser_error", str(exc), exc.detail)
+
+
+def _browser_scope(ctx: ToolContext, url: str, mission_id: str, scope,
+                   purpose: str = "target") -> None:
+    if not url or url == "about:blank":
+        return
+    parts = urlsplit(url)
+    if parts.scheme not in {"http", "https"} or not parts.hostname:
+        raise ToolError("invalid_arguments", "url must be http(s) or about:blank")
+    host = (parts.hostname or "").lower().rstrip(".")
+    if purpose == "identity":
+        if not any(host == allowed or host.endswith("." + allowed)
+                   for allowed in IDENTITY_HOSTS):
+            raise ToolError("scope_denied",
+                            f"{host} is not a recognised identity provider",
+                            "use purpose=target for ordinary navigation")
+        return
+    _require_scope(ctx, url, mission_id, scope, probe=True)
+
+
+def browser_open(ctx: ToolContext, args: dict) -> dict:
+    url = str(args.get("url") or "about:blank").strip()
+    _browser_scope(ctx, url, str(args.get("mission_id") or ""), args.get("scope"),
+                   str(args.get("purpose") or "target"))
+    result = _browser_call(browser.launch, args["profile"], url, base=ctx.base,
+                           headless=bool(args.get("headless")))
+    return {"browser": result}
+
+
+def browser_status(ctx: ToolContext, args: dict) -> dict:
+    return {"browser": _browser_call(browser.status, args["profile"], base=ctx.base)}
+
+
+def browser_list(ctx: ToolContext, args: dict) -> dict:
+    items = _browser_call(browser.profiles, base=ctx.base)
+    return {"items": items, "total": len(items)}
+
+
+def browser_goto(ctx: ToolContext, args: dict) -> dict:
+    url = str(args["url"]).strip()
+    _browser_scope(ctx, url, str(args.get("mission_id") or ""), args.get("scope"),
+                   str(args.get("purpose") or "target"))
+    result = _browser_call(browser.goto, args["profile"], url, base=ctx.base,
+                           timeout=int(args.get("timeout") or browser.DEFAULT_TIMEOUT))
+    return {"page": result}
+
+
+def browser_snapshot(ctx: ToolContext, args: dict) -> dict:
+    return _browser_call(browser.snapshot, args["profile"], base=ctx.base,
+                         include_text=bool(args.get("include_text", True)))
+
+
+def browser_click(ctx: ToolContext, args: dict) -> dict:
+    return _browser_call(browser.click, args["profile"], base=ctx.base,
+                         ref=str(args.get("ref") or ""),
+                         selector=str(args.get("selector") or ""),
+                         button=str(args.get("button") or "left"),
+                         timeout=int(args.get("timeout") or 10_000))
+
+
+def browser_type(ctx: ToolContext, args: dict) -> dict:
+    return _browser_call(browser.type_text, args["profile"], args["text"],
+                         base=ctx.base, ref=str(args.get("ref") or ""),
+                         selector=str(args.get("selector") or ""),
+                         submit=bool(args.get("submit")),
+                         clear=bool(args.get("clear", True)),
+                         timeout=int(args.get("timeout") or 10_000))
+
+
+def browser_press(ctx: ToolContext, args: dict) -> dict:
+    return _browser_call(browser.press, args["profile"], args["key"], base=ctx.base,
+                         ref=str(args.get("ref") or ""),
+                         selector=str(args.get("selector") or ""))
+
+
+def browser_wait(ctx: ToolContext, args: dict) -> dict:
+    return _browser_call(browser.wait, args["profile"], base=ctx.base,
+                         until=str(args.get("until") or "time"),
+                         value=str(args.get("value") or ""),
+                         timeout=int(args.get("timeout") or 30_000))
+
+
+def browser_screenshot(ctx: ToolContext, args: dict) -> dict:
+    return _browser_call(browser.screenshot, args["profile"], base=ctx.base,
+                         full_page=bool(args.get("full_page")))
+
+
+def browser_capture(ctx: ToolContext, args: dict) -> dict:
+    return _browser_call(browser.capture, args["profile"], args["name"],
+                         base=ctx.base, domain=str(args.get("domain") or ""))
+
+
+def browser_eval(ctx: ToolContext, args: dict) -> dict:
+    result = _browser_call(browser.evaluate, args["profile"], args["expression"],
+                           base=ctx.base)
+    return {"result": result}
+
+
+def browser_close(ctx: ToolContext, args: dict) -> dict:
+    return _browser_call(browser.close, args["profile"], base=ctx.base)
+
+
 def tool_calls_list(ctx: ToolContext, args: dict) -> dict:
     return _call(ctx, "GET", "/api/v1/tool-calls", {
         "tool": args.get("tool", ""), "status": args.get("status", ""),
@@ -981,6 +1120,7 @@ _HANDLERS.update({
     "http_probe": http_probe,
     "http_request": http_request,
     "inbox_create": inbox_create,
+    "inbox_providers": inbox_providers,
     "inbox_list": inbox_list,
     "inbox_read": inbox_read,
     "inbox_wait": inbox_wait,
@@ -992,6 +1132,19 @@ _HANDLERS.update({
     "auth_profile_list": auth_profile_list,
     "auth_profile_delete": auth_profile_delete,
     "auth_profile_import": auth_profile_import,
+    "browser_open": browser_open,
+    "browser_status": browser_status,
+    "browser_list": browser_list,
+    "browser_goto": browser_goto,
+    "browser_snapshot": browser_snapshot,
+    "browser_click": browser_click,
+    "browser_type": browser_type,
+    "browser_press": browser_press,
+    "browser_wait": browser_wait,
+    "browser_screenshot": browser_screenshot,
+    "browser_capture": browser_capture,
+    "browser_eval": browser_eval,
+    "browser_close": browser_close,
     "tool_calls_list": tool_calls_list,
     "status": tool_status,
 })
@@ -1079,6 +1232,9 @@ TOOLS: tuple[Tool, ...] = (
                   "max_tasks": _integer("task cap", 4, 20, 8),
                   "max_seconds": _integer("wall-clock cap in seconds", 30, 7200, 600),
                   "max_model_calls": _integer("model call cap", 0, 20, 2),
+                  "role": {"type": "string",
+                           "enum": ["recon", "auth", "api", "validator", "reporter"],
+                           "default": "recon"},
                   "allow_manual": _boolean("allow a manual-autonomy mission to run"),
                   "restart": _boolean("replace an interrupted or finished plan")},
                  ["mission_id"]), "agent_start", open_world=True),
@@ -1340,12 +1496,19 @@ TOOLS: tuple[Tool, ...] = (
                   "timeout": _integer("timeout in seconds", 1, 60, 15)},
                  ["target"]), "http_request", open_world=True),
     Tool("inbox_create", "Create inbox",
-         "Create a disposable mail.tm inbox for authorized account verification. "
-         "The password and bearer token stay in a 0600 file and are never returned.",
+         "Create a disposable inbox for authorized account verification. mail.tm "
+         "gives a password-backed account; guerrillamail gives a session-backed "
+         "address. Credentials stay in a 0600 file and are never returned.",
          "low", "identity",
-         _schema({"domain": _string("optional mail.tm domain"),
+         _schema({"provider": {"type": "string",
+                               "enum": list(tempmail.PROVIDERS),
+                               "default": "mail.tm"},
+                  "domain": _string("optional provider domain"),
                   "prefix": _string("local-part prefix")}), "inbox_create",
          open_world=True),
+    Tool("inbox_providers", "List mailbox providers",
+         "List the temporary-mail providers this workspace can create inboxes on.",
+         "low", "identity", _schema({}), "inbox_providers", read_only=True),
     Tool("inbox_list", "List inboxes",
          "List the disposable inboxes created on this workspace. Credentials are masked.",
          "low", "identity", _schema({}), "inbox_list", read_only=True),
@@ -1413,6 +1576,116 @@ TOOLS: tuple[Tool, ...] = (
                   "name": _string("profile name"),
                   "domain": _string("cookie domain filter")},
                  ["path", "name"]), "auth_profile_import"),
+    Tool("browser_open", "Open browser",
+         "Launch or reuse a persistent Chromium profile and navigate it. The "
+         "window is a real desktop browser: a human can solve a challenge, finish "
+         "an OAuth consent, or log in, and the agent can keep driving the same "
+         "session. Target URLs are scope-checked; set purpose=identity only for a "
+         "recognised identity provider.",
+         "medium", "browser",
+         _schema({"profile": _string("profile name, e.g. snapdeploy"),
+                  "url": _string("http(s) URL or about:blank"),
+                  "headless": _boolean("run without a visible window", False),
+                  "purpose": {"type": "string", "enum": ["target", "identity"],
+                              "default": "target"},
+                  "mission_id": _string("mission id"),
+                  "scope": _array("explicit in-scope entries")},
+                 ["profile"]), "browser_open", open_world=True),
+    Tool("browser_status", "Browser status",
+         "Show whether a profile is running, its URL, title, and process id.",
+         "low", "browser",
+         _schema({"profile": _string("profile name")}, ["profile"]),
+         "browser_status", read_only=True),
+    Tool("browser_list", "List browser profiles",
+         "List known browser profiles and their live state.",
+         "low", "browser", _schema({}), "browser_list", read_only=True),
+    Tool("browser_goto", "Navigate browser",
+         "Navigate an existing profile to a scoped URL.",
+         "medium", "browser",
+         _schema({"profile": _string("profile name"),
+                  "url": _string("http(s) URL"),
+                  "timeout": _integer("navigation timeout in ms", 1000, 120000, 20000),
+                  "purpose": {"type": "string", "enum": ["target", "identity"],
+                              "default": "target"},
+                  "mission_id": _string("mission id"),
+                  "scope": _array("explicit in-scope entries")},
+                 ["profile", "url"]), "browser_goto", open_world=True),
+    Tool("browser_snapshot", "Snapshot page",
+         "Return the visible page text plus interactive elements with stable refs. "
+         "Password values are never returned.",
+         "low", "browser",
+         _schema({"profile": _string("profile name"),
+                  "include_text": _boolean("include visible page text", True)},
+                 ["profile"]), "browser_snapshot", read_only=True),
+    Tool("browser_click", "Click element",
+         "Click an element by snapshot ref or CSS selector.",
+         "medium", "browser",
+         _schema({"profile": _string("profile name"),
+                  "ref": _string("snapshot ref, e.g. e12"),
+                  "selector": _string("CSS selector"),
+                  "button": {"type": "string", "enum": ["left", "right", "middle"],
+                             "default": "left"},
+                  "timeout": _integer("timeout in ms", 500, 120000, 10000)},
+                 ["profile"]), "browser_click"),
+    Tool("browser_type", "Type into element",
+         "Fill an input or editable element by ref or selector. The typed text is "
+         "redacted from the audit trail. Use submit=true to press Enter.",
+         "medium", "browser",
+         _schema({"profile": _string("profile name"),
+                  "text": _string("text to type"),
+                  "ref": _string("snapshot ref"),
+                  "selector": _string("CSS selector"),
+                  "submit": _boolean("press Enter after typing", False),
+                  "clear": _boolean("clear the field first", True),
+                  "timeout": _integer("timeout in ms", 500, 120000, 10000)},
+                 ["profile", "text"]), "browser_type"),
+    Tool("browser_press", "Press key",
+         "Press a keyboard key on an element or the page body.",
+         "medium", "browser",
+         _schema({"profile": _string("profile name"),
+                  "key": _string("key name, e.g. Enter or Escape"),
+                  "ref": _string("snapshot ref"),
+                  "selector": _string("CSS selector")},
+                 ["profile", "key"]), "browser_press"),
+    Tool("browser_wait", "Wait for page",
+         "Wait for a human or a page condition: time, url substring, text, selector, "
+         "or navigation away from the current URL. Use navigation after asking a "
+         "human to finish a login.",
+         "low", "browser",
+         _schema({"profile": _string("profile name"),
+                  "until": {"type": "string",
+                            "enum": ["time", "url", "text", "selector", "navigation"],
+                            "default": "time"},
+                  "value": _string("substring or selector"),
+                  "timeout": _integer("timeout in ms", 1000, 900000, 30000)},
+                 ["profile"]), "browser_wait", read_only=True),
+    Tool("browser_screenshot", "Screenshot browser",
+         "Capture the visible page to a PNG under the NetCast3r data directory.",
+         "low", "browser",
+         _schema({"profile": _string("profile name"),
+                  "full_page": _boolean("capture the full scrollable page", False)},
+                 ["profile"]), "browser_screenshot", read_only=True),
+    Tool("browser_capture", "Capture browser session",
+         "Copy the live cookie jar into a named auth profile for http_request. "
+         "Cookie values are stored sealed and are never returned.",
+         "medium", "browser",
+         _schema({"profile": _string("browser profile"),
+                  "name": _string("auth profile name"),
+                  "domain": _string("optional cookie domain filter")},
+                 ["profile", "name"]), "browser_capture"),
+    Tool("browser_eval", "Evaluate JavaScript",
+         "Evaluate one JavaScript expression in the page and return its JSON value. "
+         "High risk: it can read page secrets. Supervised mode needs an approval.",
+         "high", "browser",
+         _schema({"profile": _string("profile name"),
+                  "expression": _string("JavaScript expression")},
+                 ["profile", "expression"]), "browser_eval",
+         open_world=True),
+    Tool("browser_close", "Close browser",
+         "Terminate the Chromium process for a profile. Unsaved page state is lost.",
+         "medium", "browser",
+         _schema({"profile": _string("profile name")}, ["profile"]),
+         "browser_close", destructive=True),
     Tool("tool_calls_list", "List tool calls",
          "Read the MCP audit trail: tool, risk, status, actor, mission, run, and timing.",
          "low", "governance",
@@ -1570,7 +1843,7 @@ class ToolRegistry:
                     "mission_id": mission_id,
                     "run_id": run_id,
                     "approval_id": approval_id,
-                    "args": redact_payload(args),
+                    "args": audit_args(tool.name, args),
                     "result": redact_payload(result_value),
                     "error": "" if status == "ok" else str(
                         result_value.get("error", {}).get("message", "")),

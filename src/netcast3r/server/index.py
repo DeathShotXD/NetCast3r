@@ -250,7 +250,9 @@ AGENT_STATUSES = {"idle", "planning", "running", "paused", "stopping",
                   "stopped", "done", "error"}
 AGENT_TASK_STATUSES = {"pending", "running", "verified", "unverified",
                        "failed", "skipped", "blocked"}
-AGENT_TASK_KINDS = {"scope", "probe", "inventory", "analysis", "verify"}
+AGENT_TASK_KINDS = {"scope", "probe", "inventory", "analysis", "verify",
+                    "auth_inventory", "api_inventory", "findings_inventory",
+                    "reports_inventory"}
 MODEL_CALL_STATUSES = {"ok", "error", "unavailable", "budget"}
 APPROVAL_RISKS = {"low", "medium", "high", "critical"}
 APPROVAL_DECISIONS = {"approved", "rejected"}
