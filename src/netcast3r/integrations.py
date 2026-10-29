@@ -147,6 +147,73 @@ def _command(tool: str, target: str, timeout: int) -> list[str]:
     raise ToolRunError(f"tool is not allowlisted: {tool}")
 
 
+# ---------------------------------------------------------------------------
+# Scoped artifact download
+# ---------------------------------------------------------------------------
+
+MAX_DOWNLOAD = 20 * 1024 * 1024
+
+
+def fetch_to_file(url: str, name: str, base: str | Path | None = None,
+                  max_bytes: int = 10 * 1024 * 1024, verify_tls: bool = True,
+                  timeout: float = 30.0, headers: dict | None = None) -> dict:
+    """Download one scoped URL to the local artifact directory.
+
+    The caller has already checked the URL against the mission scope. The file
+    is never opened or executed; it exists so a reverse-engineering tool can
+    read it after the response size cap of ``http_request``.
+    """
+    import hashlib
+    import httpx
+
+    if not url.startswith(("http://", "https://")):
+        raise ToolRunError("download target must be an http(s) URL")
+    max_bytes = max(1024, min(int(max_bytes or 10 * 1024 * 1024), MAX_DOWNLOAD))
+    safe = "".join(char for char in Path(str(name or "artifact.bin")).name
+                   if char.isalnum() or char in "._-")[:120] or "artifact.bin"
+    directory = Path(base or Path.home() / ".netcast3r") / "downloads"
+    directory.mkdir(parents=True, exist_ok=True)
+    target = directory / f"{int(time.time())}-{safe}"
+    digest = hashlib.sha256()
+    total = 0
+    truncated = False
+    try:
+        with httpx.Client(timeout=timeout, follow_redirects=False, trust_env=False,
+                          verify=verify_tls) as client:
+            with client.stream("GET", url, headers=headers or {}) as response:
+                if response.status_code in {301, 302, 303, 307, 308}:
+                    location = response.headers.get("location", "")
+                    raise ToolRunError(f"download redirected to {location[:200]}; "
+                                       "fetch the in-scope URL directly")
+                if response.status_code >= 400:
+                    raise ToolRunError(f"download returned HTTP {response.status_code}")
+                content_type = response.headers.get("content-type", "")
+                with open(target, "wb") as handle:
+                    for chunk in response.iter_bytes():
+                        if total + len(chunk) > max_bytes:
+                            handle.write(chunk[: max_bytes - total])
+                            digest.update(chunk[: max_bytes - total])
+                            total = max_bytes
+                            truncated = True
+                            break
+                        handle.write(chunk)
+                        digest.update(chunk)
+                        total += len(chunk)
+    except httpx.HTTPError as exc:
+        raise ToolRunError(f"download failed: {type(exc).__name__}") from exc
+    os.chmod(target, 0o600)
+    return {
+        "path": str(target),
+        "name": safe,
+        "url": url,
+        "bytes": total,
+        "sha256": digest.hexdigest(),
+        "content_type": content_type,
+        "truncated": truncated,
+        "note": "Local artifact. Analyze it with reveng_analyze; nothing was executed.",
+    }
+
+
 def run_tool(tool: str, target: str, timeout: int = DEFAULT_TIMEOUT,
              base: str | Path | None = None) -> dict:
     """Run one allowlisted tool and return bounded stdout/stderr."""
@@ -163,7 +230,7 @@ def run_tool(tool: str, target: str, timeout: int = DEFAULT_TIMEOUT,
     started = time.monotonic()
     try:
         proc = subprocess.run(command, capture_output=True, text=True, timeout=timeout,
-                              cwd=str(run_dir), check=False)
+                              cwd=str(run_dir), check=False, stdin=subprocess.DEVNULL)
         stdout, stderr, code = proc.stdout, proc.stderr, proc.returncode
         timed_out = False
     except subprocess.TimeoutExpired as exc:

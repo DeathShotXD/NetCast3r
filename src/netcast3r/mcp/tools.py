@@ -589,6 +589,31 @@ def recon_passive(ctx: ToolContext, args: dict) -> dict:
     return _run_recon(ctx, args, "passive")
 
 
+def fetch_artifact(ctx: ToolContext, args: dict) -> dict:
+    target = str(args.get("target") or "").strip()
+    if not target:
+        raise ToolError("invalid_arguments", "target is required")
+    mission_id = str(args.get("mission_id") or "")
+    scope = args.get("scope")
+    _require_scope(ctx, target, mission_id, scope, probe=True)
+    headers = {"user-agent": "NetCast3r-MCP/0.1", "accept": "*/*"}
+    profile_name = str(args.get("auth_profile") or "").strip()
+    if profile_name:
+        profile = authstore.get_profile(profile_name, base=ctx.base)
+        if profile is None:
+            raise ToolError("invalid_arguments", f"unknown auth profile: {profile_name}")
+        headers.update(profile.request_headers())
+    name = str(args.get("name") or "") or target.rstrip("/").split("/")[-1] or "artifact.bin"
+    try:
+        return integrations.fetch_to_file(
+            target, name, base=ctx.base,
+            max_bytes=int(args.get("max_bytes", 10 * 1024 * 1024)),
+            verify_tls=bool(args.get("verify_tls", True)),
+            timeout=float(args.get("timeout", 30)), headers=headers)
+    except integrations.ToolRunError as exc:
+        raise ToolError("invalid_arguments", str(exc))
+
+
 def recon_active(ctx: ToolContext, args: dict) -> dict:
     return _run_recon(ctx, args, "active")
 
@@ -882,6 +907,7 @@ def http_request(ctx: ToolContext, args: dict) -> dict:
     follow = bool(args.get("follow_redirects", False))
     max_hops = int(args.get("max_redirects", 5)) if follow else 0
     max_hops = max(0, min(max_hops, 5))
+    verify_tls = bool(args.get("verify_tls", True))
 
     redirects: list[dict] = []
     blocked = ""
@@ -897,7 +923,8 @@ def http_request(ctx: ToolContext, args: dict) -> dict:
     truncated = False
 
     try:
-        with httpx.Client(timeout=timeout, trust_env=False, follow_redirects=False) as client:
+        with httpx.Client(timeout=timeout, trust_env=False, follow_redirects=False,
+                          verify=verify_tls) as client:
             for hop in range(max_hops + 1):
                 with client.stream(current_method, current, headers=headers,
                                    content=current_content) as response:
@@ -1036,6 +1063,7 @@ def http_path_diff(ctx: ToolContext, args: dict) -> dict:
         "max_bytes": args.get("max_bytes", 32768),
         "timeout": args.get("timeout", 15),
         "follow_redirects": bool(args.get("follow_redirects", False)),
+        "verify_tls": bool(args.get("verify_tls", True)),
     }
     rows: list[dict] = []
     baseline: dict = {}
@@ -1350,6 +1378,7 @@ _HANDLERS.update({
     "finding_artifact_list": finding_artifact_list,
     "finding_artifact_get": finding_artifact_get,
     "recon_passive": recon_passive,
+    "fetch_artifact": fetch_artifact,
     "recon_active": recon_active,
     "burp_status": burp_status,
     "burp_call": burp_call,
@@ -1633,6 +1662,21 @@ TOOLS: tuple[Tool, ...] = (
                   "scope": _array("explicit scope entries when no mission is used"),
                   "timeout": _integer("timeout in seconds", 10, 600, 180)},
                  ["tool", "target"]), "recon_passive", open_world=True),
+    Tool("fetch_artifact", "Fetch an artifact",
+         "Download one in-scope URL to a local file under ~/.netcast3r/downloads/ so a "
+         "reverse-engineering tool can read it past the response cap. The file is never "
+         "executed. Scope is checked first; TLS verification can be disabled only for an "
+         "authorized self-signed target.",
+         "medium", "reverse-engineering",
+         _schema({"target": _string("in-scope URL to download"),
+                  "name": _string("local file name"),
+                  "mission_id": _string("mission whose scope authorizes the download"),
+                  "scope": _array("explicit scope entries when no mission is used"),
+                  "auth_profile": _string("stored auth profile name"),
+                  "verify_tls": _boolean("verify the target certificate (default true)", True),
+                  "max_bytes": _integer("download cap", 1024, 20971520, 10485760),
+                  "timeout": _integer("timeout in seconds", 1, 120, 30)},
+                 ["target"]), "fetch_artifact", open_world=True),
     Tool("recon_active", "Active recon tool",
          "Run an allowlisted active tool (nuclei critical/high, dalfox, nmap top 100) "
          "against one in-scope target. Intrusive: needs an approval under supervised "
@@ -1845,6 +1889,9 @@ TOOLS: tuple[Tool, ...] = (
                   "form": _object("form request body"),
                   "follow_redirects": _boolean("follow up to max_redirects hops", False),
                   "max_redirects": _integer("redirect hop limit", 0, 5, 5),
+                  "verify_tls": _boolean("verify the target certificate (default true); "
+                                         "disable only for an authorized self-signed target",
+                                         True),
                   "max_bytes": _integer("response body cap", 1024, 524288, 65536),
                   "timeout": _integer("timeout in seconds", 1, 60, 15)},
                  ["target"]), "http_request", open_world=True),
@@ -1869,6 +1916,7 @@ TOOLS: tuple[Tool, ...] = (
                   "delay": {"type": "number", "description": "seconds between requests",
                             "minimum": 0, "maximum": 2, "default": 0.2},
                   "follow_redirects": _boolean("follow up to 5 hops", False),
+                  "verify_tls": _boolean("verify the target certificate (default true)", True),
                   "max_bytes": _integer("response body cap", 1024, 262144, 32768),
                   "timeout": _integer("timeout in seconds", 1, 60, 15)},
                  ["target"]), "http_path_diff", open_world=True),

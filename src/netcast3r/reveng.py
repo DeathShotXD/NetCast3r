@@ -32,7 +32,7 @@ from pathlib import Path
 
 KINDS = ("auto", "source", "apk", "contract", "binary")
 
-MAX_FILE_BYTES = 2_000_000
+MAX_FILE_BYTES = 12_000_000
 MAX_TOTAL_BYTES = 40_000_000
 MAX_FILES = 4000
 MAX_RESULTS = 400

@@ -56,12 +56,13 @@ class RunToolTests(unittest.TestCase):
         completed = mock.Mock(returncode=0, stdout="a" * 250000, stderr="")
         with mock.patch.object(integrations.shutil, "which", return_value="/bin/subfinder"), \
                 mock.patch.object(integrations, "_resolve_check", return_value=None), \
-                mock.patch.object(integrations.subprocess, "run", return_value=completed):
+                mock.patch.object(integrations.subprocess, "run", return_value=completed) as run:
             result = integrations.run_tool("subfinder", "example.com", base="/tmp")
         self.assertEqual(result["tool"], "subfinder")
         self.assertEqual(result["exit_code"], 0)
         self.assertTrue(result["truncated"])
         self.assertEqual(len(result["stdout"]), integrations.MAX_OUTPUT)
+        self.assertEqual(run.call_args.kwargs.get("stdin"), integrations.subprocess.DEVNULL)
 
     def test_missing_binary_is_reported(self):
         with mock.patch.object(integrations.shutil, "which", return_value=None):
