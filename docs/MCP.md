@@ -353,6 +353,26 @@ list at 25, never follows a cross-host redirect, and redacts the credential from
 the audit. A changed response is a lead, not proof; confirm the account and the
 body before recording it.
 
+### Threat intelligence
+
+`threatintel_query` and `threatintel_cve` answer "what is this CVE, how bad is
+it, and is there a PoC?" across:
+
+- **NVD** — description, CVSS v2/v3/v4, CWE, references;
+- **CISA KEV** — known exploitation and ransomware use;
+- **GitHub** — public PoC repositories and advisory records;
+- **Sploitus** — public exploit entries.
+
+Results keep their source URLs and are cached for six hours. `GITHUB_TOKEN`
+raises the GitHub rate limit.
+
+`threatintel_repro` builds a cited, non-executing plan: it reads the top PoC
+READMEs, extracts code blocks, flags destructive payloads, and lays out the
+smallest safe proof against an authorized target. It never runs the payload and
+explicitly stops at a benign marker. This is the input an agent should use
+before testing a recent CVE, not a scanner that fires exploits.
+
+
 
 ### Browser
 

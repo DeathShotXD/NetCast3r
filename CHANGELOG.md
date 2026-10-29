@@ -50,6 +50,14 @@ Notable changes to NetCast3r, newest first.
   and reports where the response changes. It requires a mission, checks every
   host against scope, never follows a cross-host redirect, and redacts the
   credential from the audit.
+- Threat intel: `threatintel_query`, `threatintel_cve`, and
+  `threatintel_repro` combine NVD, CISA KEV, GitHub repository/advisory search,
+  and Sploitus. Results keep their source URLs; the reproduction plan extracts
+  public PoC code blocks, flags destructive payloads, and never executes them.
+  Set `GITHUB_TOKEN` to raise the GitHub search limit.
+- `fetch_artifact` downloads one in-scope URL to a 0600 file for offline
+  analysis, without following redirects. `http_request` and `http_path_diff`
+  accept `verify_tls=false` only for an authorized self-signed target.
 
 ### Security
 

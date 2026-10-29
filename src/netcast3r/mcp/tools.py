@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import socket
 import time
 from dataclasses import dataclass, field
@@ -27,7 +28,7 @@ from urllib.parse import urlencode, urljoin, urlsplit
 
 import httpx
 
-from .. import authstore, browser, integrations, oast, pathdiff, pivot, reveng, tempmail
+from .. import authstore, browser, integrations, oast, pathdiff, pivot, reveng, tempmail, threatintel
 from ..scope import ScopeManager
 
 POLICIES = ("readonly", "supervised", "full")
@@ -662,6 +663,48 @@ def burp_call(ctx: ToolContext, args: dict) -> dict:
         return client.call_tool(str(args["tool"]), arguments)
     except integrations.BurpError as exc:
         raise ToolError("control_plane", f"Burp MCP call failed: {exc}")
+
+
+def threatintel_query(ctx: ToolContext, args: dict) -> dict:
+    query = str(args.get("query") or "").strip()
+    if not query:
+        raise ToolError("invalid_arguments", "query is required")
+    try:
+        return threatintel.search(
+            query, token=os.environ.get("GITHUB_TOKEN", ""),
+            limit=max(1, min(int(args.get("limit", 10)), 20)))
+    except ValueError as exc:
+        raise ToolError("invalid_arguments", str(exc))
+    except RuntimeError as exc:
+        raise ToolError("control_plane", f"threat intel lookup failed: {exc}")
+
+
+def threatintel_cve(ctx: ToolContext, args: dict) -> dict:
+    cve_id = str(args.get("cve_id") or "").strip()
+    if not cve_id:
+        raise ToolError("invalid_arguments", "cve_id is required")
+    try:
+        return threatintel.search(
+            cve_id, token=os.environ.get("GITHUB_TOKEN", ""),
+            limit=max(1, min(int(args.get("limit", 10)), 20)))
+    except ValueError as exc:
+        raise ToolError("invalid_arguments", str(exc))
+    except RuntimeError as exc:
+        raise ToolError("control_plane", f"threat intel lookup failed: {exc}")
+
+
+def threatintel_repro(ctx: ToolContext, args: dict) -> dict:
+    cve_id = str(args.get("cve_id") or "").strip()
+    if not cve_id:
+        raise ToolError("invalid_arguments", "cve_id is required")
+    try:
+        return threatintel.reproduction_plan(
+            cve_id, target=str(args.get("target") or ""),
+            token=os.environ.get("GITHUB_TOKEN", ""), base=ctx.base)
+    except ValueError as exc:
+        raise ToolError("invalid_arguments", str(exc))
+    except RuntimeError as exc:
+        raise ToolError("control_plane", f"threat intel lookup failed: {exc}")
 
 
 def token_pivot(ctx: ToolContext, args: dict) -> dict:
@@ -1383,6 +1426,9 @@ _HANDLERS.update({
     "burp_status": burp_status,
     "burp_call": burp_call,
     "token_pivot": token_pivot,
+    "threatintel_query": threatintel_query,
+    "threatintel_cve": threatintel_cve,
+    "threatintel_repro": threatintel_repro,
     "finding_triage": finding_triage,
     "submissions_list": submissions_list,
     "submissions_get": submissions_get,
@@ -1722,6 +1768,29 @@ TOOLS: tuple[Tool, ...] = (
                   "delay": {"type": "number", "description": "seconds between hosts",
                             "minimum": 0, "maximum": 5, "default": 0.25}},
                  ["token_value", "mission_id"]), "token_pivot", open_world=True),
+    Tool("threatintel_query", "Threat intel search",
+         "Search recent CVEs and PoCs across NVD, CISA KEV, GitHub repositories, GitHub "
+         "advisories, and Sploitus. A CVE id returns the advisory, severity, exploitation "
+         "status, and public repos; a keyword searches GitHub. Results keep their sources.",
+         "low", "threat-intel",
+         _schema({"query": _string("CVE id or keyword"),
+                  "limit": _integer("results per source", 1, 20, 10)},
+                 ["query"]), "threatintel_query", open_world=True),
+    Tool("threatintel_cve", "CVE dossier",
+         "Fetch the advisory, CVSS scores, CISA KEV status, GitHub advisories, and public "
+         "PoC repositories for one CVE id.",
+         "low", "threat-intel",
+         _schema({"cve_id": _string("CVE id, e.g. CVE-2025-12345"),
+                  "limit": _integer("PoC repos", 1, 20, 10)},
+                 ["cve_id"]), "threatintel_cve", open_world=True),
+    Tool("threatintel_repro", "Reproduction plan",
+         "Build a cited, non-executing reproduction plan for one CVE from the advisory and "
+         "the top public PoC READMEs. Extracts code blocks, flags destructive payloads, and "
+         "lays out the smallest safe proof against an authorized target.",
+         "low", "threat-intel",
+         _schema({"cve_id": _string("CVE id"),
+                  "target": _string("optional in-scope target to mention in the plan")},
+                 ["cve_id"]), "threatintel_repro", open_world=True),
     Tool("finding_triage", "Triage finding",
          "Set triage status, notes, tags, or a severity override on a finding.",
          "medium", "findings",
