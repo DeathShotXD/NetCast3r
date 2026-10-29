@@ -1,4 +1,4 @@
-import type { Approval, Finding, Inventory, KeyEntry, McpInfo, Meta, Mission, MissionAgent, Paged, Provider, ProviderHealth, Run, RunEvent, Submission, SubmissionSummary, ToolCall, Totals } from './types';
+import type { Approval, Finding, Inventory, KeyEntry, McpInfo, Meta, Mission, MissionAgent, Paged, Provider, ProviderHealth, RevengKinds, RevengResult, Run, RunEvent, Submission, SubmissionSummary, ToolCall, Totals } from './types';
 
 const BASE = '/api/v1';
 
@@ -76,6 +76,8 @@ export const api = {
   runEvents: (id: string) => request<{ items: RunEvent[] }>('GET', `/runs/${id}/events`),
   findings: (q = '') => request<Paged<Finding>>('GET', `/findings${q}`),
   finding: (id: string) => request<Finding>('GET', `/findings/${id}`),
+  createFinding: (body: Record<string, unknown>) =>
+    request<Finding>('POST', '/findings', body),
   patchFinding: (id: string, patch: Partial<Finding>) =>
     request<Finding>('PATCH', `/findings/${id}`, patch),
   missions: (q = '') => request<Paged<Mission>>('GET', `/missions${q}`),
@@ -126,9 +128,11 @@ export const api = {
   testProvider: (id: string) =>
     request<{ ok: boolean; reason: string; latency_ms?: number; models?: string[]; detail?: string }>(
       'POST', `/providers/${id}/test`),
-  settings: () => request<{ items: Record<string, unknown> }>('GET', '/settings'),
-  patchSettings: (patch: Record<string, unknown>) =>
+  settings: () => request<{ items: Record<string, unknown> }>('GET', '/settings'),  patchSettings: (patch: Record<string, unknown>) =>
     request<{ items: Record<string, unknown> }>('PATCH', '/settings', patch),
+  revengKinds: () => request<RevengKinds>('GET', '/reveng/kinds'),
+  revengAnalyze: (body: Record<string, unknown>) =>
+    request<RevengResult>('POST', '/reveng/analyze', body),
   mcpInfo: () => request<McpInfo>('GET', '/mcp'),
   toolCalls: (q = '') => request<Paged<ToolCall>>('GET', `/tool-calls${q}`),
   toolCall: (id: string) => request<ToolCall>('GET', `/tool-calls/${id}`),

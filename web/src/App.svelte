@@ -12,6 +12,7 @@
   import Missions from './lib/screens/Missions.svelte';
   import NewScan from './lib/screens/NewScan.svelte';
   import Reports from './lib/screens/Reports.svelte';
+  import ReverseLab from './lib/screens/ReverseLab.svelte';
   import Runs from './lib/screens/Runs.svelte';
   import Backdrop from './lib/ui/Backdrop.svelte';
   import Palette from './lib/ui/Palette.svelte';
@@ -96,6 +97,8 @@
             <AgentStudio />
           {:else if store.screen === 'reports'}
             <Reports />
+          {:else if store.screen === 'reveng'}
+            <ReverseLab />
           {:else if store.screen === 'keys'}
             <Keys />
           {:else if store.screen === 'help'}

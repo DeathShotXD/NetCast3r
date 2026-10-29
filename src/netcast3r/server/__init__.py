@@ -26,7 +26,7 @@ from .events import EventBus
 from .index import Index
 from .jobs import JobManager
 from .keys import KeyStore, mask
-from .. import control
+from .. import control, reveng
 
 API_VERSION = "v1"
 ALLOWED_HOSTS = {"127.0.0.1", "localhost", "::1", "[::1]"}
@@ -446,6 +446,42 @@ class Server:
             except ValueError as exc:
                 return _problem(400, str(exc))
             return _json(finding) if finding else _problem(404, "finding not found")
+
+        @add("GET", r"/api/v1/reveng/kinds")
+        def reveng_kinds(ctx):
+            return _json({
+                "kinds": list(reveng.KINDS),
+                "decompilers": {
+                    "jadx": bool(shutil.which("jadx")),
+                    "apktool": bool(shutil.which("apktool")),
+                    "readelf": bool(shutil.which("readelf")),
+                },
+                "note": ("Analysis is local and read-only. Observations are leads; record a "
+                         "finding only after confirming it against the live target."),
+            })
+
+        @add("POST", r"/api/v1/reveng/analyze")
+        def reveng_run(ctx):
+            body = ctx.json()
+            body = body if isinstance(body, dict) else {}
+            path = str(body.get("path") or "").strip()
+            if not path:
+                return _problem(400, "path required")
+            kind = str(body.get("kind") or "auto").strip().lower()
+            try:
+                result = reveng.analyze(
+                    kind, path,
+                    max_files=int(body.get("max_files") or 4000),
+                    timeout=int(body.get("timeout") or 240),
+                    keep=bool(body.get("keep") or False),
+                )
+            except (TypeError, ValueError) as exc:
+                return _problem(400, str(exc))
+            except OSError as exc:
+                return _problem(400, f"could not read the artifact: {exc.strerror or exc}")
+            if body.get("markdown"):
+                result["report_markdown"] = reveng.render_markdown(result)
+            return _json(result)
 
         @add("GET", r"/api/v1/missions")
         def list_missions(ctx):

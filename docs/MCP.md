@@ -258,6 +258,59 @@ different host. Metadata and link-local addresses are refused at every hop.
 Bodies are capped at 512 KiB and the response returns `set_cookie` separately
 so cookie flags can be reviewed.
 
+### Path differentials
+
+`http_path_diff` sends the same request to a bounded set of path variants —
+literal, percent-encoded, mixed-case, doubled-slash, trailing-slash, and
+semicolon forms — and labels where the response diverges from the baseline.
+A `403` that becomes `400` is labelled `check_skipped`: the authorization gate
+did not match the encoded route and the handler did. A `403`/`401` that
+becomes `2xx` is labelled `auth_bypass`. This turns a manual finding class into
+a repeatable check without deciding that a target is vulnerable; the response
+body still has to be confirmed.
+
+Non-safe methods (`POST`, `PUT`, `PATCH`, `DELETE`) are refused unless
+`allow_unsafe_method=true`, because replaying a state-changing request against
+variants can create state. Requests are spaced by a configurable delay and
+capped at 24 variants, and every variant goes through the same scope and auth
+profile checks as `http_request`.
+
+### Reverse engineering
+
+`reveng_analyze` reads an artifact the operator legitimately holds — a source
+tree, an APK, a Solidity project, a JS bundle, or a PE/ELF binary — and returns
+observations with file and line numbers. Nothing is uploaded, executed, or run
+against a target. APK analysis uses `jadx` or `apktool` when installed; the
+remaining checks are plain text analysis, so the tool works on a stock machine.
+
+The analyzers cover:
+
+- **Source:** hardcoded credentials (AWS, Google, Stripe, GitHub, Slack, npm,
+  PyPI, SendGrid, Shopify, JWTs, private keys, URL-embedded credentials),
+  endpoints, dangerous sinks per language (`pickle`, unsafe YAML, `eval`,
+  `child_process`, Java deserialization, SQL concatenation, `template.HTML`,
+  PHP object injection, Ruby `YAML.load`, `BinaryFormatter`), and disabled TLS
+  verification.
+- **APK:** manifest flags (`debuggable`, `allowBackup`, cleartext traffic),
+  exported components without a permission, intent-filter defaults, deep
+  links, dangerous permissions, network-security config, certificate pinning
+  markers, Firebase identifiers, native libraries, and secrets/endpoints in
+  decompiled sources and resources.
+- **Contracts:** `tx.origin`, `delegatecall`, `selfdestruct`, unchecked math,
+  low-level calls, timestamp dependence, inline assembly, `ecrecover` without a
+  zero-address check, floating pragmas, and initializer review prompts.
+- **Binaries:** PE/ELF/Mach-O detection, ASCII and UTF-16 strings, kernel
+  imports (`IoCreateDevice`, `MmMapIoSpace`, `ZwTerminateProcess`,
+  `ObRegisterCallbacks`, IOCTL dispatch), IOCTL names and hex constants,
+  embedded URLs/IPs, and ELF hardening (`PIE`, executable stack, canary,
+  `checkelf` output when available).
+
+Results are observations, not findings. The Reverse Lab screen in the dashboard
+runs the same API (`POST /api/v1/reveng/analyze`), shows severity counts and
+line-addressed evidence, and has a one-click "save" that records a finding
+through `POST /api/v1/findings` — still an explicit write, never inferred from
+the scan.
+
 ### Browser
 
 The browser is a real, persistent Chromium profile, not a headless fetcher.

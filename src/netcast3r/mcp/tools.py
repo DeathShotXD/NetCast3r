@@ -27,7 +27,7 @@ from urllib.parse import urlencode, urljoin, urlsplit
 
 import httpx
 
-from .. import authstore, browser, oast, tempmail
+from .. import authstore, browser, oast, pathdiff, reveng, tempmail
 from ..scope import ScopeManager
 
 POLICIES = ("readonly", "supervised", "full")
@@ -842,6 +842,110 @@ def http_request(ctx: ToolContext, args: dict) -> dict:
     }
 
 
+def reveng_analyze(ctx: ToolContext, args: dict) -> dict:
+    """Analyze a local artifact the operator legitimately holds.
+
+    Nothing leaves the machine and nothing is executed. The result is a set of
+    leads with file and line numbers; a finding is still recorded separately
+    after it is confirmed against the live target.
+    """
+    path = str(args.get("path") or "").strip()
+    if not path:
+        raise ToolError("invalid_arguments", "path is required")
+    kind = str(args.get("kind") or "auto").strip().lower()
+    options = {
+        "max_files": args.get("max_files", 4000),
+        "timeout": args.get("timeout", 240),
+        "keep": bool(args.get("keep", False)),
+    }
+    try:
+        result = reveng.analyze(kind, path, **options)
+    except ValueError as exc:
+        raise ToolError("invalid_arguments", str(exc))
+    except OSError as exc:
+        raise ToolError("read_failed", f"could not read the artifact: {exc.strerror or exc}")
+    if args.get("markdown"):
+        result["report_markdown"] = reveng.render_markdown(result)
+    return result
+
+
+def http_path_diff(ctx: ToolContext, args: dict) -> dict:
+    """Compare a baseline request with a bounded set of path variants.
+
+    Authorization layers and routers often disagree about percent-encoding.
+    This sends the same request to literal, encoded, case-varied, and
+    slash-varied paths, then labels where the responses diverge. Non-safe
+    methods are refused unless the caller explicitly opts in, because replaying
+    a POST against a handler can create state.
+    """
+    target = str(args.get("target") or "").strip()
+    url = target if "://" in target else "https://" + target
+    parts = urlsplit(url)
+    if parts.scheme not in {"http", "https"} or not parts.hostname:
+        raise ToolError("invalid_arguments", "target must be an http(s) URL or hostname")
+    method = str(args.get("method", "GET")).upper()
+    if method not in {"GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"}:
+        raise ToolError("invalid_arguments", "unsupported method")
+    if method not in {"GET", "HEAD", "OPTIONS"} and not args.get("allow_unsafe_method"):
+        raise ToolError("invalid_arguments",
+                        "non-safe methods can create state; set allow_unsafe_method=true "
+                        "only when replaying the request is safe")
+    mission_id = str(args.get("mission_id") or "")
+    scope = args.get("scope")
+    _require_scope(ctx, target, mission_id, scope, probe=True)
+
+    limit = max(2, min(int(args.get("max_variants", 12)), pathdiff.MAX_VARIANTS))
+    delay = max(0.0, min(float(args.get("delay", 0.2)), 2.0))
+    variants = pathdiff.build_variants(parts.path or "/", limit=limit)
+    shared = {
+        "method": method,
+        "mission_id": mission_id,
+        "scope": scope,
+        "auth_profile": args.get("auth_profile", ""),
+        "headers": args.get("headers") or {},
+        "body": args.get("body"),
+        "json": args.get("json"),
+        "form": args.get("form"),
+        "max_bytes": args.get("max_bytes", 32768),
+        "timeout": args.get("timeout", 15),
+        "follow_redirects": bool(args.get("follow_redirects", False)),
+    }
+    rows: list[dict] = []
+    baseline: dict = {}
+    for index, variant in enumerate(variants):
+        if index:
+            time.sleep(delay)
+        call_args = {**shared, "target": pathdiff.target_for(url, variant["path"])}
+        try:
+            response = http_request(ctx, call_args)
+        except ToolError as exc:
+            rows.append({"label": variant["label"], "path": variant["path"],
+                         "status": 0, "bytes": 0, "body": "",
+                         "error": f"{exc.code}: {exc.message}"})
+            continue
+        row = {
+            "label": variant["label"],
+            "path": variant["path"],
+            "status": response.get("status", 0),
+            "bytes": response.get("bytes", 0),
+            "body": response.get("body", ""),
+            "body_hash": pathdiff._digest(response.get("body", "")),
+            "url": response.get("url", ""),
+        }
+        if variant["label"] == "baseline":
+            baseline = row
+        rows.append(row)
+
+    if not baseline:
+        raise ToolError("request_failed", "the baseline request did not return a response")
+    comparison = pathdiff.compare(baseline, rows)
+    comparison["target"] = url
+    comparison["method"] = method
+    comparison["requests"] = len(rows)
+    comparison["auth_profile"] = args.get("auth_profile", "")
+    return comparison
+
+
 def inbox_create(ctx: ToolContext, args: dict) -> dict:
     try:
         box = tempmail.create_mailbox(
@@ -1130,6 +1234,8 @@ _HANDLERS.update({
     "scope_check": scope_check,
     "http_probe": http_probe,
     "http_request": http_request,
+    "http_path_diff": http_path_diff,
+    "reveng_analyze": reveng_analyze,
     "inbox_create": inbox_create,
     "inbox_providers": inbox_providers,
     "inbox_list": inbox_list,
@@ -1526,6 +1632,43 @@ TOOLS: tuple[Tool, ...] = (
                   "max_bytes": _integer("response body cap", 1024, 524288, 65536),
                   "timeout": _integer("timeout in seconds", 1, 60, 15)},
                  ["target"]), "http_request", open_world=True),
+    Tool("http_path_diff", "Path-variant differential",
+         "Send the same request to literal, percent-encoded, case-varied, and slash-varied "
+         "paths, then report where the status or body diverges. Useful for finding "
+         "authorization checks that run before the router decodes the path. Non-safe "
+         "methods require allow_unsafe_method because replaying a POST can create state.",
+         "medium", "web",
+         _schema({"target": _string("in-scope URL, including the path to vary"),
+                  "mission_id": _string("mission whose scope authorizes the requests"),
+                  "scope": _array("explicit scope entries when no mission is used"),
+                  "method": _string("HTTP method", enum=[
+                      "GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"]),
+                  "allow_unsafe_method": _boolean("allow replaying POST/PUT/PATCH/DELETE", False),
+                  "headers": _object("extra request headers"),
+                  "auth_profile": _string("stored auth profile name"),
+                  "body": _string("raw request body"),
+                  "json": _object("JSON request body"),
+                  "form": _object("form request body"),
+                  "max_variants": _integer("variant cap", 2, 24, 12),
+                  "delay": {"type": "number", "description": "seconds between requests",
+                            "minimum": 0, "maximum": 2, "default": 0.2},
+                  "follow_redirects": _boolean("follow up to 5 hops", False),
+                  "max_bytes": _integer("response body cap", 1024, 262144, 32768),
+                  "timeout": _integer("timeout in seconds", 1, 60, 15)},
+                 ["target"]), "http_path_diff", open_world=True),
+    Tool("reveng_analyze", "Reverse-engineer a local artifact",
+         "Analyze a source tree, APK, Solidity project, JS bundle, or PE/ELF binary you "
+         "legitimately hold. Source and contract checks are text-only; APK analysis uses "
+         "jadx or apktool when installed. Nothing is uploaded, executed, or run against a "
+         "target. Results are leads with file and line numbers, not findings.",
+         "medium", "reverse-engineering",
+         _schema({"path": _string("local file or directory to analyze"),
+                  "kind": _string("analysis kind", enum=list(reveng.KINDS)),
+                  "max_files": _integer("source file cap", 1, 20000, 4000),
+                  "timeout": _integer("decompiler timeout in seconds", 30, 900, 240),
+                  "keep": _boolean("keep the decompiler work directory", False),
+                  "markdown": _boolean("include a rendered markdown summary", False)},
+                 ["path"]), "reveng_analyze", open_world=False),
     Tool("inbox_create", "Create inbox",
          "Create a disposable inbox for authorized account verification. mail.tm "
          "gives a password-backed account; guerrillamail gives a session-backed "

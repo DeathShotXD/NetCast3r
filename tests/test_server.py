@@ -169,6 +169,31 @@ class ServerTests(unittest.TestCase):
                      {"title": "x", "severity": "high", "confidence": 2}):
             self.assertEqual(self.call("POST", "/api/v1/findings", body=body).status, 400)
 
+    def test_reveng_routes_analyze_a_local_source_tree(self):
+        root = Path(self.tmp.name) / "artifact"
+        root.mkdir()
+        (root / "app.js").write_text(
+            'const key = "AKIAIOSFODNN7EXAMPLE";\n'
+            'el.innerHTML = input;\n'
+            'fetch("/api/v1/orders");\n')
+        kinds = self.data(self.call("GET", "/api/v1/reveng/kinds"))
+        self.assertIn("source", kinds["kinds"])
+        self.assertIn("jadx", kinds["decompilers"])
+
+        response = self.call("POST", "/api/v1/reveng/analyze",
+                             body={"kind": "source", "path": str(root), "markdown": True})
+        self.assertEqual(response.status, 200)
+        result = self.data(response)
+        self.assertTrue(result["ok"])
+        self.assertGreaterEqual(result["summary"]["observations"], 2)
+        self.assertIn("report_markdown", result)
+        self.assertNotIn("AKIAIOSFODNN7EXAMPLE", json.dumps(result["secrets"]))
+
+        self.assertEqual(self.call("POST", "/api/v1/reveng/analyze",
+                                   body={"path": ""}).status, 400)
+        self.assertEqual(self.call("POST", "/api/v1/reveng/analyze",
+                                   body={"path": str(root), "kind": "nope"}).status, 400)
+
     def test_submission_ledger_routes(self):
         mission = self.data(self.call("POST", "/api/v1/missions", body={
             "title": "Operation Ledger", "target": "example.com"}))

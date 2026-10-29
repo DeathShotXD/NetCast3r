@@ -262,7 +262,66 @@ export type Screen =
   | 'agent'
   | 'reports'
   | 'keys'
+  | 'reveng'
   | 'help';
+
+export interface RevengObservation {
+  id: string;
+  title: string;
+  severity: string;
+  category: string;
+  file: string;
+  line: number;
+  evidence: string;
+  recommendation: string;
+  confidence: number;
+}
+
+export interface RevengSecret {
+  type: string;
+  file: string;
+  line: number;
+  preview: string;
+  length: number;
+}
+
+export interface RevengEndpoint {
+  url: string;
+  file: string;
+  line: number;
+}
+
+export interface RevengResult {
+  ok: boolean;
+  kind: string;
+  path: string;
+  generated_at: string;
+  summary: {
+    observations: number;
+    severity: Record<string, number>;
+    endpoints: number;
+    secrets: number;
+    files?: number;
+    components?: number;
+    permissions?: string[];
+    package?: string;
+    format?: string;
+    decompiler?: string;
+    languages?: Record<string, number>;
+    [key: string]: unknown;
+  };
+  observations: RevengObservation[];
+  endpoints: RevengEndpoint[];
+  secrets: RevengSecret[];
+  note: string;
+  report_markdown?: string;
+}
+
+export interface RevengKinds {
+  kinds: string[];
+  decompilers: { jadx: boolean; apktool: boolean; readelf: boolean };
+  note: string;
+}
 
 export interface Inventory {
   kind: string;

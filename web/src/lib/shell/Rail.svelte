@@ -27,6 +27,7 @@
       label: 'Intelligence',
       items: [
         { id: 'runs', label: 'Run Ledger', icon: 'layers', hint: 'history, rerun, delete' },
+        { id: 'reveng', label: 'Reverse Lab', icon: 'code', hint: 'source, APK, contracts, drivers' },
         { id: 'reports', label: 'Reports', icon: 'file', hint: 'submissions, outcomes, payouts' },
         { id: 'agent', label: 'Agent Studio', icon: 'bot', hint: 'MCP tools, policy, audit' },
         { id: 'keys', label: 'Providers', icon: 'plug', hint: 'keys, models, health' }

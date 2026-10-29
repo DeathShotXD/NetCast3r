@@ -23,6 +23,16 @@ Notable changes to NetCast3r, newest first.
   operator or agent explicitly writes it down. Severity, confidence, tags, and
   evidence are validated; secret values are masked at the index boundary; the
   route returns 201 and the row starts in triage status `new`.
+- Reverse Lab: `reveng_analyze`, `POST /api/v1/reveng/analyze`, and
+  `GET /api/v1/reveng/kinds` read a local source tree, APK, Solidity project,
+  JS bundle, or PE/ELF binary and return line-addressed observations. APK
+  analysis uses jadx or apktool when installed; nothing is uploaded or
+  executed. The dashboard has a Reverse Lab screen with severity counts and a
+  one-click save that records a finding through the explicit write path.
+- `http_path_diff` compares a baseline request with percent-encoded,
+  case-varied, and slash-varied paths and labels where authorization and
+  routing disagree (`check_skipped`, `auth_bypass`, `route_confusion`). It
+  refuses state-changing methods unless the caller opts in.
 
 ### Security
 
