@@ -537,6 +537,14 @@ def finding_triage(ctx: ToolContext, args: dict) -> dict:
     return _call(ctx, "PATCH", f"/api/v1/findings/{args['finding_id']}", body=body)
 
 
+def findings_create(ctx: ToolContext, args: dict) -> dict:
+    body = {key: value for key, value in args.items()
+            if key in {"title", "severity", "run_id", "impact", "evidence", "source",
+                       "secret_type", "value", "confidence", "tags", "notes",
+                       "fingerprint"}}
+    return _call(ctx, "POST", "/api/v1/findings", body=body)
+
+
 def submissions_list(ctx: ToolContext, args: dict) -> dict:
     return _call(ctx, "GET", "/api/v1/submissions", {
         "status": args.get("status", ""),
@@ -1106,6 +1114,7 @@ _HANDLERS.update({
     "findings_list": findings_list,
     "findings_get": findings_get,
     "findings_summary": findings_summary,
+    "findings_create": findings_create,
     "finding_triage": finding_triage,
     "submissions_list": submissions_list,
     "submissions_get": submissions_get,
@@ -1327,6 +1336,26 @@ TOOLS: tuple[Tool, ...] = (
          "Severity and triage counts for one run, or for the whole workspace.",
          "low", "findings",
          _schema({"run_id": _string("optional run id")}), "findings_summary", read_only=True),
+    Tool("findings_create", "Record finding",
+         "Record a finding you validated, with the evidence you can defend. A finding "
+         "is never inferred from a scan or a model response; it exists only when an "
+         "operator or agent writes it down. Secret values are masked before storage.",
+         "medium", "findings",
+         _schema({"title": _string("finding title"),
+                  "severity": _string("validated severity", enum=[
+                      "critical", "high", "medium", "low", "info", "unknown"]),
+                  "run_id": _string("optional run id"),
+                  "impact": _string("impact statement"),
+                  "evidence": _string("evidence paths or a short summary"),
+                  "source": _string("tool, module, or manual test that produced it"),
+                  "secret_type": _string("finding type, e.g. manual, idor, auth_bypass"),
+                  "value": _string("secret value; masked at storage"),
+                  "confidence": {"type": "number", "description": "0 to 1",
+                                 "minimum": 0, "maximum": 1},
+                  "tags": _array("tags"),
+                  "notes": _string("private notes"),
+                  "fingerprint": _string("optional stable fingerprint for dedupe")},
+                 ["title", "severity"]), "findings_create"),
     Tool("finding_triage", "Triage finding",
          "Set triage status, notes, tags, or a severity override on a finding.",
          "medium", "findings",

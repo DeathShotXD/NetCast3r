@@ -412,6 +412,29 @@ class Server:
             finding = self.index.get_finding(ctx.params["id"])
             return _json(finding) if finding else _problem(404, "finding not found")
 
+        @add("POST", r"/api/v1/findings")
+        def create_finding(ctx):
+            body = ctx.json()
+            body = body if isinstance(body, dict) else {}
+            try:
+                finding = self.index.create_finding(
+                    title=str(body.get("title", "")),
+                    severity=str(body.get("severity", "")),
+                    run_id=str(body.get("run_id", "")),
+                    impact=str(body.get("impact", "")),
+                    evidence=str(body.get("evidence", "")),
+                    source=str(body.get("source", "")),
+                    secret_type=str(body.get("secret_type", "manual")),
+                    value=str(body.get("value", "")),
+                    confidence=body.get("confidence", 0.0),
+                    tags=body.get("tags") if isinstance(body.get("tags"), list) else [],
+                    notes=str(body.get("notes", "")),
+                    fingerprint=str(body.get("fingerprint", "")),
+                )
+            except (TypeError, ValueError) as exc:
+                return _problem(400, str(exc))
+            return _json(finding, 201)
+
         @add("PATCH", r"/api/v1/findings/(?P<id>[A-Za-z0-9_]+)")
         def patch_finding(ctx):
             body = ctx.json()

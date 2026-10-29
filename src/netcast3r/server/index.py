@@ -483,6 +483,57 @@ class Index:
             self.conn.commit()
         return added
 
+    def create_finding(self, title: str, severity: str, run_id: str = "",
+                       impact: str = "", evidence: str = "", source: str = "",
+                       secret_type: str = "manual", value: str = "",
+                       confidence: float = 0.0, tags: list | None = None,
+                       notes: str = "", fingerprint: str = "") -> dict:
+        """Record a finding an operator or agent actually validated.
+
+        This is deliberately explicit: nothing infers a finding from a scan or
+        a model response. Callers must supply the title and severity they are
+        willing to defend. Secret values are masked before storage.
+        """
+        from .keys import mask
+
+        title = (title or "").strip()
+        if not title:
+            raise ValueError("title required")
+        severity = (severity or "").strip().lower()
+        if severity not in SEVERITY_ORDER:
+            raise ValueError(f"unknown severity: {severity}")
+        run_id = (run_id or "").strip()
+        if run_id and not self.get_run(run_id):
+            raise ValueError(f"unknown run: {run_id}")
+        try:
+            confidence = float(confidence or 0.0)
+        except (TypeError, ValueError):
+            raise ValueError("confidence must be a number") from None
+        if not 0.0 <= confidence <= 1.0:
+            raise ValueError("confidence must be between 0 and 1")
+        tags = [str(tag) for tag in (tags or []) if str(tag).strip()]
+        secret_type = (secret_type or "manual").strip() or "manual"
+        raw_value = str(value or "")
+        if not fingerprint:
+            import hashlib
+            seed = "|".join([secret_type, raw_value or title, run_id, source])
+            fingerprint = hashlib.sha256(seed.encode("utf-8", "ignore")).hexdigest()
+
+        finding_id = _new_id("fnd")
+        now = _now()
+        with self._lock:
+            self.conn.execute(
+                "INSERT INTO findings (id, run_id, fingerprint, severity, title, secret_type, "
+                "status, value, impact, evidence, source, confidence, created_at, "
+                "triage_status, severity_override, tags_json, notes) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (finding_id, run_id, fingerprint, severity, title, secret_type,
+                 "", mask(raw_value), impact.strip(), evidence.strip(), source.strip(),
+                 confidence, now, "new", None, json.dumps(tags), notes.strip()),
+            )
+            self.conn.commit()
+        return self.get_finding(finding_id)
+
     @staticmethod
     def _fingerprint(finding: dict) -> str:
         import hashlib

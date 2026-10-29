@@ -206,13 +206,14 @@ netcast3r mcp --print-config   # paste into opencode.jsonc under mcp.servers
 opencode mcp list
 ```
 
-The server has 53 typed tools with risk tiers, scope enforcement, single-use
+The server has 68 typed tools with risk tiers, scope enforcement, single-use
 approvals, rate limits, and a full tool-call audit, plus disposable inboxes,
 OAST callbacks, named auth profiles, a scoped authenticated `http_request`, and
 a bounded mission agent (`agent_start`) that plans, probes, inventories, and
 verifies inside the mission's scope. See [docs/MCP.md](docs/MCP.md). It is a
-real control surface, not an autonomous scanner: the runtime creates no
-findings, and every bounty result still comes from verified runs.
+real control surface, not an autonomous scanner: the runtime never fabricates
+findings; `findings_create` records only what an operator or agent validated,
+and every bounty result still comes from verified runs.
 
 ### Exit codes
 

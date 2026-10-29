@@ -189,6 +189,7 @@ silently ignored.
 | Tool | Risk | Purpose |
 | --- | --- | --- |
 | `findings_list` / `findings_get` / `findings_summary` | low | Read findings and counts |
+| `findings_create` | medium | Record a validated finding with its evidence |
 | `finding_triage` | medium | Status, notes, tags, severity override |
 
 Values are masked at the index boundary. Tools cannot reconstruct a secret.

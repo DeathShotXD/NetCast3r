@@ -148,6 +148,27 @@ class ServerTests(unittest.TestCase):
         self.assertEqual(patched["triage_status"], "confirmed")
         self.assertEqual(patched["tags"], ["aws"])
 
+    def test_create_finding_route_records_explicit_finding(self):
+        response = self.call("POST", "/api/v1/findings", body={
+            "title": "2FA bypass via email code", "severity": "high",
+            "impact": "full session without a TOTP challenge",
+            "evidence": "findings/bambu-2fa-email-code-bypass.md",
+            "source": "manual", "tags": ["auth", "2fa"],
+            "value": "not-a-real-secret-value", "confidence": 0.95})
+        self.assertEqual(response.status, 201)
+        finding = self.data(response)
+        self.assertEqual(finding["severity"], "high")
+        self.assertEqual(finding["triage_status"], "new")
+        self.assertEqual(finding["tags"], ["auth", "2fa"])
+        self.assertNotIn("not-a-real-secret-value", finding["value"])
+        self.assertIn("...", finding["value"])
+
+        for body in ({"title": "x", "severity": "nope"},
+                     {"severity": "high"},
+                     {"title": "x", "severity": "high", "run_id": "run_missing"},
+                     {"title": "x", "severity": "high", "confidence": 2}):
+            self.assertEqual(self.call("POST", "/api/v1/findings", body=body).status, 400)
+
     def test_submission_ledger_routes(self):
         mission = self.data(self.call("POST", "/api/v1/missions", body={
             "title": "Operation Ledger", "target": "example.com"}))

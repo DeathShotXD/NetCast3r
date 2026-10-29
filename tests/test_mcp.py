@@ -180,6 +180,24 @@ class MCPIntegrationTests(unittest.TestCase):
         self.assertEqual(inventory["total"], 1)
         self.assertEqual(inventory["items"][0]["url"], "https://example.com/api/v1")
 
+    def test_findings_create_records_validated_finding(self):
+        payload, is_error = self.call(
+            "findings_create", title="2FA bypass via email code", severity="high",
+            impact="full session without a TOTP challenge",
+            evidence="findings/bambu-2fa-email-code-bypass.md", source="manual",
+            tags=["auth", "2fa"], value="not-a-real-secret-value", confidence=0.95)
+        self.assertFalse(is_error, payload)
+        self.assertEqual(payload["severity"], "high")
+        self.assertEqual(payload["triage_status"], "new")
+        self.assertEqual(payload["tags"], ["auth", "2fa"])
+        self.assertNotIn("not-a-real-secret-value", payload["value"])
+
+        fetched = self.call("findings_get", finding_id=payload["id"])[0]
+        self.assertEqual(fetched["title"], "2FA bypass via email code")
+
+        bad, is_error = self.call("findings_create", title="x", severity="nope")
+        self.assertTrue(is_error)
+
     def test_submission_ledger_tools_record_real_rows(self):
         mission = self.create_mission()
         payload, is_error = self.call(

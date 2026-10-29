@@ -19,6 +19,10 @@ Notable changes to NetCast3r, newest first.
   redirect hop against the mission scope. Session headers do not cross a host
   boundary.
 - `write_private_json` and `read_private_json` helpers for 0600 local state.
+- `findings_create` and `POST /api/v1/findings` record a finding only when an
+  operator or agent explicitly writes it down. Severity, confidence, tags, and
+  evidence are validated; secret values are masked at the index boundary; the
+  route returns 201 and the row starts in triage status `new`.
 
 ### Security
 

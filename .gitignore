@@ -11,6 +11,9 @@ results/
 *.log
 scope.txt
 
+# Engagement reports and evidence (pre-disclosure, never committed)
+findings/
+
 # Internal planning docs and source artwork, kept local only
 PLAN.md
 BLUEPRINT.md
