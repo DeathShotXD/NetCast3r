@@ -169,6 +169,56 @@ class ServerTests(unittest.TestCase):
                      {"title": "x", "severity": "high", "confidence": 2}):
             self.assertEqual(self.call("POST", "/api/v1/findings", body=body).status, 400)
 
+    def test_finding_artifacts_round_trip(self):
+        finding = self.data(self.call("POST", "/api/v1/findings", body={
+            "title": "artifact test", "severity": "medium"}))
+        response = self.call("POST", f"/api/v1/findings/{finding['id']}/artifacts",
+                             body={"name": "../../poc.log", "content": "line one\nline two\n",
+                                   "content_type": "text/plain"})
+        self.assertEqual(response.status, 201)
+        artifact = self.data(response)
+        self.assertEqual(artifact["name"], "poc.log")
+        self.assertEqual(artifact["bytes"], len("line one\nline two\n"))
+        self.assertTrue(artifact["sha256"])
+        self.assertNotIn("..", artifact["path"])
+
+        listing = self.data(self.call(
+            "GET", f"/api/v1/findings/{finding['id']}/artifacts"))
+        self.assertEqual(listing["total"], 1)
+
+        content = self.data(self.call(
+            "GET", f"/api/v1/findings/{finding['id']}/artifacts/{artifact['id']}",
+            query={"content": "1"}))
+        self.assertEqual(content["encoding"], "text")
+        self.assertIn("line two", content["content"])
+
+        download = self.call(
+            "GET", f"/api/v1/findings/{finding['id']}/artifacts/{artifact['id']}",
+            query={"download": "1"})
+        self.assertEqual(download.status, 200)
+        self.assertEqual(download.body, b"line one\nline two\n")
+        self.assertIn("attachment", download.headers.get("Content-Disposition", ""))
+
+        binary = self.data(self.call(
+            "POST", f"/api/v1/findings/{finding['id']}/artifacts",
+            body={"name": "blob.bin", "encoding": "base64", "content": "AAECAw=="}))
+        raw = self.data(self.call(
+            "GET", f"/api/v1/findings/{finding['id']}/artifacts/{binary['id']}",
+            query={"content": "1"}))
+        self.assertEqual(raw["encoding"], "base64")
+        self.assertEqual(raw["content"], "AAECAw==")
+
+        self.assertEqual(self.call(
+            "POST", f"/api/v1/findings/{finding['id']}/artifacts",
+            body={"name": "empty", "content": ""}).status, 400)
+        self.assertEqual(self.call(
+            "POST", "/api/v1/findings/fnd_missing/artifacts",
+            body={"name": "x", "content": "y"}).status, 404)
+        self.assertEqual(self.call(
+            "DELETE", f"/api/v1/findings/{finding['id']}/artifacts/{artifact['id']}").status, 200)
+        self.assertEqual(self.data(self.call(
+            "GET", f"/api/v1/findings/{finding['id']}/artifacts"))["total"], 1)
+
     def test_reveng_routes_analyze_a_local_source_tree(self):
         root = Path(self.tmp.name) / "artifact"
         root.mkdir()

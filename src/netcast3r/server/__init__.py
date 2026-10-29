@@ -26,7 +26,7 @@ from .events import EventBus
 from .index import Index
 from .jobs import JobManager
 from .keys import KeyStore, mask
-from .. import control, reveng
+from .. import control, integrations, reveng
 
 API_VERSION = "v1"
 ALLOWED_HOSTS = {"127.0.0.1", "localhost", "::1", "[::1]"}
@@ -483,6 +483,71 @@ class Server:
                 result["report_markdown"] = reveng.render_markdown(result)
             return _json(result)
 
+        @add("GET", r"/api/v1/findings/(?P<id>[A-Za-z0-9_]+)/artifacts")
+        def list_finding_artifacts(ctx):
+            if not self.index.get_finding(ctx.params["id"]):
+                return _problem(404, "finding not found")
+            items = self.index.list_finding_artifacts(ctx.params["id"])
+            return _json({"items": items, "total": len(items)})
+
+        @add("POST", r"/api/v1/findings/(?P<id>[A-Za-z0-9_]+)/artifacts")
+        def add_finding_artifact(ctx):
+            body = ctx.json()
+            body = body if isinstance(body, dict) else {}
+            name = str(body.get("name") or "artifact.bin")
+            encoding = str(body.get("encoding") or "text").lower()
+            raw = body.get("content")
+            if not isinstance(raw, str) or not raw:
+                return _problem(400, "content required")
+            try:
+                content = base64.b64decode(raw, validate=True) if encoding == "base64" \
+                    else raw.encode("utf-8")
+            except (ValueError, TypeError):
+                return _problem(400, "content is not valid base64")
+            try:
+                artifact = self.index.add_finding_artifact(
+                    ctx.params["id"], name, content,
+                    str(body.get("content_type") or "application/octet-stream"))
+            except ValueError as exc:
+                return _problem(400 if "not found" not in str(exc) else 404, str(exc))
+            return _json(artifact, 201)
+
+        @add("GET", r"/api/v1/findings/(?P<id>[A-Za-z0-9_]+)/artifacts/"
+                    r"(?P<aid>[A-Za-z0-9_]+)")
+        def get_finding_artifact(ctx):
+            artifact = self.index.get_finding_artifact(ctx.params["id"], ctx.params["aid"])
+            if not artifact:
+                return _problem(404, "artifact not found")
+            if str(ctx.query.get("download") or "").lower() in {"1", "true", "yes"}:
+                try:
+                    content = Path(artifact["path"]).read_bytes()
+                except OSError:
+                    return _problem(404, "artifact file is missing")
+                return Response(status=200, body=content,
+                                content_type=artifact["content_type"],
+                                headers={"Content-Disposition":
+                                         f'attachment; filename="{artifact["name"]}"'})
+            if str(ctx.query.get("content") or "").lower() in {"1", "true", "yes"}:
+                try:
+                    content = Path(artifact["path"]).read_bytes()
+                except OSError:
+                    return _problem(404, "artifact file is missing")
+                try:
+                    text = content.decode("utf-8")
+                    if any(ord(char) < 32 and char not in "\n\r\t" for char in text):
+                        raise UnicodeDecodeError("utf-8", content, 0, 1, "binary")
+                    artifact = {**artifact, "content": text, "encoding": "text"}
+                except UnicodeDecodeError:
+                    artifact = {**artifact, "content": base64.b64encode(content).decode("ascii"),
+                                "encoding": "base64"}
+            return _json(artifact)
+
+        @add("DELETE", r"/api/v1/findings/(?P<id>[A-Za-z0-9_]+)/artifacts/"
+                       r"(?P<aid>[A-Za-z0-9_]+)")
+        def delete_finding_artifact(ctx):
+            deleted = self.index.delete_finding_artifact(ctx.params["id"], ctx.params["aid"])
+            return _json({"deleted": True}) if deleted else _problem(404, "artifact not found")
+
         @add("GET", r"/api/v1/missions")
         def list_missions(ctx):
             try:
@@ -746,6 +811,21 @@ class Server:
         def get_tool_call(ctx):
             call = self.index.get_tool_call(ctx.params["id"])
             return _json(call) if call else _problem(404, "tool call not found")
+
+        @add("GET", r"/api/v1/integrations")
+        def integrations_status(ctx):
+            tools = []
+            for name, (mode, binary, risk, description) in integrations.TOOL_CATALOG.items():
+                tools.append({"name": name, "mode": mode, "risk": risk,
+                              "installed": bool(shutil.which(binary)),
+                              "description": description})
+            burp = integrations.load_burp_config(self.index.path.parent)
+            return _json({
+                "tools": tools,
+                "burp": {"configured": burp["configured"], "url": burp["url"]},
+                "note": ("Local tools run through recon_passive/recon_active; Burp "
+                         "MCP is driven through burp_status/burp_call."),
+            })
 
         @add("GET", r"/api/v1/mcp")
         def mcp_info(ctx):

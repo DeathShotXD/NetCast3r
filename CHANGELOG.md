@@ -33,6 +33,23 @@ Notable changes to NetCast3r, newest first.
   case-varied, and slash-varied paths and labels where authorization and
   routing disagree (`check_skipped`, `auth_bypass`, `route_confusion`). It
   refuses state-changing methods unless the caller opts in.
+- Evidence artifacts: `POST /api/v1/findings/{id}/artifacts` and
+  `finding_artifact_add` store text or base64 files (up to 8 MiB) under
+  `~/.netcast3r/artifacts/<finding_id>/` with a SHA-256, size, MIME type, and
+  download URL. `finding_artifact_list` and `finding_artifact_get` read them;
+  files are 0600.
+- `recon_passive` and `recon_active` run allowlisted local tools
+  (subfinder, httpx, katana, whatweb, gau, waybackurls; nuclei/dalfox/nmap for
+  active) with fixed argv, no shell, bounded output, and a scope check. Active
+  tools are high risk and need an approval under supervised policy.
+- Burp MCP: `burp_status` lists the tools exposed by a configured Burp MCP
+  server; `burp_call` invokes one. Configure with `NETCAST3R_BURP_URL` /
+  `NETCAST3R_BURP_TOKEN` or `~/.netcast3r/integrations.json`. URL, host, and raw
+  `Host:` values in the arguments are scope-checked before the call.
+- `token_pivot` sends a captured credential to a bounded list of in-scope hosts
+  and reports where the response changes. It requires a mission, checks every
+  host against scope, never follows a cross-host redirect, and redacts the
+  credential from the audit.
 
 ### Security
 

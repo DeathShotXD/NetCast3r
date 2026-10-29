@@ -198,6 +198,24 @@ class MCPIntegrationTests(unittest.TestCase):
         bad, is_error = self.call("findings_create", title="x", severity="nope")
         self.assertTrue(is_error)
 
+    def test_finding_artifacts_are_stored_and_readable(self):
+        finding = self.call("findings_create", title="artifact finding",
+                            severity="high")[0]
+        artifact = self.registry.call("finding_artifact_add", {
+            "finding_id": finding["id"], "name": "poc.txt",
+            "content": "request\nresponse\n", "content_type": "text/plain",
+        }, actor="test/1")[0]
+        self.assertEqual(artifact["name"], "poc.txt")
+        self.assertEqual(artifact["bytes"], len("request\nresponse\n"))
+
+        listing = self.call("finding_artifact_list", finding_id=finding["id"])[0]
+        self.assertEqual(listing["total"], 1)
+
+        fetched = self.call("finding_artifact_get", finding_id=finding["id"],
+                            artifact_id=artifact["id"])[0]
+        self.assertEqual(fetched["encoding"], "text")
+        self.assertIn("response", fetched["content"])
+
     def test_submission_ledger_tools_record_real_rows(self):
         mission = self.create_mission()
         payload, is_error = self.call(

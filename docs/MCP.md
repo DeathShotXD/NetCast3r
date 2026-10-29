@@ -311,6 +311,49 @@ line-addressed evidence, and has a one-click "save" that records a finding
 through `POST /api/v1/findings` — still an explicit write, never inferred from
 the scan.
 
+### Evidence artifacts
+
+A finding can carry its own evidence files. `finding_artifact_add` (or
+`POST /api/v1/findings/{id}/artifacts`) accepts text or base64 content up to
+8 MiB, writes it 0600 under `~/.netcast3r/artifacts/<finding_id>/`, records the
+SHA-256, size, and MIME type, and returns a download URL. `finding_artifact_list`
+and `finding_artifact_get` read the metadata and content back. The finding row
+remains the authority; the artifact is the bytes that outlive the conversation.
+
+### Local recon tools
+
+`recon_passive` runs subfinder, httpx, katana, whatweb, gau, or waybackurls.
+`recon_active` runs nuclei (critical/high), dalfox, or nmap (top 100). Both use
+a fixed argv, never a shell, refuse private/metadata targets, cap output at
+200 KB, and require a mission or explicit scope. Active tools are high risk and
+need an approval under supervised policy. Results are leads; a finding still
+requires confirmation.
+
+### Burp MCP
+
+`burp_status` connects to a Burp MCP server and lists its tools. `burp_call`
+invokes one, after checking any `url`, `target`, `host`, `hostname`, or
+`endpoint` argument—and any `Host:` header in a raw request—against the mission
+scope. Configure the endpoint with `NETCAST3R_BURP_URL` and an optional
+`NETCAST3R_BURP_TOKEN`, or write:
+
+```json
+{"burp": {"url": "http://127.0.0.1:9876", "token": ""}}
+```
+
+to `~/.netcast3r/integrations.json`. The client speaks MCP's streamable-HTTP
+transport, including JSON and SSE responses and the `Mcp-Session-Id` header.
+
+### Credential pivoting
+
+`token_pivot` takes a token, cookie, or API key and a bounded list of hosts,
+sends one authenticated GET and one baseline GET to each, and reports where the
+status or body changed. It requires a mission, scope-checks every host, caps the
+list at 25, never follows a cross-host redirect, and redacts the credential from
+the audit. A changed response is a lead, not proof; confirm the account and the
+body before recording it.
+
+
 ### Browser
 
 The browser is a real, persistent Chromium profile, not a headless fetcher.

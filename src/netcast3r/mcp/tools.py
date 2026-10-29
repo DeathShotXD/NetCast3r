@@ -27,7 +27,7 @@ from urllib.parse import urlencode, urljoin, urlsplit
 
 import httpx
 
-from .. import authstore, browser, oast, pathdiff, reveng, tempmail
+from .. import authstore, browser, integrations, oast, pathdiff, pivot, reveng, tempmail
 from ..scope import ScopeManager
 
 POLICIES = ("readonly", "supervised", "full")
@@ -37,7 +37,7 @@ DEFAULT_POLICY = "supervised"
 REDACT_KEYS = {"api_key", "apikey", "authorization", "cookie", "cookies", "password",
                "secret", "token", "private_key", "session", "set-cookie",
                "set_cookie", "x-api-key", "x-auth-token", "proxy-authorization",
-               "body", "json", "form", "headers"}
+               "body", "json", "form", "headers", "arguments", "token_value"}
 
 METADATA_HOSTS = {"metadata.google.internal", "metadata.goog"}
 METADATA_IPS = {"169.254.169.254", "100.100.100.200", "fd00:ec2::254"}
@@ -543,6 +543,133 @@ def findings_create(ctx: ToolContext, args: dict) -> dict:
                        "secret_type", "value", "confidence", "tags", "notes",
                        "fingerprint"}}
     return _call(ctx, "POST", "/api/v1/findings", body=body)
+
+
+def finding_artifact_add(ctx: ToolContext, args: dict) -> dict:
+    body = {key: args[key] for key in ("name", "content", "encoding", "content_type")
+            if key in args}
+    return _call(ctx, "POST", f"/api/v1/findings/{args['finding_id']}/artifacts",
+                 body=body)
+
+
+def finding_artifact_list(ctx: ToolContext, args: dict) -> dict:
+    return _call(ctx, "GET", f"/api/v1/findings/{args['finding_id']}/artifacts")
+
+
+def finding_artifact_get(ctx: ToolContext, args: dict) -> dict:
+    return _call(ctx, "GET",
+                 f"/api/v1/findings/{args['finding_id']}/artifacts/{args['artifact_id']}",
+                 {"content": 1})
+
+
+def _run_recon(ctx: ToolContext, args: dict, mode: str) -> dict:
+    tool = str(args.get("tool") or "").strip().lower()
+    catalog = integrations.TOOL_CATALOG
+    if tool not in catalog:
+        raise ToolError("invalid_arguments", f"unknown tool: {tool}")
+    if catalog[tool][0] != mode:
+        raise ToolError("invalid_arguments",
+                        f"{tool} is a {catalog[tool][0]} tool, not {mode}")
+    target = str(args.get("target") or "").strip()
+    if not target:
+        raise ToolError("invalid_arguments", "target is required")
+    mission_id = str(args.get("mission_id") or "")
+    scope = args.get("scope")
+    _require_scope(ctx, target, mission_id, scope, probe=True)
+    try:
+        result = integrations.run_tool(tool, target, timeout=int(args.get("timeout", 180)),
+                                       base=ctx.base)
+    except integrations.ToolRunError as exc:
+        raise ToolError("invalid_arguments", str(exc))
+    result["mission_id"] = mission_id
+    return result
+
+
+def recon_passive(ctx: ToolContext, args: dict) -> dict:
+    return _run_recon(ctx, args, "passive")
+
+
+def recon_active(ctx: ToolContext, args: dict) -> dict:
+    return _run_recon(ctx, args, "active")
+
+
+def burp_status(ctx: ToolContext, args: dict) -> dict:
+    config = integrations.load_burp_config(ctx.base)
+    if not config["configured"]:
+        return {"ok": False, "configured": False,
+                "note": ("Set NETCAST3R_BURP_URL (and optionally NETCAST3R_BURP_TOKEN) "
+                         "or write ~/.netcast3r/integrations.json with "
+                         "{\"burp\": {\"url\": \"http://127.0.0.1:9876\"}}.")}
+    client = integrations.BurpClient(config["url"], config["token"])
+    try:
+        status = client.status()
+    except integrations.BurpError as exc:
+        return {"ok": False, "configured": True, "url": config["url"],
+                "error": str(exc)}
+    status["configured"] = True
+    return status
+
+
+def _burp_scope_check(ctx: ToolContext, arguments: dict, mission_id: str,
+                      scope) -> None:
+    target_keys = {"url", "target", "host", "hostname", "endpoint", "base_url"}
+    for key, value in (arguments or {}).items():
+        if key in target_keys and isinstance(value, str) and value.strip():
+            _require_scope(ctx, value, mission_id, scope, probe=True)
+        elif key in {"request", "raw", "raw_request"} and isinstance(value, str):
+            match = __import__("re").search(r"(?im)^host:\s*(\S+)", value)
+            if match:
+                _require_scope(ctx, match.group(1), mission_id, scope, probe=True)
+
+
+def burp_call(ctx: ToolContext, args: dict) -> dict:
+    config = integrations.load_burp_config(ctx.base)
+    if not config["configured"]:
+        raise ToolError("invalid_arguments",
+                        "Burp MCP is not configured; set NETCAST3R_BURP_URL")
+    arguments = args.get("arguments") or {}
+    if not isinstance(arguments, dict):
+        raise ToolError("invalid_arguments", "arguments must be an object")
+    _burp_scope_check(ctx, arguments, str(args.get("mission_id") or ""),
+                      args.get("scope"))
+    client = integrations.BurpClient(config["url"], config["token"])
+    try:
+        return client.call_tool(str(args["tool"]), arguments)
+    except integrations.BurpError as exc:
+        raise ToolError("control_plane", f"Burp MCP call failed: {exc}")
+
+
+def token_pivot(ctx: ToolContext, args: dict) -> dict:
+    mission_id = str(args.get("mission_id") or "").strip()
+    if not mission_id:
+        raise ToolError("invalid_arguments", "token_pivot requires a mission_id")
+    mission = _mission(ctx, mission_id)
+    hosts = [str(item).strip() for item in (args.get("hosts") or []) if str(item).strip()]
+    if not hosts:
+        target = str(mission.get("target") or "").strip()
+        if target:
+            hosts.append(target)
+        for entry in mission.get("scope") or []:
+            entry = str(entry).strip()
+            if entry and not entry.startswith("!") and "*" not in entry:
+                hosts.append(entry)
+        hosts = list(dict.fromkeys(hosts))
+    if not hosts:
+        raise ToolError("invalid_arguments",
+                        "no hosts to test; pass hosts or give the mission a concrete target")
+    if len(hosts) > pivot.MAX_HOSTS:
+        raise ToolError("invalid_arguments", f"at most {pivot.MAX_HOSTS} hosts per pivot")
+    for host in hosts:
+        _require_scope(ctx, host, mission_id, None, probe=True)
+    try:
+        result = pivot.pivot(hosts, str(args.get("header") or "Authorization"),
+                             str(args["token_value"]), path=str(args.get("path") or "/"),
+                             timeout=float(args.get("timeout", 10)),
+                             delay=float(args.get("delay", 0.25)))
+    except ValueError as exc:
+        raise ToolError("invalid_arguments", str(exc))
+    result["mission_id"] = mission_id
+    return result
 
 
 def submissions_list(ctx: ToolContext, args: dict) -> dict:
@@ -1219,6 +1346,14 @@ _HANDLERS.update({
     "findings_get": findings_get,
     "findings_summary": findings_summary,
     "findings_create": findings_create,
+    "finding_artifact_add": finding_artifact_add,
+    "finding_artifact_list": finding_artifact_list,
+    "finding_artifact_get": finding_artifact_get,
+    "recon_passive": recon_passive,
+    "recon_active": recon_active,
+    "burp_status": burp_status,
+    "burp_call": burp_call,
+    "token_pivot": token_pivot,
     "finding_triage": finding_triage,
     "submissions_list": submissions_list,
     "submissions_get": submissions_get,
@@ -1462,6 +1597,87 @@ TOOLS: tuple[Tool, ...] = (
                   "notes": _string("private notes"),
                   "fingerprint": _string("optional stable fingerprint for dedupe")},
                  ["title", "severity"]), "findings_create"),
+    Tool("finding_artifact_add", "Attach evidence",
+         "Store a text or base64 evidence file with a finding. Files are written 0600 "
+         "under the NetCast3r base directory, hashed, and listed with a download URL. "
+         "Use this for PoC logs, screenshots, and request captures so the finding keeps "
+         "its own evidence after the conversation ends.",
+         "medium", "findings",
+         _schema({"finding_id": _string("finding id"),
+                  "name": _string("file name"),
+                  "content": _string("text, or base64 when encoding=base64"),
+                  "encoding": _string("text or base64", enum=["text", "base64"]),
+                  "content_type": _string("MIME type")},
+                 ["finding_id", "name", "content"]), "finding_artifact_add"),
+    Tool("finding_artifact_list", "List evidence",
+         "List the evidence files attached to a finding.",
+         "low", "findings",
+         _schema({"finding_id": _string("finding id")}, ["finding_id"]),
+         "finding_artifact_list", read_only=True),
+    Tool("finding_artifact_get", "Read evidence",
+         "Return one artifact with its content (text, or base64 for binary files) and "
+         "its hash.",
+         "low", "findings",
+         _schema({"finding_id": _string("finding id"),
+                  "artifact_id": _string("artifact id")},
+                 ["finding_id", "artifact_id"]), "finding_artifact_get", read_only=True),
+    Tool("recon_passive", "Passive recon tool",
+         "Run an allowlisted passive tool (subfinder, httpx, katana, whatweb, gau, "
+         "waybackurls) against one in-scope target. The command is fixed and run "
+         "without a shell; output is bounded. Treat the output as leads.",
+         "medium", "recon",
+         _schema({"tool": _string("passive tool", enum=[
+                     "subfinder", "httpx", "katana", "whatweb", "gau", "waybackurls"]),
+                  "target": _string("in-scope domain or URL"),
+                  "mission_id": _string("mission whose scope authorizes the run"),
+                  "scope": _array("explicit scope entries when no mission is used"),
+                  "timeout": _integer("timeout in seconds", 10, 600, 180)},
+                 ["tool", "target"]), "recon_passive", open_world=True),
+    Tool("recon_active", "Active recon tool",
+         "Run an allowlisted active tool (nuclei critical/high, dalfox, nmap top 100) "
+         "against one in-scope target. Intrusive: needs an approval under supervised "
+         "policy. The command is fixed and run without a shell.",
+         "high", "recon",
+         _schema({"tool": _string("active tool", enum=["nuclei", "dalfox", "nmap"]),
+                  "target": _string("in-scope host or URL"),
+                  "mission_id": _string("mission whose scope authorizes the run"),
+                  "scope": _array("explicit scope entries when no mission is used"),
+                  "timeout": _integer("timeout in seconds", 10, 600, 180),
+                  "approval_id": _string("approved approval id"),
+                  "confirm": _boolean("explicit confirmation (full policy)")},
+                 ["tool", "target"]), "recon_active", open_world=True),
+    Tool("burp_status", "Burp MCP status",
+         "Connect to the configured Burp MCP server and list its tools. Configure with "
+         "NETCAST3R_BURP_URL / NETCAST3R_BURP_TOKEN or ~/.netcast3r/integrations.json.",
+         "low", "integrations", _schema({}), "burp_status", read_only=True),
+    Tool("burp_call", "Call a Burp MCP tool",
+         "Invoke one tool exposed by Burp MCP (proxy history, Repeater, scanner). URL, "
+         "host, and raw Host headers in the arguments are checked against the mission "
+         "scope first. High risk: needs an approval under supervised policy.",
+         "high", "integrations",
+         _schema({"tool": _string("Burp MCP tool name"),
+                  "arguments": _object("tool arguments"),
+                  "mission_id": _string("mission whose scope authorizes the call"),
+                  "scope": _array("explicit scope entries when no mission is used"),
+                  "approval_id": _string("approved approval id"),
+                  "confirm": _boolean("explicit confirmation (full policy)")},
+                 ["tool"]), "burp_call", open_world=True),
+    Tool("token_pivot", "Credential pivot",
+         "Send a captured token, cookie, or API key to a bounded list of in-scope hosts "
+         "and compare each response with an unauthenticated baseline. Reports where the "
+         "credential changes the response; never follows a cross-host redirect. Requires "
+         "a mission; every host is scope-checked first.",
+         "medium", "post-exploitation",
+         _schema({"token_value": _string("credential value; redacted from the audit"),
+                  "header": _string("header name, default Authorization"),
+                  "hosts": _array("hosts to test; defaults to the mission target and "
+                                  "concrete scope entries"),
+                  "path": _string("path to request, default /"),
+                  "mission_id": _string("mission whose scope authorizes the test"),
+                  "timeout": _integer("per-request timeout in seconds", 1, 60, 10),
+                  "delay": {"type": "number", "description": "seconds between hosts",
+                            "minimum": 0, "maximum": 5, "default": 0.25}},
+                 ["token_value", "mission_id"]), "token_pivot", open_world=True),
     Tool("finding_triage", "Triage finding",
          "Set triage status, notes, tags, or a severity override on a finding.",
          "medium", "findings",

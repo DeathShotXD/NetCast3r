@@ -66,6 +66,18 @@ CREATE INDEX IF NOT EXISTS idx_find_run ON findings(run_id);
 CREATE INDEX IF NOT EXISTS idx_find_status ON findings(triage_status, severity);
 CREATE INDEX IF NOT EXISTS idx_find_fp ON findings(fingerprint);
 
+CREATE TABLE IF NOT EXISTS finding_artifacts (
+    id TEXT PRIMARY KEY,
+    finding_id TEXT,
+    name TEXT,
+    path TEXT,
+    sha256 TEXT,
+    bytes INTEGER,
+    content_type TEXT,
+    created_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_artifact_finding ON finding_artifacts(finding_id, created_at);
+
 CREATE TABLE IF NOT EXISTS providers (
     id TEXT PRIMARY KEY,
     name TEXT,
@@ -533,6 +545,99 @@ class Index:
             )
             self.conn.commit()
         return self.get_finding(finding_id)
+
+    # -- evidence artifacts ------------------------------------------------
+    @staticmethod
+    def _safe_artifact_name(name: str) -> str:
+        name = Path(str(name or "")).name.strip()
+        cleaned = "".join(char for char in name
+                          if char.isalnum() or char in "._- ()[]")
+        cleaned = cleaned.lstrip(".")[:120]
+        return cleaned or "artifact.bin"
+
+    def add_finding_artifact(self, finding_id: str, name: str, content: bytes,
+                             content_type: str = "application/octet-stream") -> dict:
+        """Store an evidence file next to the finding, with a hash and size.
+
+        The finding row is the authority; the artifact is the bytes the operator
+        wants to keep after the report leaves the conversation. Files are 0600
+        and live under the NetCast3r base directory, not the repository.
+        """
+        import hashlib
+        import os
+
+        finding = self.get_finding(finding_id)
+        if not finding:
+            raise ValueError("finding not found")
+        if not isinstance(content, (bytes, bytearray)):
+            raise ValueError("content must be bytes")
+        if len(content) == 0:
+            raise ValueError("artifact is empty")
+        if len(content) > 8 * 1024 * 1024:
+            raise ValueError("artifact is larger than 8 MiB")
+        safe_name = self._safe_artifact_name(name)
+        artifact_id = _new_id("art")
+        directory = self.path.parent / "artifacts" / finding_id
+        directory.mkdir(parents=True, exist_ok=True)
+        target = directory / f"{artifact_id}-{safe_name}"
+        with open(target, "wb") as handle:
+            handle.write(bytes(content))
+        try:
+            os.chmod(target, 0o600)
+        except OSError:
+            pass
+        digest = hashlib.sha256(bytes(content)).hexdigest()
+        with self._lock:
+            self.conn.execute(
+                "INSERT INTO finding_artifacts (id, finding_id, name, path, sha256, "
+                "bytes, content_type, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                (artifact_id, finding_id, safe_name, str(target), digest,
+                 len(content), (content_type or "application/octet-stream")[:120], _now()),
+            )
+            self.conn.commit()
+        return self.get_finding_artifact(finding_id, artifact_id)
+
+    def list_finding_artifacts(self, finding_id: str) -> list[dict]:
+        with self._lock:
+            rows = self.conn.execute(
+                "SELECT * FROM finding_artifacts WHERE finding_id = ? ORDER BY created_at",
+                (finding_id,),
+            ).fetchall()
+        return [self._artifact_row(row) for row in rows]
+
+    def get_finding_artifact(self, finding_id: str, artifact_id: str) -> dict | None:
+        with self._lock:
+            row = self.conn.execute(
+                "SELECT * FROM finding_artifacts WHERE id = ? AND finding_id = ?",
+                (artifact_id, finding_id),
+            ).fetchone()
+        return self._artifact_row(row) if row else None
+
+    def delete_finding_artifact(self, finding_id: str, artifact_id: str) -> bool:
+        artifact = self.get_finding_artifact(finding_id, artifact_id)
+        if not artifact:
+            return False
+        try:
+            Path(artifact["path"]).unlink(missing_ok=True)
+        except OSError:
+            pass
+        with self._lock:
+            self.conn.execute(
+                "DELETE FROM finding_artifacts WHERE id = ? AND finding_id = ?",
+                (artifact_id, finding_id),
+            )
+            self.conn.commit()
+        return True
+
+    @staticmethod
+    def _artifact_row(row: sqlite3.Row) -> dict:
+        return {
+            "id": row["id"], "finding_id": row["finding_id"], "name": row["name"],
+            "path": row["path"], "sha256": row["sha256"], "bytes": row["bytes"],
+            "content_type": row["content_type"], "created_at": row["created_at"],
+            "download_url": f"/api/v1/findings/{row['finding_id']}/artifacts/"
+                            f"{row['id']}?download=1",
+        }
 
     @staticmethod
     def _fingerprint(finding: dict) -> str:
