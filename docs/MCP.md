@@ -373,6 +373,26 @@ smallest safe proof against an authorized target. It never runs the payload and
 explicitly stops at a benign marker. This is the input an agent should use
 before testing a recent CVE, not a scanner that fires exploits.
 
+### Training range
+
+Training is separate from hunting. `training_sources` lists the bundled
+catalogue: the PortSwigger Academy index, the Acunetix testphp.vulnweb.com
+exercise pack, and local Juice Shop, DVWA, and WebGoat ranges. Each entry
+carries its source, allowed hosts, setup command, objective, and proof.
+
+| Tool | Risk | Purpose |
+| --- | --- | --- |
+| `training_plan` | low | Rotate across source and category, easiest unsolved first |
+| `training_status` | low | Solved and in-progress counts by source, category, and difficulty |
+| `training_sources` | low | List packs, hosts, setup, and progress |
+| `training_record` | medium | Record an in-progress, solved, blocked, or skipped result |
+| `training_verify` | low | Check the Academy banner, explicit `expect` markers, or a browser profile |
+
+A solved record needs evidence and a written lesson. The lesson updates
+technology expertise and appears in `next_actions`. Local ranges are loopback
+only. testphp is a published public lab; its pack is catalogued but it has been
+intermittently unreachable, so a record is only written after a live check.
+
 ### Learning loop
 
 NetCast3r keeps operational memory in the same SQLite index as runs and
@@ -385,8 +405,12 @@ stored, so experience cannot be invented:
 | `lessons_list` / `lessons_get` | low | Search and read lessons by text, tag, or outcome |
 | `lesson_reflect` | low | Derive a lesson from a stored tool call or run |
 | `skills_list` / `skills_get` | low | Read the markdown skill library |
+| `skill_packs` | low | List the 17 bundled advanced playbooks and their install state |
 | `skills_upsert` | medium | Create or version a technique/checklist/write-up digest |
 | `next_actions` | low | Rank the next concrete steps from stored records |
+| `selfmodel_snapshot` | low | Capability scores from stored training, skills, expertise, and findings |
+| `selfmodel_gaps` | low | Rank the weakest areas with one concrete next step |
+| `upgrade_propose` / `upgrade_list` / `upgrade_update` | medium | Human-gated improvement proposals with evidence |
 
 The mission agent now plans a `recall` task before the active probe. It loads
 lessons and skills that match the target, then writes one deterministic lesson
@@ -394,10 +418,14 @@ after a failed or blocked task. Reflection classifies the cause (scope, policy,
 approval, auth, routing, input, reliability, tooling) and records one concrete
 next step.
 
-Four skills are seeded on first start: path-encoding scope differentials, the
-login-method x 2FA matrix, account rebind takeover, and the two-account object
-matrix. They are generic procedures, not target notes. Add a new skill with
-`skills_upsert` after a test produces a reusable method.
+Four generic procedures are seeded on first start: path-encoding scope
+differentials, the login-method x 2FA matrix, account rebind takeover, and the
+two-account object matrix. Seventeen advanced packs are installed beside them:
+SQLi, XSS, SSRF/cloud pivot, IDOR, JWT/OAuth/SAML, GraphQL, deserialization,
+upload, cache/smuggling, race, cloud IMDS, mobile APK, binary reversing, LLM
+features, recon, evidence/reporting, and business logic. They are procedures,
+not target notes. Add a new skill with `skills_upsert` after a test produces a
+reusable method.
 
 ### Technology expertise
 
