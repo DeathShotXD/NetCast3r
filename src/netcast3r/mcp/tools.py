@@ -28,7 +28,8 @@ from urllib.parse import urlencode, urljoin, urlsplit
 
 import httpx
 
-from .. import authstore, browser, integrations, oast, pathdiff, pivot, quality, reveng, stix, surface, tempmail, threatintel
+from .. import (authstore, browser, integrations, oast, pathdiff, pivot, quality,
+                reveng, stix, surface, tempmail, threatintel, training)
 from ..scope import ScopeManager
 
 POLICIES = ("readonly", "supervised", "full")
@@ -751,6 +752,114 @@ def test_case_run(ctx: ToolContext, args: dict) -> dict:
             "ok": failed == 0,
             "note": ("Assertions and raw responses are recorded per step. This harness "
                      "does not decide that a target is vulnerable.")}
+
+
+def hypothesis_create(ctx: ToolContext, args: dict) -> dict:
+    body = {key: args[key] for key in
+            ("title", "target", "mission_id", "technique", "rationale", "expected")
+            if key in args}
+    return _call(ctx, "POST", "/api/v1/hypotheses", body=body)
+
+
+def hypothesis_list(ctx: ToolContext, args: dict) -> dict:
+    return _call(ctx, "GET", "/api/v1/hypotheses", {
+        "mission_id": args.get("mission_id", ""), "status": args.get("status", ""),
+        "q": args.get("q", ""), "limit": args.get("limit", 50),
+        "offset": args.get("offset", 0)})
+
+
+def hypothesis_get(ctx: ToolContext, args: dict) -> dict:
+    return _call(ctx, "GET", f"/api/v1/hypotheses/{args['hypothesis_id']}")
+
+
+def hypothesis_test(ctx: ToolContext, args: dict) -> dict:
+    """Run a hypothesis as an assertion-based test case and record the verdict."""
+    hypothesis = _call(ctx, "GET", f"/api/v1/hypotheses/{args['hypothesis_id']}")
+    steps = args.get("steps")
+    if not isinstance(steps, list) or not steps:
+        raise ToolError("invalid_arguments", "steps must be a non-empty array")
+    mission_id = str(args.get("mission_id") or hypothesis.get("mission_id") or "")
+    call_args = {"name": hypothesis.get("title") or "hypothesis test",
+                 "steps": steps, "mission_id": mission_id,
+                 "scope": args.get("scope"),
+                 "base_url": args.get("base_url") or hypothesis.get("target"),
+                 "fail_fast": args.get("fail_fast", True)}
+    result = test_case_run(ctx, call_args)
+    if result.get("ok"):
+        status = "supported"
+    elif any(item.get("error") for item in result.get("results", [])):
+        status = "inconclusive"
+    else:
+        status = "refuted"
+    updated = _call(ctx, "PATCH", f"/api/v1/hypotheses/{args['hypothesis_id']}",
+                    body={"status": status,
+                          "test": {"steps": steps, "base_url": call_args["base_url"]},
+                          "result": result})
+    return {"hypothesis": updated, "status": status, "test_result": result,
+            "note": ("A supported hypothesis is still not a finding; promote it with "
+                     "impact and evidence before triage.")}
+
+
+def hypothesis_promote(ctx: ToolContext, args: dict) -> dict:
+    body = {key: args[key] for key in
+            ("title", "severity", "impact", "evidence", "tags", "source")
+            if key in args}
+    return _call(ctx, "POST", f"/api/v1/hypotheses/{args['hypothesis_id']}/promote",
+                 body=body)
+
+
+def training_plan(ctx: ToolContext, args: dict) -> dict:
+    return _call(ctx, "GET", "/api/v1/training/plan", {
+        "category": args.get("category", ""),
+        "difficulty": args.get("difficulty", ""),
+        "limit": args.get("limit", 5)})
+
+
+def training_status(ctx: ToolContext, args: dict) -> dict:
+    return _call(ctx, "GET", "/api/v1/training")
+
+
+def training_record(ctx: ToolContext, args: dict) -> dict:
+    body = {key: args[key] for key in
+            ("lab_slug", "status", "lesson", "evidence", "notes", "instance_url",
+             "verified", "technique", "mission_id") if key in args}
+    return _call(ctx, "POST", "/api/v1/training/record", body=body)
+
+
+def training_verify(ctx: ToolContext, args: dict) -> dict:
+    target = str(args.get("instance_url") or "").strip()
+    host = (urlsplit(target).hostname or "").lower()
+    if not host or not (host == "web-security-academy.net"
+                        or host.endswith(".web-security-academy.net")):
+        raise ToolError("invalid_arguments",
+                        "instance_url must be a PortSwigger Academy lab host")
+    try:
+        response = http_request(ctx, {
+            "target": target, "method": "GET",
+            "scope": ["web-security-academy.net", "*.web-security-academy.net"],
+            "max_bytes": 262144, "timeout": 30, "follow_redirects": True})
+    except ToolError as exc:
+        raise ToolError("request_failed", f"lab check failed: {exc.message}")
+    body = str(response.get("body") or "")
+    solved = training.verify_signal(body)
+    excerpt = ""
+    if solved:
+        lower = body.lower()
+        index = lower.find("congratulations")
+        excerpt = body[max(0, index - 100):index + 300].replace("\n", " ")
+    return {
+        "instance_url": target,
+        "solved": solved,
+        "status": response.get("status"),
+        "evidence": excerpt or "no congratulations banner in the response",
+        "note": ("A banner is the Academy's own solved signal. Record the lab with "
+                 "training_record and attach the same evidence."),
+    }
+
+
+def toolbook(ctx: ToolContext, args: dict) -> dict:
+    return _call(ctx, "GET", "/api/v1/toolbook", {
+        "q": args.get("query", ""), "name": args.get("name", "")})
 
 
 def burp_status(ctx: ToolContext, args: dict) -> dict:
@@ -1680,6 +1789,16 @@ _HANDLERS.update({
     "recon_passive": recon_passive,
     "fetch_artifact": fetch_artifact,
     "test_case_run": test_case_run,
+    "hypothesis_create": hypothesis_create,
+    "hypothesis_list": hypothesis_list,
+    "hypothesis_get": hypothesis_get,
+    "hypothesis_test": hypothesis_test,
+    "hypothesis_promote": hypothesis_promote,
+    "training_plan": training_plan,
+    "training_status": training_status,
+    "training_record": training_record,
+    "training_verify": training_verify,
+    "toolbook": toolbook,
     "burp_status": burp_status,
     "burp_call": burp_call,
     "mcp_servers_list": mcp_servers_list,
@@ -2066,6 +2185,104 @@ TOOLS: tuple[Tool, ...] = (
                   "fail_fast": _boolean("stop at the first failed assertion", True),
                   "steps": _array("ordered steps", {"type": "object"})},
                  ["steps"]), "test_case_run", open_world=True),
+    Tool("hypothesis_create", "Record a falsifiable hypothesis",
+         "Write down one precise question about one in-scope target: the technique, "
+         "why it should work here, and the observation that would support it. A "
+         "hypothesis is not a finding and is never inferred from a scan.",
+         "low", "findings",
+         _schema({"title": _string("what you are testing"),
+                  "target": _string("in-scope URL or host"),
+                  "mission_id": _string("mission that owns this hypothesis"),
+                  "technique": _string("technique or bug class"),
+                  "rationale": _string("why this target should be vulnerable"),
+                  "expected": _string("observation that would support it")},
+                 ["title"]), "hypothesis_create"),
+    Tool("hypothesis_list", "List hypotheses",
+         "List recorded hypotheses, optionally filtered by mission, status, or text.",
+         "low", "findings",
+         _schema({"mission_id": _string("filter by mission"),
+                  "status": _string("filter by status", enum=[
+                      "open", "supported", "refuted", "inconclusive",
+                      "promoted", "archived"]),
+                  "q": _string("text filter"),
+                  "limit": _integer("page size", 1, 200, 50),
+                  "offset": _integer("offset", 0, 100000, 0)}),
+         "hypothesis_list", read_only=True),
+    Tool("hypothesis_get", "Get a hypothesis",
+         "Read one hypothesis with its stored test and result.",
+         "low", "findings",
+         _schema({"hypothesis_id": _string("hypothesis id")}, ["hypothesis_id"]),
+         "hypothesis_get", read_only=True),
+    Tool("hypothesis_test", "Test a hypothesis",
+         "Run the hypothesis as an explicit assertion-based test case (same engine as "
+         "test_case_run), store the raw result, and mark it supported, refuted, or "
+         "inconclusive. Requests are scope-checked by the mission.",
+         "medium", "findings",
+         _schema({"hypothesis_id": _string("hypothesis id"),
+                  "steps": _array("ordered request/assertion steps", {"type": "object"}),
+                  "mission_id": _string("override mission when the hypothesis has none"),
+                  "scope": _array("explicit scope entries when no mission is used"),
+                  "base_url": _string("override base URL"),
+                  "fail_fast": _boolean("stop at the first failed assertion", True)},
+                 ["hypothesis_id", "steps"]), "hypothesis_test", open_world=True),
+    Tool("hypothesis_promote", "Promote a supported hypothesis",
+         "Create a finding only from a hypothesis whose test case passed. The raw test "
+         "result is attached automatically as evidence. Refused for open or refuted "
+         "hypotheses and for duplicate promotion.",
+         "medium", "findings",
+         _schema({"hypothesis_id": _string("hypothesis id"),
+                  "title": _string("finding title"),
+                  "severity": _string("validated severity", enum=[
+                      "critical", "high", "medium", "low", "info", "unknown"]),
+                  "impact": _string("impact statement"),
+                  "evidence": _string("evidence summary"),
+                  "tags": _array("tags"),
+                  "source": _string("source label")},
+                 ["hypothesis_id", "title", "severity", "impact"]),
+         "hypothesis_promote"),
+    Tool("training_plan", "Plan Academy training",
+         "Choose the next PortSwigger Academy labs. The plan rotates across categories, "
+         "prefers an in-progress lab, then apprentice before practitioner before expert. "
+         "Labs are teaching targets, not bounty targets.",
+         "low", "training",
+         _schema({"category": _string("optional exact category"),
+                  "difficulty": _string("apprentice, practitioner, or expert", enum=[
+                      "apprentice", "practitioner", "expert"]),
+                  "limit": _integer("how many labs", 1, 25, 5)}),
+         "training_plan", read_only=True),
+    Tool("training_status", "Academy training status",
+         "Show solved and in-progress labs by category and difficulty, plus recent "
+         "records. Progress is explicit and never inferred from a page view.",
+         "low", "training", _schema({}), "training_status", read_only=True),
+    Tool("training_record", "Record a lab result",
+         "Record in-progress, solved, blocked, or skipped for one lab. A solved record "
+         "needs evidence and a written lesson; that lesson updates expertise.",
+         "medium", "training",
+         _schema({"lab_slug": _string("catalogue slug, e.g. lab-retrieve-hidden-data"),
+                  "status": _string("result", enum=[
+                      "in_progress", "solved", "blocked", "skipped"]),
+                  "lesson": _string("what you learned (required when solved)"),
+                  "evidence": _string("banner text or artifact path (required when solved)"),
+                  "notes": _string("private notes or next step"),
+                  "instance_url": _string("the Academy lab URL you tested"),
+                  "verified": _boolean("the solved banner was verified", False),
+                  "technique": _string("technique label"),
+                  "mission_id": _string("optional training mission")},
+                 ["lab_slug", "status"]), "training_record"),
+    Tool("training_verify", "Verify a solved lab",
+         "Fetch one PortSwigger Academy lab instance and check for its congratulations "
+         "banner. Only *.web-security-academy.net hosts are accepted; the host is "
+         "scope-checked before the request.",
+         "low", "training",
+         _schema({"instance_url": _string("Academy lab instance URL")},
+                 ["instance_url"]), "training_verify", open_world=True),
+    Tool("toolbook", "Search the toolbook",
+         "Look up a Linux/web security tool: what it does, when to use it, one focused "
+         "command, and the scope or rate-limit caution. Pass name for one entry.",
+         "low", "training",
+         _schema({"query": _string("search text"),
+                  "name": _string("exact tool name, e.g. ffuf")}),
+         "toolbook", read_only=True),
     Tool("burp_status", "Burp MCP status",
          "Connect to the configured Burp MCP server and list its tools. Configure with "
          "NETCAST3R_BURP_URL / NETCAST3R_BURP_TOKEN or ~/.netcast3r/integrations.json.",

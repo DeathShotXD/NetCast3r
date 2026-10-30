@@ -26,7 +26,8 @@ from .events import EventBus
 from .index import Index
 from .jobs import JobManager
 from .keys import KeyStore, mask
-from .. import control, integrations, learning, quality, reveng, selfaudit, stix, surface
+from .. import (control, integrations, learning, quality, reveng, selfaudit,
+                stix, surface, training)
 
 API_VERSION = "v1"
 ALLOWED_HOSTS = {"127.0.0.1", "localhost", "::1", "[::1]"}
@@ -558,6 +559,108 @@ class Server:
                 return _json(quality.score_finding(self.index, ctx.params["id"]))
             except ValueError as exc:
                 return _problem(404, str(exc))
+
+        @add("GET", r"/api/v1/hypotheses")
+        def list_hypotheses(ctx):
+            try:
+                items, total = self.index.list_hypotheses(
+                    mission_id=ctx.query.get("mission_id", ""),
+                    status=ctx.query.get("status", ""), q=ctx.query.get("q", ""),
+                    limit=ctx.limit, offset=ctx.offset)
+            except ValueError as exc:
+                return _problem(400, str(exc))
+            return _json({"items": items, "total": total, "page": ctx.page,
+                          "size": ctx.limit})
+
+        @add("POST", r"/api/v1/hypotheses")
+        def create_hypothesis(ctx):
+            body = ctx.json()
+            body = body if isinstance(body, dict) else {}
+            try:
+                hypothesis = self.index.create_hypothesis(
+                    title=str(body.get("title", "")),
+                    target=str(body.get("target", "")),
+                    mission_id=str(body.get("mission_id", "")),
+                    technique=str(body.get("technique", "")),
+                    rationale=str(body.get("rationale", "")),
+                    expected=str(body.get("expected", "")))
+            except ValueError as exc:
+                return _problem(400, str(exc))
+            return _json(hypothesis, 201)
+
+        @add("GET", r"/api/v1/hypotheses/(?P<id>[A-Za-z0-9_]+)")
+        def get_hypothesis(ctx):
+            hypothesis = self.index.get_hypothesis(ctx.params["id"])
+            return _json(hypothesis) if hypothesis else _problem(404, "hypothesis not found")
+
+        @add("PATCH", r"/api/v1/hypotheses/(?P<id>[A-Za-z0-9_]+)")
+        def patch_hypothesis(ctx):
+            body = ctx.json()
+            body = body if isinstance(body, dict) else {}
+            try:
+                hypothesis = self.index.patch_hypothesis(
+                    ctx.params["id"], title=body.get("title"),
+                    technique=body.get("technique"), rationale=body.get("rationale"),
+                    expected=body.get("expected"), status=body.get("status"),
+                    test=body.get("test") if "test" in body else None,
+                    result=body.get("result") if "result" in body else None)
+            except ValueError as exc:
+                return _problem(400, str(exc))
+            return _json(hypothesis) if hypothesis else _problem(404, "hypothesis not found")
+
+        @add("POST", r"/api/v1/hypotheses/(?P<id>[A-Za-z0-9_]+)/promote")
+        def promote_hypothesis(ctx):
+            body = ctx.json()
+            body = body if isinstance(body, dict) else {}
+            try:
+                finding = self.index.promote_hypothesis(
+                    ctx.params["id"], title=str(body.get("title", "")),
+                    severity=str(body.get("severity", "")),
+                    impact=str(body.get("impact", "")),
+                    evidence=str(body.get("evidence", "")),
+                    tags=body.get("tags") if isinstance(body.get("tags"), list) else [],
+                    source=str(body.get("source", "")))
+            except ValueError as exc:
+                return _problem(400, str(exc))
+            return _json(finding, 201)
+
+        @add("GET", r"/api/v1/training")
+        def training_status(ctx):
+            return _json(training.status(self.index))
+
+        @add("GET", r"/api/v1/training/plan")
+        def training_plan(ctx):
+            try:
+                return _json(training.plan(
+                    self.index, category=ctx.query.get("category", ""),
+                    difficulty=ctx.query.get("difficulty", ""),
+                    limit=_int_or(ctx.query.get("limit"), 5)))
+            except ValueError as exc:
+                return _problem(400, str(exc))
+
+        @add("POST", r"/api/v1/training/record")
+        def training_record(ctx):
+            body = ctx.json()
+            body = body if isinstance(body, dict) else {}
+            try:
+                result = training.record(
+                    self.index, slug=str(body.get("lab_slug", "")),
+                    status=str(body.get("status", "")),
+                    lesson=str(body.get("lesson", "")),
+                    evidence=str(body.get("evidence", "")),
+                    notes=str(body.get("notes", "")),
+                    instance_url=str(body.get("instance_url", "")),
+                    verified=bool(body.get("verified") or False),
+                    technique=str(body.get("technique", "")),
+                    mission_id=str(body.get("mission_id", "")))
+            except ValueError as exc:
+                return _problem(400, str(exc))
+            return _json(result, 201)
+
+        @add("GET", r"/api/v1/toolbook")
+        def toolbook(ctx):
+            return _json(training.toolbook(query=ctx.query.get("q", ""),
+                                           name=ctx.query.get("name", "")))
 
         @add("GET", r"/api/v1/self-audit")
         def self_audit(ctx):

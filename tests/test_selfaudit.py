@@ -41,12 +41,12 @@ class SelfAuditTests(unittest.TestCase):
         self.assertEqual(result["grade"], "A")
 
     def test_diagnostics_reports_integrity_and_counts(self):
-        result = selfaudit.diagnostics(self.index, self.base, routes=5, tools=105)
+        result = selfaudit.diagnostics(self.index, self.base, routes=5, tools=115)
         self.assertEqual(result["integrity"], "ok")
         self.assertTrue(result["ok"])
         self.assertEqual(result["counts"]["findings"], 0)
         self.assertEqual(result["routes"], 5)
-        self.assertEqual(result["tools"], 105)
+        self.assertEqual(result["tools"], 115)
 
 
 class ExpertiseTests(unittest.TestCase):

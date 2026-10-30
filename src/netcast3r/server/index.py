@@ -79,6 +79,40 @@ CREATE TABLE IF NOT EXISTS finding_artifacts (
 );
 CREATE INDEX IF NOT EXISTS idx_artifact_finding ON finding_artifacts(finding_id, created_at);
 
+CREATE TABLE IF NOT EXISTS hypotheses (
+    id TEXT PRIMARY KEY,
+    mission_id TEXT,
+    target TEXT,
+    title TEXT,
+    technique TEXT,
+    rationale TEXT,
+    expected TEXT,
+    status TEXT DEFAULT 'open',
+    test_json TEXT DEFAULT '',
+    result_json TEXT DEFAULT '',
+    finding_id TEXT,
+    created_at TEXT,
+    updated_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_hyp_mission ON hypotheses(mission_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_hyp_status ON hypotheses(status, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS training_progress (
+    lab_slug TEXT PRIMARY KEY,
+    category TEXT,
+    difficulty TEXT,
+    status TEXT DEFAULT 'planned',
+    attempts INTEGER DEFAULT 0,
+    instance_url TEXT DEFAULT '',
+    evidence TEXT DEFAULT '',
+    notes TEXT DEFAULT '',
+    verified INTEGER DEFAULT 0,
+    lesson_id TEXT DEFAULT '',
+    created_at TEXT,
+    updated_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_training_status ON training_progress(status, category);
+
 CREATE TABLE IF NOT EXISTS lessons (
     id TEXT PRIMARY KEY,
     mission_id TEXT,
@@ -300,6 +334,8 @@ CREATE INDEX IF NOT EXISTS idx_agent_model_calls_mission
 """
 
 SEVERITY_ORDER = {"critical": 0, "high": 1, "medium": 2, "low": 3, "info": 4, "unknown": 5}
+HYPOTHESIS_STATUSES = {"open", "supported", "refuted", "inconclusive", "promoted", "archived"}
+TRAINING_STATUSES = {"planned", "in_progress", "solved", "blocked", "skipped"}
 TRIAGE_STATUSES = {"new", "in_progress", "confirmed", "escalated", "rejected", "false_positive"}
 SORTS = {"created_at", "severity", "confidence", "title"}
 MISSION_STATUSES = {"draft", "active", "paused", "done", "archived"}
@@ -331,6 +367,10 @@ TECH_TAGS = {
     "wireguard", "vpn", "email", "dns", "cdn", "waf", "mobile", "android",
     "ios", "solana", "ethereum", "solidity", "defi", "driver", "kernel",
     "aspnet", "iis", "xmlrpc", "cpanel", "whm", "phpmyadmin",
+    "xxe", "ssti", "smuggling", "cache", "deserialization", "infodisclosure",
+    "logic", "business", "race", "upload", "cors", "clickjacking", "websocket",
+    "host-header", "prototype-pollution", "llm", "ai", "prompt-injection", "dom",
+    "database", "command-injection", "filesystem", "javascript", "http", "burp",
 }
 
 
@@ -710,6 +750,217 @@ class Index:
             "download_url": f"/api/v1/findings/{row['finding_id']}/artifacts/"
                             f"{row['id']}?download=1",
         }
+
+    # -- hypotheses -------------------------------------------------------
+    @staticmethod
+    def _hypothesis_row(row: sqlite3.Row) -> dict:
+        item = dict(row)
+        item["test"] = _loads(item.pop("test_json"), None)
+        item["result"] = _loads(item.pop("result_json"), None)
+        return item
+
+    def create_hypothesis(self, title: str, target: str = "", mission_id: str = "",
+                          technique: str = "", rationale: str = "",
+                          expected: str = "") -> dict:
+        """Record one falsifiable test an operator intends to run.
+
+        A hypothesis is not a finding. It is the precise question, the target,
+        and the expected observation; it only becomes a finding after a test
+        case supports it and the operator promotes it with evidence.
+        """
+        title = (title or "").strip()
+        if not title:
+            raise ValueError("title required")
+        mission_id = (mission_id or "").strip()
+        target = (target or "").strip()
+        if mission_id:
+            mission = self.get_mission(mission_id)
+            if not mission:
+                raise ValueError(f"unknown mission: {mission_id}")
+            target = target or str(mission.get("target") or "")
+        if not target:
+            raise ValueError("target required")
+        hypothesis_id = _new_id("hyp")
+        now = _now()
+        with self._lock:
+            self.conn.execute(
+                "INSERT INTO hypotheses (id, mission_id, target, title, technique, "
+                "rationale, expected, status, test_json, result_json, finding_id, "
+                "created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (hypothesis_id, mission_id, target, title, technique.strip(),
+                 rationale.strip(), expected.strip(), "open", "", "", None, now, now),
+            )
+            self.conn.commit()
+        return self.get_hypothesis(hypothesis_id) or {}
+
+    def list_hypotheses(self, mission_id: str = "", status: str = "",
+                        q: str = "", limit: int = 50,
+                        offset: int = 0) -> tuple[list[dict], int]:
+        clause, params = [], []
+        if mission_id:
+            clause.append("mission_id = ?")
+            params.append(mission_id)
+        if status:
+            if status not in HYPOTHESIS_STATUSES:
+                raise ValueError(f"unknown hypothesis status: {status}")
+            clause.append("status = ?")
+            params.append(status)
+        if q:
+            clause.append("(title LIKE ? OR target LIKE ? OR technique LIKE ?)")
+            params.extend([f"%{q}%"] * 3)
+        where = f"WHERE {' AND '.join(clause)}" if clause else ""
+        with self._lock:
+            total = self.conn.execute(
+                f"SELECT COUNT(*) FROM hypotheses {where}", params).fetchone()[0]
+            rows = self.conn.execute(
+                f"SELECT * FROM hypotheses {where} ORDER BY created_at DESC LIMIT ? OFFSET ?",
+                [*params, max(1, min(int(limit), 200)), max(0, int(offset))],
+            ).fetchall()
+        return [self._hypothesis_row(row) for row in rows], total
+
+    def get_hypothesis(self, hypothesis_id: str) -> dict | None:
+        with self._lock:
+            row = self.conn.execute(
+                "SELECT * FROM hypotheses WHERE id = ?", (hypothesis_id,)).fetchone()
+        return self._hypothesis_row(row) if row else None
+
+    def patch_hypothesis(self, hypothesis_id: str, **fields) -> dict | None:
+        current = self.get_hypothesis(hypothesis_id)
+        if not current:
+            return None
+        sets, values = [], []
+        for column in ("title", "technique", "rationale", "expected"):
+            if column in fields and fields[column] is not None:
+                sets.append(f"{column} = ?")
+                values.append(str(fields[column]).strip())
+        if "status" in fields and fields["status"] is not None:
+            status = str(fields["status"]).strip()
+            if status not in HYPOTHESIS_STATUSES:
+                raise ValueError(f"unknown hypothesis status: {status}")
+            sets.append("status = ?")
+            values.append(status)
+        if "test" in fields:
+            sets.append("test_json = ?")
+            values.append(json.dumps(fields["test"]))
+        if "result" in fields:
+            sets.append("result_json = ?")
+            values.append(json.dumps(fields["result"]))
+        if sets:
+            sets.append("updated_at = ?")
+            values.append(_now())
+            values.append(hypothesis_id)
+            with self._lock:
+                self.conn.execute(
+                    f"UPDATE hypotheses SET {', '.join(sets)} WHERE id = ?", values)
+                self.conn.commit()
+        return self.get_hypothesis(hypothesis_id)
+
+    def promote_hypothesis(self, hypothesis_id: str, title: str, severity: str,
+                           impact: str, evidence: str = "", tags: list | None = None,
+                           source: str = "") -> dict:
+        """Turn a supported hypothesis into a finding, with its test result attached.
+
+        This is the evidence gate: promotion is refused unless a test case ran
+        and every assertion passed. The raw test result is stored as an artifact
+        so the finding can be defended later.
+        """
+        hypothesis = self.get_hypothesis(hypothesis_id)
+        if not hypothesis:
+            raise ValueError(f"unknown hypothesis: {hypothesis_id}")
+        if hypothesis.get("status") != "supported":
+            raise ValueError("hypothesis is not supported by a passing test case")
+        result = hypothesis.get("result") or {}
+        if not result or not result.get("ok"):
+            raise ValueError("hypothesis has no passing test result to attach")
+        if hypothesis.get("finding_id"):
+            raise ValueError(f"hypothesis already promoted to {hypothesis['finding_id']}")
+        tags = [str(tag) for tag in (tags or []) if str(tag).strip()]
+        if hypothesis_id not in tags:
+            tags.append(hypothesis_id)
+        finding = self.create_finding(
+            title=title, severity=severity,
+            impact=impact, evidence=evidence or str(hypothesis.get("expected") or ""),
+            source=source or f"hypothesis:{hypothesis_id}",
+            secret_type=str(hypothesis.get("technique") or "manual"),
+            confidence=0.9, tags=tags,
+            notes=f"Promoted from {hypothesis_id}; target {hypothesis.get('target')}.")
+        payload = json.dumps({
+            "hypothesis": hypothesis, "test_result": result,
+        }, indent=2, sort_keys=True).encode("utf-8")
+        artifact = self.add_finding_artifact(
+            finding["id"], f"{hypothesis_id}-test-result.json", payload,
+            "application/json")
+        with self._lock:
+            self.conn.execute(
+                "UPDATE hypotheses SET status = 'promoted', finding_id = ?, updated_at = ? "
+                "WHERE id = ?", (finding["id"], _now(), hypothesis_id))
+            self.conn.commit()
+        finding = self.get_finding(finding["id"]) or finding
+        finding["hypothesis_id"] = hypothesis_id
+        finding["artifact_id"] = artifact["id"]
+        return finding
+
+    # -- training progress ------------------------------------------------
+    @staticmethod
+    def _training_row(row: sqlite3.Row) -> dict:
+        item = dict(row)
+        item["verified"] = bool(item.get("verified"))
+        return item
+
+    def list_training(self, status: str = "", category: str = "",
+                      limit: int = 500) -> list[dict]:
+        clause, params = [], []
+        if status:
+            if status not in TRAINING_STATUSES:
+                raise ValueError(f"unknown training status: {status}")
+            clause.append("status = ?")
+            params.append(status)
+        if category:
+            clause.append("category = ?")
+            params.append(category)
+        where = f"WHERE {' AND '.join(clause)}" if clause else ""
+        with self._lock:
+            rows = self.conn.execute(
+                f"SELECT * FROM training_progress {where} "
+                "ORDER BY updated_at DESC LIMIT ?",
+                [*params, max(1, min(int(limit), 1000))]).fetchall()
+        return [self._training_row(row) for row in rows]
+
+    def get_training(self, lab_slug: str) -> dict | None:
+        with self._lock:
+            row = self.conn.execute(
+                "SELECT * FROM training_progress WHERE lab_slug = ?",
+                (lab_slug,)).fetchone()
+        return self._training_row(row) if row else None
+
+    def record_training(self, lab_slug: str, category: str, difficulty: str,
+                        status: str, instance_url: str = "", evidence: str = "",
+                        notes: str = "", verified: bool = False,
+                        lesson_id: str = "") -> dict:
+        lab_slug = (lab_slug or "").strip()
+        if not lab_slug:
+            raise ValueError("lab_slug required")
+        status = (status or "planned").strip()
+        if status not in TRAINING_STATUSES:
+            raise ValueError(f"unknown training status: {status}")
+        now = _now()
+        with self._lock:
+            self.conn.execute(
+                "INSERT INTO training_progress (lab_slug, category, difficulty, status, "
+                "attempts, instance_url, evidence, notes, verified, lesson_id, "
+                "created_at, updated_at) VALUES (?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?) "
+                "ON CONFLICT(lab_slug) DO UPDATE SET category = excluded.category, "
+                "difficulty = excluded.difficulty, status = excluded.status, "
+                "attempts = training_progress.attempts + 1, instance_url = excluded.instance_url, "
+                "evidence = excluded.evidence, notes = excluded.notes, "
+                "verified = excluded.verified, lesson_id = excluded.lesson_id, "
+                "updated_at = excluded.updated_at",
+                (lab_slug, category, difficulty, status, instance_url.strip(),
+                 evidence.strip(), notes.strip(), 1 if verified else 0,
+                 lesson_id, now, now),
+            )
+            self.conn.commit()
+        return self.get_training(lab_slug) or {}
 
     # -- lessons and skills ------------------------------------------------
     def add_lesson(self, title: str, lesson: str, technique: str = "",

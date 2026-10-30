@@ -204,6 +204,25 @@ def suggest_next(index, mission_id: str, limit: int = 8) -> dict:
                 "finding_artifact_add",
                 {"finding_id": untriaged[0]["id"], "name": "evidence.txt",
                  "content": "replace with the captured request/response"}, "medium")
+    try:
+        open_hypotheses, _ = index.list_hypotheses(
+            mission_id=mission_id, status="open", limit=5)
+        supported, _ = index.list_hypotheses(
+            mission_id=mission_id, status="supported", limit=5)
+    except (ValueError, AttributeError):
+        open_hypotheses, supported = [], []
+    for hypothesis in supported[:2]:
+        add(f"Promote the supported hypothesis: {hypothesis['title']}",
+            "its assertion-based test passed but it is not a finding yet",
+            "hypothesis_promote",
+            {"hypothesis_id": hypothesis["id"], "title": hypothesis["title"],
+             "severity": "medium", "impact": "replace with the demonstrated impact"},
+            "medium")
+    for hypothesis in open_hypotheses[:2]:
+        add(f"Test the open hypothesis: {hypothesis['title']}",
+            f"recorded for {hypothesis.get('target')} and not resolved yet",
+            "hypothesis_test",
+            {"hypothesis_id": hypothesis["id"], "steps": []}, "medium")
     for lesson in lessons[:3]:
         if lesson.get("next_step"):
             add(lesson["next_step"], f"lesson: {lesson.get('title')}",

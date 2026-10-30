@@ -6,6 +6,20 @@ Notable changes to NetCast3r, newest first.
 
 ### Added
 
+- Hypothesis ledger: `hypothesis_create`, `hypothesis_list`, `hypothesis_get`,
+  `hypothesis_test`, and `hypothesis_promote` keep a lead as an assertion with
+  an explicit test, a supported/refuted result, and an evidence artifact before
+  it can become a finding. Open and supported hypotheses appear in
+  `next_actions`.
+- Training subsystem: a bundled 273-lab PortSwigger Web Security Academy
+  catalogue (`training_plan`, `training_status`, `training_record`,
+  `training_verify`) and a 45-entry toolbook. A lab counts as solved only after
+  a recorded result with evidence and a written lesson; the lesson feeds
+  technology expertise. Labs are teaching targets and cannot reuse a bounty
+  mission.
+- `test_case_run` executes up to 12 ordered, scope-checked requests with
+  explicit status, body, and header assertions, replacing broad scanners in
+  the active path.
 - Disposable inboxes (`inbox_create`, `inbox_list`, `inbox_read`,
   `inbox_wait`) backed by mail.tm. Mailbox passwords and bearer tokens live in
   a 0600 state file and never appear in a tool response or audit row.
