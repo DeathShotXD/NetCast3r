@@ -273,6 +273,11 @@ capped at 2000 probes, rate-limited separately from normal requests, and every
 probe goes through the same scope check. It does not decide that a bug exists;
 the extracted value still has to be used to prove impact.
 
+`race_run` sends the same scoped request up to 50 times with a bounded worker
+pool and returns every response. It is a concurrent burst, not a single-packet
+attack; a duplicate side effect is the proof. Campaigns that need packet-level
+alignment still require a dedicated HTTP/2 sender.
+
 ### Path differentials
 
 `http_path_diff` sends the same request to a bounded set of path variants —

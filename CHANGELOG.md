@@ -66,9 +66,16 @@ Notable changes to NetCast3r, newest first.
   oracle. It renders an expression into the URL, a header, or the body and
   sends a bounded, rate-limited probe per candidate; it is the missing
   primitive for blind SQL injection and blind command injection.
+- `race_run` sends a bounded concurrent burst of one scoped request and
+  returns every status, body shape, and elapsed time. It is a concurrent
+  burst, not a single-packet attack, and the note says so.
 - Training progressed to 15 solved exercises: blind SQL injection with
   conditional responses used `oracle_extract`; remote code execution via a web
   shell used `http_upload`; stored XSS used the existing browser/HTTP path.
+- The limit-overrun race lab remains blocked: `race_run` applied at most two
+  coupons because it opens one connection per request. It produced a
+  high-priority proposal for an HTTP/2 single-packet sender rather than a
+  false solved record.
 - `docs/research/penligent-public-comparison.md` records what Penligent's
   public repository and site actually expose. The application source is not
   public, so the note does not claim a source-code review.

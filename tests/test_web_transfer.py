@@ -8,7 +8,7 @@ from pathlib import Path
 
 os.environ.setdefault("NETCAST3R_NO_KEYRING", "1")
 
-from netcast3r.mcp.tools import ToolContext, http_upload, oracle_extract
+from netcast3r.mcp.tools import ToolContext, http_upload, oracle_extract, race_run
 
 
 class TransferHandler(BaseHTTPRequestHandler):
@@ -91,6 +91,19 @@ class WebTransferTests(unittest.TestCase):
         self.assertEqual(result["value"], "a")
         self.assertEqual(result["requests"], 1)
         self.assertFalse(result["truncated"])
+
+    def test_race_run_returns_every_response(self):
+        result = race_run(self.ctx, {
+            "target": self.base + "/race",
+            "method": "POST",
+            "form": {"x": "1"},
+            "count": 3,
+            "concurrency": 3,
+            "scope": ["127.0.0.1"],
+        })
+        self.assertEqual(result["count"], 3)
+        self.assertEqual(len(result["responses"]), 3)
+        self.assertTrue(all(item["status"] == 200 for item in result["responses"]))
 
     def test_oracle_stops_at_a_missing_character(self):
         result = oracle_extract(self.ctx, {

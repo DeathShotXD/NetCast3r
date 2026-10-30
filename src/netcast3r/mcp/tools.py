@@ -21,6 +21,7 @@ import base64
 import hashlib
 import json
 import os
+from concurrent.futures import ThreadPoolExecutor
 import socket
 import time
 from dataclasses import dataclass, field
@@ -218,6 +219,7 @@ class RateLimiter:
         "probe": (60, 60.0),
         "request": (90, 60.0),
         "oracle": (600, 60.0),
+        "race": (20, 60.0),
         "wait": (6, 60.0),
     }
 
@@ -1740,6 +1742,118 @@ def oracle_extract(ctx: ToolContext, args: dict) -> dict:
     }
 
 
+def race_run(ctx: ToolContext, args: dict) -> dict:
+    """Send a bounded concurrent burst of the same scoped request.
+
+    This is not a single-packet attack; it is a reproducible concurrent burst
+    for check-then-act tests. Every response is kept so the caller can compare
+    the invariant instead of trusting one status code.
+    """
+    target = str(args.get("target") or "").strip()
+    url = target if "://" in target else "https://" + target
+    parts = urlsplit(url)
+    if parts.scheme not in {"http", "https"} or not parts.hostname:
+        raise ToolError("invalid_arguments", "target must be an http(s) URL or hostname")
+    method = str(args.get("method") or "POST").upper()
+    if method not in {"GET", "HEAD", "POST", "PUT", "PATCH", "DELETE"}:
+        raise ToolError("invalid_arguments", "unsupported method")
+    mission_id = str(args.get("mission_id") or "")
+    scope = args.get("scope")
+    _require_scope(ctx, target, mission_id, scope, probe=True)
+
+    count = max(2, min(int(args.get("count") or 10), 50))
+    concurrency = max(1, min(int(args.get("concurrency") or count), count, 50))
+    timeout = max(1.0, min(float(args.get("timeout", 20)), 60.0))
+    maximum = max(256, min(int(args.get("max_bytes", 16384)), 65536))
+    verify_tls = bool(args.get("verify_tls", True))
+
+    headers: dict[str, str] = {"user-agent": "NetCast3r-MCP/0.1", "accept": "*/*"}
+    profile_name = str(args.get("auth_profile") or "").strip()
+    if profile_name:
+        profile = authstore.get_profile(profile_name, base=ctx.base)
+        if profile is None:
+            raise ToolError("invalid_arguments", f"unknown auth profile: {profile_name}")
+        headers.update(profile.request_headers())
+    supplied = args.get("headers") or {}
+    if not isinstance(supplied, dict):
+        raise ToolError("invalid_arguments", "headers must be an object")
+    if any(str(name).strip().lower() == "cookie" for name in supplied):
+        headers = {key: value for key, value in headers.items()
+                   if key.lower() != "cookie"}
+    for raw_name, raw_value in supplied.items():
+        name = str(raw_name).strip()
+        value = str(raw_value)
+        if not name or any(char in name for char in "\r\n:") or "\r" in value or "\n" in value:
+            raise ToolError("invalid_arguments", f"invalid header: {name[:40]!r}")
+        headers[name] = value
+
+    content: bytes | None = None
+    payload_json = args.get("json")
+    payload_form = args.get("form")
+    raw_body = args.get("body")
+    if sum(item is not None for item in (payload_json, payload_form, raw_body)) > 1:
+        raise ToolError("invalid_arguments", "use only one of body, json, or form")
+    if payload_json is not None:
+        content = json.dumps(payload_json).encode("utf-8")
+        headers.setdefault("content-type", "application/json")
+    elif payload_form is not None:
+        content = urlencode(payload_form, doseq=True).encode("utf-8")
+        headers.setdefault("content-type", "application/x-www-form-urlencoded")
+    elif raw_body is not None:
+        content = str(raw_body).encode("utf-8")
+
+    ctx.limiter.check("race")
+    started = time.monotonic()
+
+    def send(_index: int) -> dict:
+        began = time.monotonic()
+        try:
+            with httpx.Client(timeout=timeout, trust_env=False,
+                              follow_redirects=False,
+                              verify=verify_tls) as client:
+                with client.stream(method, url, headers=headers,
+                                   content=content) as response:
+                    chunks, read = [], 0
+                    for chunk in response.iter_bytes():
+                        if read + len(chunk) > maximum:
+                            chunks.append(chunk[: maximum - read])
+                            break
+                        chunks.append(chunk)
+                        read += len(chunk)
+                    body = b"".join(chunks)
+                    return {
+                        "status": response.status_code,
+                        "bytes": len(body),
+                        "body": body.decode("utf-8", "replace"),
+                        "body_sha256": hashlib.sha256(body).hexdigest()[:16],
+                        "elapsed_ms": int((time.monotonic() - began) * 1000),
+                    }
+        except httpx.HTTPError as exc:
+            return {"status": 0, "bytes": 0, "body": "",
+                    "error": f"{type(exc).__name__}: {exc}",
+                    "elapsed_ms": int((time.monotonic() - began) * 1000)}
+
+    with ThreadPoolExecutor(max_workers=concurrency) as pool:
+        responses = list(pool.map(send, range(count)))
+    statuses: dict[str, int] = {}
+    shapes: dict[str, int] = {}
+    for response in responses:
+        statuses[str(response["status"])] = statuses.get(
+            str(response["status"]), 0) + 1
+        shapes[response["body_sha256"]] = shapes.get(
+            response["body_sha256"], 0) + 1
+    return {
+        "target": target, "method": method, "count": count,
+        "concurrency": concurrency, "responses": responses,
+        "statuses": statuses, "body_shapes": shapes,
+        "distinct_statuses": len(statuses),
+        "distinct_bodies": len(shapes),
+        "elapsed_ms": int((time.monotonic() - started) * 1000),
+        "note": ("A duplicate side effect is the proof. Compare the invariant "
+                 "before and after; a different status is only a lead."),
+    }
+
+
 def reveng_analyze(ctx: ToolContext, args: dict) -> dict:
     """Analyze a local artifact the operator legitimately holds.
 
@@ -2193,6 +2307,7 @@ _HANDLERS.update({
     "http_request": http_request,
     "http_upload": http_upload,
     "oracle_extract": oracle_extract,
+    "race_run": race_run,
     "http_path_diff": http_path_diff,
     "reveng_analyze": reveng_analyze,
     "inbox_create": inbox_create,
@@ -3150,6 +3265,29 @@ TOOLS: tuple[Tool, ...] = (
                   "expected_status": _integer("status that indicates true", 100, 599, 200),
                   "threshold_ms": _integer("time threshold in milliseconds", 1, 60000, 3000)},
                  ["target"]), "oracle_extract", open_world=True),
+    Tool("race_run", "Bounded concurrent burst",
+         "Send the same scoped request N times concurrently and return every "
+         "status, body shape, and elapsed time. Use it to test check-then-act "
+         "flows such as coupons, refunds, OTP verification, and vote limits. "
+         "It is a concurrent burst, not a single-packet attack; compare the "
+         "invariant before and after.",
+         "medium", "web",
+         _schema({"target": _string("in-scope URL"),
+                  "mission_id": _string("mission whose scope authorizes the burst"),
+                  "scope": _array("explicit scope entries when no mission is used"),
+                  "method": _string("HTTP method", enum=[
+                      "GET", "HEAD", "POST", "PUT", "PATCH", "DELETE"]),
+                  "headers": _object("extra request headers"),
+                  "auth_profile": _string("stored auth profile name"),
+                  "body": _string("raw request body"),
+                  "json": _object("JSON request body"),
+                  "form": _object("form request body"),
+                  "count": _integer("number of requests", 2, 50, 10),
+                  "concurrency": _integer("parallel workers", 1, 50, 10),
+                  "verify_tls": _boolean("verify the target certificate", True),
+                  "max_bytes": _integer("per-response body cap", 256, 65536, 16384),
+                  "timeout": _integer("per-request timeout in seconds", 1, 60, 20)},
+                 ["target"]), "race_run", open_world=True),
     Tool("http_path_diff", "Path-variant differential",
          "Send the same request to literal, percent-encoded, case-varied, and slash-varied "
          "paths, then report where the status or body diverges. Useful for finding "
