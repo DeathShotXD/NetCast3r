@@ -871,6 +871,11 @@ def training_verify(ctx: ToolContext, args: dict) -> dict:
             snap = browser.snapshot(profile, base=ctx.base)
         except Exception as exc:  # browser failures are transport failures here
             raise ToolError("request_failed", f"browser check failed: {exc}")
+        snap_host = (urlsplit(str(snap.get("url") or "")).hostname or "").lower()
+        if snap_host != host:
+            raise ToolError(
+                "scope_denied",
+                f"browser profile is on {snap_host or 'an unknown host'}, not {host}")
         body = str(snap.get("text") or "") + "\n" + str(snap.get("html") or "")
         status = 200
         verified_via = "browser"
