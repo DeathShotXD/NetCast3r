@@ -47,6 +47,9 @@ Notable changes to NetCast3r, newest first.
   library into six phases: scope, baseline, identity, technique tests,
   validation, and evidence. It is read-only and does not authorise a target.
 - The self-model now reports technique coverage per capability dimension.
+- Browser actions now record and auto-dismiss `alert`, `confirm`, and `prompt`
+  dialogs. A DOM XSS proof no longer wedges the managed profile; the message
+  is returned in the tool result as `dialogs`.
 - `test_case_run` executes up to 12 ordered, scope-checked requests with
   explicit status, body, and header assertions, replacing broad scanners in
   the active path.

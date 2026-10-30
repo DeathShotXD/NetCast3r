@@ -236,7 +236,19 @@ async def _with_page(profile: str, base, action):
         context = contexts[0]
         pages = context.pages
         page = pages[0] if pages else await context.new_page()
+        dialogs: list[dict] = []
+
+        def on_dialog(dialog) -> None:
+            # XSS labs and real applications use alert/confirm/prompt. Record
+            # the message, then dismiss so the page is usable again. Schedule
+            # the async dismissal; the event handler itself must stay sync.
+            dialogs.append({"type": dialog.type, "message": dialog.message})
+            asyncio.ensure_future(dialog.dismiss())
+
+        page.on("dialog", on_dialog)
         result = await action(page, context)
+        if isinstance(result, dict) and dialogs:
+            result["dialogs"] = dialogs
         write_private_json(_state_path(profile, base), {
             "profile": profile, "pid": current["pid"], "port": current["port"],
             "url": page.url, "user_data_dir": current["user_data_dir"],
