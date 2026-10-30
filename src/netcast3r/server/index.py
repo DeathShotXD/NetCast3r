@@ -1043,7 +1043,7 @@ class Index:
         return items
 
     def list_lessons(self, q: str = "", tag: str = "", outcome: str = "",
-                     limit: int = 50) -> tuple[list[dict], int]:
+                     limit: int = 50, mission_id: str = "") -> tuple[list[dict], int]:
         where, values = [], []
         if q:
             like = f"%{q}%"
@@ -1056,6 +1056,9 @@ class Index:
         if outcome:
             where.append("outcome = ?")
             values.append(outcome)
+        if mission_id:
+            where.append("mission_id = ?")
+            values.append(mission_id)
         clause = (" WHERE " + " AND ".join(where)) if where else ""
         with self._lock:
             total = self.conn.execute(

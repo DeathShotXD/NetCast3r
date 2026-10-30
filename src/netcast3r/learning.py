@@ -172,7 +172,10 @@ def suggest_next(index, mission_id: str, limit: int = 8) -> dict:
     host = _host(target)
     slug = host.split(".")[0] if host else ""
     findings, _ = index.list_findings(q=host, limit=20)
-    lessons, _ = index.list_lessons(q=host, limit=20)
+    lessons, _ = index.list_lessons(mission_id=mission_id, limit=20)
+    matched, _ = index.list_lessons(q=host, limit=20)
+    seen = {item["id"] for item in lessons}
+    lessons.extend(item for item in matched if item["id"] not in seen)
     if slug:
         tagged, _ = index.list_lessons(tag=slug, limit=20)
         seen = {item["id"] for item in lessons}

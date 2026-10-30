@@ -70,6 +70,8 @@ class StoreTests(unittest.TestCase):
         self.assertEqual(items[0]["id"], lesson["id"])
         items, total = self.index.list_lessons(tag="authz", outcome="success")
         self.assertEqual(total, 1)
+        items, total = self.index.list_lessons(mission_id=self.mission["id"])
+        self.assertEqual(total, 1)
         self.assertEqual(self.index.get_lesson(lesson["id"])["title"],
                          "Use a path differential")
         self.assertTrue(self.index.delete_lesson(lesson["id"]))
@@ -114,12 +116,17 @@ class StoreTests(unittest.TestCase):
         self.index.add_lesson(
             "Tag-only lesson", "A tagged note.", tags=["example"],
             next_step="Test the tagged surface", mission_id=self.mission["id"])
+        self.index.add_lesson(
+            "Mission-only lesson", "An unlabelled training note.",
+            tags=["unrelatedtag"], next_step="Try the mission-only step",
+            mission_id=self.mission["id"])
         actions = learning.suggest_next(self.index, self.mission["id"])
         self.assertEqual(actions["mission_id"], self.mission["id"])
         self.assertTrue(actions["actions"])
         self.assertTrue(all(item["tool"] for item in actions["actions"]))
-        self.assertIn("Test the tagged surface",
-                      [item["title"] for item in actions["actions"]])
+        titles = [item["title"] for item in actions["actions"]]
+        self.assertIn("Test the tagged surface", titles)
+        self.assertIn("Try the mission-only step", titles)
 
 
 if __name__ == "__main__":
