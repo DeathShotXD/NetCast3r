@@ -30,7 +30,7 @@ import zipfile
 from collections import Counter
 from pathlib import Path
 
-KINDS = ("auto", "source", "apk", "contract", "binary")
+KINDS = ("auto", "source", "apk", "contract", "binary", "js")
 
 MAX_FILE_BYTES = 12_000_000
 MAX_TOTAL_BYTES = 40_000_000
@@ -735,7 +735,7 @@ def detect_kind(path: str) -> str:
     if suffix in {".exe", ".dll", ".sys", ".so", ".elf", ".dylib", ".bin", ".o"}:
         return "binary"
     if suffix in {".js", ".mjs", ".ts"}:
-        return "source"
+        return "js"
     try:
         with file.open("rb") as handle:
             head = handle.read(4)
@@ -764,8 +764,72 @@ def analyze(kind: str, path: str, **options) -> dict:
         return analyze_apk(path, timeout=int(options.get("timeout", 240)),
                            keep=bool(options.get("keep", False)))
     if kind == "js":
-        return analyze_js(str(options.get("text", "")), str(options.get("source", "<inline>")))
+        text = options.get("text")
+        if text is None:
+            try:
+                with Path(path).expanduser().open("r", encoding="utf-8",
+                                                  errors="replace") as handle:
+                    text = handle.read(MAX_FILE_BYTES)
+            except OSError as exc:
+                raise OSError(f"could not read JavaScript: {exc}") from exc
+        return analyze_js(str(text), str(options.get("source") or path))
     raise ValueError(f"unknown analysis kind: {kind}")
+
+
+REA_STEPS = {
+    "apk": [
+        "Read AndroidManifest.xml for exported activities, services, receivers, deep links, and backup flags.",
+        "Grep the decompiled tree for endpoints, cloud keys, JWTs, and Firebase configuration.",
+        "Check certificate pinning and root/tamper checks; confirm the important leads on the live API.",
+    ],
+    "binary": [
+        "Record architecture, bitness, packing, and hardening before reading code.",
+        "Triage imports, strings, and the entry path; trace one input to its sink.",
+        "Build a minimal local harness; prove a read-only effect before claiming exploitation.",
+    ],
+    "source": [
+        "Map routes, auth middleware, and data stores before reading individual handlers.",
+        "Trace one user-controlled value from source to sink and record the file/line.",
+        "Check tests, migrations, and deployment config for secrets and trust assumptions.",
+    ],
+    "contract": [
+        "Map external entry points, modifiers, and state-changing paths.",
+        "Check accounting, access control, oracle use, reentrancy, and upgrade authority.",
+        "Write a Foundry test that proves the invariant break before reporting.",
+    ],
+    "js": [
+        "Extract endpoints, hidden routes, feature flags, and SDK configuration.",
+        "Grep for secrets and DOM sinks; confirm each lead against the live bundle.",
+        "Compare the production bundle with source maps or an older build when available.",
+    ],
+}
+REA_TOOLS = {
+    "apk": ["jadx", "apktool", "frida", "objection"],
+    "binary": ["checksec", "rabin2", "ghidra", "radare2"],
+    "source": ["semgrep", "gitleaks", "trufflehog"],
+    "contract": ["forge", "slither", "semgrep"],
+    "js": ["semgrep", "gitleaks", "browser DevTools"],
+}
+
+
+def rea_plan(path: str, kind: str = "auto", goal: str = "",
+             **options) -> dict:
+    """Run the local analysis and attach a kind-specific REA next-step plan."""
+    result = analyze(kind, path, **options)
+    actual = str(result.get("kind") or kind)
+    return {
+        "ok": True,
+        "goal": goal.strip(),
+        "artifact": {"path": result.get("path"), "kind": actual},
+        "summary": result.get("summary") or {},
+        "observations": result.get("observations") or [],
+        "endpoints": result.get("endpoints") or [],
+        "secrets": result.get("secrets") or [],
+        "next_steps": REA_STEPS.get(actual, REA_STEPS["source"]),
+        "tooling": REA_TOOLS.get(actual, REA_TOOLS["source"]),
+        "note": ("REA plans the next local checks. It does not execute the "
+                 "artifact or turn an observation into a finding."),
+    }
 
 
 def render_markdown(result: dict, limit: int = 80) -> str:

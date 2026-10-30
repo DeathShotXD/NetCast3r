@@ -111,6 +111,20 @@ class ServerTests(unittest.TestCase):
         self.assertEqual(self.index.get_run(run["id"])["results_dir"],
                          f"results/{run['id']}")
 
+    def test_training_target_cannot_start_a_cast(self):
+        response = self.call("POST", "/api/v1/runs",
+                             body={"target": "https://portswigger.net/web-security"})
+        self.assertEqual(response.status, 400)
+        self.assertIn("training target", self.data(response)["title"])
+
+    def test_training_mission_cannot_start_a_cast(self):
+        mission = self.index.create_mission(
+            "Training session", "https://portswigger.net/web-security",
+            status="active", scope=["portswigger.net"])
+        response = self.call("POST", f"/api/v1/missions/{mission['id']}/runs", body={})
+        self.assertEqual(response.status, 400)
+        self.assertIn("training mission", self.data(response)["title"])
+
     def test_rerun_starts_fresh_without_resume_state(self):
         parent = self.index.create_run("https://a.example", {
             "resume": True, "resume_from": "run_old", "results_dir": "old", "depth": 3,

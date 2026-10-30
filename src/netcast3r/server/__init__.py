@@ -23,7 +23,7 @@ from typing import Iterator
 from urllib.parse import parse_qs, urlparse
 
 from .events import EventBus
-from .index import Index
+from .index import Index, is_training_target
 from .jobs import JobManager
 from .keys import KeyStore, mask
 from .. import (control, integrations, learning, quality, research, reveng,
@@ -307,6 +307,11 @@ class Server:
                 return _problem(400, "target required")
             options = ctx.json().get("options")
             options = dict(options) if isinstance(options, dict) else {}
+            if is_training_target(target) and not options.get("allow_training_scan"):
+                return _problem(
+                    400, "training target: a cast is a live scan",
+                    "use the training mission agent (role=training) or pass "
+                    "allow_training_scan=true only for an explicit lab crawl")
             if self.config is not None:
                 options.setdefault("results_dir", str(getattr(self.config, "results_dir", "results")))
             return _json(self._start_run(target, options), 201)
@@ -344,6 +349,11 @@ class Server:
             # continue the old run and write into the parent's directory.
             options.pop("resume", None)
             options.pop("resume_from", None)
+            if is_training_target(str(parent.get("target") or "")) \
+                    and not options.get("allow_training_scan"):
+                return _problem(
+                    400, "training target: a rerun would crawl the lab",
+                    "use the training mission agent instead")
             if self.config is not None:
                 options["results_dir"] = str(getattr(self.config, "results_dir", "results"))
             return _json(self._start_run(parent["target"], options,
@@ -1090,6 +1100,10 @@ class Server:
             options = dict(options) if isinstance(options, dict) else {}
             if not target:
                 return _problem(400, "target required")
+            if mission.get("training") or is_training_target(target):
+                return _problem(
+                    400, "training mission: a cast would crawl the lab",
+                    "start the mission agent with role=training instead")
             run = self._start_run(target, options)
             self.index.add_mission_run(mission["id"], run["id"])
             if mission.get("status") in {"draft", "paused"}:

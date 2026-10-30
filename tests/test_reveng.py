@@ -35,6 +35,18 @@ class SourceAnalysisTests(unittest.TestCase):
         for secret in result["secrets"]:
             self.assertIn("...", secret["preview"])
 
+    def test_single_javascript_file_uses_the_js_analyzer(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "bundle.js"
+            path.write_text(
+                'fetch("https://api.example.com/v1/orders");\n'
+                'const key = "AKIAIOSFODNN7EXAMPLE";\n'
+                'el.innerHTML = location.hash;\n')
+            result = reveng.analyze("auto", str(path))
+        self.assertEqual(result["kind"], "js")
+        self.assertTrue(result["endpoints"])
+        self.assertTrue(result["secrets"])
+
     def test_placeholder_assignments_are_not_reported(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -43,6 +55,16 @@ class SourceAnalysisTests(unittest.TestCase):
                 'const password = process.env.PASSWORD;\n')
             result = reveng.analyze("source", str(root))
         self.assertEqual(result["secrets"], [])
+
+    def test_rea_plan_adds_kind_specific_steps(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "bundle.js"
+            path.write_text('fetch("https://api.example.com/v1/orders");\n')
+            result = reveng.rea_plan(str(path), goal="map the API")
+        self.assertEqual(result["artifact"]["kind"], "js")
+        self.assertEqual(result["goal"], "map the API")
+        self.assertTrue(result["next_steps"])
+        self.assertIn("gitleaks", result["tooling"])
 
     def test_missing_path_is_an_error(self):
         with self.assertRaises(ValueError):

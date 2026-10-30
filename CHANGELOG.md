@@ -76,6 +76,21 @@ Notable changes to NetCast3r, newest first.
   coupons because it opens one connection per request. It produced a
   high-priority proposal for an HTTP/2 single-packet sender rather than a
   false solved record.
+- Training targets can no longer start a cast. `POST /api/v1/runs` and
+  `POST /api/v1/missions/{id}/runs` return 400 for Academy, testphp, or an
+  explicitly training-labelled mission; the dashboard's global action is now
+  labelled **New scan**. An explicit `allow_training_scan=true` remains for an
+  intentional lab crawl.
+- `ui_audit` opens the local dashboard, visits selected screens, records
+  console errors, failed requests, horizontal overflow, and one screenshot
+  per screen. It is the first automated SQA pass over the UI.
+- `rea_analyze` wraps the local artifact analyzer with a kind-specific REA
+  next-step plan and tool set for APK, binary, source, JavaScript, and smart
+  contract work. The JavaScript analyzer is now reachable through `kind=js`
+  and auto-detection; previously `analyze_js` was defined but unreachable.
+- Live transmission text is whitespace-normalised and long tokens wrap, so a
+  model that returns one character per line no longer collapses the stream
+  into a vertical column.
 - `docs/research/penligent-public-comparison.md` records what Penligent's
   public repository and site actually expose. The application source is not
   public, so the note does not claim a source-code review.

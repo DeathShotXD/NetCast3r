@@ -31,8 +31,8 @@ from urllib.parse import quote, urlencode, urljoin, urlsplit
 import httpx
 
 from .. import (authstore, browser, integrations, oast, pathdiff, pivot, quality,
-                research, reveng, selfmodel, stix, surface, tempmail, threatintel,
-                training)
+                research, reveng, selfmodel, sqa, stix, surface, tempmail,
+                threatintel, training)
 from ..scope import ScopeManager
 
 POLICIES = ("readonly", "supervised", "full")
@@ -926,6 +926,19 @@ def training_verify(ctx: ToolContext, args: dict) -> dict:
 
 def skill_packs(ctx: ToolContext, args: dict) -> dict:
     return _call(ctx, "GET", "/api/v1/skill-packs")
+
+
+def ui_audit(ctx: ToolContext, args: dict) -> dict:
+    try:
+        return sqa.audit_pages(
+            ctx.base,
+            routes=args.get("routes"),
+            viewport={"width": args.get("width", 1440),
+                      "height": args.get("height", 900)},
+            headless=bool(args.get("headless", True)))
+    except Exception as exc:  # noqa: BLE001 - surface the browser reason
+        raise ToolError("audit_failed", f"UI audit failed: {type(exc).__name__}",
+                        str(exc))
 
 
 def technique_search(ctx: ToolContext, args: dict) -> dict:
@@ -1854,6 +1867,23 @@ def race_run(ctx: ToolContext, args: dict) -> dict:
     }
 
 
+def rea_analyze(ctx: ToolContext, args: dict) -> dict:
+    path = str(args.get("path") or "").strip()
+    if not path:
+        raise ToolError("invalid_arguments", "path is required")
+    kind = str(args.get("kind") or "auto").strip().lower()
+    try:
+        return reveng.rea_plan(
+            path, kind=kind, goal=str(args.get("goal") or ""),
+            max_files=args.get("max_files", 4000),
+            timeout=args.get("timeout", 240),
+            keep=bool(args.get("keep", False)))
+    except ValueError as exc:
+        raise ToolError("invalid_arguments", str(exc))
+    except OSError as exc:
+        raise ToolError("read_failed", f"could not read the artifact: {exc.strerror or exc}")
+
+
 def reveng_analyze(ctx: ToolContext, args: dict) -> dict:
     """Analyze a local artifact the operator legitimately holds.
 
@@ -2258,6 +2288,7 @@ _HANDLERS.update({
     "training_record": training_record,
     "training_verify": training_verify,
     "skill_packs": skill_packs,
+    "ui_audit": ui_audit,
     "technique_search": technique_search,
     "technique_plan": technique_plan,
     "research_sources": research_sources,
@@ -2310,6 +2341,7 @@ _HANDLERS.update({
     "race_run": race_run,
     "http_path_diff": http_path_diff,
     "reveng_analyze": reveng_analyze,
+    "rea_analyze": rea_analyze,
     "inbox_create": inbox_create,
     "inbox_providers": inbox_providers,
     "inbox_list": inbox_list,
@@ -2771,6 +2803,17 @@ TOOLS: tuple[Tool, ...] = (
          "auth, GraphQL, deserialization, upload, cache/smuggling, race, cloud, mobile, "
          "reversing, LLM, recon, reporting, and business logic. Read one with skills_get.",
          "low", "training", _schema({}), "skill_packs", read_only=True),
+    Tool("ui_audit", "Audit the local dashboard",
+         "Open the local dashboard in Chromium and audit the requested screens. "
+         "It records console errors, failed requests, horizontal overflow, and "
+         "one screenshot per screen. Read-only and local-only.",
+         "low", "learning",
+         _schema({"routes": _array("screens to audit, e.g. missions or live",
+                                   {"type": "string"}),
+                  "width": _integer("viewport width", 800, 2560, 1440),
+                  "height": _integer("viewport height", 600, 1600, 900),
+                  "headless": _boolean("run without a visible window", True)}),
+         "ui_audit"),
     Tool("technique_search", "Search the technique library",
          "Search a curated library of less-saturated, high-impact techniques drawn "
          "from public 2025-2026 research: CSPT, cache deception, ORM leaks, "
@@ -3313,6 +3356,19 @@ TOOLS: tuple[Tool, ...] = (
                   "max_bytes": _integer("response body cap", 1024, 262144, 32768),
                   "timeout": _integer("timeout in seconds", 1, 60, 15)},
                  ["target"]), "http_path_diff", open_world=True),
+    Tool("rea_analyze", "REA: reverse-engineer anything",
+         "Run the local analyzer on an APK, binary, source tree, JavaScript "
+         "bundle, or smart contract and return the observations plus a "
+         "kind-specific REA next-step plan and tool set. Local and read-only.",
+         "low", "reverse",
+         _schema({"path": _string("local artifact path"),
+                  "kind": _string("artifact kind", enum=[
+                      "auto", "source", "js", "apk", "contract", "binary"]),
+                  "goal": _string("what the reverse-engineering pass should answer"),
+                  "max_files": _integer("source file cap", 1, 4000, 4000),
+                  "timeout": _integer("APK analyzer timeout", 10, 900, 240),
+                  "keep": _boolean("keep the APK extraction directory", False)},
+                 ["path"]), "rea_analyze"),
     Tool("reveng_analyze", "Reverse-engineer a local artifact",
          "Analyze a source tree, APK, Solidity project, JS bundle, or PE/ELF binary you "
          "legitimately hold. Source and contract checks are text-only; APK analysis uses "

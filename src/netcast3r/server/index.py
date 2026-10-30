@@ -411,6 +411,20 @@ TRAINING_HOSTS = {
 }
 
 
+def is_training_target(target: str) -> bool:
+    """True for a published lab range, never for a live bounty target."""
+    text = str(target or "").strip()
+    if not text:
+        return False
+    host = (urlsplit(text if "://" in text else f"https://{text}").hostname
+            or "").lower()
+    if not host:
+        return False
+    if host in TRAINING_HOSTS:
+        return True
+    return any(host.endswith(f".{name}") for name in TRAINING_HOSTS)
+
+
 def _is_training_mission(mission: dict) -> bool:
     """A training mission is a lab range, not a live bounty target."""
     words = " ".join(str(mission.get(key) or "") for key in
@@ -418,18 +432,8 @@ def _is_training_mission(mission: dict) -> bool:
     if any(word in words for word in
            ("training", "academy lab", "practice lab", "self learning")):
         return True
-    for entry in [mission.get("target"), *(mission.get("scope") or [])]:
-        text = str(entry or "").strip()
-        if not text:
-            continue
-        host = (urlsplit(text if "://" in text else f"https://{text}").hostname
-                or "").lower()
-        if host in TRAINING_HOSTS:
-            return True
-        if any(host.endswith(f".{name}") for name in TRAINING_HOSTS
-               if name not in {"localhost", "127.0.0.1", "::1"}):
-            return True
-    return False
+    return any(is_training_target(entry) for entry in
+               [mission.get("target"), *(mission.get("scope") or [])])
 
 
 class Index:

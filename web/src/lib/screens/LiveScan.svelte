@@ -204,6 +204,12 @@
     return 'var(--nc-bone)';
   }
 
+  function formatText(text: string, cap = 420): string {
+    // Model output occasionally arrives with a newline or a wide gap between
+    // every character. Collapse it so the transmission stays readable.
+    return String(text ?? '').replace(/\s+/g, ' ').trim().slice(0, cap);
+  }
+
   const seen = new Set<number>();
   let queue: RunEvent[] = [];
   let flushScheduled = false;
@@ -776,10 +782,10 @@
                   </span>
                   {#if row.kind === 'found'}
                     <Chip label={row.sub} color={sevColor(row.sub)} shape={sevShape(row.sub)} />
-                    <span class="min-w-0 flex-1 break-words text-bone" title={row.text}>{row.text}</span>
+                    <span class="min-w-0 flex-1 break-words text-bone" title={row.text}>{formatText(row.text, 900)}</span>
                   {:else}
-                    <span class="min-w-0 flex-1 break-words" style="color:{rowColor(row)}" title={row.text}>
-                      {row.text.slice(0, 420)}
+                    <span class="min-w-0 flex-1 break-words" style="color:{rowColor(row)};overflow-wrap:anywhere" title={row.text}>
+                      {formatText(row.text)}
                     </span>
                     {#if row.sub}
                       <span class="num shrink-0 text-[10px] text-ash">{row.sub}</span>
@@ -1180,7 +1186,7 @@
           <p class="think-line mono text-[11px]">
             <span class="text-slate">{clock(row.ts)} </span>
             <span style="color:{badge.color}">{badge.text} </span>
-            <span class="whitespace-pre-wrap" style="color:{rowColor(row)}">{row.text}</span>
+            <span style="color:{rowColor(row)};overflow-wrap:anywhere">{formatText(row.text, 900)}</span>
             {#if row.sub}<span class="text-ash"> / {row.sub}</span>{/if}
             {#if running && i === spotlightRows.length - 1}
               <span class="caret" aria-hidden="true"></span>

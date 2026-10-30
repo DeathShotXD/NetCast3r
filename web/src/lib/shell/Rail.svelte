@@ -215,7 +215,7 @@
 
     <button class="obs-btn obs-btn-primary" type="button" onclick={() => go('new')} style="width:100%">
       <Icon name="crosshair" size={13} />
-      Cast a net
+      New scan
     </button>
 
     <p class="obs-sidebar-legal">

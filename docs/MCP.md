@@ -303,6 +303,17 @@ observations with file and line numbers. Nothing is uploaded, executed, or run
 against a target. APK analysis uses `jadx` or `apktool` when installed; the
 remaining checks are plain text analysis, so the tool works on a stock machine.
 
+`rea_analyze` is the orchestration layer: it runs the same local analysis and
+adds a kind-specific REA plan and tool set (APK, binary, source, JavaScript,
+contract). `kind=js` and auto-detection now reach the JavaScript analyzer;
+previously the analyzer existed but was unreachable.
+
+`ui_audit` is the SQA pass for the dashboard. It opens the local control plane
+in Chromium, visits the requested screens, records console errors, failed
+requests, horizontal overflow, and writes one screenshot per screen under
+`~/.netcast3r/artifacts/ui-audit/`. It does not judge visual taste, but it
+catches the runtime and layout gaps that a screenshot review would miss.
+
 The analyzers cover:
 
 - **Source:** hardcoded credentials (AWS, Google, Stripe, GitHub, Slack, npm,
