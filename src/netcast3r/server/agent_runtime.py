@@ -35,7 +35,7 @@ MAX_MODEL_CALLS = 20
 TERMINAL = {"done", "stopped", "error"}
 ACTIVE = {"planning", "running", "stopping"}
 REQUIRED_KINDS = {"scope", "probe", "inventory"}
-ROLES = ("recon", "auth", "api", "validator", "reporter")
+ROLES = ("recon", "auth", "api", "validator", "reporter", "training")
 ROLE_FOCUS = {
     "recon": "map the reachable surface and name what is worth probing next",
     "auth": "focus on authentication, session boundaries, and account state",
@@ -242,7 +242,8 @@ class AgentRuntime:
             self.index.reset_agent_run(mission_id)
 
         budget = self._budget(mission, options)
-        role = str(options.get("role") or "recon").lower()
+        default_role = "training" if mission.get("training") else "recon"
+        role = str(options.get("role") or default_role).lower()
         if role not in ROLES:
             raise ValueError(f"unknown agent role: {role}")
         use_model = bool(options.get("use_model")) and budget["max_model_calls"] > 0
@@ -364,6 +365,21 @@ class AgentRuntime:
         if role_inventory:
             tasks.append({"kind": role_inventory[0], "title": role_inventory[1],
                           "tool": "", "risk": "low", "args": {}})
+        if role == "training" or bool(mission.get("training")):
+            tasks.extend([
+                {"kind": "training_plan",
+                 "title": "Select the next training labs and record the plan",
+                 "tool": "training_plan", "risk": "low",
+                 "args": {"source": "", "limit": 3}},
+                {"kind": "training_research",
+                 "title": "Match public-research techniques to the training target",
+                 "tool": "technique_plan", "risk": "low",
+                 "args": {"target": target, "limit": 3}},
+                {"kind": "training_gaps",
+                 "title": "Read the capability gaps that this session should close",
+                 "tool": "selfmodel_gaps", "risk": "low",
+                 "args": {"limit": 3}},
+            ])
         if use_model:
             tasks.append({
                 "kind": "analysis",
@@ -476,6 +492,10 @@ class AgentRuntime:
                 status, result, evidence, verification, notes = self._probe(mission_id, task)
             elif task["kind"] == "inventory":
                 status, result, evidence, verification, notes = self._inventory(
+                    mission_id, task)
+            elif task["kind"] in {"training_plan", "training_research",
+                                  "training_gaps"}:
+                status, result, evidence, verification, notes = self._training(
                     mission_id, task)
             elif task["kind"] == "recall":
                 status, result, evidence, verification, notes = self._recall(
@@ -600,6 +620,59 @@ class AgentRuntime:
                 if not findings else
                 f"inventoried {len(findings)} existing finding(s); the runtime created none")
         return ("verified", result, evidence, "verified", note)
+
+    def _training(self, mission_id: str, task: dict) -> tuple:
+        """Plan training without crawling a live target.
+
+        The training agent selects labs, matches a research technique, and reads
+        the capability gaps. It never marks a lab solved and never creates a
+        finding; a lab is solved only through the evidence-gated record path.
+        """
+        registry = self._registry(mission_id)
+        kind = task["kind"]
+        if kind == "training_plan":
+            result = self._tool(registry, "training_plan", task["args"])
+            labs = result.get("items") or []
+            evidence = {
+                "labs": [{
+                    "slug": lab.get("slug"), "title": lab.get("title"),
+                    "source": lab.get("source"), "category": lab.get("category"),
+                    "difficulty": lab.get("difficulty"), "url": lab.get("url"),
+                    "objective": lab.get("objective"),
+                } for lab in labs],
+                "catalogue": result.get("catalogue"),
+            }
+            if not labs:
+                return ("blocked", result, evidence, "blocked",
+                        "no training lab matched the current filters")
+            return ("verified", result, evidence, "verified",
+                    f"{len(labs)} training lab(s) selected; none were marked solved")
+        if kind == "training_research":
+            result = self._tool(registry, "technique_plan", task["args"])
+            items = result.get("items") or []
+            evidence = {
+                "techniques": [{
+                    "id": item.get("id"), "title": item.get("title"),
+                    "why": item.get("why"), "proof": item.get("proof"),
+                    "sources": item.get("sources"),
+                } for item in items],
+                "catalogue": result.get("catalogue"),
+            }
+            if not items:
+                return ("blocked", result, evidence, "blocked",
+                        "the research library returned no matching technique")
+            return ("verified", result, evidence, "verified",
+                    f"{len(items)} technique(s) matched the training target")
+        result = self._tool(registry, "selfmodel_gaps", task["args"])
+        items = result.get("items") or []
+        evidence = {
+            "gaps": [{
+                "dimension": item.get("dimension"), "label": item.get("label"),
+                "gap": item.get("gap"), "action": item.get("action"),
+            } for item in items],
+        }
+        return ("verified", result, evidence, "verified",
+                f"{len(items)} capability gap(s) read for the next session")
 
     def _recall(self, mission_id: str, task: dict) -> tuple:
         """Load prior lessons and skills before planning the active steps."""
@@ -794,9 +867,18 @@ class AgentRuntime:
             "call_id": call.get("id"),
         }
 
+    def _required_kinds(self, mission_id: str) -> set[str]:
+        kinds = set(REQUIRED_KINDS)
+        state = self.index.get_agent_state(mission_id) or {}
+        role = (state.get("options") or {}).get("role")
+        if role == "training":
+            kinds.add("training_plan")
+        return kinds
+
     def _verify(self, mission_id: str, task: dict) -> tuple:
         tasks = self.index.list_agent_tasks(mission_id)
-        required = [item for item in tasks if item["kind"] in REQUIRED_KINDS]
+        required_kinds = self._required_kinds(mission_id)
+        required = [item for item in tasks if item["kind"] in required_kinds]
         verified = [item for item in required if item["status"] == "verified"]
         failed = [item for item in required if item["status"] in {"failed", "blocked"}]
         pending = [item for item in required if item["status"] in {"pending", "running"}]
@@ -824,7 +906,8 @@ class AgentRuntime:
     # -- finish -----------------------------------------------------------
     def _finalize(self, mission_id: str) -> None:
         tasks = self.index.list_agent_tasks(mission_id)
-        required = [item for item in tasks if item["kind"] in REQUIRED_KINDS]
+        required_kinds = self._required_kinds(mission_id)
+        required = [item for item in tasks if item["kind"] in required_kinds]
         failed = [item for item in required if item["status"] in {"failed", "blocked"}]
         verified = [item for item in required if item["status"] == "verified"]
         findings = sum(int((item.get("result") or {}).get("finding_count") or 0)
@@ -840,6 +923,12 @@ class AgentRuntime:
         summary = (f"{len(verified)} required checks verified against live evidence. "
                    f"{findings} existing finding(s) inventoried. "
                    "The runtime created 0 findings.")
+        training = next((item for item in tasks if item["kind"] == "training_plan"
+                         and item["status"] == "verified"), None)
+        if training:
+            labs = (training.get("result") or {}).get("items") or []
+            summary += (f" {len(labs)} training lab(s) selected; "
+                        "open the next lab and record evidence when it is solved.")
         advisory = next((item for item in tasks if item["kind"] == "analysis"
                          and item["status"] == "unverified"), None)
         if advisory:

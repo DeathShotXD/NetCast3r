@@ -89,6 +89,7 @@ export interface Mission {
   run_count: number;
   finding_count: number;
   pending_approvals: number;
+  training?: boolean;
   runs?: Run[];
 }
 

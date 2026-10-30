@@ -108,6 +108,30 @@ class RuntimeCases(RuntimeHarness):
         self.assertEqual(self.server.index.list_findings(limit=10)[1], 0)
         self.assertEqual(self.server.index.get_mission(mission["id"])["status"], "active")
 
+    def test_training_mission_plans_instead_of_crawling(self):
+        mission = self.mission(status="draft")
+        self.server.index.patch_mission(
+            mission["id"], title="Training lab session",
+            objective="Practice the next labs and record a lesson.")
+        self.runtime.start(mission["id"], {"max_seconds": 30})
+        state = self.wait(mission["id"])
+
+        self.assertEqual(state["status"], "done", state["last_error"])
+        self.assertEqual(state["role"], "training")
+        kinds = [task["kind"] for task in state["tasks"]]
+        self.assertIn("training_plan", kinds)
+        self.assertIn("training_research", kinds)
+        self.assertIn("training_gaps", kinds)
+        self.assertIn("verify", kinds)
+        self.assertIn("training lab(s) selected", state["summary"])
+        calls, _ = self.server.index.list_tool_calls(
+            mission_id=mission["id"], limit=50)
+        tools = {call["tool"] for call in calls}
+        self.assertIn("training_plan", tools)
+        self.assertIn("technique_plan", tools)
+        self.assertIn("selfmodel_gaps", tools)
+        self.assertNotIn("run_create", tools)
+
     def test_scope_exclusion_stops_before_the_probe(self):
         mission = self.mission(scope=["!127.0.0.1"])
         self.runtime.start(mission["id"], {"max_seconds": 30})

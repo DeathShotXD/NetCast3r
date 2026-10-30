@@ -50,6 +50,12 @@ Notable changes to NetCast3r, newest first.
 - Browser actions now record and auto-dismiss `alert`, `confirm`, and `prompt`
   dialogs. A DOM XSS proof no longer wedges the managed profile; the message
   is returned in the tool result as `dialogs`.
+- Training missions now plan learning instead of crawling. The mission API
+  marks Academy, testphp, and explicitly training-labelled missions as
+  `training`; the UI shows a training badge and a **Continue training** action,
+  and the agent role `training` selects the next labs, matches public-research
+  techniques, reads capability gaps, and verifies the session. It never marks
+  a lab solved or creates a finding.
 - `test_case_run` executes up to 12 ordered, scope-checked requests with
   explicit status, body, and header assertions, replacing broad scanners in
   the active path.

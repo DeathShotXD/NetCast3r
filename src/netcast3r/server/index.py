@@ -13,6 +13,7 @@ import sqlite3
 import threading
 import time
 from pathlib import Path
+from urllib.parse import urlsplit
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS runs (
@@ -360,7 +361,8 @@ AGENT_TASK_STATUSES = {"pending", "running", "verified", "unverified",
                        "failed", "skipped", "blocked"}
 AGENT_TASK_KINDS = {"scope", "recall", "probe", "inventory", "analysis", "verify",
                     "auth_inventory", "api_inventory", "findings_inventory",
-                    "reports_inventory"}
+                    "reports_inventory", "training_plan", "training_research",
+                    "training_gaps"}
 MODEL_CALL_STATUSES = {"ok", "error", "unavailable", "budget"}
 APPROVAL_RISKS = {"low", "medium", "high", "critical"}
 APPROVAL_DECISIONS = {"approved", "rejected"}
@@ -401,6 +403,33 @@ def _loads(text, default):
         return json.loads(text or "")
     except (ValueError, TypeError):
         return default
+
+
+TRAINING_HOSTS = {
+    "portswigger.net", "web-security-academy.net", "exploit-server.net",
+    "testphp.vulnweb.com",
+}
+
+
+def _is_training_mission(mission: dict) -> bool:
+    """A training mission is a lab range, not a live bounty target."""
+    words = " ".join(str(mission.get(key) or "") for key in
+                     ("title", "objective", "target")).lower()
+    if any(word in words for word in
+           ("training", "academy lab", "practice lab", "self learning")):
+        return True
+    for entry in [mission.get("target"), *(mission.get("scope") or [])]:
+        text = str(entry or "").strip()
+        if not text:
+            continue
+        host = (urlsplit(text if "://" in text else f"https://{text}").hostname
+                or "").lower()
+        if host in TRAINING_HOSTS:
+            return True
+        if any(host.endswith(f".{name}") for name in TRAINING_HOSTS
+               if name not in {"localhost", "127.0.0.1", "::1"}):
+            return True
+    return False
 
 
 class Index:
@@ -1576,6 +1605,7 @@ class Index:
         item["budget"] = _loads(item.pop("budget_json"), {})
         item["scope"] = _loads(item.pop("scope_json"), [])
         item["plan"] = _loads(item.pop("plan_json"), [])
+        item["training"] = _is_training_mission(item)
         return item
 
     # -- mission agent runtime --------------------------------------------

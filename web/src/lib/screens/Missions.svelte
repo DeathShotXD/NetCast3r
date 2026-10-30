@@ -137,6 +137,7 @@
     try {
       agent = await api.startMissionAgent(selected.id, {
         use_model: agentModel,
+        role: selected.training ? 'training' : 'recon',
         restart: agent?.status === 'interrupted'
       });
       if (selected.status === 'draft' || selected.status === 'paused') {
@@ -417,6 +418,9 @@
                 {statusCopy[mission.status]}
               </span>
               <span class="obs-chip">{autonomyCopy[mission.autonomy]}</span>
+              {#if mission.training}
+                <span class="obs-chip acid">training</span>
+              {/if}
               {#if mission.pending_approvals > 0}
                 <span class="obs-chip violet" style="margin-left:auto">{mission.pending_approvals} approval{mission.pending_approvals === 1 ? '' : 's'}</span>
               {/if}
@@ -464,6 +468,9 @@
                 {statusCopy[selected.status]}
               </span>
               <span class="obs-chip">{autonomyCopy[selected.autonomy]}</span>
+              {#if selected.training}
+                <span class="obs-chip acid">training</span>
+              {/if}
               <button class="obs-icon-btn" type="button" aria-label="close mission" onclick={() => { selected = null; agent = null; }} style="margin-left:auto">
                 <Icon name="x" size={13} />
               </button>
@@ -478,10 +485,17 @@
             </p>
             <div class="obs-mission-detail-actions">
               {#if selected.status !== 'done' && selected.status !== 'archived'}
-                <button class="obs-btn obs-btn-primary" type="button" disabled={busy === 'launch'} onclick={() => void launch()}>
-                  <Icon name="activity" size={13} />
-                  {busy === 'launch' ? 'Starting...' : 'Launch cast'}
-                </button>
+                {#if selected.training}
+                  <button class="obs-btn obs-btn-primary" type="button" disabled={agentBusy === 'start'} onclick={() => void startAgent()}>
+                    <Icon name="activity" size={13} />
+                    {agentBusy === 'start' ? 'Planning...' : 'Continue training'}
+                  </button>
+                {:else}
+                  <button class="obs-btn obs-btn-primary" type="button" disabled={busy === 'launch'} onclick={() => void launch()}>
+                    <Icon name="activity" size={13} />
+                    {busy === 'launch' ? 'Starting...' : 'Launch cast'}
+                  </button>
+                {/if}
               {/if}
               {#if selected.status === 'draft' || selected.status === 'paused'}
                 <button class="obs-btn" type="button" disabled={busy.startsWith('status:')} onclick={() => void transition('active')}>
@@ -552,9 +566,11 @@
               <section class="obs-detail-section">
                 <h3>Plan</h3>
                 <p>
-                  {selected.plan.length
-                    ? 'A plan is attached to this mission. Starting the agent stores its own bounded task plan and verifier alongside it.'
-                    : 'The agent builds the plan when you start it: scope check, one live probe, a read-only inventory, an optional advisory analysis, and an independent verifier. The tasks and their evidence are kept on the mission.'}
+                  {selected.training
+                    ? 'This is a training mission. Starting it selects the next labs, matches public-research techniques, reads capability gaps, and verifies the session. It does not crawl the target or mark a lab solved; solved labs still need evidence and a lesson.'
+                    : selected.plan.length
+                      ? 'A plan is attached to this mission. Starting the agent stores its own bounded task plan and verifier alongside it.'
+                      : 'The agent builds the plan when you start it: scope check, one live probe, a read-only inventory, an optional advisory analysis, and an independent verifier. The tasks and their evidence are kept on the mission.'}
                 </p>
               </section>
               <section class="obs-detail-section">
@@ -589,9 +605,15 @@
               {:else}
                 <div class="obs-empty" style="min-height:170px">
                   <span class="obs-empty-icon"><Icon name="activity" size={18} /></span>
-                  <div class="obs-empty-title">No run attached</div>
-                  <p class="obs-empty-copy">Launching a cast starts a real scan with this mission's target and links it here.</p>
-                  <button class="obs-btn" type="button" onclick={() => void launch()}>Launch the first cast</button>
+                  <div class="obs-empty-title">{selected.training ? 'No training session yet' : 'No run attached'}</div>
+                  <p class="obs-empty-copy">
+                    {selected.training
+                      ? 'A training session selects the next labs, matches research techniques, and reads the capability gaps. It does not crawl the target.'
+                      : "Launching a cast starts a real scan with this mission's target and links it here."}
+                  </p>
+                  <button class="obs-btn" type="button" onclick={() => selected?.training ? void startAgent() : void launch()}>
+                    {selected.training ? 'Plan the next session' : 'Launch the first cast'}
+                  </button>
                 </div>
               {/if}
             {:else if detailTab === 'agent'}
@@ -620,7 +642,7 @@
                   {#if !agent || ['idle', 'stopped', 'error', 'interrupted', 'done'].includes(agent.status)}
                     <button class="obs-btn obs-btn-primary" type="button" disabled={agentBusy === 'start'} onclick={() => void startAgent()}>
                       <Icon name="play" size={12} />
-                      {agentBusy === 'start' ? 'Planning...' : agent?.status === 'done' ? 'Run again' : 'Start agent'}
+                      {agentBusy === 'start' ? 'Planning...' : agent?.status === 'done' ? (selected.training ? 'Plan another session' : 'Run again') : (selected.training ? 'Plan a training session' : 'Start agent')}
                     </button>
                   {:else if agent.status === 'paused'}
                     <button class="obs-btn obs-btn-primary" type="button" disabled={agentBusy === 'resume'} onclick={() => void controlAgent('resume')}>
