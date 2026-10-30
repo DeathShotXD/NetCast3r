@@ -527,7 +527,7 @@ class Index:
             return self.get_run(run_id)
         values.append(run_id)
         with self._lock:
-            self.conn.execute(f"UPDATE runs SET {', '.join(sets)} WHERE id = ?", values)
+            self.conn.execute(f"UPDATE runs SET {', '.join(sets)} WHERE id = ?", values)  # codeaudit: ignore py-sql-fstring -- sets come from an allowed-column set
             self.conn.commit()
         return self.get_run(run_id)
 
@@ -535,6 +535,13 @@ class Index:
         with self._lock:
             row = self.conn.execute("SELECT * FROM runs WHERE id = ?", (run_id,)).fetchone()
         return self._run_row(row) if row else None
+
+    def running_run_ids(self) -> list[str]:
+        """Run ids left mid-flight, read under the index lock."""
+        with self._lock:
+            rows = self.conn.execute(
+                "SELECT id FROM runs WHERE status IN ('running', 'queued')").fetchall()
+        return [row["id"] for row in rows]
 
     def list_runs(self, status: str = "", q: str = "", limit: int = 50,
                   offset: int = 0) -> tuple[list[dict], int]:
@@ -547,7 +554,7 @@ class Index:
             params.append(f"%{q}%")
         clause = ("WHERE " + " AND ".join(where)) if where else ""
         with self._lock:
-            total = self.conn.execute(f"SELECT COUNT(*) FROM runs {clause}", params).fetchone()[0]
+            total = self.conn.execute(f"SELECT COUNT(*) FROM runs {clause}", params).fetchone()[0]  # codeaudit: ignore py-sql-fstring -- clause is built from fixed strings, values are bound
             rows = self.conn.execute(
                 f"SELECT * FROM runs {clause} ORDER BY created_at DESC LIMIT ? OFFSET ?",
                 [*params, limit, offset],
@@ -1426,7 +1433,7 @@ class Index:
         clause = ("WHERE " + " AND ".join(where)) if where else ""
         order = sort if sort in SORTS else "created_at"
         with self._lock:
-            total = self.conn.execute(f"SELECT COUNT(*) FROM findings {clause}", params).fetchone()[0]
+            total = self.conn.execute(f"SELECT COUNT(*) FROM findings {clause}", params).fetchone()[0]  # codeaudit: ignore py-sql-fstring -- clause is built from fixed strings, values are bound
             rows = self.conn.execute(
                 f"SELECT * FROM findings {clause} ORDER BY {order} DESC LIMIT ? OFFSET ?",
                 [*params, limit, offset],
@@ -1462,7 +1469,7 @@ class Index:
         if sets:
             values.append(finding_id)
             with self._lock:
-                self.conn.execute(f"UPDATE findings SET {', '.join(sets)} WHERE id = ?", values)
+                self.conn.execute(f"UPDATE findings SET {', '.join(sets)} WHERE id = ?", values)  # codeaudit: ignore py-sql-fstring -- sets come from an allowed-column set
                 self.conn.commit()
         return self.get_finding(finding_id)
 
@@ -2383,7 +2390,7 @@ class Index:
         if sets:
             values.append(provider_id)
             with self._lock:
-                self.conn.execute(f"UPDATE providers SET {', '.join(sets)} WHERE id = ?", values)
+                self.conn.execute(f"UPDATE providers SET {', '.join(sets)} WHERE id = ?", values)  # codeaudit: ignore py-sql-fstring -- sets come from an allowed-column set
                 self.conn.commit()
         return self.get_provider(provider_id)
 

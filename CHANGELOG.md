@@ -6,6 +6,14 @@ Notable changes to NetCast3r, newest first.
 
 ### Added
 
+- Source auditor: `codeaudit_scan` and `codeaudit_rules` (also
+  `GET /api/v1/codeaudit`). It walks Python, JavaScript, TypeScript, Svelte,
+  and other source trees for defects with a known consequence: swallowed
+  exceptions, injection-prone shell and SQL, insecure deserialisation,
+  disabled TLS verification, weak randomness, and committed secrets. A
+  `codeaudit: ignore[-file] <rules> -- reason` comment records a reviewed
+  exception and appears under `suppressed` instead of vanishing. The bundled
+  audit is in `docs/audit-2026-10.md`.
 - Hypothesis ledger: `hypothesis_create`, `hypothesis_list`, `hypothesis_get`,
   `hypothesis_test`, and `hypothesis_promote` keep a lead as an assertion with
   an explicit test, a supported/refuted result, and an evidence artifact before
@@ -257,6 +265,18 @@ Notable changes to NetCast3r, newest first.
 
 ### Fixed
 
+- A provider that answers correctly now clears its strike counter, so one
+  later transient error no longer retires a healthy provider for the whole
+  cooldown.
+- `JobManager.recover` reads through `Index.running_run_ids()` under the index
+  lock, and a finished run removes its handle so a long-lived dashboard does
+  not grow one dict per run.
+- `HEAD` now answers with the matching `GET` route's headers instead of 404.
+- A lab recipe that names its own base (the local Juice Shop) adds that host to
+  the scope it declares, so the recipe is no longer denied by its own runner.
+- `browser.py` and `tools/build_web.py` pass a timeout to every `subprocess`
+  call.
+- `Home.svelte` caps the paused-event buffer at 1800 like the main list.
 - A caller-supplied `Cookie` header now replaces a profile cookie in any
   casing. The previous code removed only a capital-C header and could silently
   send the profile session instead.
@@ -268,6 +288,22 @@ Notable changes to NetCast3r, newest first.
 
 ### Security
 
+- Approvals are mandatory-bound: an approval whose payload lacks a tool name
+  or argument hash is refused, and `approval_request` rejects a request that
+  does not name the exact tool and arguments. A vague approval no longer opens
+  every high-risk tool.
+- A mission is now the whole authorisation. A caller that names a `mission_id`
+  can no longer widen the boundary with its own `scope` list.
+- Scheme-less targets are parsed the same way they are dialled, so
+  `example.com@evil.example` is checked and reached as `evil.example`, and a
+  port no longer hides the host from a rule.
+- Local analyzers (`rea_analyze`, `reveng_analyze`, `auth_profile_import`,
+  `codeaudit_scan`) refuse NetCast3r's own state directory and known credential
+  stores after resolving symlinks, closing an arbitrary-file-read path.
+- Burp and outbound MCP scope checks scan every string, including URLs in plain
+  lists and `Host:` headers in raw requests, instead of trusting key names.
+- Browser snapshot, click, type, press, wait, screenshot, and eval re-check
+  scope after navigation, so an out-of-scope page is not returned.
 - The Scribe prompt no longer carries the raw credential: the value is masked
   and every copy of it inside the finding text is scrubbed before the writing
   call, so model prose cannot re-expose what the report redacts.

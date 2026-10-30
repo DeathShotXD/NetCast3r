@@ -172,10 +172,10 @@ class Store:
 
     def _ensure_column(self, table: str, columns) -> None:
         """Add missing columns to a database written by an older version."""
-        existing = {row[1] for row in self.conn.execute(f"PRAGMA table_info({table})")}
+        existing = {row[1] for row in self.conn.execute(f"PRAGMA table_info({table})")}  # codeaudit: ignore py-sql-fstring -- table is a module constant
         for name, decl in columns:
             if name not in existing:
-                self.conn.execute(f"ALTER TABLE {table} ADD COLUMN {name} {decl}")
+                self.conn.execute(f"ALTER TABLE {table} ADD COLUMN {name} {decl}")  # codeaudit: ignore py-sql-fstring -- name and decl are module constants
 
     def close(self) -> None:
         self.conn.close()
@@ -387,7 +387,7 @@ class Store:
         for table in ("assets", "js_files", "endpoints", "secrets", "validations",
                       "findings", "reviews", "candidates", "subdomains",
                       "corroborations"):
-            row = self.conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()
+            row = self.conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()  # codeaudit: ignore py-sql-fstring -- table comes from a fixed tuple
             result[table] = row[0] if row else 0
         return result
 

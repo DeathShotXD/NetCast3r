@@ -1159,7 +1159,7 @@
           {#if reportErr}
             <p class="text-sm text-violet">{reportErr}</p>
           {:else if report}
-            <article class="report-prose max-w-[860px]">{@html renderMarkdown(report)}</article>
+            <article class="report-prose max-w-[860px]">{@html renderMarkdown(report)}</article><!-- codeaudit: ignore svelte-html -- renderMarkdown escapes every character before rebuilding markup -->
           {:else}
             <p class="text-sm text-slate">
               {running

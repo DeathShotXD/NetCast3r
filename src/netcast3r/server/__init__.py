@@ -985,6 +985,22 @@ class Server:
                                                routes=len(self._routes),
                                                tools=len(TOOLS)))
 
+        @add("GET", r"/api/v1/codeaudit")
+        def codeaudit_scan(ctx):
+            from .. import codeaudit as codeaudit_module
+            path = str(ctx.query.get("path") or "").strip() or str(self.index.path.parent)
+            try:
+                return _json(codeaudit_module.scan(
+                    path, max_files=_int_or(ctx.query.get("max_files"),
+                                            codeaudit_module.MAX_FILES)))
+            except ValueError as exc:
+                return _problem(400, str(exc))
+
+        @add("GET", r"/api/v1/codeaudit/rules")
+        def codeaudit_rules(ctx):
+            from .. import codeaudit as codeaudit_module
+            return _json({"items": codeaudit_module.rules()})
+
         @add("GET", r"/api/v1/expertise")
         def expertise_profile(ctx):
             items = self.index.list_expertise(limit=ctx.limit)
@@ -1780,7 +1796,7 @@ class Server:
             try:
                 payload = response.json()
                 models = [row.get("id") for row in (payload.get("data") or [])][:200]
-            except Exception:
+            except Exception:  # codeaudit: ignore py-swallowed-exception -- a non-JSON body just yields no models
                 pass
             return {"ok": True, "reason": "ok", "latency_ms": latency, "models": models}
         if response.status_code in (401, 403):
@@ -1805,7 +1821,9 @@ class Server:
             match = regex.match(path)
             if not match:
                 continue
-            if route_method != method:
+            # A HEAD request answers with the headers of the equivalent GET.
+            # The dispatcher already drops the body.
+            if route_method != method and not (method == "HEAD" and route_method == "GET"):
                 continue
             ctx = _Context(method=method, path=path, query=query, headers=headers,
                            body=body, params=match.groupdict(), server=self)
@@ -2008,7 +2026,7 @@ def serve(host: str = "127.0.0.1", port: int = 7857, *, open_browser: bool = Tru
     if open_browser:
         try:
             webbrowser.open(url)
-        except Exception:
+        except Exception:  # codeaudit: ignore py-swallowed-exception -- opening a browser is optional
             pass
     try:
         httpd.serve_forever()

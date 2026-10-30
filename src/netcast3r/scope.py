@@ -87,15 +87,36 @@ def parse_rule(entry: str) -> ScopeRule | None:
                 return None
             return ScopeRule(raw=raw, kind="url_prefix", value=host, path="/" + path.lstrip("/"))
     if raw.startswith("*."):
-        return ScopeRule(raw=raw, kind="wildcard", value=raw[2:].lower().rstrip("."))
-    return ScopeRule(raw=raw, kind="suffix", value=raw.lower().rstrip("."))
+        return ScopeRule(raw=raw, kind="wildcard",
+                         value=_strip_port(raw[2:].lower().rstrip(".")))
+    return ScopeRule(raw=raw, kind="suffix", value=_strip_port(raw.lower().rstrip(".")))
+
+
+def _strip_port(value: str) -> str:
+    """Drop a trailing :port from a host rule, but never from an IPv6 host."""
+    host, sep, port = value.rpartition(":")
+    if sep and port.isdigit() and host and ":" not in host:
+        return host
+    return value
 
 
 def _split(target: str) -> tuple[str, str]:
-    if "://" in target:
-        parts = urlsplit(target)
-        return (parts.hostname or "").lower(), parts.path or "/"
-    return target.split("/", 1)[0].lower(), "/" + target.split("/", 1)[1] if "/" in target else "/"
+    """Return (host, path) using the same parse as the request builder.
+
+    A scheme-less target is parsed as if it carried a scheme, so a value like
+    ``example.com@evil.com`` or ``host:8443`` resolves to the host the request
+    will actually reach. Checking a different string than the one dialled is how
+    a scope rule silently fails open.
+    """
+    raw = (target or "").strip()
+    candidate = raw if "://" in raw else "//" + raw
+    try:
+        parts = urlsplit(candidate)
+    except ValueError:
+        return raw.split("/", 1)[0].lower(), "/"
+    if not parts.hostname:
+        return raw.split("/", 1)[0].lower(), "/"
+    return parts.hostname.lower(), parts.path or "/"
 
 
 class ScopeManager:
@@ -131,13 +152,7 @@ class ScopeManager:
         raw = seed.strip()
         if not raw:
             return
-        try:
-            if "://" in raw:
-                host = urlsplit(raw).hostname or ""
-            else:
-                host = raw.split("/", 1)[0]
-        except ValueError:
-            return
+        host, _ = _split(raw)
         host = host.lower().rstrip(".")
         if not host:
             return

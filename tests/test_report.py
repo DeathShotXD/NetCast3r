@@ -1,3 +1,4 @@
+# codeaudit: ignore-file py-hardcoded-secret -- deliberate redaction fixtures
 import json
 import tempfile
 import unittest

@@ -108,9 +108,19 @@ class ProviderBus:
             record = self._cooldown.get(name)
         return bool(record) and time.monotonic() < record[0]
 
-    def _settle(self, name: str) -> None:
+    def _settle(self, name: str, model: str = "") -> None:
+        """A real answer clears this provider's cooldown and strikes.
+
+        A strike is a suspicion, not a verdict. Leaving it in place retired a
+        healthy provider after one later transient error, so success resets it.
+        """
         with self._lock:
             self._cooldown.pop(name, None)
+            if model:
+                self._strikes.pop((name, model), None)
+            else:
+                for key in [key for key in self._strikes if key[0] == name]:
+                    self._strikes.pop(key, None)
 
     def _observe(self, data: dict) -> None:
         """Tell the dashboard what the bus is doing, without ever failing a call."""
@@ -259,7 +269,7 @@ class ProviderBus:
                                            "ok": False, "ms": _ms(attempt),
                                            "error": last_error[:140]})
                             continue
-                        self._settle(provider.name)
+                        self._settle(provider.name, model)
                         self._observe({"kind": "done", "agent": agent,
                                        "provider": provider.name, "model": model,
                                        "ok": True, "ms": _ms(attempt)})
@@ -361,7 +371,7 @@ class ProviderBus:
                                        "error": last_error[:140]})
                         continue
                     usage = data.get("usage")
-                    self._settle(provider.name)
+                    self._settle(provider.name, model)
                     self._observe({"kind": "done", "agent": agent,
                                    "provider": provider.name, "model": model,
                                    "ok": True, "ms": _ms(attempt)})

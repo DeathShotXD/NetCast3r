@@ -1,3 +1,4 @@
+# codeaudit: ignore-file py-private-key,py-hardcoded-secret -- deliberate fixtures
 import re
 import unittest
 

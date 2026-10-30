@@ -109,7 +109,7 @@ class Knowledge:
             if self.store_path:
                 self.store_path.parent.mkdir(parents=True, exist_ok=True)
                 self.store_path.write_text(json.dumps(self.classifications, indent=2))
-        except Exception:
+        except Exception:  # codeaudit: ignore py-swallowed-exception -- the cache is disposable
             pass
 
     def classification(self, value: str) -> dict | None:

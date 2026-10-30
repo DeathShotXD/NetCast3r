@@ -107,7 +107,7 @@ def _pid_alive(pid: int) -> bool:
         return False
     if sys.platform == "win32":
         result = subprocess.run(["tasklist", "/FI", f"PID eq {pid}"],
-                                capture_output=True, text=True)
+                                capture_output=True, text=True, timeout=10)
         return str(pid) in result.stdout
     try:
         os.kill(pid, 0)
@@ -208,7 +208,7 @@ def close(profile: str, base: str | Path | None = None) -> dict:
         try:
             if sys.platform == "win32":
                 subprocess.run(["taskkill", "/PID", str(current["pid"]), "/T", "/F"],
-                               capture_output=True)
+                               capture_output=True, timeout=10)
             else:
                 os.kill(current["pid"], signal.SIGTERM)
         except OSError:

@@ -676,7 +676,7 @@
         const event = JSON.parse(message.data) as RunEvent;
         if (event.run_id !== runId) return;
         if (!autoFollow) {
-          pausedEvents.push(event);
+          pausedEvents = [...pausedEvents, event].slice(-1800);
           pausedCount = pausedEvents.length;
           return;
         }

@@ -498,7 +498,7 @@ def serve(path: str | Path, port: int = 8899, open_browser: bool = True,
     if open_browser:
         try:
             webbrowser.open(url)
-        except Exception:
+        except Exception:  # codeaudit: ignore py-swallowed-exception -- opening a browser is optional
             pass
     try:
         server.serve_forever()

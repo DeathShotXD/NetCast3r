@@ -20,7 +20,7 @@ OUT = ROOT / "src" / "netcast3r" / "web" / "index.html"
 
 
 def run(command: list[str]) -> None:
-    subprocess.run(command, cwd=WEB, check=True)
+    subprocess.run(command, cwd=WEB, check=True, timeout=600)
 
 
 def main() -> int:

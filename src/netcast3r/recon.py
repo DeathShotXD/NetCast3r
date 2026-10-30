@@ -330,7 +330,9 @@ class Recon:
                     if should_stop():
                         break
                 except Exception:
-                    pass
+                    # A broken stop callback must fail safe: treat it as a
+                    # stop request rather than crawling on past a cancel.
+                    break
             url, depth = queue.pop(0)
             if url in seen:
                 continue

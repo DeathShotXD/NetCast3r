@@ -443,10 +443,10 @@ class StdioMCPClient:
         try:
             self.proc.terminate()
             self.proc.wait(timeout=3)
-        except Exception:
+        except Exception:  # codeaudit: ignore py-swallowed-exception -- terminate may have already reaped the process
             try:
                 self.proc.kill()
-            except Exception:
+            except Exception:  # codeaudit: ignore py-swallowed-exception -- kill is a last resort
                 pass
 
 

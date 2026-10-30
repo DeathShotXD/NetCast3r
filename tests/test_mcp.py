@@ -324,7 +324,9 @@ class MCPIntegrationTests(unittest.TestCase):
     def test_operator_only_approval_in_supervised_mode(self):
         mission = self.create_mission()
         approval = self.call("approval_request", mission_id=mission["id"],
-                             action="Synthetic", risk="high")[0]
+                             action="Synthetic", risk="high",
+                             tool="missions_delete",
+                             arguments={"mission_id": mission["id"]})[0]
         payload, is_error = self.call("approval_decide", approval_id=approval["id"],
                                       decision="approved")
         self.assertTrue(is_error)
@@ -643,7 +645,7 @@ class MCPIntegrationTests(unittest.TestCase):
         url = "http://127.0.0.1:7857"
         control.write_control_plane(self.tmp, {"pid": 999999, "url": url,
                                                "token": "old-token"})
-        self.plane.server.token = "new-token"
+        self.plane.server.token = "new-token"  # codeaudit: ignore py-hardcoded-secret -- test token
         self.assertTrue(_restore_session_token(self.plane.server))
         self.assertEqual(self.plane.server.token, "old-token")
 

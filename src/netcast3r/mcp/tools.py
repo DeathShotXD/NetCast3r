@@ -21,6 +21,7 @@ import base64
 import hashlib
 import json
 import os
+import re
 from concurrent.futures import ThreadPoolExecutor
 import socket
 import ssl
@@ -31,7 +32,7 @@ from urllib.parse import quote, urlencode, urljoin, urlsplit
 
 import httpx
 
-from .. import (authstore, browser, chains, integrations, oast, offsec,
+from .. import (authstore, browser, chains, codeaudit, integrations, oast, offsec,
                 pathdiff, pivot, quality, research, reveng, selfmodel,
                 single_packet, sqa, stix, surface, tempmail, threatintel,
                 training)
@@ -290,11 +291,13 @@ def _scope_entries(mission: dict | None, extra=None) -> list[str]:
 
 def _target_host(target: str) -> str:
     raw = (target or "").strip()
-    if "://" in raw:
-        try:
-            return (urlsplit(raw).hostname or "").lower()
-        except ValueError:
-            return ""
+    candidate = raw if "://" in raw else "//" + raw
+    try:
+        parts = urlsplit(candidate)
+    except ValueError:
+        return ""
+    if parts.hostname:
+        return parts.hostname.lower()
     return raw.split("/", 1)[0].split(":", 1)[0].lower().rstrip(".")
 
 
@@ -315,6 +318,11 @@ def _deny_metadata(target: str) -> None:
 def _require_scope(ctx: ToolContext, target: str, mission_id: str = "",
                    extra_scope=None, probe: bool = False) -> dict:
     mission = _mission(ctx, mission_id) if mission_id else None
+    if mission is not None:
+        # A mission is the whole authorisation. A caller cannot widen it by
+        # passing its own scope alongside the mission id; that would let an
+        # agent escape the boundary the operator set.
+        extra_scope = None
     entries = _scope_entries(mission, extra_scope)
     if not entries:
         raise ToolError(
@@ -333,6 +341,56 @@ def _require_scope(ctx: ToolContext, target: str, mission_id: str = "",
         _deny_metadata(target)
     return {"mission": mission, "scope": entries,
             "classification": manager.classify(target)}
+
+
+_SENSITIVE_NAMES = {"control-plane.json", "auth-profiles.json", "secrets.json",
+                    "integrations.json", "id_rsa", "id_ed25519", "id_ecdsa",
+                    ".netrc", ".git-credentials", "credentials", ".env",
+                    "known_hosts"}
+_SENSITIVE_DIRS = {".ssh", ".aws", ".gnupg", ".netcast3r"}
+_ALLOWED_BASE_DIRS = {"artifacts", "downloads", "results", "uploads", "samples"}
+
+
+def _guard_local_path(ctx: ToolContext, path: str, allow_base: bool = False) -> str:
+    """Resolve a local artifact path and refuse the secret stores.
+
+    An analyzer that opens any path the caller names is an arbitrary-file-read
+    primitive. This keeps the useful case (an APK, binary, or source tree the
+    operator holds) while refusing NetCast3r's own credential files, SSH/GPG/AWS
+    material, and dotfiles. Symlinks are resolved first, so a link cannot point
+    back into a denied location.
+    """
+    raw = str(path or "").strip()
+    if not raw:
+        raise ToolError("invalid_arguments", "path is required")
+    try:
+        resolved = Path(raw).expanduser().resolve()
+    except OSError as exc:
+        raise ToolError("read_failed", f"could not resolve the path: {exc}")
+    base = Path(ctx.base).expanduser().resolve()
+    try:
+        relative = resolved.relative_to(base)
+        inside_base = True
+    except ValueError:
+        relative = None
+        inside_base = False
+    if inside_base and not allow_base:
+        parts = relative.parts
+        if not parts or parts[0] not in _ALLOWED_BASE_DIRS:
+            raise ToolError(
+                "scope_denied",
+                "path is inside the NetCast3r state directory",
+                "analyze artifacts under base/artifacts, base/downloads, or a "
+                "run results directory")
+    names = {part.lower() for part in
+             (relative.parts if inside_base and relative is not None
+              else resolved.parts)}
+    if resolved.name.lower() in _SENSITIVE_NAMES or names & _SENSITIVE_DIRS:
+        raise ToolError(
+            "scope_denied",
+            "path points at a credential or key store",
+            "copy the artifact somewhere neutral before analyzing it")
+    return str(resolved)
 
 
 def _scan_options(raw: dict | None) -> dict:
@@ -590,6 +648,27 @@ def surface_diff(ctx: ToolContext, args: dict) -> dict:
 
 def self_audit(ctx: ToolContext, args: dict) -> dict:
     return _call(ctx, "GET", "/api/v1/self-audit")
+
+
+def codeaudit_scan(ctx: ToolContext, args: dict) -> dict:
+    """Audit a source tree for real defects. Local, read-only."""
+    root = _guard_local_path(ctx, str(args.get("path") or "").strip() or str(ctx.base),
+                             allow_base=True)
+    if not Path(root).exists():
+        raise ToolError("invalid_arguments", f"path does not exist: {root}")
+    try:
+        return codeaudit.scan(
+            root, extensions=args.get("extensions") or None,
+            max_files=int(args.get("max_files") or codeaudit.MAX_FILES))
+    except ValueError as exc:
+        raise ToolError("codeaudit_failed", str(exc))
+
+
+def codeaudit_rules(ctx: ToolContext, args: dict) -> dict:
+    return {"items": codeaudit.rules(),
+            "note": ("Each rule flags a defect with a known consequence, not a "
+                     "style choice. A line may carry a codeaudit: ignore comment "
+                     "to record a reviewed exception.")}
 
 
 def diagnostics(ctx: ToolContext, args: dict) -> dict:
@@ -1110,24 +1189,45 @@ def burp_status(ctx: ToolContext, args: dict) -> dict:
     return status
 
 
+_URL_IN_TEXT = re.compile(r"(?i)\b(?:https?|wss?)://[^\s'\"<>]+")
+_HOST_HEADER = re.compile(r"(?im)^[ \t]*host[ \t]*:[ \t]*(\S+)")
+
+
+def _check_burp_text(ctx: ToolContext, text: str, mission_id: str, scope) -> None:
+    """Scope-check every URL and Host header inside an arbitrary string."""
+    for host in _HOST_HEADER.findall(text or ""):
+        _require_scope(ctx, host, mission_id, scope, probe=True)
+    for url in _URL_IN_TEXT.findall(text or ""):
+        _require_scope(ctx, url, mission_id, scope, probe=True)
+
+
 def _burp_scope_check(ctx: ToolContext, arguments: dict, mission_id: str,
-                      scope) -> None:
+                      scope, depth: int = 0) -> None:
+    """Refuse a Burp/MCP call that would reach an out-of-scope host.
+
+    Every string is inspected, not only a fixed list of key names: a URL can
+    sit in a list, under an unlisted key, or inside a raw request body, and each
+    of those is a way past a key-based check.
+    """
+    if depth > 6:
+        raise ToolError("invalid_arguments", "arguments nested too deeply to scope-check")
     target_keys = {"url", "uri", "target", "host", "hostname", "endpoint", "base_url",
                    "domain", "destination", "dest", "address", "origin",
                    "redirect", "redirect_uri", "callback"}
     for key, value in (arguments or {}).items():
-        if key in target_keys and isinstance(value, str) and value.strip():
-            _require_scope(ctx, value, mission_id, scope, probe=True)
-        elif isinstance(value, dict):
-            _burp_scope_check(ctx, value, mission_id, scope)
+        if isinstance(value, dict):
+            _burp_scope_check(ctx, value, mission_id, scope, depth + 1)
         elif isinstance(value, list):
             for item in value:
                 if isinstance(item, dict):
-                    _burp_scope_check(ctx, item, mission_id, scope)
-        elif key in {"request", "raw", "raw_request"} and isinstance(value, str):
-            match = __import__("re").search(r"(?im)^host:\s*(\S+)", value)
-            if match:
-                _require_scope(ctx, match.group(1), mission_id, scope, probe=True)
+                    _burp_scope_check(ctx, item, mission_id, scope, depth + 1)
+                elif isinstance(item, str):
+                    _check_burp_text(ctx, item, mission_id, scope)
+        elif isinstance(value, str) and value.strip():
+            if key in target_keys:
+                _require_scope(ctx, value, mission_id, scope, probe=True)
+            else:
+                _check_burp_text(ctx, value, mission_id, scope)
 
 
 def sandbox_run(ctx: ToolContext, args: dict) -> dict:
@@ -1372,11 +1472,16 @@ def approval_request(ctx: ToolContext, args: dict) -> dict:
     _mission(ctx, mission_id)
     payload = redact_payload(args.get("payload") or {})
     tool_name = str(args.get("tool") or "").strip()
-    if tool_name:
-        arguments = args.get("arguments")
-        arguments = arguments if isinstance(arguments, dict) else {}
-        payload["tool"] = tool_name
-        payload["args_digest"] = args_digest(tool_name, arguments)
+    if not tool_name:
+        raise ToolError(
+            "invalid_arguments",
+            "an approval request must name the exact tool it authorises",
+            "an approval is a capability bound to one tool and one argument hash; "
+            "an approval with no tool would open every high-risk tool")
+    arguments = args.get("arguments")
+    arguments = arguments if isinstance(arguments, dict) else {}
+    payload["tool"] = tool_name
+    payload["args_digest"] = args_digest(tool_name, arguments)
     body = {
         "mission_id": mission_id,
         "action": args["action"],
@@ -2082,9 +2187,7 @@ def race_run(ctx: ToolContext, args: dict) -> dict:
 
 
 def rea_analyze(ctx: ToolContext, args: dict) -> dict:
-    path = str(args.get("path") or "").strip()
-    if not path:
-        raise ToolError("invalid_arguments", "path is required")
+    path = _guard_local_path(ctx, args.get("path"))
     kind = str(args.get("kind") or "auto").strip().lower()
     try:
         return reveng.rea_plan(
@@ -2105,9 +2208,7 @@ def reveng_analyze(ctx: ToolContext, args: dict) -> dict:
     leads with file and line numbers; a finding is still recorded separately
     after it is confirmed against the live target.
     """
-    path = str(args.get("path") or "").strip()
-    if not path:
-        raise ToolError("invalid_arguments", "path is required")
+    path = _guard_local_path(ctx, args.get("path"))
     kind = str(args.get("kind") or "auto").strip().lower()
     options = {
         "max_files": args.get("max_files", 4000),
@@ -2320,9 +2421,10 @@ def auth_profile_delete(ctx: ToolContext, args: dict) -> dict:
 
 
 def auth_profile_import(ctx: ToolContext, args: dict) -> dict:
+    path = _guard_local_path(ctx, args.get("path"))
     try:
         profile = authstore.from_storage_state(
-            args["path"], args["name"], domain=str(args.get("domain") or ""),
+            path, args["name"], domain=str(args.get("domain") or ""),
             base=ctx.base)
     except authstore.AuthError as exc:
         raise ToolError("invalid_arguments", str(exc))
@@ -2383,44 +2485,66 @@ def browser_goto(ctx: ToolContext, args: dict) -> dict:
     return {"page": result}
 
 
+def _browser_recheck(ctx: ToolContext, result: dict, mission_id: str,
+                     scope) -> dict:
+    """Refuse to return a page that navigated outside the mission scope."""
+    url = str((result or {}).get("url") or "")
+    mission_id = mission_id or getattr(ctx, "mission_id", "") or ""
+    if url and (mission_id or scope):
+        _browser_scope(ctx, url, mission_id, scope, "target")
+    return result
+
+
 def browser_snapshot(ctx: ToolContext, args: dict) -> dict:
-    return _browser_call(browser.snapshot, args["profile"], base=ctx.base,
-                         include_text=bool(args.get("include_text", True)))
+    result = _browser_call(browser.snapshot, args["profile"], base=ctx.base,
+                           include_text=bool(args.get("include_text", True)))
+    return _browser_recheck(ctx, result, str(args.get("mission_id") or ""),
+                            args.get("scope"))
 
 
 def browser_click(ctx: ToolContext, args: dict) -> dict:
-    return _browser_call(browser.click, args["profile"], base=ctx.base,
-                         ref=str(args.get("ref") or ""),
-                         selector=str(args.get("selector") or ""),
-                         button=str(args.get("button") or "left"),
-                         timeout=int(args.get("timeout") or 10_000))
+    result = _browser_call(browser.click, args["profile"], base=ctx.base,
+                           ref=str(args.get("ref") or ""),
+                           selector=str(args.get("selector") or ""),
+                           button=str(args.get("button") or "left"),
+                           timeout=int(args.get("timeout") or 10_000))
+    return _browser_recheck(ctx, result, str(args.get("mission_id") or ""),
+                            args.get("scope"))
 
 
 def browser_type(ctx: ToolContext, args: dict) -> dict:
-    return _browser_call(browser.type_text, args["profile"], args["text"],
-                         base=ctx.base, ref=str(args.get("ref") or ""),
-                         selector=str(args.get("selector") or ""),
-                         submit=bool(args.get("submit")),
-                         clear=bool(args.get("clear", True)),
-                         timeout=int(args.get("timeout") or 10_000))
+    result = _browser_call(browser.type_text, args["profile"], args["text"],
+                           base=ctx.base, ref=str(args.get("ref") or ""),
+                           selector=str(args.get("selector") or ""),
+                           submit=bool(args.get("submit")),
+                           clear=bool(args.get("clear", True)),
+                           timeout=int(args.get("timeout") or 10_000))
+    return _browser_recheck(ctx, result, str(args.get("mission_id") or ""),
+                            args.get("scope"))
 
 
 def browser_press(ctx: ToolContext, args: dict) -> dict:
-    return _browser_call(browser.press, args["profile"], args["key"], base=ctx.base,
-                         ref=str(args.get("ref") or ""),
-                         selector=str(args.get("selector") or ""))
+    result = _browser_call(browser.press, args["profile"], args["key"], base=ctx.base,
+                           ref=str(args.get("ref") or ""),
+                           selector=str(args.get("selector") or ""))
+    return _browser_recheck(ctx, result, str(args.get("mission_id") or ""),
+                            args.get("scope"))
 
 
 def browser_wait(ctx: ToolContext, args: dict) -> dict:
-    return _browser_call(browser.wait, args["profile"], base=ctx.base,
-                         until=str(args.get("until") or "time"),
-                         value=str(args.get("value") or ""),
-                         timeout=int(args.get("timeout") or 30_000))
+    result = _browser_call(browser.wait, args["profile"], base=ctx.base,
+                           until=str(args.get("until") or "time"),
+                           value=str(args.get("value") or ""),
+                           timeout=int(args.get("timeout") or 30_000))
+    return _browser_recheck(ctx, result, str(args.get("mission_id") or ""),
+                            args.get("scope"))
 
 
 def browser_screenshot(ctx: ToolContext, args: dict) -> dict:
-    return _browser_call(browser.screenshot, args["profile"], base=ctx.base,
-                         full_page=bool(args.get("full_page")))
+    result = _browser_call(browser.screenshot, args["profile"], base=ctx.base,
+                           full_page=bool(args.get("full_page")))
+    return _browser_recheck(ctx, result, str(args.get("mission_id") or ""),
+                            args.get("scope"))
 
 
 def browser_capture(ctx: ToolContext, args: dict) -> dict:
@@ -2431,6 +2555,9 @@ def browser_capture(ctx: ToolContext, args: dict) -> dict:
 
 
 def browser_eval(ctx: ToolContext, args: dict) -> dict:
+    current = _browser_call(browser.status, args["profile"], base=ctx.base)
+    _browser_recheck(ctx, current, str(args.get("mission_id") or ""),
+                     args.get("scope"))
     result = _browser_call(browser.evaluate, args["profile"], args["expression"],
                            base=ctx.base)
     return {"result": result}
@@ -2485,6 +2612,8 @@ _HANDLERS.update({
     "stix_export": stix_export,
     "surface_diff": surface_diff,
     "self_audit": self_audit,
+    "codeaudit_scan": codeaudit_scan,
+    "codeaudit_rules": codeaudit_rules,
     "diagnostics": diagnostics,
     "expertise_profile": expertise_profile,
     "taxii_collections": taxii_collections,
@@ -2861,6 +2990,21 @@ TOOLS: tuple[Tool, ...] = (
          "Check SQLite integrity, table counts, file modes, route count, and tool count. "
          "Read-only and local.",
          "low", "workspace", _schema({}), "diagnostics", read_only=True),
+    Tool("codeaudit_scan", "Audit a source tree",
+         "Scan Python, JavaScript, TypeScript, Svelte, and other source files for real "
+         "defects: swallowed exceptions, injection-prone shell and SQL, insecure "
+         "deserialisation, disabled TLS verification, weak randomness, and committed "
+         "secrets. Read-only and local. A line may carry a codeaudit: ignore comment to "
+         "record a reviewed exception.",
+         "low", "workspace",
+         _schema({"path": _string("directory or file to scan (defaults to the workspace)"),
+                  "extensions": _array("file extensions to include", _string("e.g. .py")),
+                  "max_files": _integer("file cap", 1, 20000, codeaudit.MAX_FILES)}),
+         "codeaudit_scan", read_only=True),
+    Tool("codeaudit_rules", "List source-audit rules",
+         "List every static rule the source auditor applies, with its severity and the "
+         "fix it recommends. Low risk and read-only.",
+         "low", "workspace", _schema({}), "codeaudit_rules", read_only=True),
     Tool("expertise_profile", "Show technology expertise",
          "Show this instance's per-technology exposure and success profile, derived only "
          "from recorded lessons. Different researchers build different expertise.",
@@ -3877,7 +4021,9 @@ TOOLS: tuple[Tool, ...] = (
          "Password values are never returned.",
          "low", "browser",
          _schema({"profile": _string("profile name"),
-                  "include_text": _boolean("include visible page text", True)},
+                  "include_text": _boolean("include visible page text", True),
+                  "mission_id": _string("mission whose scope bounds the page"),
+                  "scope": _array("explicit scope when no mission is used")},
                  ["profile"]), "browser_snapshot", read_only=True),
     Tool("browser_click", "Click element",
          "Click an element by snapshot ref or CSS selector.",
@@ -3887,7 +4033,9 @@ TOOLS: tuple[Tool, ...] = (
                   "selector": _string("CSS selector"),
                   "button": {"type": "string", "enum": ["left", "right", "middle"],
                              "default": "left"},
-                  "timeout": _integer("timeout in ms", 500, 120000, 10000)},
+                  "timeout": _integer("timeout in ms", 500, 120000, 10000),
+                  "mission_id": _string("mission whose scope bounds the page"),
+                  "scope": _array("explicit scope when no mission is used")},
                  ["profile"]), "browser_click"),
     Tool("browser_type", "Type into element",
          "Fill an input or editable element by ref or selector. The typed text is "
@@ -3899,7 +4047,9 @@ TOOLS: tuple[Tool, ...] = (
                   "selector": _string("CSS selector"),
                   "submit": _boolean("press Enter after typing", False),
                   "clear": _boolean("clear the field first", True),
-                  "timeout": _integer("timeout in ms", 500, 120000, 10000)},
+                  "timeout": _integer("timeout in ms", 500, 120000, 10000),
+                  "mission_id": _string("mission whose scope bounds the page"),
+                  "scope": _array("explicit scope when no mission is used")},
                  ["profile", "text"]), "browser_type"),
     Tool("browser_press", "Press key",
          "Press a keyboard key on an element or the page body.",
@@ -3907,7 +4057,9 @@ TOOLS: tuple[Tool, ...] = (
          _schema({"profile": _string("profile name"),
                   "key": _string("key name, e.g. Enter or Escape"),
                   "ref": _string("snapshot ref"),
-                  "selector": _string("CSS selector")},
+                  "selector": _string("CSS selector"),
+                  "mission_id": _string("mission whose scope bounds the page"),
+                  "scope": _array("explicit scope when no mission is used")},
                  ["profile", "key"]), "browser_press"),
     Tool("browser_wait", "Wait for page",
          "Wait for a human or a page condition: time, url substring, text, selector, "
@@ -3919,13 +4071,17 @@ TOOLS: tuple[Tool, ...] = (
                             "enum": ["time", "url", "text", "selector", "navigation"],
                             "default": "time"},
                   "value": _string("substring or selector"),
-                  "timeout": _integer("timeout in ms", 1000, 900000, 30000)},
+                  "timeout": _integer("timeout in ms", 1000, 900000, 30000),
+                  "mission_id": _string("mission whose scope bounds the page"),
+                  "scope": _array("explicit scope when no mission is used")},
                  ["profile"]), "browser_wait", read_only=True),
     Tool("browser_screenshot", "Screenshot browser",
          "Capture the visible page to a PNG under the NetCast3r data directory.",
          "low", "browser",
          _schema({"profile": _string("profile name"),
-                  "full_page": _boolean("capture the full scrollable page", False)},
+                  "full_page": _boolean("capture the full scrollable page", False),
+                  "mission_id": _string("mission whose scope bounds the page"),
+                  "scope": _array("explicit scope when no mission is used")},
                  ["profile"]), "browser_screenshot", read_only=True),
     Tool("browser_capture", "Capture browser session",
          "Copy the live cookie jar into a named auth profile for http_request. "
@@ -3942,7 +4098,9 @@ TOOLS: tuple[Tool, ...] = (
          "High risk: it can read page secrets. Supervised mode needs an approval.",
          "high", "browser",
          _schema({"profile": _string("profile name"),
-                  "expression": _string("JavaScript expression")},
+                  "expression": _string("JavaScript expression"),
+                  "mission_id": _string("mission whose scope bounds the page"),
+                  "scope": _array("explicit scope when no mission is used")},
                  ["profile", "expression"]), "browser_eval",
          open_world=True),
     Tool("browser_close", "Close browser",
@@ -4038,11 +4196,12 @@ class ToolRegistry:
             raise ToolError("approval_required", "approval belongs to a different mission")
         payload = approval.get("payload") or {}
         approved_tool = str(payload.get("tool") or "").strip()
-        if approved_tool and approved_tool != tool.name:
+        if not approved_tool or approved_tool != tool.name:
             raise ToolError("approval_required",
-                            f"approval is for {approved_tool}, not {tool.name}")
+                            "approval is not bound to this tool",
+                            "request a new approval that names this tool and arguments")
         expected = str(payload.get("args_digest") or "")
-        if expected and expected != args_digest(tool.name, args):
+        if not expected or expected != args_digest(tool.name, args):
             raise ToolError("approval_required",
                             "approval was granted for different arguments")
         try:

@@ -389,6 +389,13 @@ class LabRunner:
             base=self.server.base, actor="agent:lab", mission_id=mission_id)
         registry = ToolRegistry(ctx)
         scope = list(LAB_SCOPE)
+        if recipe.get("base"):
+            # A recipe that names its own origin (a local Juice Shop, say) must
+            # be allowed to reach it when no mission supplies the scope.
+            from urllib.parse import urlsplit as _urlsplit
+            host = (_urlsplit(str(recipe["base"])).hostname or "").strip().lower()
+            if host and host not in scope:
+                scope.append(host)
         variables: dict[str, str] = {}
         http_calls = 0
         phase = {"stage": "launch"}

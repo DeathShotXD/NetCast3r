@@ -158,6 +158,9 @@ silently ignored.
 | --- | --- | --- |
 | `status` | low | Version, policy, counters, active runs |
 | `tool_calls_list` | low | Read the audit trail |
+| `self_audit` / `diagnostics` | low | Local posture and database integrity |
+| `codeaudit_scan` | low | Static audit of a source tree |
+| `codeaudit_rules` | low | List the static audit rules |
 
 ### Missions
 
@@ -508,11 +511,22 @@ secret-bearing state files (`control-plane.json`, `auth-profiles.json`,
 and tool count. Both are read-only and local; they do not scan the host or the
 network.
 
+`codeaudit_scan` walks a source tree (Python, JavaScript, TypeScript, Svelte,
+Go, Ruby, PHP, Java, Kotlin, Rust) and reports defects with a known
+consequence: a swallowed exception, a shell string built from input, SQL
+assembled by formatting, insecure deserialisation, disabled TLS verification,
+weak randomness, a committed private key. `codeaudit_rules` lists the rule
+table. A line or file may carry `codeaudit: ignore[-file] <rules> -- reason`
+to record a reviewed exception; suppressed matches are counted separately in
+the report, never hidden. The default target is the workspace; the tool
+resolves symlinks and refuses credential stores. It is a pattern pass, not a
+proof: it cannot see a logic flaw or a missing authorization check.
+
 The index database is created `0600` and the base directory `0700`. The recon
 wrappers do not follow redirects: `httpx` and `whatweb` run without redirect
 following and `katana` uses `-fs rdn -dr`. Request and sandbox stdin are capped
-at 1 MiB. Remote MCP
-argument checks walk nested objects and cover host-like keys.
+at 1 MiB. Burp and outbound MCP argument checks walk nested objects and lists
+and scan every string for absolute URLs and `Host:` headers.
 
 
 ### Outbound MCP registry

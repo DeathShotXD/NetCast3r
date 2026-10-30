@@ -72,7 +72,7 @@ class JobManager:
             self.bus.publish(event)
             try:
                 self.index.add_event(run_id, event.to_dict())
-            except Exception:
+            except Exception:  # codeaudit: ignore py-swallowed-exception -- event persistence is best effort
                 pass
 
         coalescer = _ReasonCoalescer(publish)
@@ -120,6 +120,8 @@ class JobManager:
                    payload={"status": status, "counts": summary if isinstance(summary, dict) else {}}))
         if status == "done":
             emit(Event(type="run.finished", run_id=run_id, payload={"counts": summary}))
+        with self._lock:
+            self._handles.pop(run_id, None)
 
     def cancel(self, run_id: str) -> bool:
         with self._lock:
@@ -142,11 +144,8 @@ class JobManager:
     def recover(self) -> int:
         """Any run left mid-flight by a previous process becomes interrupted."""
         recovered = 0
-        with self._lock:
-            rows = self.index.conn.execute(
-                "SELECT id FROM runs WHERE status IN ('running', 'queued')").fetchall()
-        for row in rows:
-            self.index.update_run(row["id"], status="interrupted", finished_at=_utc(),
+        for run_id in self.index.running_run_ids():
+            self.index.update_run(run_id, status="interrupted", finished_at=_utc(),
                                   error="server restarted")
             recovered += 1
         return recovered

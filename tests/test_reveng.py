@@ -1,3 +1,4 @@
+# codeaudit: ignore-file py-pickle -- describes an input fixture, it never loads one
 import os
 import tempfile
 import unittest
