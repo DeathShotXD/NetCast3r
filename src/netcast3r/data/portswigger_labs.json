@@ -604,7 +604,7 @@
   },
   {
     "id": "9E3414EE887EBAED9F7ED25B58DD639959BB28A3B926F53C831C1D86E03D8813",
-    "slug": "lab-html-context-nothing-encoded",
+    "slug": "reflected-lab-html-context-nothing-encoded",
     "title": "Reflected XSS into HTML context with nothing encoded",
     "category": "Cross-site scripting",
     "difficulty": "apprentice",
@@ -631,7 +631,7 @@
   },
   {
     "id": "09E0BEE59E32E92A78E614589793110F95C397459ED0AB96A3DBAF100E3B7CDE",
-    "slug": "lab-html-context-nothing-encoded",
+    "slug": "stored-lab-html-context-nothing-encoded",
     "title": "Stored XSS into HTML context with nothing encoded",
     "category": "Cross-site scripting",
     "difficulty": "apprentice",
@@ -1585,7 +1585,7 @@
   },
   {
     "id": "2B08DE150E353DC1C0057519F466A55A0CA4A7901B2469D56EF7D2A80EDDEAA6",
-    "slug": "lab-simple",
+    "slug": "os-command-injection-lab-simple",
     "title": "OS command injection, simple case",
     "category": "OS command injection",
     "difficulty": "apprentice",
@@ -1630,7 +1630,7 @@
   },
   {
     "id": "1EB25C72BBA9C28A06EF2EE3F090ECB4AB93ADF38414A9D0AE9F017F2208B937",
-    "slug": "lab-simple",
+    "slug": "file-path-traversal-lab-simple",
     "title": "File path traversal, simple case",
     "category": "Path traversal",
     "difficulty": "apprentice",

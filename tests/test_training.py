@@ -24,6 +24,8 @@ class TrainingTests(unittest.TestCase):
 
     def test_catalogue_is_complete_and_parseable(self):
         self.assertGreaterEqual(len(self.labs), 250)
+        slugs = [lab["slug"] for lab in self.labs]
+        self.assertEqual(len(slugs), len(set(slugs)))
         for lab in self.labs[:20]:
             self.assertTrue(lab["slug"].startswith("lab-"))
             self.assertTrue(lab["title"])
