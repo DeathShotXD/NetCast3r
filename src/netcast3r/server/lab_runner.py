@@ -184,7 +184,7 @@ class LabRunner:
         emit = self._emit(run_id)
         self.server.index.update_run(run_id, status="running",
                                      started_at=_now())
-        emit(Event(type="log", agent="lab",
+        emit(Event(type="log", agent="lab", stage="launch",
                    payload={"text": f"recipe loaded: {recipe['title']}"}))
         try:
             summary = self._execute(slug, recipe, mission_id, emit, cancel)
@@ -203,7 +203,7 @@ class LabRunner:
                                      counts_json=summary, error=error)
         with self._lock:
             self._handles.pop(run_id, None)
-        emit(Event(type="run.state", payload={"status": status}))
+        emit(Event(type="run.state", stage="record", payload={"status": status}))
         if status == "done":
             emit(Event(type="run.finished", payload={"counts": summary}))
 
@@ -267,6 +267,7 @@ class LabRunner:
         scope = list(LAB_SCOPE)
         variables: dict[str, str] = {}
         http_calls = 0
+        phase = {"stage": "launch"}
 
         def request(args: dict) -> dict:
             nonlocal http_calls
@@ -283,13 +284,13 @@ class LabRunner:
                     args[key] = self._sub(args[key], variables)
             payload = self._call(registry, "http_request", args)
             http_calls += 1
-            emit(Event(type="fetch", agent="lab", payload={
+            emit(Event(type="fetch", agent="lab", stage=phase["stage"], payload={
                 "url": payload.get("url") or args.get("target"),
                 "status": payload.get("status")}))
             return payload
 
         page = recipe["page"]
-        emit(Event(type="log", agent="lab", payload={
+        emit(Event(type="log", agent="lab", stage=phase["stage"], payload={
             "text": f"launching {page}"}))
         page_response = request({
             "target": page, "method": "GET", "max_bytes": 131072,
@@ -312,14 +313,17 @@ class LabRunner:
         if ".web-security-academy.net" not in base:
             raise RuntimeError(f"launch did not reach a lab instance: {base}")
         variables["base"] = base
-        emit(Event(type="log", agent="lab", payload={
+        emit(Event(type="log", agent="lab", stage=phase["stage"], payload={
             "text": f"lab instance ready: {base}"}))
 
         for index, step in enumerate(recipe["steps"], 1):
             if cancel.is_set():
                 raise RuntimeError("cancelled")
             kind = step["kind"]
-            emit(Event(type="log", agent="lab", payload={
+            phase["stage"] = ("identity" if kind == "login" else
+                              "verify" if kind == "verify" else
+                              "record" if kind == "record" else "test")
+            emit(Event(type="log", agent="lab", stage=phase["stage"], payload={
                 "text": f"step {index}/{len(recipe['steps'])}: {kind}"}))
             if kind == "login":
                 login = request({

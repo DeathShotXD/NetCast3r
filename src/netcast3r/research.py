@@ -193,6 +193,49 @@ def plan(index=None, target: str = "", tech: str = "", signals: list | None = No
     }
 
 
+def hunt_brief(index, mission_id: str, limit: int = 3) -> dict:
+    """A compact, model-agnostic brief for a small model or a new operator."""
+    mission = index.get_mission(mission_id)
+    if not mission:
+        raise ValueError("mission not found")
+    target = str(mission.get("target") or "")
+    ranked = plan(index, target=target, limit=max(1, min(int(limit or 3), 10)))
+    steps = []
+    for item in ranked["items"]:
+        steps.append({
+            "technique": item["id"],
+            "title": item["title"],
+            "why": item["why"],
+            "first_test": item["steps"][0] if item["steps"] else "",
+            "proof": item["proof"],
+            "tools": item["tools"],
+            "sources": item["sources"],
+        })
+    return {
+        "mission_id": mission_id,
+        "target": target,
+        "scope": mission.get("scope") or [],
+        "objective": mission.get("objective") or "",
+        "rules": [
+            "Confirm the target is inside the mission scope before the first active request.",
+            "Use two accounts you own for object- and role-level checks.",
+            "One precise request at a time; stop at the first real effect.",
+            "A signal is not a finding until the proof is reproducible.",
+            "Never use a third party's data or credentials.",
+        ],
+        "steps": steps,
+        "stop_conditions": [
+            "out-of-scope target",
+            "a 401/403 that does not change under a valid owned session",
+            "no response difference after a bounded probe",
+            "proof captured and the lesson recorded",
+        ],
+        "note": ("This brief is deterministic. It gives a weak model the same "
+                 "scope and proof discipline as a strong one; it does not "
+                 "replace reasoning or authorisation."),
+    }
+
+
 def hunt_plan(index, mission_id: str, tech: str = "", signals: list | None = None,
               limit: int = 6) -> dict:
     """Build a phase plan for one mission from the technique library."""

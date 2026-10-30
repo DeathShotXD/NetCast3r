@@ -70,6 +70,11 @@ class ResearchLibraryTests(unittest.TestCase):
         phases = [item["phase"] for item in plan["phases"]]
         self.assertIn("technique-tests", phases)
         self.assertIn("evidence", phases)
+        brief = research.hunt_brief(self.index, mission["id"], limit=2)
+        self.assertEqual(brief["mission_id"], mission["id"])
+        self.assertTrue(brief["rules"])
+        self.assertEqual(len(brief["steps"]), 2)
+        self.assertTrue(brief["steps"][0]["first_test"])
         with self.assertRaises(ValueError):
             research.hunt_plan(self.index, "msn_missing")
 

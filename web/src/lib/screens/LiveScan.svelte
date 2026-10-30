@@ -15,6 +15,13 @@
   import { countup, spotlight } from '../actions';
 
   const stages = STAGES as unknown as { key: string; label: string }[];
+  const LAB_STAGES = [
+    { key: 'launch', label: 'Launch', detail: 'Start the lab instance' },
+    { key: 'identity', label: 'Identity', detail: 'Log in with an owned account' },
+    { key: 'test', label: 'Test', detail: 'Run the minimum exploit steps' },
+    { key: 'verify', label: 'Verify', detail: 'Check the solved banner' },
+    { key: 'record', label: 'Record', detail: 'Store evidence and the lesson' }
+  ];
   const TERMINAL = ['done', 'failed', 'stopped', 'interrupted'];
   const RESUMABLE = ['stopped', 'interrupted', 'failed'];
   const BUCKET_MS = 250;
@@ -51,6 +58,9 @@
   };
 
   let run = $state<Run | null>(null);
+  const isLab = $derived(String((run?.options as Record<string, unknown> | undefined)?.mode ?? '') === 'lab');
+  const displayStages = $derived(isLab ? LAB_STAGES : stages);
+  const displayTabs = $derived(isLab ? TABS.filter((item) => item.id === 'feed' || item.id === 'report') : TABS);
   let events = $state<RunEvent[]>([]);
   let counts = $state<Record<string, number>>({});
   let landed = $state<{ id: number; status: string; secret_type: string; value: string; detail: string }[]>([]);
@@ -112,8 +122,8 @@
 
   const stageCount = $derived.by(() => {
     const next: Record<string, number> = {};
-    for (const stage of stages) next[stage.key] = stageCounts[stage.key] ?? 0;
-    next.crawl = Math.max(next.crawl ?? 0, crawled);
+    for (const stage of displayStages) next[stage.key] = stageCounts[stage.key] ?? 0;
+    if (!isLab) next.crawl = Math.max(next.crawl ?? 0, crawled);
     return next;
   });
 
@@ -640,14 +650,14 @@
         </div>
       </div>
       <div class="mt-4">
-        <StageRail current={currentStage} finished={finished ? stages.map((s) => s.key) : finishedThrough(currentStage)} />
+        <StageRail stages={displayStages} current={currentStage} finished={finished ? displayStages.map((s) => s.key) : finishedThrough(currentStage)} />
       </div>
     </section>
 
     <section class="grid gap-3 lg:grid-cols-[1.35fr_1fr]">
       <div class="panel panel-hud flex flex-col justify-center gap-3 px-4 py-3">
         <div class="flex items-center justify-between">
-          <p class="eyebrow">stage signal</p>
+          <p class="eyebrow">{isLab ? 'lab signal' : 'stage signal'}</p>
           <span
             class="mono text-[10px] tracking-[0.14em]"
             style="color:{running ? 'var(--nc-acid)' : 'var(--nc-ash)'}"
@@ -655,7 +665,7 @@
             {running ? `${(currentStage || 'crawl').toLowerCase()} // live` : statusLabel(run.status)}
           </span>
         </div>
-        <StageSignal stages={stages} counts={stageCount} current={currentStage} {running} />
+        <StageSignal stages={displayStages} counts={stageCount} current={currentStage} {running} />
       </div>
 
       <div class="panel flex flex-col overflow-hidden">
@@ -697,17 +707,28 @@
     </section>
 
     <section class="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4" aria-label="counters">
-      {#each [['pages', 'pages'], ['js files', 'js_files'], ['endpoints', 'endpoints'], ['candidates', 'candidates'], ['verified', 'verified'], ['findings', 'findings'], ['not confirmed', 'unverified'], ['weak points', 'review_loopholes']] as [label, key] (key)}
-        <div class="panel kpi px-4 py-3">
-          <p class="eyebrow">{label}</p>
-          <p class="num mt-1 text-xl text-bone" use:countup={counts[key] ?? 0}>0</p>
-        </div>
-      {/each}
+      {#if isLab}
+        {#each [['steps', 'steps'], ['http calls', 'http_calls'], ['solved', 'solved'], ['lesson', 'lesson_id']] as [label, key] (key)}
+          <div class="panel kpi px-4 py-3">
+            <p class="eyebrow">{label}</p>
+            <p class="num mt-1 text-xl text-bone">
+              {key === 'solved' ? (counts.solved ? 'yes' : 'no') : key === 'lesson_id' ? (counts.lesson_id ? 'yes' : 'no') : (counts[key] ?? 0)}
+            </p>
+          </div>
+        {/each}
+      {:else}
+        {#each [['pages', 'pages'], ['js files', 'js_files'], ['endpoints', 'endpoints'], ['candidates', 'candidates'], ['verified', 'verified'], ['findings', 'findings'], ['not confirmed', 'unverified'], ['weak points', 'review_loopholes']] as [label, key] (key)}
+          <div class="panel kpi px-4 py-3">
+            <p class="eyebrow">{label}</p>
+            <p class="num mt-1 text-xl text-bone" use:countup={counts[key] ?? 0}>0</p>
+          </div>
+        {/each}
+      {/if}
     </section>
 
     <section class="panel overflow-hidden">
       <div class="flex flex-wrap items-center gap-1 border-b border-indigo-deep px-3 py-2" role="tablist" aria-label="run inspector">
-        {#each TABS as item (item.id)}
+        {#each displayTabs as item (item.id)}
           <button
             class="live-tab"
             class:active={tab === item.id}
@@ -797,6 +818,7 @@
           </div>
 
           <div class="flex flex-col">
+            {#if !isLab}
             <div class="border-b border-indigo-deep">
               <div class="flex items-center justify-between px-4 py-2.5">
                 <p class="eyebrow">credentials caught</p>
@@ -822,6 +844,7 @@
                 </ul>
               {/if}
             </div>
+            {/if}
 
             <div class="flex-1">
               <div class="flex items-center justify-between px-4 py-2.5">

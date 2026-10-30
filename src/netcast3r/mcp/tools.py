@@ -991,6 +991,11 @@ def knowledge_read(ctx: ToolContext, args: dict) -> dict:
                  body={"max_chars": args.get("max_chars", 8000)})
 
 
+def hunt_brief(ctx: ToolContext, args: dict) -> dict:
+    return _call(ctx, "GET", "/api/v1/hunt-brief", {
+        "mission_id": args["mission_id"], "limit": args.get("limit", 3)})
+
+
 def hunt_plan(ctx: ToolContext, args: dict) -> dict:
     return _call(ctx, "GET", "/api/v1/hunt-plan", {
         "mission_id": args["mission_id"], "tech": args.get("tech", ""),
@@ -2331,6 +2336,7 @@ _HANDLERS.update({
     "knowledge_list": knowledge_list,
     "knowledge_read": knowledge_read,
     "hunt_plan": hunt_plan,
+    "hunt_brief": hunt_brief,
     "selfmodel_snapshot": selfmodel_snapshot,
     "selfmodel_gaps": selfmodel_gaps,
     "selfmodel_evolve": selfmodel_evolve,
@@ -2926,6 +2932,14 @@ TOOLS: tuple[Tool, ...] = (
                   "notes": _string("distilled technique, at least 80 characters"),
                   "tags": _array("tags", {"type": "string"})},
                  ["url", "title", "notes"]), "research_ingest"),
+    Tool("hunt_brief", "Build a small-model hunt brief",
+         "Return a compact mission brief: scope, rules, the top techniques with "
+         "their first test and proof, and stop conditions. Deterministic; it "
+         "gives a weak model the same discipline as a strong one.",
+         "low", "research",
+         _schema({"mission_id": _string("mission id"),
+                  "limit": _integer("techniques", 1, 10, 3)},
+                 ["mission_id"]), "hunt_brief", read_only=True),
     Tool("hunt_plan", "Build a mission hunt plan",
          "Combine a mission's target with the technique library into phases: scope, "
          "baseline, identity, technique tests, validation, and evidence. Read-only; "

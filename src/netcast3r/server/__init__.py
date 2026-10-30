@@ -752,6 +752,15 @@ class Server:
         def research_sources(ctx):
             return _json(research.sources())
 
+        @add("GET", r"/api/v1/hunt-brief")
+        def hunt_brief_route(ctx):
+            try:
+                return _json(research.hunt_brief(
+                    self.index, mission_id=str(ctx.query.get("mission_id", "")),
+                    limit=_int_or(ctx.query.get("limit"), 3)))
+            except ValueError as exc:
+                return _problem(400, str(exc))
+
         @add("GET", r"/api/v1/hunt-plan")
         def hunt_plan_route(ctx):
             signals = [item for item in

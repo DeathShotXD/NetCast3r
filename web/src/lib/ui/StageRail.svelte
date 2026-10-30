@@ -4,10 +4,16 @@
 
   let {
     current = '',
-    finished = []
-  }: { current?: string; finished?: string[] } = $props();
+    finished = [],
+    stages: provided = null
+  }: {
+    current?: string;
+    finished?: string[];
+    stages?: { key: string; label: string; detail?: string }[] | null;
+  } = $props();
 
-  const stages = STAGES as unknown as { key: string; label: string; detail: string }[];
+  const defaultStages = STAGES as unknown as { key: string; label: string; detail: string }[];
+  const stages = $derived(provided ?? defaultStages);
   const index = (key: string) => stages.findIndex((stage) => stage.key === key);
   const currentAt = $derived(index(current));
 
@@ -52,7 +58,7 @@
             <span class="pulse-live ml-auto h-1.5 w-1.5 rounded-full bg-acid" aria-hidden="true"></span>
           {/if}
         </div>
-        <p class="text-xs leading-snug text-bone-dust">{stage.detail}</p>
+        <p class="text-xs leading-snug text-bone-dust">{stage.detail ?? ''}</p>
         <span class="sr-only">{active ? 'in progress' : done ? 'complete' : 'pending'}</span>
       </li>
     {/each}
