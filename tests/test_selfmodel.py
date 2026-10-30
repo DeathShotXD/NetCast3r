@@ -52,6 +52,18 @@ class SelfModelTests(unittest.TestCase):
         self.assertLessEqual(len(gaps["items"]), 3)
         self.assertTrue(all(item["action"] for item in gaps["items"]))
 
+    def test_gap_proposals_are_deduplicated(self):
+        first = selfmodel.propose_gaps(self.index, limit=2)
+        self.assertTrue(first["created"])
+        self.assertTrue(all(item["status"] == "proposed"
+                            for item in first["created"]))
+        second = selfmodel.propose_gaps(self.index, limit=2)
+        self.assertFalse(second["created"])
+        self.assertTrue(second["skipped"])
+        titles = [item["title"] for item in
+                  self.index.list_upgrade_proposals(status="proposed")]
+        self.assertEqual(len(titles), len(set(titles)))
+
     def test_upgrade_proposals_are_human_gated(self):
         with self.assertRaises(ValueError):
             selfmodel.propose(self.index, "short", "rationale " * 4, "evidence")

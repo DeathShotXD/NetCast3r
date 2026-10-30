@@ -56,6 +56,12 @@ Notable changes to NetCast3r, newest first.
   and the agent role `training` selects the next labs, matches public-research
   techniques, reads capability gaps, and verifies the session. It never marks
   a lab solved or creates a finding.
+- `selfmodel_evolve` turns the top capability gaps into deduplicated,
+  human-gated upgrade proposals. It writes a backlog; it does not edit code or
+  apply a change.
+- `docs/research/penligent-public-comparison.md` records what Penligent's
+  public repository and site actually expose. The application source is not
+  public, so the note does not claim a source-code review.
 - `test_case_run` executes up to 12 ordered, scope-checked requests with
   explicit status, body, and header assertions, replacing broad scanners in
   the active path.

@@ -743,6 +743,13 @@ class Server:
             return _json(selfmodel.gaps(
                 self.index, limit=_int_or(ctx.query.get("limit"), 6)))
 
+        @add("POST", r"/api/v1/selfmodel/evolve")
+        def selfmodel_evolve(ctx):
+            body = ctx.json()
+            body = body if isinstance(body, dict) else {}
+            return _json(selfmodel.propose_gaps(
+                self.index, limit=_int_or(body.get("limit"), 3)), 201)
+
         @add("GET", r"/api/v1/upgrades")
         def list_upgrades(ctx):
             items = self.index.list_upgrade_proposals(

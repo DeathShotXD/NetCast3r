@@ -245,6 +245,37 @@ def gaps(index, limit: int = 6) -> dict:
     }
 
 
+def propose_gaps(index, limit: int = 3) -> dict:
+    """Turn the top capability gaps into deduplicated, human-gated proposals."""
+    report = gaps(index, limit=limit)
+    existing = index.list_upgrade_proposals(limit=500)
+    seen = {(item.get("area"), item.get("title")) for item in existing}
+    created, skipped = [], []
+    for gap in report["items"]:
+        area = gap["dimension"] if gap["dimension"] in {
+            *DIMENSIONS, "reporting"} else "general"
+        title = f"Close the {gap['label']} gap: {gap['gap']}"
+        if (area, title) in seen:
+            skipped.append({"area": area, "title": title})
+            continue
+        proposal = index.add_upgrade_proposal(
+            title=title,
+            rationale=(f"{gap['action']}. The self-model scores this area at "
+                       f"{gap['score']}, below the competent threshold."),
+            evidence=(f"selfmodel gap: dimension={gap['dimension']}, "
+                      f"gap={gap['gap']}, score={gap['score']}"),
+            area=area, priority="high")
+        created.append(proposal)
+        seen.add((area, title))
+    return {
+        "created": created,
+        "skipped": skipped,
+        "gaps": report["items"],
+        "note": ("Proposals are a backlog, not an automatic code change. An "
+                 "operator still decides what to implement."),
+    }
+
+
 def propose(index, title: str, rationale: str, evidence: str, area: str = "",
             priority: str = "medium") -> dict:
     """Store a human-gated improvement proposal. Never applies it."""

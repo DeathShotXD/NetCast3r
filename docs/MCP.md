@@ -393,6 +393,12 @@ technology expertise and appears in `next_actions`. Local ranges are loopback
 only. testphp is a published public lab; its pack is catalogued but it has been
 intermittently unreachable, so a record is only written after a live check.
 
+Starting a mission agent with `role=training` (or starting a mission that the
+index marks as training) selects the next labs, matches research techniques,
+reads capability gaps, and verifies the session. It does not crawl the target,
+mark a lab solved, or create a finding. The dashboard shows **Continue
+training** instead of **Launch cast** for these missions.
+
 ### Learning loop
 
 NetCast3r keeps operational memory in the same SQLite index as runs and
@@ -410,6 +416,7 @@ stored, so experience cannot be invented:
 | `next_actions` | low | Rank the next concrete steps from stored records |
 | `selfmodel_snapshot` | low | Capability scores from stored training, skills, expertise, and findings |
 | `selfmodel_gaps` | low | Rank the weakest areas with one concrete next step |
+| `selfmodel_evolve` | medium | Turn the top gaps into deduplicated, human-gated proposals |
 | `upgrade_propose` / `upgrade_list` / `upgrade_update` | medium | Human-gated improvement proposals with evidence |
 | `technique_search` / `technique_plan` | low | Rank a 38-entry public-research technique library against a target |
 | `research_sources` | low | Coverage of the technique library by class and rarity |

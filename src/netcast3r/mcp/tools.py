@@ -965,6 +965,11 @@ def selfmodel_gaps(ctx: ToolContext, args: dict) -> dict:
                  {"limit": args.get("limit", 6)})
 
 
+def selfmodel_evolve(ctx: ToolContext, args: dict) -> dict:
+    return _call(ctx, "POST", "/api/v1/selfmodel/evolve",
+                 body={"limit": args.get("limit", 3)})
+
+
 def upgrade_propose(ctx: ToolContext, args: dict) -> dict:
     body = {key: args[key] for key in
             ("title", "rationale", "evidence", "area", "priority") if key in args}
@@ -1934,6 +1939,7 @@ _HANDLERS.update({
     "hunt_plan": hunt_plan,
     "selfmodel_snapshot": selfmodel_snapshot,
     "selfmodel_gaps": selfmodel_gaps,
+    "selfmodel_evolve": selfmodel_evolve,
     "upgrade_propose": upgrade_propose,
     "upgrade_list": upgrade_list,
     "upgrade_update": upgrade_update,
@@ -2493,6 +2499,12 @@ TOOLS: tuple[Tool, ...] = (
          "low", "learning",
          _schema({"limit": _integer("how many gaps", 1, 30, 6)}),
          "selfmodel_gaps", read_only=True),
+    Tool("selfmodel_evolve", "Propose upgrades from capability gaps",
+         "Read the stored capability gaps and create one deduplicated, "
+         "human-gated upgrade proposal per gap. Nothing is applied automatically.",
+         "medium", "learning",
+         _schema({"limit": _integer("how many gaps", 1, 10, 3)}),
+         "selfmodel_evolve"),
     Tool("upgrade_propose", "Propose a framework upgrade",
          "Write a human-gated improvement proposal with evidence. Nothing is applied "
          "automatically; an operator decides whether to implement it.",
