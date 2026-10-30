@@ -47,16 +47,18 @@ class CommandTests(unittest.TestCase):
         self.assertIn("https://example.com", command)
         self.assertNotIn("-follow-redirects", command)
 
-    def test_crawl_and_scan_tools_stay_in_scope(self):
+    def test_crawl_tools_stay_in_scope(self):
         katana = integrations._command("katana", "example.com", 60)
         self.assertIn("-fs", katana)
         self.assertIn("rdn", katana)
         self.assertIn("-dr", katana)
-        nuclei = integrations._command("nuclei", "example.com", 60)
-        self.assertIn("-disable-redirects", nuclei)
         whatweb = integrations._command("whatweb", "example.com", 60)
         self.assertIn("--follow-redirect=never", whatweb)
         self.assertIn("--color=never", whatweb)
+
+    def test_broad_scanners_are_not_in_the_catalog(self):
+        for name in ("nuclei", "dalfox", "nmap"):
+            self.assertNotIn(name, integrations.TOOL_CATALOG)
 
     def test_unknown_tool_is_refused(self):
         with self.assertRaises(integrations.ToolRunError):
@@ -79,7 +81,7 @@ class RunToolTests(unittest.TestCase):
     def test_missing_binary_is_reported(self):
         with mock.patch.object(integrations.shutil, "which", return_value=None):
             with self.assertRaises(integrations.ToolRunError):
-                integrations.run_tool("nuclei", "example.com", base="/tmp")
+                integrations.run_tool("subfinder", "example.com", base="/tmp")
 
 
 class BurpClientTests(unittest.TestCase):

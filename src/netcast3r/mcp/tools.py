@@ -660,8 +660,97 @@ def fetch_artifact(ctx: ToolContext, args: dict) -> dict:
         raise ToolError("invalid_arguments", str(exc))
 
 
-def recon_active(ctx: ToolContext, args: dict) -> dict:
-    return _run_recon(ctx, args, "active")
+def test_case_run(ctx: ToolContext, args: dict) -> dict:
+    """Run a small, ordered set of requests with explicit assertions.
+
+    This is the precise-manual path: the operator states the request and the
+    expected status/body, and the harness records pass/fail with evidence. It is
+    not a scanner and it never invents a finding.
+    """
+    steps = args.get("steps")
+    if not isinstance(steps, list) or not steps:
+        raise ToolError("invalid_arguments", "steps must be a non-empty array")
+    if len(steps) > 12:
+        raise ToolError("invalid_arguments", "a test case is limited to 12 steps")
+    mission_id = str(args.get("mission_id") or "")
+    base = str(args.get("base_url") or "").strip()
+    if not base and mission_id:
+        mission = _mission(ctx, mission_id)
+        base = str(mission.get("target") or "")
+    if base and "://" not in base:
+        base = "https://" + base
+    fail_fast = bool(args.get("fail_fast", True))
+    results = []
+    passed = failed = 0
+    for index, step in enumerate(steps, 1):
+        if not isinstance(step, dict):
+            raise ToolError("invalid_arguments", f"step {index} must be an object")
+        method = str(step.get("method") or "GET").upper()
+        if method not in {"GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"}:
+            raise ToolError("invalid_arguments", f"step {index} has an unsupported method")
+        url = str(step.get("url") or "")
+        path = str(step.get("path") or "")
+        target = url or (base.rstrip("/") + path if base else "")
+        if not target:
+            raise ToolError("invalid_arguments", f"step {index} needs url, path, or base_url")
+        call_args = {"target": target, "method": method,
+                     "mission_id": mission_id, "scope": args.get("scope")}
+        for key in ("headers", "auth_profile", "body", "json", "form",
+                    "follow_redirects", "verify_tls", "max_bytes", "timeout"):
+            if key in step:
+                call_args[key] = step[key]
+        try:
+            response = http_request(ctx, call_args)
+            actual = int(response.get("status") or 0)
+            body = str(response.get("body") or "")
+            headers = response.get("headers") or {}
+        except ToolError as exc:
+            results.append({"step": index, "name": step.get("name", ""),
+                            "target": target, "method": method, "pass": False,
+                            "error": f"{exc.code}: {exc.message}"})
+            failed += 1
+            if fail_fast:
+                break
+            continue
+        expected = step.get("expect_status", step.get("status"))
+        checks = []
+        if expected is not None:
+            want = expected if isinstance(expected, list) else [expected]
+            checks.append({"check": "status", "ok": actual in [int(item) for item in want],
+                           "expected": want, "actual": actual})
+        else:
+            checks.append({"check": "status", "ok": 100 <= actual < 500,
+                           "expected": "100-499", "actual": actual})
+        contains = step.get("expect_body_contains")
+        if contains:
+            checks.append({"check": "body_contains", "ok": str(contains) in body,
+                           "expected": str(contains)[:120], "actual": body[:200]})
+        absent = step.get("expect_body_absent")
+        if absent:
+            checks.append({"check": "body_absent", "ok": str(absent) not in body,
+                           "expected": f"not {str(absent)[:120]}", "actual": body[:200]})
+        expect_header = step.get("expect_header")
+        if isinstance(expect_header, dict):
+            for name, value in expect_header.items():
+                actual_header = str(headers.get(str(name).lower(), ""))
+                checks.append({"check": f"header:{name}", "ok": str(value) in actual_header,
+                               "expected": str(value), "actual": actual_header[:160]})
+        ok = all(item["ok"] for item in checks)
+        results.append({"step": index, "name": step.get("name", ""), "target": target,
+                        "method": method, "status": actual, "pass": ok,
+                        "checks": checks, "body_sample": body[:240],
+                        "elapsed_ms": response.get("elapsed_ms")})
+        if ok:
+            passed += 1
+        else:
+            failed += 1
+            if fail_fast:
+                break
+    return {"name": str(args.get("name") or "test case"), "steps": len(steps),
+            "passed": passed, "failed": failed, "results": results,
+            "ok": failed == 0,
+            "note": ("Assertions and raw responses are recorded per step. This harness "
+                     "does not decide that a target is vulnerable.")}
 
 
 def burp_status(ctx: ToolContext, args: dict) -> dict:
@@ -1590,7 +1679,7 @@ _HANDLERS.update({
     "taxii_poll": taxii_poll,
     "recon_passive": recon_passive,
     "fetch_artifact": fetch_artifact,
-    "recon_active": recon_active,
+    "test_case_run": test_case_run,
     "burp_status": burp_status,
     "burp_call": burp_call,
     "mcp_servers_list": mcp_servers_list,
@@ -1965,19 +2054,18 @@ TOOLS: tuple[Tool, ...] = (
                   "max_bytes": _integer("download cap", 1024, 20971520, 10485760),
                   "timeout": _integer("timeout in seconds", 1, 120, 30)},
                  ["target"]), "fetch_artifact", open_world=True),
-    Tool("recon_active", "Active recon tool",
-         "Run an allowlisted active tool (nuclei critical/high, dalfox, nmap top 100) "
-         "against one in-scope target. Intrusive: needs an approval under supervised "
-         "policy. The command is fixed and run without a shell.",
-         "high", "recon",
-         _schema({"tool": _string("active tool", enum=["nuclei", "dalfox", "nmap"]),
-                  "target": _string("in-scope host or URL"),
-                  "mission_id": _string("mission whose scope authorizes the run"),
+    Tool("test_case_run", "Run a precise test case",
+         "Run up to 12 ordered requests with explicit assertions on status, body, and "
+         "headers. This is the manual precision path: no scanner, no guess. Each step is "
+         "scope-checked and recorded with its raw response sample.",
+         "medium", "web",
+         _schema({"name": _string("test case name"),
+                  "mission_id": _string("mission whose scope authorizes the steps"),
                   "scope": _array("explicit scope entries when no mission is used"),
-                  "timeout": _integer("timeout in seconds", 10, 600, 180),
-                  "approval_id": _string("approved approval id"),
-                  "confirm": _boolean("explicit confirmation (full policy)")},
-                 ["tool", "target"]), "recon_active", open_world=True),
+                  "base_url": _string("optional base URL"),
+                  "fail_fast": _boolean("stop at the first failed assertion", True),
+                  "steps": _array("ordered steps", {"type": "object"})},
+                 ["steps"]), "test_case_run", open_world=True),
     Tool("burp_status", "Burp MCP status",
          "Connect to the configured Burp MCP server and list its tools. Configure with "
          "NETCAST3R_BURP_URL / NETCAST3R_BURP_TOKEN or ~/.netcast3r/integrations.json.",

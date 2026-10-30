@@ -38,10 +38,9 @@ Notable changes to NetCast3r, newest first.
   `~/.netcast3r/artifacts/<finding_id>/` with a SHA-256, size, MIME type, and
   download URL. `finding_artifact_list` and `finding_artifact_get` read them;
   files are 0600.
-- `recon_passive` and `recon_active` run allowlisted local tools
-  (subfinder, httpx, katana, whatweb, gau, waybackurls; nuclei/dalfox/nmap for
-  active) with fixed argv, no shell, bounded output, and a scope check. Active
-  tools are high risk and need an approval under supervised policy.
+- `recon_passive` runs allowlisted local tools (subfinder, httpx, katana,
+  whatweb, gau, waybackurls) with fixed argv, no shell, bounded output, and a
+  scope check. Broad scanners are deliberately not part of the active surface.
 - Burp MCP: `burp_status` lists the tools exposed by a configured Burp MCP
   server; `burp_call` invokes one. Configure with `NETCAST3R_BURP_URL` /
   `NETCAST3R_BURP_TOKEN` or `~/.netcast3r/integrations.json`. URL, host, and raw
@@ -84,6 +83,12 @@ Notable changes to NetCast3r, newest first.
 - STIX 2.1: `stix_export` builds a bundle with an identity, vulnerability
   objects, and a report; `taxii_collections` and `taxii_poll` read a configured
   TAXII 2.1 server.
+- Broad scanners were removed from the active surface. `nuclei`, `dalfox`, and
+  `nmap` are no longer in the tool catalogue; the precision path is manual
+  `http_request`/`http_path_diff`/`test_case_run` plus the scoped browser.
+- `test_case_run` executes up to 12 ordered requests with explicit status, body,
+  and header assertions, and records the raw response per step. No scanner and
+  no inferred finding.
 - `surface_diff` compares two runs' subdomains, assets, JavaScript, endpoints,
   secret candidates, and findings; it reports added, removed, and
   severity-changed items from the stored run inventories.
@@ -96,7 +101,7 @@ Notable changes to NetCast3r, newest first.
   exposes it, and `next_actions` adds WordPress, GraphQL, OAuth/SAML, PHP, and
   API checks based on this instance's real exposure.
 - Security hardening from the self-audit: recon wrappers no longer follow
-  redirects (`httpx`, `nuclei`, `katana`, `whatweb` stay on the registered
+  redirects (`httpx`, `katana`, `whatweb` stay on the registered
   domain), request and sandbox stdin are capped at 1 MiB, and remote MCP
   argument checking now covers nested objects and more target keys.
 - Research note: `docs/research/penligent-and-commercial-features.md` studies

@@ -323,11 +323,12 @@ remains the authority; the artifact is the bytes that outlive the conversation.
 ### Local recon tools
 
 `recon_passive` runs subfinder, httpx, katana, whatweb, gau, or waybackurls.
-`recon_active` runs nuclei (critical/high), dalfox, or nmap (top 100). Both use
-a fixed argv, never a shell, refuse private/metadata targets, cap output at
-200 KB, and require a mission or explicit scope. Active tools are high risk and
-need an approval under supervised policy. Results are leads; a finding still
-requires confirmation.
+Broad scanners (nuclei, dalfox, nmap) are intentionally not part of the active
+surface: they consume time and produce too many false positives. The precision
+path is `http_request`, `http_path_diff`, the scoped browser, and
+`test_case_run`, which executes an explicit ordered test case with assertions.
+`recon_passive` uses a fixed argv, never a shell, refuses private/metadata
+targets, caps output at 200 KB, and requires a mission or explicit scope.
 
 ### Burp MCP
 
@@ -426,8 +427,8 @@ network.
 
 The index database is created `0600` and the base directory `0700`. The recon
 wrappers do not follow redirects: `httpx` and `whatweb` run without redirect
-following, `katana` uses `-fs rdn -dr`, and `nuclei` uses
-`-disable-redirects`. Request and sandbox stdin are capped at 1 MiB. Remote MCP
+following and `katana` uses `-fs rdn -dr`. Request and sandbox stdin are capped
+at 1 MiB. Remote MCP
 argument checks walk nested objects and cover host-like keys.
 
 

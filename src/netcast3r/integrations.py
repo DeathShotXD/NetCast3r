@@ -47,12 +47,6 @@ TOOL_CATALOG: dict[str, tuple[str, str, str, str]] = {
             "Fetch known URLs for a domain from public archives."),
     "waybackurls": ("passive", "waybackurls", "medium",
                     "Fetch known URLs for a domain from the Wayback Machine."),
-    "nuclei": ("active", "nuclei", "high",
-               "Run critical/high nuclei templates against one URL."),
-    "dalfox": ("active", "dalfox", "high",
-               "XSS scan against one URL with a bounded payload set."),
-    "nmap": ("active", "nmap", "high",
-             "Service probe of the top 100 TCP ports on one host."),
 }
 
 METADATA_HOSTS = {"metadata.google.internal", "metadata.goog"}
@@ -114,7 +108,7 @@ def _resolve_check(host: str) -> None:
 
 def _command(tool: str, target: str, timeout: int) -> list[str]:
     host = target_host(target, domain_only=tool in {"subfinder", "gau", "waybackurls"})
-    if tool in {"nuclei", "dalfox", "whatweb", "httpx", "katana"}:
+    if tool in {"whatweb", "httpx", "katana"}:
         url = target if "://" in target else "https://" + target
         parts = urlsplit(url)
         if parts.scheme not in {"http", "https"} or not parts.hostname:
@@ -136,15 +130,6 @@ def _command(tool: str, target: str, timeout: int) -> list[str]:
         return ["gau", "--subs", host]
     if tool == "waybackurls":
         return ["waybackurls", host]
-    if tool == "nuclei":
-        return ["nuclei", "-u", url, "-silent", "-severity", "critical,high",
-                "-stats", "-timeout", "10", "-retries", "1", "-no-color",
-                "-disable-redirects"]
-    if tool == "dalfox":
-        return ["dalfox", "url", url, "--silence", "--no-color",
-                "--timeout", "10"]
-    if tool == "nmap":
-        return ["nmap", "-sV", "-T3", "--top-ports", "100", "--open", host]
     raise ToolRunError(f"tool is not allowlisted: {tool}")
 
 

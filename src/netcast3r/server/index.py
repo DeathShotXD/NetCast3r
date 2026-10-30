@@ -330,6 +330,7 @@ TECH_TAGS = {
     "ssrf", "xss", "sqli", "rce", "lfi", "csrf", "auth", "encoding", "scim",
     "wireguard", "vpn", "email", "dns", "cdn", "waf", "mobile", "android",
     "ios", "solana", "ethereum", "solidity", "defi", "driver", "kernel",
+    "aspnet", "iis", "xmlrpc", "cpanel", "whm", "phpmyadmin",
 }
 
 
