@@ -100,6 +100,9 @@ export const api = {
     request<MissionAgent>('POST', `/missions/${id}/agent/resume`, {}),
   stopMissionAgent: (id: string) =>
     request<MissionAgent>('POST', `/missions/${id}/agent/stop`, {}),
+  labRecipes: () => request<{ items: Array<Record<string, unknown>>; total: number }>('GET', '/labs/recipes'),
+  startLabRun: (body: Record<string, unknown>) =>
+    request<Run>('POST', '/labs/run', body),
   approvals: (q = '') => request<Paged<Approval>>('GET', `/approvals${q}`),
   createApproval: (body: Record<string, unknown>) =>
     request<Approval>('POST', '/approvals', body),

@@ -163,6 +163,9 @@ class EmbeddedPlane:
             runtime = getattr(self.server, "agent_runtime", None)
             if runtime is not None:
                 runtime.shutdown()
+            labs = getattr(self.server, "lab_runner", None)
+            if labs is not None:
+                labs.shutdown(wait=False)
             self.server.jobs.shutdown(wait=False)
         finally:
             self.server.index.close()

@@ -91,6 +91,15 @@ Notable changes to NetCast3r, newest first.
 - Live transmission text is whitespace-normalised and long tokens wrap, so a
   model that returns one character per line no longer collapses the stream
   into a vertical column.
+- Scripted lab runner: `lab_recipes`, `lab_run`, `POST /api/v1/labs/run`, and a
+  **Run next lab** action on a training mission. A recipe launches the lab
+  through the managed browser or auth profile, performs the minimum HTTP/upload
+  steps, verifies the Academy banner, and records the lesson. The run appears
+  in Live Runs with real events instead of a crawler transcript.
+- Initial recipes: SQL injection in a WHERE clause, SQL injection login
+  bypass, unprotected admin functionality, web shell upload, and JWT
+  unverified-signature bypass. A failed recipe is a real capability signal, not
+  a solved record.
 - `docs/research/penligent-public-comparison.md` records what Penligent's
   public repository and site actually expose. The application source is not
   public, so the note does not claim a source-code review.

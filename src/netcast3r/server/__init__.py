@@ -167,7 +167,9 @@ class Server:
         self._app_cache: str | None = None
         self._csp = CSP
         self._agent_lock = threading.Lock()
+        self._lab_lock = threading.Lock()
         self.agent_runtime = None
+        self.lab_runner = None
         self._routes = self._build_routes()
         try:
             learning.seed_builtin_skills(self.index)
@@ -184,6 +186,17 @@ class Server:
                     from .agent_runtime import AgentRuntime
                     runtime = AgentRuntime(self)
                     self.agent_runtime = runtime
+        return runtime
+
+    def _labs(self):
+        runtime = self.lab_runner
+        if runtime is None:
+            with self._lab_lock:
+                runtime = self.lab_runner
+                if runtime is None:
+                    from .lab_runner import LabRunner
+                    runtime = LabRunner(self)
+                    self.lab_runner = runtime
         return runtime
 
     # -- run helpers ------------------------------------------------------
@@ -689,6 +702,27 @@ class Server:
             return _json({"items": items, "total": len(items),
                           "note": ("Bundled playbooks are installed at startup for "
                                    "every agent. Read one with skills_get.")})
+
+        @add("GET", r"/api/v1/labs/recipes")
+        def lab_recipes(ctx):
+            items = self._labs().available()
+            return _json({"items": items, "total": len(items)})
+
+        @add("POST", r"/api/v1/labs/run")
+        def lab_run(ctx):
+            body = ctx.json()
+            body = body if isinstance(body, dict) else {}
+            try:
+                run = self._labs().start(
+                    str(body.get("slug") or "auto"),
+                    mission_id=str(body.get("mission_id") or ""))
+            except ValueError as exc:
+                return _problem(400, str(exc))
+            return _json(run, 201)
+
+        @add("POST", r"/api/v1/labs/runs/(?P<id>[A-Za-z0-9_]+)/stop")
+        def lab_stop(ctx):
+            return _json({"stopped": self._labs().cancel(ctx.params["id"])})
 
         @add("GET", r"/api/v1/toolbook")
         def toolbook(ctx):
@@ -1842,6 +1876,8 @@ def serve(host: str = "127.0.0.1", port: int = 7857, *, open_browser: bool = Tru
     finally:
         if server.agent_runtime is not None:
             server.agent_runtime.shutdown()
+        if getattr(server, "lab_runner", None) is not None:
+            server.lab_runner.shutdown(wait=True)
         server.jobs.shutdown(wait=True)
         server.index.close()
         httpd.server_close()

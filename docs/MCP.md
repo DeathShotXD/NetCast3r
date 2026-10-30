@@ -413,6 +413,8 @@ carries its source, allowed hosts, setup command, objective, and proof.
 
 | Tool | Risk | Purpose |
 | --- | --- | --- |
+| `lab_recipes` | low | List labs with a scripted end-to-end recipe |
+| `lab_run` | medium | Run a recipe (or `slug=auto`) through scoped tools; it verifies before recording |
 | `training_plan` | low | Rotate across source and category, easiest unsolved first |
 | `training_status` | low | Solved and in-progress counts by source, category, and difficulty |
 | `training_sources` | low | List packs, hosts, setup, and progress |

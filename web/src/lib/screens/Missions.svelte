@@ -155,6 +155,20 @@
     }
   }
 
+  async function runNextLab() {
+    if (!selected) return;
+    agentBusy = 'lab';
+    try {
+      const run = await api.startLabRun({ slug: 'auto', mission_id: selected.id });
+      store.toast('ok', 'lab run started');
+      store.watch(run.id);
+    } catch (exc) {
+      store.fail(exc instanceof Error ? exc.message : 'could not start the lab runner');
+    } finally {
+      agentBusy = '';
+    }
+  }
+
   async function controlAgent(action: 'pause' | 'resume' | 'stop') {
     if (!selected) return;
     agentBusy = action;
@@ -489,6 +503,10 @@
                   <button class="obs-btn obs-btn-primary" type="button" disabled={agentBusy === 'start'} onclick={() => void startAgent()}>
                     <Icon name="activity" size={13} />
                     {agentBusy === 'start' ? 'Planning...' : 'Continue training'}
+                  </button>
+                  <button class="obs-btn" type="button" disabled={agentBusy === 'lab'} onclick={() => void runNextLab()}>
+                    <Icon name="crosshair" size={13} />
+                    {agentBusy === 'lab' ? 'Starting...' : 'Run next lab'}
                   </button>
                 {:else}
                   <button class="obs-btn obs-btn-primary" type="button" disabled={busy === 'launch'} onclick={() => void launch()}>

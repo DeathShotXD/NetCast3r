@@ -813,6 +813,17 @@ def hypothesis_promote(ctx: ToolContext, args: dict) -> dict:
                  body=body)
 
 
+def lab_recipes(ctx: ToolContext, args: dict) -> dict:
+    return _call(ctx, "GET", "/api/v1/labs/recipes")
+
+
+def lab_run(ctx: ToolContext, args: dict) -> dict:
+    body = {"slug": args.get("slug", "auto")}
+    if args.get("mission_id"):
+        body["mission_id"] = args["mission_id"]
+    return _call(ctx, "POST", "/api/v1/labs/run", body=body)
+
+
 def training_plan(ctx: ToolContext, args: dict) -> dict:
     return _call(ctx, "GET", "/api/v1/training/plan", {
         "category": args.get("category", ""),
@@ -2282,6 +2293,8 @@ _HANDLERS.update({
     "hypothesis_get": hypothesis_get,
     "hypothesis_test": hypothesis_test,
     "hypothesis_promote": hypothesis_promote,
+    "lab_recipes": lab_recipes,
+    "lab_run": lab_run,
     "training_plan": training_plan,
     "training_status": training_status,
     "training_sources": training_sources,
@@ -2747,6 +2760,19 @@ TOOLS: tuple[Tool, ...] = (
                   "source": _string("source label")},
                  ["hypothesis_id", "title", "severity", "impact"]),
          "hypothesis_promote"),
+    Tool("lab_recipes", "List scripted lab recipes",
+         "List the labs NetCast3r can solve end to end through its own scoped "
+         "tools. Recipes launch the instance, perform the minimum steps, verify "
+         "the Academy banner, and record the lesson.",
+         "low", "training", _schema({}), "lab_recipes", read_only=True),
+    Tool("lab_run", "Run a scripted lab",
+         "Start a live lab run for a supported recipe, or pass slug=auto to "
+         "pick the first planned lab that has one. The run appears in Live Runs "
+         "and records training progress only after the banner verifies.",
+         "medium", "training",
+         _schema({"slug": _string("lab slug or auto"),
+                  "mission_id": _string("optional training mission")},
+                 []), "lab_run", open_world=True),
     Tool("training_plan", "Plan training",
          "Choose the next labs across every bundled source (PortSwigger Academy, "
          "Acunetix testphp, local Juice Shop/DVWA/WebGoat ranges). The plan rotates "
