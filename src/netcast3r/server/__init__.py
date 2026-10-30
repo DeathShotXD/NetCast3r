@@ -26,8 +26,8 @@ from .events import EventBus
 from .index import Index, is_training_target
 from .jobs import JobManager
 from .keys import KeyStore, mask
-from .. import (control, feedwatch, integrations, learning, quality, research,
-                reveng, selfaudit, selfmodel, stix, surface, training)
+from .. import (chains, control, feedwatch, integrations, learning, quality,
+                research, reveng, selfaudit, selfmodel, stix, surface, training)
 
 API_VERSION = "v1"
 ALLOWED_HOSTS = {"127.0.0.1", "localhost", "::1", "[::1]"}
@@ -751,6 +751,28 @@ class Server:
         @add("GET", r"/api/v1/research/sources")
         def research_sources(ctx):
             return _json(research.sources())
+
+        @add("GET", r"/api/v1/chains")
+        def chain_search(ctx):
+            return _json(chains.search(
+                query=ctx.query.get("q", ""), tag=ctx.query.get("tag", ""),
+                impact=ctx.query.get("impact", ""),
+                limit=_int_or(ctx.query.get("limit"), 20)))
+
+        @add("GET", r"/api/v1/chains/plan")
+        def chain_plan(ctx):
+            signals = [item for item in
+                       str(ctx.query.get("signals", "")).split(",") if item.strip()]
+            tags = [item for item in
+                    str(ctx.query.get("tags", "")).split(",") if item.strip()]
+            return _json(chains.plan(
+                self.index, target=ctx.query.get("target", ""),
+                signals=signals, tags=tags,
+                limit=_int_or(ctx.query.get("limit"), 4)))
+
+        @add("GET", r"/api/v1/chains/sources")
+        def chain_sources(ctx):
+            return _json(chains.sources())
 
         @add("GET", r"/api/v1/hunt-brief")
         def hunt_brief_route(ctx):

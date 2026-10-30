@@ -452,6 +452,8 @@ stored, so experience cannot be invented:
 | `selfmodel_evolve` | medium | Turn the top gaps into deduplicated, human-gated proposals |
 | `upgrade_propose` / `upgrade_list` / `upgrade_update` | medium | Human-gated improvement proposals with evidence |
 | `technique_search` / `technique_plan` | low | Rank a 38-entry public-research technique library against a target |
+| `chain_search` / `chain_plan` | low | Rank multi-step exploit chains against a target |
+| `single_packet_race` | medium | HTTP/2 last-byte-aligned burst for check-then-act bugs |
 | `research_sources` | low | Coverage of the technique library by class and rarity |
 | `research_ingest` | medium | Store a sourced write-up digest as an active skill |
 | `knowledge_sources` | low | Curated advisory and research feeds |

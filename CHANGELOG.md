@@ -110,6 +110,17 @@ Notable changes to NetCast3r, newest first.
   tasks and records the captured items in the task evidence. The `auto` lab
   selector falls back to the first unsolved scripted lab, then to the first
   recipe for a regression check.
+- More chained lab recipes: GraphQL hidden-field disclosure, PHP serialized
+  admin tampering, IDOR with an account API key, a client-controlled role
+  cookie, SSRF to the local admin API, path traversal, and Juice Shop login
+  SQL injection. Each recipe verifies before recording.
+- `single_packet_race` opens one TLS/HTTP/2 connection and writes every final
+  DATA frame together. It is the packet-alignment primitive that `race_run`
+  was missing.
+- Chain library: 13 multi-step chains (IDOR to ATO, SSRF to IAM, XSS to CSRF
+  to ATO, OAuth redirect theft, CSPT plus cache deception, SCIM takeover,
+  MCP resource confusion) with `chain_search`, `chain_plan`, and
+  `chain_sources`.
 - `docs/research/penligent-public-comparison.md` records what Penligent's
   public repository and site actually expose. The application source is not
   public, so the note does not claim a source-code review.

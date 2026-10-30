@@ -1,0 +1,337 @@
+{
+  "chains": [
+    {
+      "id": "idor-read-write-ato",
+      "title": "IDOR read -> write -> account takeover",
+      "steps": [
+        "IDOR read",
+        "IDOR write",
+        "email or password change",
+        "session takeover"
+      ],
+      "signals": [
+        "object id",
+        "api",
+        "two accounts",
+        "profile"
+      ],
+      "impact": "critical",
+      "proof": "Account B reads and then changes account A's data, and the change survives a fresh login.",
+      "tags": [
+        "idor",
+        "authz",
+        "ato"
+      ],
+      "sources": [
+        "https://portswigger.net/web-security/access-control"
+      ]
+    },
+    {
+      "id": "ssrf-imds-iam",
+      "title": "SSRF -> cloud metadata -> IAM -> data",
+      "steps": [
+        "SSRF callback",
+        "IMDS read",
+        "role credential",
+        "read-only cloud call"
+      ],
+      "signals": [
+        "url fetch",
+        "pdf",
+        "webhook",
+        "cloud"
+      ],
+      "impact": "critical",
+      "proof": "The metadata response yields a credential and one read-only identity call succeeds.",
+      "tags": [
+        "ssrf",
+        "cloud",
+        "aws",
+        "gcp",
+        "azure"
+      ],
+      "sources": [
+        "https://portswigger.net/web-security/ssrf"
+      ]
+    },
+    {
+      "id": "xss-csrf-ato",
+      "title": "Stored XSS -> CSRF token theft -> ATO",
+      "steps": [
+        "stored XSS",
+        "read CSRF token",
+        "state-changing request",
+        "email change"
+      ],
+      "signals": [
+        "comment",
+        "profile",
+        "admin view",
+        "spa"
+      ],
+      "impact": "critical",
+      "proof": "The payload executes for another user and performs an email change without their interaction.",
+      "tags": [
+        "xss",
+        "csrf",
+        "ato"
+      ],
+      "sources": [
+        "https://portswigger.net/web-security/cross-site-scripting"
+      ]
+    },
+    {
+      "id": "open-redirect-oauth",
+      "title": "Open redirect -> OAuth code theft -> ATO",
+      "steps": [
+        "allowed redirect origin",
+        "open redirect",
+        "code or token capture",
+        "session"
+      ],
+      "signals": [
+        "oauth",
+        "redirect_uri",
+        "login",
+        "sso"
+      ],
+      "impact": "critical",
+      "proof": "The authorization server redirects to the attacker with a valid code that is exchanged.",
+      "tags": [
+        "oauth",
+        "open-redirect",
+        "ato"
+      ],
+      "sources": [
+        "https://portswigger.net/web-security/oauth"
+      ]
+    },
+    {
+      "id": "subdomain-takeover-oauth",
+      "title": "Subdomain takeover -> OAuth redirect -> ATO",
+      "steps": [
+        "dangling CNAME",
+        "claim host",
+        "OAuth redirect_uri",
+        "code capture"
+      ],
+      "signals": [
+        "subdomain",
+        "cname",
+        "oauth"
+      ],
+      "impact": "critical",
+      "proof": "The claimed host receives an OAuth code for a real user.",
+      "tags": [
+        "subdomain",
+        "oauth",
+        "ato"
+      ],
+      "sources": [
+        "https://portswigger.net/web-security/oauth"
+      ]
+    },
+    {
+      "id": "cspt-cache-deception-ato",
+      "title": "CSPT -> cache deception -> token leak",
+      "steps": [
+        "CSPT source",
+        "cacheable sensitive path",
+        "authenticated cache fill",
+        "anonymous read"
+      ],
+      "signals": [
+        "spa",
+        "fetch",
+        "cdn",
+        "cache"
+      ],
+      "impact": "critical",
+      "proof": "An anonymous request returns the victim's token from the cache.",
+      "tags": [
+        "cspt",
+        "cache",
+        "ato"
+      ],
+      "sources": [
+        "https://zere.es/posts/cache-deception-cspt-account-takeover"
+      ]
+    },
+    {
+      "id": "graphql-gid-pii",
+      "title": "GraphQL global ID -> hidden fields -> PII",
+      "steps": [
+        "introspection",
+        "node(id:)",
+        "hidden field",
+        "cross-user read"
+      ],
+      "signals": [
+        "graphql",
+        "relay",
+        "node"
+      ],
+      "impact": "high",
+      "proof": "A second account receives fields it should not see.",
+      "tags": [
+        "graphql",
+        "idor",
+        "api"
+      ],
+      "sources": [
+        "https://portswigger.net/web-security/graphql"
+      ]
+    },
+    {
+      "id": "jwt-claim-admin",
+      "title": "JWT claim change -> admin action",
+      "steps": [
+        "decode token",
+        "change role/sub",
+        "replay",
+        "admin action"
+      ],
+      "signals": [
+        "jwt",
+        "auth",
+        "admin"
+      ],
+      "impact": "critical",
+      "proof": "The server accepts the changed claim and performs an admin action.",
+      "tags": [
+        "jwt",
+        "auth",
+        "ato"
+      ],
+      "sources": [
+        "https://portswigger.net/web-security/jwt"
+      ]
+    },
+    {
+      "id": "upload-webshell-rce",
+      "title": "Upload -> web shell -> RCE",
+      "steps": [
+        "upload bypass",
+        "served path",
+        "execute harmless command",
+        "read secret"
+      ],
+      "signals": [
+        "upload",
+        "avatar",
+        "file",
+        "php"
+      ],
+      "impact": "critical",
+      "proof": "The stored file executes and returns a command or secret.",
+      "tags": [
+        "upload",
+        "rce"
+      ],
+      "sources": [
+        "https://portswigger.net/web-security/file-upload"
+      ]
+    },
+    {
+      "id": "race-coupon-double-spend",
+      "title": "Race -> coupon or balance double spend",
+      "steps": [
+        "state machine",
+        "concurrent burst",
+        "duplicate side effect",
+        "financial proof"
+      ],
+      "signals": [
+        "coupon",
+        "refund",
+        "balance",
+        "checkout"
+      ],
+      "impact": "high",
+      "proof": "The invariant changes more than once for one intended action.",
+      "tags": [
+        "race",
+        "logic",
+        "payment"
+      ],
+      "sources": [
+        "https://portswigger.net/web-security/race-conditions"
+      ]
+    },
+    {
+      "id": "host-header-reset-ato",
+      "title": "Host header -> reset poisoning -> ATO",
+      "steps": [
+        "reset request",
+        "host override",
+        "token to attacker",
+        "use token"
+      ],
+      "signals": [
+        "password reset",
+        "host header",
+        "email"
+      ],
+      "impact": "critical",
+      "proof": "The reset email links to the attacker origin and the token works.",
+      "tags": [
+        "host-header",
+        "ato",
+        "auth"
+      ],
+      "sources": [
+        "https://portswigger.net/web-security/host-header"
+      ]
+    },
+    {
+      "id": "scim-email-ato",
+      "title": "SCIM email change -> tenant ATO",
+      "steps": [
+        "SCIM token",
+        "update userName/email",
+        "skip verification",
+        "login as victim"
+      ],
+      "signals": [
+        "scim",
+        "sso",
+        "tenant"
+      ],
+      "impact": "critical",
+      "proof": "A SCIM write changes the victim's email and the attacker logs in.",
+      "tags": [
+        "scim",
+        "sso",
+        "ato"
+      ],
+      "sources": [
+        "https://blog.doyensec.com/2025/05/08/scim-hunting.html"
+      ]
+    },
+    {
+      "id": "mcp-resource-confusion",
+      "title": "MCP token audience confusion -> cross-resource tools",
+      "steps": [
+        "discover metadata",
+        "get token for resource A",
+        "replay at resource B",
+        "high-risk tool"
+      ],
+      "signals": [
+        "mcp",
+        "oauth",
+        "agent"
+      ],
+      "impact": "high",
+      "proof": "A token minted for one resource invokes tools on another.",
+      "tags": [
+        "mcp",
+        "oauth",
+        "ai"
+      ],
+      "sources": [
+        "https://blog.doyensec.com/2026/03/05/mcp-nightmare.html"
+      ]
+    }
+  ]
+}

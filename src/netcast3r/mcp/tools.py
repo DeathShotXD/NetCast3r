@@ -30,9 +30,9 @@ from urllib.parse import quote, urlencode, urljoin, urlsplit
 
 import httpx
 
-from .. import (authstore, browser, integrations, oast, pathdiff, pivot, quality,
-                research, reveng, selfmodel, sqa, stix, surface, tempmail,
-                threatintel, training)
+from .. import (authstore, browser, chains, integrations, oast, pathdiff,
+                pivot, quality, research, reveng, selfmodel, single_packet,
+                sqa, stix, surface, tempmail, threatintel, training)
 from ..scope import ScopeManager
 
 POLICIES = ("readonly", "supervised", "full")
@@ -991,6 +991,24 @@ def knowledge_read(ctx: ToolContext, args: dict) -> dict:
                  body={"max_chars": args.get("max_chars", 8000)})
 
 
+def chain_search(ctx: ToolContext, args: dict) -> dict:
+    return _call(ctx, "GET", "/api/v1/chains", {
+        "q": args.get("query", ""), "tag": args.get("tag", ""),
+        "impact": args.get("impact", ""), "limit": args.get("limit", 20)})
+
+
+def chain_plan(ctx: ToolContext, args: dict) -> dict:
+    return _call(ctx, "GET", "/api/v1/chains/plan", {
+        "target": args.get("target", ""),
+        "signals": ",".join(str(item) for item in (args.get("signals") or [])),
+        "tags": ",".join(str(item) for item in (args.get("tags") or [])),
+        "limit": args.get("limit", 4)})
+
+
+def chain_sources(ctx: ToolContext, args: dict) -> dict:
+    return _call(ctx, "GET", "/api/v1/chains/sources")
+
+
 def hunt_brief(ctx: ToolContext, args: dict) -> dict:
     return _call(ctx, "GET", "/api/v1/hunt-brief", {
         "mission_id": args["mission_id"], "limit": args.get("limit", 3)})
@@ -1791,6 +1809,68 @@ def oracle_extract(ctx: ToolContext, args: dict) -> dict:
     }
 
 
+def single_packet_race(ctx: ToolContext, args: dict) -> dict:
+    """One HTTP/2 connection, all final body bytes in one write."""
+    target = str(args.get("target") or "").strip()
+    url = target if "://" in target else "https://" + target
+    parts = urlsplit(url)
+    if parts.scheme != "https" or not parts.hostname:
+        raise ToolError("invalid_arguments", "target must be an https URL")
+    method = str(args.get("method") or "POST").upper()
+    if method not in {"POST", "PUT", "PATCH", "DELETE"}:
+        raise ToolError("invalid_arguments", "method must be POST, PUT, PATCH, or DELETE")
+    mission_id = str(args.get("mission_id") or "")
+    _require_scope(ctx, target, mission_id, args.get("scope"), probe=True)
+
+    headers: dict[str, str] = {"user-agent": "NetCast3r-MCP/0.1",
+                               "accept": "*/*"}
+    profile_name = str(args.get("auth_profile") or "").strip()
+    if profile_name:
+        profile = authstore.get_profile(profile_name, base=ctx.base)
+        if profile is None:
+            raise ToolError("invalid_arguments", f"unknown auth profile: {profile_name}")
+        headers.update(profile.request_headers())
+    supplied = args.get("headers") or {}
+    if not isinstance(supplied, dict):
+        raise ToolError("invalid_arguments", "headers must be an object")
+    if any(str(name).strip().lower() == "cookie" for name in supplied):
+        headers = {key: value for key, value in headers.items()
+                   if key.lower() != "cookie"}
+    for raw_name, raw_value in supplied.items():
+        name = str(raw_name).strip()
+        value = str(raw_value)
+        if not name or any(char in name for char in "\r\n:") or "\r" in value or "\n" in value:
+            raise ToolError("invalid_arguments", f"invalid header: {name[:40]!r}")
+        headers[name] = value
+
+    body: bytes | None = None
+    payload_json = args.get("json")
+    payload_form = args.get("form")
+    raw_body = args.get("body")
+    if sum(item is not None for item in (payload_json, payload_form, raw_body)) > 1:
+        raise ToolError("invalid_arguments", "use only one of body, json, or form")
+    if payload_json is not None:
+        body = json.dumps(payload_json).encode("utf-8")
+        headers.setdefault("content-type", "application/json")
+    elif payload_form is not None:
+        body = urlencode(payload_form, doseq=True).encode("utf-8")
+        headers.setdefault("content-type", "application/x-www-form-urlencoded")
+    elif raw_body is not None:
+        body = str(raw_body).encode("utf-8")
+    if body is not None and len(body) > 1_048_576:
+        raise ToolError("invalid_arguments", "request body is larger than 1 MiB")
+
+    ctx.limiter.check("race")
+    try:
+        return single_packet.send_burst(
+            url, method, headers, body,
+            count=int(args.get("count") or 10),
+            timeout=float(args.get("timeout") or 20),
+            verify_tls=bool(args.get("verify_tls", True)))
+    except single_packet.SinglePacketError as exc:
+        raise ToolError("request_failed", str(exc))
+
+
 def race_run(ctx: ToolContext, args: dict) -> dict:
     """Send a bounded concurrent burst of the same scoped request.
 
@@ -2336,6 +2416,9 @@ _HANDLERS.update({
     "knowledge_list": knowledge_list,
     "knowledge_read": knowledge_read,
     "hunt_plan": hunt_plan,
+    "chain_search": chain_search,
+    "chain_plan": chain_plan,
+    "chain_sources": chain_sources,
     "hunt_brief": hunt_brief,
     "selfmodel_snapshot": selfmodel_snapshot,
     "selfmodel_gaps": selfmodel_gaps,
@@ -2382,6 +2465,7 @@ _HANDLERS.update({
     "http_upload": http_upload,
     "oracle_extract": oracle_extract,
     "race_run": race_run,
+    "single_packet_race": single_packet_race,
     "http_path_diff": http_path_diff,
     "reveng_analyze": reveng_analyze,
     "rea_analyze": rea_analyze,
@@ -2932,6 +3016,29 @@ TOOLS: tuple[Tool, ...] = (
                   "notes": _string("distilled technique, at least 80 characters"),
                   "tags": _array("tags", {"type": "string"})},
                  ["url", "title", "notes"]), "research_ingest"),
+    Tool("chain_search", "Search exploit chains",
+         "Search a curated library of multi-step chains: IDOR to ATO, SSRF to "
+         "cloud IAM, XSS to CSRF to ATO, OAuth redirect theft, CSPT plus cache "
+         "deception, SCIM takeover, and more.",
+         "low", "research",
+         _schema({"query": _string("text or step"),
+                  "tag": _string("exact tag"),
+                  "impact": _string("critical, high, medium, or low"),
+                  "limit": _integer("how many", 1, 100, 20)}),
+         "chain_search", read_only=True),
+    Tool("chain_plan", "Plan chains for a target",
+         "Rank multi-step chains against a target fingerprint. Each result "
+         "lists the links and the minimum proof. A chain is a hypothesis until "
+         "every link is reproduced.",
+         "low", "research",
+         _schema({"target": _string("target host or URL"),
+                  "signals": _array("observed signals", {"type": "string"}),
+                  "tags": _array("desired tags", {"type": "string"}),
+                  "limit": _integer("how many", 1, 20, 4)}),
+         "chain_plan", read_only=True),
+    Tool("chain_sources", "Chain library coverage",
+         "Show the chain count by impact and tag.",
+         "low", "research", _schema({}), "chain_sources", read_only=True),
     Tool("hunt_brief", "Build a small-model hunt brief",
          "Return a compact mission brief: scope, rules, the top techniques with "
          "their first test and proof, and stop conditions. Deterministic; it "
@@ -3420,6 +3527,26 @@ TOOLS: tuple[Tool, ...] = (
                   "max_bytes": _integer("per-response body cap", 256, 65536, 16384),
                   "timeout": _integer("per-request timeout in seconds", 1, 60, 20)},
                  ["target"]), "race_run", open_world=True),
+    Tool("single_packet_race", "HTTP/2 single-packet race",
+         "Open one TLS/HTTP/2 connection, send every request's headers and all "
+         "but the final body byte, then write every final DATA frame in one "
+         "packet. Use it for check-then-act bugs that need packet alignment. "
+         "The target must be in scope; a duplicate side effect is the proof.",
+         "medium", "web",
+         _schema({"target": _string("in-scope https URL"),
+                  "mission_id": _string("mission whose scope authorizes the burst"),
+                  "scope": _array("explicit scope entries when no mission is used"),
+                  "method": _string("HTTP method", enum=[
+                      "POST", "PUT", "PATCH", "DELETE"]),
+                  "headers": _object("extra request headers"),
+                  "auth_profile": _string("stored auth profile name"),
+                  "body": _string("raw request body"),
+                  "json": _object("JSON request body"),
+                  "form": _object("form request body"),
+                  "count": _integer("number of requests", 2, 50, 10),
+                  "verify_tls": _boolean("verify the target certificate", True),
+                  "timeout": _integer("timeout in seconds", 1, 60, 20)},
+                 ["target"]), "single_packet_race", open_world=True),
     Tool("http_path_diff", "Path-variant differential",
          "Send the same request to literal, percent-encoded, case-varied, and slash-varied "
          "paths, then report where the status or body diverges. Useful for finding "

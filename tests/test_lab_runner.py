@@ -13,7 +13,9 @@ class LabRecipeTests(unittest.TestCase):
         self.assertGreaterEqual(len(RECIPES), 4)
         for slug, recipe in RECIPES.items():
             self.assertIn(slug, slugs)
-            self.assertTrue(recipe["page"].startswith("https://portswigger.net/"))
+            self.assertTrue(
+                recipe["page"].startswith("https://portswigger.net/")
+                or recipe["page"].startswith("http://127.0.0.1:"))
             self.assertTrue(recipe["steps"])
             self.assertEqual(recipe["steps"][-1]["kind"], "record")
 
