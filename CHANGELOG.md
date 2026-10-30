@@ -59,6 +59,16 @@ Notable changes to NetCast3r, newest first.
 - `selfmodel_evolve` turns the top capability gaps into deduplicated,
   human-gated upgrade proposals. It writes a backlog; it does not edit code or
   apply a change.
+- `http_upload` sends one scoped multipart upload from memory (1 MiB cap) so
+  file-upload labs and real endpoints can be tested without a shell or a
+  temporary file.
+- `oracle_extract` extracts a value through a boolean, status, or time-based
+  oracle. It renders an expression into the URL, a header, or the body and
+  sends a bounded, rate-limited probe per candidate; it is the missing
+  primitive for blind SQL injection and blind command injection.
+- Training progressed to 15 solved exercises: blind SQL injection with
+  conditional responses used `oracle_extract`; remote code execution via a web
+  shell used `http_upload`; stored XSS used the existing browser/HTTP path.
 - `docs/research/penligent-public-comparison.md` records what Penligent's
   public repository and site actually expose. The application source is not
   public, so the note does not claim a source-code review.

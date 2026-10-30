@@ -17,6 +17,7 @@ the control plane has no data, the tool says so.
 
 from __future__ import annotations
 
+import base64
 import hashlib
 import json
 import os
@@ -24,7 +25,7 @@ import socket
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from urllib.parse import urlencode, urljoin, urlsplit
+from urllib.parse import quote, urlencode, urljoin, urlsplit
 
 import httpx
 
@@ -216,6 +217,7 @@ class RateLimiter:
         "scan": (6, 3600.0),
         "probe": (60, 60.0),
         "request": (90, 60.0),
+        "oracle": (600, 60.0),
         "wait": (6, 60.0),
     }
 
@@ -1528,6 +1530,216 @@ def http_request(ctx: ToolContext, args: dict) -> dict:
     }
 
 
+def http_upload(ctx: ToolContext, args: dict) -> dict:
+    """One scoped multipart upload. The file is held in memory, never written."""
+    target = str(args.get("target") or "").strip()
+    url = target if "://" in target else "https://" + target
+    parts = urlsplit(url)
+    if parts.scheme not in {"http", "https"} or not parts.hostname:
+        raise ToolError("invalid_arguments", "target must be an http(s) URL or hostname")
+    method = str(args.get("method") or "POST").upper()
+    if method not in {"POST", "PUT", "PATCH"}:
+        raise ToolError("invalid_arguments", "upload method must be POST, PUT, or PATCH")
+    mission_id = str(args.get("mission_id") or "")
+    scope = args.get("scope")
+    _require_scope(ctx, target, mission_id, scope, probe=True)
+
+    field = str(args.get("field") or "file").strip()
+    filename = str(args.get("filename") or "upload.bin").strip()
+    if not field or any(ch in field for ch in "\r\n\"") or not filename \
+            or "\r" in filename or "\n" in filename:
+        raise ToolError("invalid_arguments", "invalid multipart field or filename")
+    raw = args.get("content")
+    if raw is None:
+        raise ToolError("invalid_arguments", "content is required")
+    if args.get("content_base64"):
+        try:
+            content = base64.b64decode(str(raw), validate=True)
+        except ValueError as exc:
+            raise ToolError("invalid_arguments", f"content is not valid base64: {exc}")
+    else:
+        content = str(raw).encode("utf-8")
+    if len(content) > 1_048_576:
+        raise ToolError("invalid_arguments", "upload is larger than 1 MiB")
+    content_type = str(args.get("content_type") or "application/octet-stream")
+    form = args.get("form") or {}
+    if not isinstance(form, dict):
+        raise ToolError("invalid_arguments", "form must be an object")
+
+    headers: dict[str, str] = {"user-agent": "NetCast3r-MCP/0.1", "accept": "*/*"}
+    profile_name = str(args.get("auth_profile") or "").strip()
+    if profile_name:
+        profile = authstore.get_profile(profile_name, base=ctx.base)
+        if profile is None:
+            raise ToolError("invalid_arguments", f"unknown auth profile: {profile_name}")
+        headers.update(profile.request_headers())
+    supplied = args.get("headers") or {}
+    if not isinstance(supplied, dict):
+        raise ToolError("invalid_arguments", "headers must be an object")
+    if any(str(name).strip().lower() == "cookie" for name in supplied):
+        headers = {key: value for key, value in headers.items()
+                   if key.lower() != "cookie"}
+    for raw_name, raw_value in supplied.items():
+        name = str(raw_name).strip()
+        value = str(raw_value)
+        if not name or any(char in name for char in "\r\n:") or "\r" in value or "\n" in value:
+            raise ToolError("invalid_arguments", f"invalid header: {name[:40]!r}")
+        if name.lower() == "content-type":
+            continue  # httpx must own the multipart boundary
+        headers[name] = value
+
+    maximum = max(1024, min(int(args.get("max_bytes", 65536)), 524288))
+    timeout = max(1.0, min(float(args.get("timeout", 30)), 60.0))
+    verify_tls = bool(args.get("verify_tls", True))
+    started = time.monotonic()
+    try:
+        with httpx.Client(timeout=timeout, trust_env=False, follow_redirects=False,
+                          verify=verify_tls) as client:
+            with client.stream(
+                    method, url, headers=headers,
+                    files={field: (filename, content, content_type)},
+                    data={str(key): str(value) for key, value in form.items()}) as response:
+                chunks, read, truncated = [], 0, False
+                for chunk in response.iter_bytes():
+                    if read + len(chunk) > maximum:
+                        chunks.append(chunk[: maximum - read])
+                        truncated = True
+                        break
+                    chunks.append(chunk)
+                    read += len(chunk)
+                body = b"".join(chunks).decode("utf-8", "replace")
+                response_headers = {}
+                set_cookie = []
+                for key, value in response.headers.multi_items():
+                    lower = key.lower()
+                    if lower == "set-cookie":
+                        set_cookie.append(value)
+                    elif lower in response_headers:
+                        response_headers[lower] += ", " + value
+                    else:
+                        response_headers[lower] = value
+                status = response.status_code
+    except httpx.HTTPError as exc:
+        raise ToolError("request_failed", f"upload failed: {type(exc).__name__}", str(exc))
+    return {
+        "target": target, "status": status, "headers": response_headers,
+        "set_cookie": set_cookie, "body": body, "bytes": len(body),
+        "truncated": truncated, "field": field, "filename": filename,
+        "uploaded_bytes": len(content),
+        "elapsed_ms": int((time.monotonic() - started) * 1000),
+        "note": "The file was held in memory and sent once; no copy was written.",
+    }
+
+
+def oracle_extract(ctx: ToolContext, args: dict) -> dict:
+    """Extract a value through a boolean or time-based oracle.
+
+    The caller supplies a template containing ``{{expr}}`` in the URL, a header,
+    or the body. For each position and candidate character the tool renders
+    ``expr_template`` and sends one scoped probe. This is the missing primitive
+    for blind SQL injection, blind command injection, and similar oracles.
+    """
+    target = str(args.get("target") or "").strip()
+    method = str(args.get("method") or "GET").upper()
+    if method not in {"GET", "POST", "PUT", "PATCH"}:
+        raise ToolError("invalid_arguments", "unsupported method")
+    headers = args.get("headers") or {}
+    if not isinstance(headers, dict):
+        raise ToolError("invalid_arguments", "headers must be an object")
+    body = args.get("body")
+    if body is not None and not isinstance(body, str):
+        raise ToolError("invalid_arguments", "body must be a string")
+    target_template = target
+    if "{{expr}}" not in target and "{{expr}}" not in str(body or "") \
+            and not any("{{expr}}" in str(value) for value in headers.values()):
+        raise ToolError("invalid_arguments",
+                        "put {{expr}} in the target, a header, or the body")
+    true_when = str(args.get("true_when") or "contains").lower()
+    if true_when not in {"contains", "not_contains", "status", "time"}:
+        raise ToolError("invalid_arguments",
+                        "true_when must be contains, not_contains, status, or time")
+    match = str(args.get("match") or "")
+    if true_when in {"contains", "not_contains"} and not match:
+        raise ToolError("invalid_arguments", "match is required for a body oracle")
+    expected_status = int(args.get("expected_status") or 200)
+    threshold_ms = int(args.get("threshold_ms") or 3000)
+    query = str(args.get("query") or "")
+    expr_template = str(args.get("expr_template")
+                        or "ASCII(SUBSTRING(({query}),{pos},1))={char}")
+    charset = str(args.get("charset")
+                  or "abcdefghijklmnopqrstuvwxyz0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ")
+    max_length = max(1, min(int(args.get("max_length") or 32), 256))
+    position_start = max(1, min(int(args.get("position_start") or 1), 4096))
+    max_requests = max(1, min(int(args.get("max_requests") or 600), 2000))
+    profile_name = str(args.get("auth_profile") or "").strip()
+    mission_id = str(args.get("mission_id") or "")
+    scope = args.get("scope")
+
+    extracted = []
+    requests = 0
+    truncated = False
+
+    def render(expr: str) -> tuple[str, dict, str | None]:
+        url = target_template.replace("{{expr}}", quote(expr, safe=""))
+        rendered_headers = {str(key): str(value).replace("{{expr}}", expr)
+                            for key, value in headers.items()}
+        rendered_body = (body.replace("{{expr}}", expr)
+                         if isinstance(body, str) else None)
+        return url, rendered_headers, rendered_body
+
+    for position in range(position_start, position_start + max_length):
+        found = ""
+        for char in charset:
+            if requests >= max_requests:
+                truncated = True
+                break
+            expr = (expr_template.replace("{query}", query)
+                    .replace("{pos}", str(position))
+                    .replace("{char}", str(ord(char))))
+            url, rendered_headers, rendered_body = render(expr)
+            ctx.limiter.check("oracle")
+            probe = {
+                "target": url, "method": method, "headers": rendered_headers,
+                "auth_profile": profile_name, "mission_id": mission_id,
+                "scope": scope, "max_bytes": 131072, "timeout": 20,
+                "follow_redirects": False,
+            }
+            if rendered_body is not None:
+                probe["body"] = rendered_body
+            response = http_request(ctx, probe)
+            requests += 1
+            status = int(response.get("status") or 0)
+            text = str(response.get("body") or "")
+            elapsed = int(response.get("elapsed_ms") or 0)
+            if true_when == "contains":
+                hit = match.lower() in text.lower()
+            elif true_when == "not_contains":
+                hit = match.lower() not in text.lower()
+            elif true_when == "status":
+                hit = status == expected_status
+            else:
+                hit = elapsed >= threshold_ms
+            if hit:
+                found = char
+                break
+        if not found:
+            break
+        extracted.append(found)
+        if len(extracted) >= max_length or requests >= max_requests:
+            break
+    value = "".join(extracted)
+    return {
+        "target": target, "method": method, "true_when": true_when,
+        "value": value, "length": len(value), "requests": requests,
+        "max_requests": max_requests, "truncated": truncated,
+        "positions": position_start + len(value) - 1 if value else position_start,
+        "evidence": (f"extracted {len(value)} character(s) through a "
+                     f"{true_when} oracle in {requests} probe(s)"),
+        "note": ("Each probe is scope-checked and rate-limited. Stop at the "
+                 "minimum value that proves the bug."),
+    }
+
+
 def reveng_analyze(ctx: ToolContext, args: dict) -> dict:
     """Analyze a local artifact the operator legitimately holds.
 
@@ -1979,6 +2191,8 @@ _HANDLERS.update({
     "scope_check": scope_check,
     "http_probe": http_probe,
     "http_request": http_request,
+    "http_upload": http_upload,
+    "oracle_extract": oracle_extract,
     "http_path_diff": http_path_diff,
     "reveng_analyze": reveng_analyze,
     "inbox_create": inbox_create,
@@ -2887,6 +3101,55 @@ TOOLS: tuple[Tool, ...] = (
                   "max_bytes": _integer("response body cap", 1024, 524288, 65536),
                   "timeout": _integer("timeout in seconds", 1, 60, 15)},
                  ["target"]), "http_request", open_world=True),
+    Tool("http_upload", "Scoped multipart upload",
+         "Send one multipart file upload with optional form fields and an auth "
+         "profile. The file is held in memory, capped at 1 MiB, and the target is "
+         "scope-checked. Use it to test extension, MIME, magic-byte, and storage "
+         "handling without a shell.",
+         "medium", "web",
+         _schema({"target": _string("in-scope upload URL"),
+                  "mission_id": _string("mission whose scope authorizes the upload"),
+                  "scope": _array("explicit scope entries when no mission is used"),
+                  "method": _string("upload method", enum=["POST", "PUT", "PATCH"]),
+                  "headers": _object("extra request headers"),
+                  "auth_profile": _string("stored auth profile name"),
+                  "field": _string("multipart field name"),
+                  "filename": _string("filename presented to the server"),
+                  "content": _string("file content"),
+                  "content_base64": _boolean("decode content from base64", False),
+                  "content_type": _string("part content type"),
+                  "form": _object("extra form fields"),
+                  "verify_tls": _boolean("verify the target certificate", True),
+                  "max_bytes": _integer("response body cap", 1024, 524288, 65536),
+                  "timeout": _integer("timeout in seconds", 1, 60, 30)},
+                 ["target", "content"]), "http_upload", open_world=True),
+    Tool("oracle_extract", "Extract through a blind oracle",
+         "Extract a value character by character through a boolean, status, or "
+         "time-based oracle. Put {{expr}} in the URL, a header, or the body; the "
+         "tool renders expr_template with {query}, {pos}, and {char} and sends one "
+         "scoped, rate-limited probe per candidate. Use it for blind SQL injection, "
+         "blind command injection, and similar oracles.",
+         "medium", "web",
+         _schema({"target": _string("in-scope URL, optionally containing {{expr}}"),
+                  "method": _string("HTTP method", enum=[
+                      "GET", "POST", "PUT", "PATCH"]),
+                  "headers": _object("headers; values may contain {{expr}}"),
+                  "body": _string("body template; may contain {{expr}}"),
+                  "auth_profile": _string("stored auth profile name"),
+                  "mission_id": _string("mission whose scope authorizes the probes"),
+                  "scope": _array("explicit scope entries when no mission is used"),
+                  "expr_template": _string("expression template using {query}, {pos}, {char}"),
+                  "query": _string("subquery or value to extract"),
+                  "charset": _string("candidate characters"),
+                  "max_length": _integer("maximum characters to extract", 1, 256, 32),
+                  "position_start": _integer("first character position", 1, 4096, 1),
+                  "max_requests": _integer("hard probe cap", 1, 2000, 600),
+                  "true_when": _string("oracle type", enum=[
+                      "contains", "not_contains", "status", "time"]),
+                  "match": _string("body text that indicates a true condition"),
+                  "expected_status": _integer("status that indicates true", 100, 599, 200),
+                  "threshold_ms": _integer("time threshold in milliseconds", 1, 60000, 3000)},
+                 ["target"]), "oracle_extract", open_world=True),
     Tool("http_path_diff", "Path-variant differential",
          "Send the same request to literal, percent-encoded, case-varied, and slash-varied "
          "paths, then report where the status or body diverges. Useful for finding "

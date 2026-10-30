@@ -258,6 +258,21 @@ different host. Metadata and link-local addresses are refused at every hop.
 Bodies are capped at 512 KiB and the response returns `set_cookie` separately
 so cookie flags can be reviewed.
 
+### Uploads and blind oracles
+
+`http_upload` sends one scoped multipart upload with an optional form body and
+auth profile. The file is held in memory, capped at 1 MiB, and the response is
+capped like any other request. It exists so an agent can test extension, MIME,
+magic-byte, and storage handling without a shell or a temporary file.
+
+`oracle_extract` is the blind-extraction primitive. The caller puts `{{expr}}`
+in the URL, a header, or the body, then supplies `expr_template` with
+`{query}`, `{pos}`, and `{char}`. The tool tries each character at each
+position and stops on a body marker, a status, or a time threshold. It is
+capped at 2000 probes, rate-limited separately from normal requests, and every
+probe goes through the same scope check. It does not decide that a bug exists;
+the extracted value still has to be used to prove impact.
+
 ### Path differentials
 
 `http_path_diff` sends the same request to a bounded set of path variants —
