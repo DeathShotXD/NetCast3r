@@ -131,6 +131,23 @@ def plan(index=None, target: str = "", tech: str = "", signals: list | None = No
                     row.get("exposures") or 0)
         except Exception:  # noqa: BLE001 - ranking must not depend on this table
             expertise = {}
+    def row(item: dict, score: int, why: list[str]) -> dict:
+        return {
+            "id": item["id"],
+            "title": item["title"],
+            "class": item["class"],
+            "rarity": item["rarity"],
+            "impact": item["impact"],
+            "score": score,
+            "why": sorted(set(why))[:8],
+            "signals": item["signals"],
+            "steps": item["steps"],
+            "proof": item["proof"],
+            "tools": item["tools"],
+            "sources": item["sources"],
+            "tags": item["tags"],
+        }
+
     ranked = []
     for item in techniques():
         signal_hits = [value for value in item["signals"]
@@ -152,21 +169,16 @@ def plan(index=None, target: str = "", tech: str = "", signals: list | None = No
         if not context:
             score = (IMPACT_WEIGHT.get(item["impact"], 0) * 2
                      + RARITY_WEIGHT.get(item["rarity"], 0))
-        ranked.append({
-            "id": item["id"],
-            "title": item["title"],
-            "class": item["class"],
-            "rarity": item["rarity"],
-            "impact": item["impact"],
-            "score": score,
-            "why": sorted(set(signal_hits + tag_hits + hint_hits))[:8],
-            "signals": item["signals"],
-            "steps": item["steps"],
-            "proof": item["proof"],
-            "tools": item["tools"],
-            "sources": item["sources"],
-            "tags": item["tags"],
-        })
+        ranked.append(row(item, score, signal_hits + tag_hits + hint_hits))
+    fallback = False
+    if context and not ranked:
+        # Unknown stack: offer the general high-impact starters rather than an
+        # empty plan. The caller still has to test the prerequisites.
+        fallback = True
+        for item in techniques():
+            score = (IMPACT_WEIGHT.get(item["impact"], 0) * 2
+                     + RARITY_WEIGHT.get(item["rarity"], 0))
+            ranked.append(row(item, score, ["general high-impact starter"]))
     ranked.sort(key=lambda row: (-row["score"], -IMPACT_WEIGHT.get(row["impact"], 0),
                                  row["title"].lower()))
     return {
@@ -175,6 +187,7 @@ def plan(index=None, target: str = "", tech: str = "", signals: list | None = No
         "signals": list(signals or []),
         "items": ranked[:max(1, min(int(limit or 6), 30))],
         "catalogue": len(techniques()),
+        "fallback": fallback,
         "note": ("Ranked from a public-research library. A high score is a reason "
                  "to test, not evidence of a vulnerability."),
     }

@@ -56,6 +56,9 @@ class ResearchLibraryTests(unittest.TestCase):
         empty = research.plan(self.index, limit=3)
         self.assertEqual(len(empty["items"]), 3)
         self.assertGreaterEqual(empty["items"][0]["score"], empty["items"][1]["score"])
+        unknown = research.plan(self.index, tech="unknown-stack", limit=3)
+        self.assertTrue(unknown["fallback"])
+        self.assertEqual(len(unknown["items"]), 3)
 
     def test_hunt_plan_combines_mission_and_techniques(self):
         mission = self.index.create_mission(
