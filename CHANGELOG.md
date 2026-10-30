@@ -84,6 +84,9 @@ Notable changes to NetCast3r, newest first.
 - STIX 2.1: `stix_export` builds a bundle with an identity, vulnerability
   objects, and a report; `taxii_collections` and `taxii_poll` read a configured
   TAXII 2.1 server.
+- `surface_diff` compares two runs' subdomains, assets, JavaScript, endpoints,
+  secret candidates, and findings; it reports added, removed, and
+  severity-changed items from the stored run inventories.
 - Research note: `docs/research/penligent-and-commercial-features.md` studies
   Penligent AI's public product pattern and lists profit-making features
   (surface diff, presets, quality gate, payout ROI, verified pipeline, CI gate,

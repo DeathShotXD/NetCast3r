@@ -424,6 +424,15 @@ against the mission before the call, and the result is audited. This is the
 bridge for Hermes Agent, Agent Zero, HexStrike, OpenCode, and an internal MCP
 server.
 
+### Continuous surface diff
+
+`surface_diff` compares two runs' per-run inventories: subdomains, assets,
+JavaScript files, endpoints, secret candidates, and findings. It returns added,
+removed, and severity-changed items with counts and samples. It reads the run
+databases as written; a missing run database is an error, not an empty surface.
+Use it for weekly monitoring: run the same mission, diff against the previous
+run, and triage only what changed.
+
 ### Sandbox
 
 `sandbox_run` executes one short command in a locked-down Docker container:

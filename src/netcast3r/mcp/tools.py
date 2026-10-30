@@ -28,7 +28,7 @@ from urllib.parse import urlencode, urljoin, urlsplit
 
 import httpx
 
-from .. import authstore, browser, integrations, oast, pathdiff, pivot, quality, reveng, stix, tempmail, threatintel
+from .. import authstore, browser, integrations, oast, pathdiff, pivot, quality, reveng, stix, surface, tempmail, threatintel
 from ..scope import ScopeManager
 
 POLICIES = ("readonly", "supervised", "full")
@@ -569,6 +569,11 @@ def report_quality(ctx: ToolContext, args: dict) -> dict:
 
 def program_rank(ctx: ToolContext, args: dict) -> dict:
     return _call(ctx, "GET", "/api/v1/programs/rank")
+
+
+def surface_diff(ctx: ToolContext, args: dict) -> dict:
+    return _call(ctx, "GET", f"/api/v1/runs/{args['run_id']}/diff", {
+        "against": args["against"], "limit": args.get("limit", 200)})
 
 
 def stix_export(ctx: ToolContext, args: dict) -> dict:
@@ -1555,6 +1560,7 @@ _HANDLERS.update({
     "report_quality": report_quality,
     "program_rank": program_rank,
     "stix_export": stix_export,
+    "surface_diff": surface_diff,
     "taxii_collections": taxii_collections,
     "taxii_poll": taxii_poll,
     "recon_passive": recon_passive,
@@ -1859,6 +1865,15 @@ TOOLS: tuple[Tool, ...] = (
          "submissions, acceptances, paid rows, and bounty totals. No estimates and no "
          "currency conversion.",
          "low", "reports", _schema({}), "program_rank", read_only=True),
+    Tool("surface_diff", "Diff two runs",
+         "Compare the per-run inventories of two runs: subdomains, assets, JavaScript, "
+         "endpoints, secret candidates, and findings added, removed, or changed. This is "
+         "the continuous-monitoring primitive; it reads stored runs only.",
+         "low", "runs",
+         _schema({"run_id": _string("base run id"),
+                  "against": _string("newer run id to compare"),
+                  "limit": _integer("sample cap per category", 1, 1000, 200)},
+                 ["run_id", "against"]), "surface_diff", read_only=True),
     Tool("stix_export", "Export findings as STIX 2.1",
          "Export findings as a STIX 2.1 bundle: an identity, one vulnerability object per "
          "finding with its CVE reference when present, and a report. No indicators are "

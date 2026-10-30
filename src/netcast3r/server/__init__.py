@@ -26,7 +26,7 @@ from .events import EventBus
 from .index import Index
 from .jobs import JobManager
 from .keys import KeyStore, mask
-from .. import control, integrations, learning, quality, reveng, stix
+from .. import control, integrations, learning, quality, reveng, stix, surface
 
 API_VERSION = "v1"
 ALLOWED_HOSTS = {"127.0.0.1", "localhost", "::1", "[::1]"}
@@ -558,6 +558,17 @@ class Server:
                 return _json(quality.score_finding(self.index, ctx.params["id"]))
             except ValueError as exc:
                 return _problem(404, str(exc))
+
+        @add("GET", r"/api/v1/runs/(?P<id>[A-Za-z0-9_]+)/diff")
+        def run_diff(ctx):
+            against = ctx.query.get("against", "")
+            if not against:
+                return _problem(400, "against is required")
+            try:
+                return _json(surface.diff(self.index, ctx.params["id"], against,
+                                          limit=ctx.limit))
+            except ValueError as exc:
+                return _problem(400, str(exc))
 
         @add("GET", r"/api/v1/programs/rank")
         def program_rank(ctx):
