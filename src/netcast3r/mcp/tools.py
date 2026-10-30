@@ -23,6 +23,7 @@ import json
 import os
 from concurrent.futures import ThreadPoolExecutor
 import socket
+import ssl
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -30,9 +31,10 @@ from urllib.parse import quote, urlencode, urljoin, urlsplit
 
 import httpx
 
-from .. import (authstore, browser, chains, integrations, oast, pathdiff,
-                pivot, quality, research, reveng, selfmodel, single_packet,
-                sqa, stix, surface, tempmail, threatintel, training)
+from .. import (authstore, browser, chains, integrations, oast, offsec,
+                pathdiff, pivot, quality, research, reveng, selfmodel,
+                single_packet, sqa, stix, surface, tempmail, threatintel,
+                training)
 from ..scope import ScopeManager
 
 POLICIES = ("readonly", "supervised", "full")
@@ -991,6 +993,19 @@ def knowledge_read(ctx: ToolContext, args: dict) -> dict:
                  body={"max_chars": args.get("max_chars", 8000)})
 
 
+def offsec_frameworks(ctx: ToolContext, args: dict) -> dict:
+    return _call(ctx, "GET", "/api/v1/offsec/frameworks", {
+        "q": args.get("query", ""), "category": args.get("category", ""),
+        "coverage": args.get("coverage", ""), "limit": args.get("limit", 50)})
+
+
+def boot2root_plan(ctx: ToolContext, args: dict) -> dict:
+    return _call(ctx, "GET", "/api/v1/offsec/boot2root", {
+        "os": args.get("os", "linux"),
+        "services": ",".join(str(item) for item in (args.get("services") or [])),
+        "goal": args.get("goal", "")})
+
+
 def chain_search(ctx: ToolContext, args: dict) -> dict:
     return _call(ctx, "GET", "/api/v1/chains", {
         "q": args.get("query", ""), "tag": args.get("tag", ""),
@@ -1809,6 +1824,74 @@ def oracle_extract(ctx: ToolContext, args: dict) -> dict:
     }
 
 
+def host_probe(ctx: ToolContext, args: dict) -> dict:
+    """Banner-grab an explicit, bounded port list on one scoped host."""
+    target = str(args.get("target") or "").strip()
+    if not target:
+        raise ToolError("invalid_arguments", "target is required")
+    host = urlsplit(target if "://" in target else f"https://{target}").hostname
+    if not host:
+        raise ToolError("invalid_arguments", "target must be a host or URL")
+    mission_id = str(args.get("mission_id") or "")
+    _require_scope(ctx, host, mission_id, args.get("scope"), probe=True)
+    raw_ports = args.get("ports") or [22, 80, 443, 445, 3389, 5985, 8080, 8443]
+    ports = []
+    for value in raw_ports:
+        try:
+            port = int(value)
+        except (TypeError, ValueError):
+            continue
+        if 1 <= port <= 65535 and port not in ports:
+            ports.append(port)
+    if not ports:
+        raise ToolError("invalid_arguments", "ports must contain at least one valid port")
+    if len(ports) > 20:
+        raise ToolError("invalid_arguments", "at most 20 ports per probe")
+    timeout = max(0.5, min(float(args.get("timeout", 3)), 10.0))
+    ctx.limiter.check("probe")
+    results = []
+    for port in ports:
+        started = time.monotonic()
+        item = {"port": port, "open": False, "service": "", "banner": "",
+                "tls": None, "elapsed_ms": 0}
+        try:
+            with socket.create_connection((host, port), timeout=timeout) as raw:
+                item["open"] = True
+                raw.settimeout(timeout)
+                if port in {443, 8443, 9443}:
+                    context = ssl.create_default_context()
+                    context.check_hostname = False
+                    context.verify_mode = ssl.CERT_NONE
+                    with context.wrap_socket(raw, server_hostname=host) as tls:
+                        cert = tls.getpeercert() or {}
+                        item["tls"] = {
+                            "subject": str(cert.get("subject", "")),
+                            "issuer": str(cert.get("issuer", "")),
+                            "subjectAltName": str(cert.get("subjectAltName", "")),
+                        }
+                        tls.sendall((f"HEAD / HTTP/1.0\r\nHost: {host}\r\n\r\n").encode())
+                        item["banner"] = tls.recv(512).decode("utf-8", "replace")
+                    item["service"] = "https"
+                else:
+                    if port in {80, 8000, 8080, 8888}:
+                        raw.sendall((f"HEAD / HTTP/1.0\r\nHost: {host}\r\n\r\n").encode())
+                    else:
+                        raw.sendall(b"\r\n")
+                    item["banner"] = raw.recv(512).decode("utf-8", "replace")
+                    item["service"] = ({22: "ssh", 445: "smb", 389: "ldap",
+                                        3389: "rdp", 5985: "winrm"}.get(port, ""))
+        except (OSError, ValueError) as exc:
+            item["error"] = str(exc)[:120]
+        item["elapsed_ms"] = int((time.monotonic() - started) * 1000)
+        results.append(item)
+    return {
+        "target": host, "ports": results,
+        "open": [item["port"] for item in results if item["open"]],
+        "note": ("Explicit-port banner grab only; this is not a full port scan. "
+                 "Version strings still need confirmation."),
+    }
+
+
 def single_packet_race(ctx: ToolContext, args: dict) -> dict:
     """One HTTP/2 connection, all final body bytes in one write."""
     target = str(args.get("target") or "").strip()
@@ -2416,6 +2499,8 @@ _HANDLERS.update({
     "knowledge_list": knowledge_list,
     "knowledge_read": knowledge_read,
     "hunt_plan": hunt_plan,
+    "offsec_frameworks": offsec_frameworks,
+    "boot2root_plan": boot2root_plan,
     "chain_search": chain_search,
     "chain_plan": chain_plan,
     "chain_sources": chain_sources,
@@ -2466,6 +2551,7 @@ _HANDLERS.update({
     "oracle_extract": oracle_extract,
     "race_run": race_run,
     "single_packet_race": single_packet_race,
+    "host_probe": host_probe,
     "http_path_diff": http_path_diff,
     "reveng_analyze": reveng_analyze,
     "rea_analyze": rea_analyze,
@@ -3016,6 +3102,27 @@ TOOLS: tuple[Tool, ...] = (
                   "notes": _string("distilled technique, at least 80 characters"),
                   "tags": _array("tags", {"type": "string"})},
                  ["url", "title", "notes"]), "research_ingest"),
+    Tool("offsec_frameworks", "Map OffSec frameworks to NetCast3r",
+         "Show what Metasploit, Sliver, Cobalt Strike, BloodHound, Impacket, "
+         "NetExec, Certipy, Mimikatz, Chisel, Burp, Ghidra, Frida, Prowler, "
+         "Pacu, and others do, and whether NetCast3r covers, partially covers, "
+         "or lacks that capability.",
+         "low", "research",
+         _schema({"query": _string("name or capability"),
+                  "category": _string("framework category"),
+                  "coverage": _string("full, partial, or gap"),
+                  "limit": _integer("how many", 1, 200, 50)}),
+         "offsec_frameworks", read_only=True),
+    Tool("boot2root_plan", "Build a boot2root route",
+         "Turn an OS and exposed service list into phases: scope, enumerate, "
+         "web/directory access, foothold, privilege escalation, loot/report, "
+         "and cleanup. Each phase lists checks, evidence, tools, and honest "
+         "capability gaps.",
+         "low", "research",
+         _schema({"os": _string("linux or windows"),
+                  "services": _array("observed services", {"type": "string"}),
+                  "goal": _string("what the host route should prove")},
+                 []), "boot2root_plan", read_only=True),
     Tool("chain_search", "Search exploit chains",
          "Search a curated library of multi-step chains: IDOR to ATO, SSRF to "
          "cloud IAM, XSS to CSRF to ATO, OAuth redirect theft, CSPT plus cache "
@@ -3527,6 +3634,18 @@ TOOLS: tuple[Tool, ...] = (
                   "max_bytes": _integer("per-response body cap", 256, 65536, 16384),
                   "timeout": _integer("per-request timeout in seconds", 1, 60, 20)},
                  ["target"]), "race_run", open_world=True),
+    Tool("host_probe", "Bounded host banner probe",
+         "Connect to an explicit port list on one scoped host, collect banners "
+         "and TLS certificate details, and report which ports are open. At most "
+         "20 ports; this is a precise banner grab, not a full port scan.",
+         "medium", "network",
+         _schema({"target": _string("in-scope host or URL"),
+                  "mission_id": _string("mission whose scope authorizes the probe"),
+                  "scope": _array("explicit scope entries when no mission is used"),
+                  "ports": _array("explicit ports, default common set",
+                                  {"type": "integer"}),
+                  "timeout": _integer("per-port timeout in seconds", 1, 10, 3)},
+                 ["target"]), "host_probe", open_world=True),
     Tool("single_packet_race", "HTTP/2 single-packet race",
          "Open one TLS/HTTP/2 connection, send every request's headers and all "
          "but the final body byte, then write every final DATA frame in one "

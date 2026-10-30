@@ -1,0 +1,211 @@
+{
+  "frameworks": [
+    {
+      "id": "metasploit",
+      "name": "Metasploit Framework",
+      "category": "exploitation",
+      "capabilities": "Modules, payloads, sessions, post-exploitation",
+      "coverage": "partial",
+      "note": "NetCast3r has scoped HTTP, upload, and oracle primitives but no session/payload layer.",
+      "source": "https://docs.metasploit.com/"
+    },
+    {
+      "id": "sliver",
+      "name": "Sliver",
+      "category": "c2",
+      "capabilities": "Implant generation, mTLS/WireGuard C2, pivoting",
+      "coverage": "gap",
+      "note": "No C2 or implant lifecycle; adding one requires explicit authorization and a lab-only design.",
+      "source": "https://github.com/BishopFox/sliver"
+    },
+    {
+      "id": "cobalt-strike",
+      "name": "Cobalt Strike",
+      "category": "c2",
+      "capabilities": "Beacon, malleable profiles, lateral movement",
+      "coverage": "gap",
+      "note": "Commercial C2; not integrated. Do not emulate without a signed engagement.",
+      "source": "https://www.cobaltstrike.com/"
+    },
+    {
+      "id": "empire",
+      "name": "PowerShell Empire",
+      "category": "post-exploitation",
+      "capabilities": "PowerShell agents, modules, persistence",
+      "coverage": "gap",
+      "note": "No agent runtime. PowerShell tradecraft is a lab-only future module.",
+      "source": "https://github.com/BC-SECURITY/Empire"
+    },
+    {
+      "id": "bloodhound",
+      "name": "BloodHound",
+      "category": "active-directory",
+      "capabilities": "AD graph, attack paths, ACL analysis",
+      "coverage": "gap",
+      "note": "No AD collector or graph ingestion. NetCast3r can store the resulting paths as evidence.",
+      "source": "https://bloodhound.readthedocs.io/"
+    },
+    {
+      "id": "impacket",
+      "name": "Impacket",
+      "category": "active-directory",
+      "capabilities": "SMB, MSRPC, Kerberos, LDAP protocol toolkit",
+      "coverage": "gap",
+      "note": "No SMB/Kerberos client. A read-only AD probe is on the roadmap.",
+      "source": "https://github.com/fortra/impacket"
+    },
+    {
+      "id": "netexec",
+      "name": "NetExec",
+      "category": "active-directory",
+      "capabilities": "SMB/WinRM/LDAP/MSSQL command execution and auth checks",
+      "coverage": "partial",
+      "note": "NetCast3r can scope and audit a single credential check; it does not spray or execute commands.",
+      "source": "https://www.netexec.wiki/"
+    },
+    {
+      "id": "responder",
+      "name": "Responder",
+      "category": "credential-access",
+      "capabilities": "LLMNR/NBT-NS/mDNS poisoning",
+      "coverage": "gap",
+      "note": "Poisoning is not appropriate for a bug-bounty framework; keep it lab-only.",
+      "source": "https://github.com/lgandx/Responder"
+    },
+    {
+      "id": "certipy",
+      "name": "Certipy",
+      "category": "active-directory",
+      "capabilities": "AD CS enumeration and certificate abuse",
+      "coverage": "gap",
+      "note": "No AD CS collector. Certificate templates are a high-value future chain.",
+      "source": "https://github.com/ly4k/Certipy"
+    },
+    {
+      "id": "rubeus",
+      "name": "Rubeus",
+      "category": "active-directory",
+      "capabilities": "Kerberos tickets, roasting, delegation",
+      "coverage": "gap",
+      "note": "No Kerberos ticket operations.",
+      "source": "https://github.com/GhostPack/Rubeus"
+    },
+    {
+      "id": "mimikatz",
+      "name": "Mimikatz",
+      "category": "credential-access",
+      "capabilities": "LSASS, tickets, DPAPI",
+      "coverage": "gap",
+      "note": "Credential dumping is host-level and requires an isolated lab.",
+      "source": "https://github.com/gentilkiwi/mimikatz"
+    },
+    {
+      "id": "chisel",
+      "name": "Chisel",
+      "category": "pivoting",
+      "capabilities": "TCP/UDP tunnel over HTTP",
+      "coverage": "gap",
+      "note": "No tunnel manager. Pivoting needs an explicit engagement and network map.",
+      "source": "https://github.com/jpillora/chisel"
+    },
+    {
+      "id": "ligolo-ng",
+      "name": "Ligolo-ng",
+      "category": "pivoting",
+      "capabilities": "TUN-based reverse proxy",
+      "coverage": "gap",
+      "note": "No TUN integration.",
+      "source": "https://github.com/nicocha30/ligolo-ng"
+    },
+    {
+      "id": "nmap",
+      "name": "Nmap",
+      "category": "discovery",
+      "capabilities": "Port and service discovery",
+      "coverage": "partial",
+      "note": "NetCast3r's host_probe is explicit-port and bounded; it is not a replacement for a full scan.",
+      "source": "https://nmap.org/"
+    },
+    {
+      "id": "burp",
+      "name": "Burp Suite",
+      "category": "web",
+      "capabilities": "Proxy, Repeater, Intruder, Collaborator",
+      "coverage": "partial",
+      "note": "NetCast3r drives its own HTTP/browser and can call a configured Burp MCP server.",
+      "source": "https://portswigger.net/burp"
+    },
+    {
+      "id": "caido",
+      "name": "Caido",
+      "category": "web",
+      "capabilities": "Modern web proxy and replay",
+      "coverage": "gap",
+      "note": "No direct adapter; HTTP/browser tools cover the same manual workflow.",
+      "source": "https://caido.io/"
+    },
+    {
+      "id": "ghidra",
+      "name": "Ghidra",
+      "category": "reverse-engineering",
+      "capabilities": "Decompiler and binary analysis",
+      "coverage": "partial",
+      "note": "reveng_analyze triages imports, strings, and hardening; it does not replace a decompiler.",
+      "source": "https://ghidra-sre.org/"
+    },
+    {
+      "id": "frida",
+      "name": "Frida",
+      "category": "mobile",
+      "capabilities": "Runtime instrumentation",
+      "coverage": "partial",
+      "note": "Mobile analysis is static; Frida templates are documented but not executed by the server.",
+      "source": "https://frida.re/"
+    },
+    {
+      "id": "prowler",
+      "name": "Prowler",
+      "category": "cloud",
+      "capabilities": "AWS/Azure/GCP posture checks",
+      "coverage": "gap",
+      "note": "No cloud posture scanner; cloud work is scoped manual/API-first.",
+      "source": "https://github.com/prowler-cloud/prowler"
+    },
+    {
+      "id": "pacu",
+      "name": "Pacu",
+      "category": "cloud",
+      "capabilities": "AWS exploitation framework",
+      "coverage": "gap",
+      "note": "No AWS exploitation modules.",
+      "source": "https://github.com/RhinoSecurityLabs/pacu"
+    },
+    {
+      "id": "roadtools",
+      "name": "ROADtools",
+      "category": "cloud",
+      "capabilities": "Azure AD/Entra enumeration",
+      "coverage": "gap",
+      "note": "No Entra graph collector.",
+      "source": "https://github.com/dirkjanm/ROADtools"
+    },
+    {
+      "id": "hashcat",
+      "name": "Hashcat",
+      "category": "cracking",
+      "capabilities": "GPU hash cracking",
+      "coverage": "partial",
+      "note": "The toolbook documents it; cracking is not run by the server.",
+      "source": "https://hashcat.net/hashcat/"
+    },
+    {
+      "id": "semgrep",
+      "name": "Semgrep",
+      "category": "sast",
+      "capabilities": "Pattern-based source analysis",
+      "coverage": "partial",
+      "note": "reveng_analyze performs local source analysis; semgrep can be wired as a parser later.",
+      "source": "https://semgrep.dev/"
+    }
+  ]
+}

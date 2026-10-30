@@ -26,8 +26,9 @@ from .events import EventBus
 from .index import Index, is_training_target
 from .jobs import JobManager
 from .keys import KeyStore, mask
-from .. import (chains, control, feedwatch, integrations, learning, quality,
-                research, reveng, selfaudit, selfmodel, stix, surface, training)
+from .. import (chains, control, feedwatch, integrations, learning, offsec,
+                quality, research, reveng, selfaudit, selfmodel, stix, surface,
+                training)
 
 API_VERSION = "v1"
 ALLOWED_HOSTS = {"127.0.0.1", "localhost", "::1", "[::1]"}
@@ -751,6 +752,25 @@ class Server:
         @add("GET", r"/api/v1/research/sources")
         def research_sources(ctx):
             return _json(research.sources())
+
+        @add("GET", r"/api/v1/offsec/frameworks")
+        def offsec_frameworks(ctx):
+            return _json(offsec.search(
+                query=ctx.query.get("q", ""), category=ctx.query.get("category", ""),
+                coverage=ctx.query.get("coverage", ""),
+                limit=_int_or(ctx.query.get("limit"), 50)))
+
+        @add("GET", r"/api/v1/offsec/summary")
+        def offsec_summary(ctx):
+            return _json(offsec.summary())
+
+        @add("GET", r"/api/v1/offsec/boot2root")
+        def offsec_boot2root(ctx):
+            services = [item for item in
+                        str(ctx.query.get("services", "")).split(",") if item.strip()]
+            return _json(offsec.boot2root_plan(
+                os_name=ctx.query.get("os", "linux"), services=services,
+                goal=ctx.query.get("goal", "")))
 
         @add("GET", r"/api/v1/chains")
         def chain_search(ctx):

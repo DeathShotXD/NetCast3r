@@ -64,12 +64,17 @@ def plan(index, target: str = "", signals: list | None = None,
     parts.extend(str(value) for value in (tags or []))
     context = " ".join(parts).strip().lower()
     tokens = {token for token in re.split(r"[^a-z0-9.+#-]+", context) if token}
+    def hit(value: str) -> bool:
+        text = value.lower().strip()
+        if " " in text or "-" in text:
+            return text in context
+        return text in tokens
+
     ranked = []
     for item in chains():
-        signal_hits = [value for value in item["signals"]
-                       if value in context or value in tokens]
-        tag_hits = [value for value in item["tags"] if value in context or value in tokens]
-        step_hits = [value for value in item["steps"] if value in context]
+        signal_hits = [value for value in item["signals"] if hit(value)]
+        tag_hits = [value for value in item["tags"] if hit(value)]
+        step_hits = [value for value in item["steps"] if value.lower() in context]
         if context and not (signal_hits or tag_hits or step_hits):
             continue
         score = 3 * len(signal_hits) + 2 * len(tag_hits) + len(step_hits)

@@ -8,7 +8,8 @@ from pathlib import Path
 
 os.environ.setdefault("NETCAST3R_NO_KEYRING", "1")
 
-from netcast3r.mcp.tools import ToolContext, http_upload, oracle_extract, race_run
+from netcast3r.mcp.tools import (ToolContext, host_probe, http_upload,
+                                 oracle_extract, race_run)
 
 
 class TransferHandler(BaseHTTPRequestHandler):
@@ -91,6 +92,13 @@ class WebTransferTests(unittest.TestCase):
         self.assertEqual(result["value"], "a")
         self.assertEqual(result["requests"], 1)
         self.assertFalse(result["truncated"])
+
+    def test_host_probe_grabs_an_explicit_port(self):
+        result = host_probe(self.ctx, {
+            "target": "127.0.0.1", "ports": [self.port],
+            "timeout": 2, "scope": ["127.0.0.1"],
+        })
+        self.assertEqual(result["open"], [self.port])
 
     def test_race_run_returns_every_response(self):
         result = race_run(self.ctx, {

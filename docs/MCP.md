@@ -453,6 +453,9 @@ stored, so experience cannot be invented:
 | `upgrade_propose` / `upgrade_list` / `upgrade_update` | medium | Human-gated improvement proposals with evidence |
 | `technique_search` / `technique_plan` | low | Rank a 38-entry public-research technique library against a target |
 | `chain_search` / `chain_plan` | low | Rank multi-step exploit chains against a target |
+| `offsec_frameworks` | low | Map Metasploit, BloodHound, Impacket, etc. to real NetCast3r coverage |
+| `boot2root_plan` | low | Turn an OS and service list into a phased host route |
+| `host_probe` | medium | Explicit-port banner and TLS certificate grab |
 | `single_packet_race` | medium | HTTP/2 last-byte-aligned burst for check-then-act bugs |
 | `research_sources` | low | Coverage of the technique library by class and rarity |
 | `research_ingest` | medium | Store a sourced write-up digest as an active skill |

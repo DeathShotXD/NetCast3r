@@ -117,10 +117,22 @@ Notable changes to NetCast3r, newest first.
 - `single_packet_race` opens one TLS/HTTP/2 connection and writes every final
   DATA frame together. It is the packet-alignment primitive that `race_run`
   was missing.
-- Chain library: 13 multi-step chains (IDOR to ATO, SSRF to IAM, XSS to CSRF
+- Chain library: 17 multi-step chains (IDOR to ATO, SSRF to IAM, XSS to CSRF
   to ATO, OAuth redirect theft, CSPT plus cache deception, SCIM takeover,
-  MCP resource confusion) with `chain_search`, `chain_plan`, and
+  MCP resource confusion, boot2root service-to-root, Kerberoast-to-DA,
+  web-RCE-to-root, VPN pivot) with `chain_search`, `chain_plan`, and
   `chain_sources`.
+- OffSec framework map: 23 frameworks (Metasploit, Sliver, Cobalt Strike,
+  BloodHound, Impacket, NetExec, Certipy, Mimikatz, Chisel, Burp, Ghidra,
+  Frida, Prowler, Pacu, and more) with an honest `full`/`partial`/`gap`
+  coverage label. `offsec_frameworks` and `boot2root_plan` turn an OS and
+  service list into a phased host route with proof, cleanup, and explicit
+  gaps.
+- `host_probe` performs an explicit-port banner grab (max 20 ports) on a
+  scoped host, including TLS certificate details. It is deliberately not a
+  full port scanner.
+- The `boot2root-methodology` skill pack covers scope, enumeration, access,
+  foothold, Linux/Windows privesc, AD, pivoting, proof, and cleanup.
 - `docs/research/penligent-public-comparison.md` records what Penligent's
   public repository and site actually expose. The application source is not
   public, so the note does not claim a source-code review.

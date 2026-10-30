@@ -332,6 +332,116 @@
       "sources": [
         "https://blog.doyensec.com/2026/03/05/mcp-nightmare.html"
       ]
+    },
+    {
+      "id": "boot2root-service-to-root",
+      "title": "Exposed service -> foothold -> root",
+      "steps": [
+        "service discovery",
+        "credential or parser bug",
+        "foothold",
+        "local privilege escalation",
+        "root proof"
+      ],
+      "signals": [
+        "ssh",
+        "smb",
+        "rdp",
+        "jenkins",
+        "tomcat",
+        "ftp"
+      ],
+      "impact": "critical",
+      "proof": "A shell as the service user, then a documented local misconfiguration that yields root and one minimal host proof.",
+      "tags": [
+        "boot2root",
+        "privesc",
+        "host"
+      ],
+      "sources": [
+        "https://www.offsec.com/metasploit-unleashed/"
+      ]
+    },
+    {
+      "id": "ad-kerberoast-da",
+      "title": "Domain user -> SPN roast -> DA",
+      "steps": [
+        "domain enumeration",
+        "owned domain user",
+        "SPN request",
+        "offline crack",
+        "privileged group path"
+      ],
+      "signals": [
+        "ldap",
+        "kerberos",
+        "smb",
+        "ad",
+        "winrm"
+      ],
+      "impact": "critical",
+      "proof": "A service ticket for an owned request is cracked, and the recovered identity reaches a domain-admin action in the lab.",
+      "tags": [
+        "active-directory",
+        "kerberos",
+        "boot2root"
+      ],
+      "sources": [
+        "https://bloodhound.readthedocs.io/"
+      ]
+    },
+    {
+      "id": "web-rce-host-root",
+      "title": "Web RCE -> local enum -> root",
+      "steps": [
+        "web RCE",
+        "local enumeration",
+        "privesc misconfiguration",
+        "root proof"
+      ],
+      "signals": [
+        "http",
+        "upload",
+        "rce",
+        "linux"
+      ],
+      "impact": "critical",
+      "proof": "Command execution as the web user, then a local misconfiguration that yields root with a minimal proof.",
+      "tags": [
+        "web",
+        "rce",
+        "boot2root"
+      ],
+      "sources": [
+        "https://portswigger.net/web-security/os-command-injection"
+      ]
+    },
+    {
+      "id": "vpn-internal-pivot",
+      "title": "VPN credential -> internal host -> pivot",
+      "steps": [
+        "VPN auth",
+        "internal discovery",
+        "credential reuse with an owned account",
+        "second host",
+        "proof"
+      ],
+      "signals": [
+        "vpn",
+        "rdp",
+        "ssh",
+        "internal"
+      ],
+      "impact": "critical",
+      "proof": "A second in-scope host is reached from the first, with the pivot path and minimal data recorded.",
+      "tags": [
+        "pivot",
+        "boot2root",
+        "red-team"
+      ],
+      "sources": [
+        "https://www.offsec.com/"
+      ]
     }
   ]
 }
