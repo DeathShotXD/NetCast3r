@@ -606,7 +606,13 @@ class AgentRuntime:
         registry = self._registry(mission_id)
         mission = self._tool(registry, "missions_get", {"mission_id": mission_id})
         host = _host(str(mission.get("target") or ""))
+        slug = host.split(".")[0] if host else ""
         lessons = self._tool(registry, "lessons_list", {"q": host, "limit": 10})
+        if slug:
+            tagged = self._tool(registry, "lessons_list", {"tag": slug, "limit": 10})
+            existing = {item.get("id") for item in lessons.get("items") or []}
+            lessons["items"] = (lessons.get("items") or []) + [
+                item for item in tagged.get("items") or [] if item.get("id") not in existing]
         skills = self._tool(registry, "skills_list", {"q": host, "limit": 5})
         lesson_items = lessons.get("items") or []
         skill_items = skills.get("items") or []

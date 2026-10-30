@@ -95,10 +95,15 @@ class StoreTests(unittest.TestCase):
             error="target is outside the declared scope")
         draft = learning.reflect_tool_call(call)
         self.index.add_lesson(**draft)
+        self.index.add_lesson(
+            "Tag-only lesson", "A tagged note.", tags=["example"],
+            next_step="Test the tagged surface", mission_id=self.mission["id"])
         actions = learning.suggest_next(self.index, self.mission["id"])
         self.assertEqual(actions["mission_id"], self.mission["id"])
         self.assertTrue(actions["actions"])
         self.assertTrue(all(item["tool"] for item in actions["actions"]))
+        self.assertIn("Test the tagged surface",
+                      [item["title"] for item in actions["actions"]])
 
 
 if __name__ == "__main__":

@@ -99,7 +99,7 @@ class RuntimeCases(RuntimeHarness):
         self.assertFalse(state["usage"]["cost_reported"])
 
         calls, total = self.server.index.list_tool_calls(mission_id=mission["id"], limit=50)
-        self.assertEqual(total, 8)
+        self.assertEqual(total, 9)
         self.assertEqual({call["tool"] for call in calls},
                          {"scope_check", "http_probe", "missions_get",
                           "runs_list", "findings_summary", "lessons_list", "skills_list"})

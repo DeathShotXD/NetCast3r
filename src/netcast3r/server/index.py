@@ -718,8 +718,8 @@ class Index:
         if q:
             like = f"%{q}%"
             where.append("(title LIKE ? OR technique LIKE ? OR context LIKE ? OR "
-                         "lesson LIKE ? OR next_step LIKE ?)")
-            values.extend([like] * 5)
+                         "lesson LIKE ? OR next_step LIKE ? OR tags_json LIKE ?)")
+            values.extend([like] * 6)
         if tag:
             where.append("tags_json LIKE ?")
             values.append(f"%{tag}%")
