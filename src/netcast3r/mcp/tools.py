@@ -431,6 +431,10 @@ def agent_status(ctx: ToolContext, args: dict) -> dict:
     return _call(ctx, "GET", f"/api/v1/missions/{args['mission_id']}/agent")
 
 
+def mission_hunt(ctx: ToolContext, args: dict) -> dict:
+    return _call(ctx, "POST", f"/api/v1/missions/{args['mission_id']}/hunt", body={})
+
+
 def agent_start(ctx: ToolContext, args: dict) -> dict:
     mission = _mission(ctx, args["mission_id"])
     target = str(mission.get("target") or "").strip()
@@ -2444,6 +2448,7 @@ _HANDLERS.update({
     "missions_attach_run": missions_attach_run,
     "mission_start_run": mission_start_run,
     "agent_status": agent_status,
+    "mission_hunt": mission_hunt,
     "agent_start": agent_start,
     "agent_pause": agent_pause,
     "agent_resume": agent_resume,
@@ -2657,6 +2662,13 @@ TOOLS: tuple[Tool, ...] = (
          "low", "missions",
          _schema({"mission_id": _string("mission id")}, ["mission_id"]),
          "agent_status", read_only=True),
+    Tool("mission_hunt", "Start a standalone hunt",
+         "Run a deterministic read-only hunt for a mission: scope, fingerprint, "
+         "safe surface paths, technique and chain ranking, and explicit "
+         "hypotheses. It does not need an external agent and creates no finding.",
+         "medium", "missions",
+         _schema({"mission_id": _string("mission id")}, ["mission_id"]),
+         "mission_hunt", open_world=True),
     Tool("agent_start", "Start mission agent",
          "Plan and run the bounded mission agent: scope check, one live probe, an "
          "inventory of existing evidence, an optional model analysis, and an "

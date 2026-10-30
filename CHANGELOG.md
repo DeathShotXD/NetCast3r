@@ -131,6 +131,12 @@ Notable changes to NetCast3r, newest first.
 - `host_probe` performs an explicit-port banner grab (max 20 ports) on a
   scoped host, including TLS certificate details. It is deliberately not a
   full port scanner.
+- Standalone dashboard hunt: `POST /api/v1/missions/{id}/hunt` and the
+  **Hunt now** action run scope, fingerprint, safe surface paths, technique
+  and chain ranking, and hypothesis creation without OpenCode, Hermes, or an
+  external agent. A hunt run has its own Scope/Fingerprint/Surface/Research/
+  Hypotheses stages in Live Runs and creates 0 findings unless a human tests
+  and promotes a hypothesis.
 - The `boot2root-methodology` skill pack covers scope, enumeration, access,
   foothold, Linux/Windows privesc, AD, pivoting, proof, and cleanup.
 - `docs/research/penligent-public-comparison.md` records what Penligent's

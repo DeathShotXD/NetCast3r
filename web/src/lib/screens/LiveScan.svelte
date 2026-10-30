@@ -22,6 +22,13 @@
     { key: 'verify', label: 'Verify', detail: 'Check the solved banner' },
     { key: 'record', label: 'Record', detail: 'Store evidence and the lesson' }
   ];
+  const HUNT_STAGES = [
+    { key: 'scope', label: 'Scope', detail: 'Confirm the mission boundary' },
+    { key: 'fingerprint', label: 'Fingerprint', detail: 'Read headers and title' },
+    { key: 'surface', label: 'Surface', detail: 'Check safe public paths' },
+    { key: 'research', label: 'Research', detail: 'Rank techniques and chains' },
+    { key: 'hypotheses', label: 'Hypotheses', detail: 'Record falsifiable leads' }
+  ];
   const TERMINAL = ['done', 'failed', 'stopped', 'interrupted'];
   const RESUMABLE = ['stopped', 'interrupted', 'failed'];
   const BUCKET_MS = 250;
@@ -58,9 +65,11 @@
   };
 
   let run = $state<Run | null>(null);
-  const isLab = $derived(String((run?.options as Record<string, unknown> | undefined)?.mode ?? '') === 'lab');
-  const displayStages = $derived(isLab ? LAB_STAGES : stages);
-  const displayTabs = $derived(isLab ? TABS.filter((item) => item.id === 'feed' || item.id === 'report') : TABS);
+  const runMode = $derived(String((run?.options as Record<string, unknown> | undefined)?.mode ?? ''));
+  const isLab = $derived(runMode === 'lab');
+  const isHunt = $derived(runMode === 'hunt');
+  const displayStages = $derived(isLab ? LAB_STAGES : isHunt ? HUNT_STAGES : stages);
+  const displayTabs = $derived((isLab || isHunt) ? TABS.filter((item) => item.id === 'feed' || item.id === 'report') : TABS);
   let events = $state<RunEvent[]>([]);
   let counts = $state<Record<string, number>>({});
   let landed = $state<{ id: number; status: string; secret_type: string; value: string; detail: string }[]>([]);
@@ -123,7 +132,7 @@
   const stageCount = $derived.by(() => {
     const next: Record<string, number> = {};
     for (const stage of displayStages) next[stage.key] = stageCounts[stage.key] ?? 0;
-    if (!isLab) next.crawl = Math.max(next.crawl ?? 0, crawled);
+    if (!isLab && !isHunt) next.crawl = Math.max(next.crawl ?? 0, crawled);
     return next;
   });
 
@@ -707,7 +716,14 @@
     </section>
 
     <section class="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4" aria-label="counters">
-      {#if isLab}
+      {#if isHunt}
+        {#each [['pages', 'pages'], ['endpoints', 'endpoints'], ['techniques', 'techniques'], ['hypotheses', 'leads']] as [label, key] (key)}
+          <div class="panel kpi px-4 py-3">
+            <p class="eyebrow">{label}</p>
+            <p class="num mt-1 text-xl text-bone" use:countup={counts[key] ?? 0}>0</p>
+          </div>
+        {/each}
+      {:else if isLab}
         {#each [['steps', 'steps'], ['http calls', 'http_calls'], ['solved', 'solved'], ['lesson', 'lesson_id']] as [label, key] (key)}
           <div class="panel kpi px-4 py-3">
             <p class="eyebrow">{label}</p>
@@ -818,7 +834,7 @@
           </div>
 
           <div class="flex flex-col">
-            {#if !isLab}
+            {#if !isLab && !isHunt}
             <div class="border-b border-indigo-deep">
               <div class="flex items-center justify-between px-4 py-2.5">
                 <p class="eyebrow">credentials caught</p>

@@ -155,6 +155,20 @@
     }
   }
 
+  async function runHunt() {
+    if (!selected) return;
+    busy = 'hunt';
+    try {
+      const run = await api.startMissionHunt(selected.id);
+      store.toast('ok', 'hunt started');
+      store.watch(run.id);
+    } catch (exc) {
+      store.fail(exc instanceof Error ? exc.message : 'could not start the hunt');
+    } finally {
+      busy = '';
+    }
+  }
+
   async function runNextLab() {
     if (!selected) return;
     agentBusy = 'lab';
@@ -509,7 +523,11 @@
                     {agentBusy === 'lab' ? 'Starting...' : 'Run next lab'}
                   </button>
                 {:else}
-                  <button class="obs-btn obs-btn-primary" type="button" disabled={busy === 'launch'} onclick={() => void launch()}>
+                  <button class="obs-btn obs-btn-primary" type="button" disabled={busy === 'hunt'} onclick={() => void runHunt()}>
+                    <Icon name="crosshair" size={13} />
+                    {busy === 'hunt' ? 'Hunting...' : 'Hunt now'}
+                  </button>
+                  <button class="obs-btn" type="button" disabled={busy === 'launch'} onclick={() => void launch()}>
                     <Icon name="activity" size={13} />
                     {busy === 'launch' ? 'Starting...' : 'Launch cast'}
                   </button>

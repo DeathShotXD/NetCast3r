@@ -169,8 +169,10 @@ class Server:
         self._csp = CSP
         self._agent_lock = threading.Lock()
         self._lab_lock = threading.Lock()
+        self._hunt_lock = threading.Lock()
         self.agent_runtime = None
         self.lab_runner = None
+        self.hunt_runner = None
         self._routes = self._build_routes()
         try:
             learning.seed_builtin_skills(self.index)
@@ -198,6 +200,17 @@ class Server:
                     from .lab_runner import LabRunner
                     runtime = LabRunner(self)
                     self.lab_runner = runtime
+        return runtime
+
+    def _hunts(self):
+        runtime = self.hunt_runner
+        if runtime is None:
+            with self._hunt_lock:
+                runtime = self.hunt_runner
+                if runtime is None:
+                    from .hunt_runner import HuntRunner
+                    runtime = HuntRunner(self)
+                    self.hunt_runner = runtime
         return runtime
 
     # -- run helpers ------------------------------------------------------
@@ -708,6 +721,18 @@ class Server:
         def lab_recipes(ctx):
             items = self._labs().available()
             return _json({"items": items, "total": len(items)})
+
+        @add("POST", r"/api/v1/missions/(?P<id>[A-Za-z0-9_]+)/hunt")
+        def mission_hunt(ctx):
+            try:
+                run = self._hunts().start(ctx.params["id"])
+            except ValueError as exc:
+                return _problem(400, str(exc))
+            return _json(run, 201)
+
+        @add("POST", r"/api/v1/hunts/(?P<id>[A-Za-z0-9_]+)/stop")
+        def hunt_stop(ctx):
+            return _json({"stopped": self._hunts().cancel(ctx.params["id"])})
 
         @add("POST", r"/api/v1/labs/run")
         def lab_run(ctx):
@@ -1962,6 +1987,8 @@ def serve(host: str = "127.0.0.1", port: int = 7857, *, open_browser: bool = Tru
             server.agent_runtime.shutdown()
         if getattr(server, "lab_runner", None) is not None:
             server.lab_runner.shutdown(wait=True)
+        if getattr(server, "hunt_runner", None) is not None:
+            server.hunt_runner.shutdown(wait=True)
         server.jobs.shutdown(wait=True)
         server.index.close()
         httpd.server_close()

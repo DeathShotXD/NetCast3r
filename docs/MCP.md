@@ -168,6 +168,7 @@ silently ignored.
 | `missions_update` | medium | Change fields or status |
 | `missions_attach_run` | medium | Link an existing run |
 | `mission_start_run` | medium | Start a scoped scan and link it |
+| `mission_hunt` | medium | Standalone hunt: scope, fingerprint, surface, research, hypotheses |
 | `agent_status` | low | Read the runtime plan, tasks, budget, and model calls |
 | `agent_start` | medium | Plan and run the bounded mission agent |
 | `agent_pause` / `agent_resume` / `agent_stop` | low | Control a live run |

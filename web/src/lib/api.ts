@@ -90,6 +90,8 @@ export const api = {
     request<{ deleted: boolean }>('DELETE', `/missions/${id}`),
   startMissionRun: (id: string, body: Record<string, unknown>) =>
     request<{ mission: Mission; run: Run }>('POST', `/missions/${id}/runs`, body),
+  startMissionHunt: (id: string) =>
+    request<Run>('POST', `/missions/${id}/hunt`, {}),
   missionAgent: (id: string) =>
     request<MissionAgent>('GET', `/missions/${id}/agent`),
   startMissionAgent: (id: string, body: Record<string, unknown>) =>
