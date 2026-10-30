@@ -198,7 +198,28 @@ class MCPIntegrationTests(unittest.TestCase):
         bad, is_error = self.call("findings_create", title="x", severity="nope")
         self.assertTrue(is_error)
 
-    def test_finding_artifacts_are_stored_and_readable(self):
+    def test_learning_tools_round_trip(self):
+        mission = self.create_mission()
+        lesson = self.call("lessons_record", title="Path variants",
+                           lesson="Encoded variants skip route-level gates.",
+                           technique="http_path_diff", outcome="success",
+                           tags=["encoding"], mission_id=mission["id"])[0]
+        listing = self.call("lessons_list", q="encoded", limit=10)[0]
+        self.assertEqual(listing["total"], 1)
+        self.assertEqual(listing["items"][0]["id"], lesson["id"])
+
+        skill = self.registry.call("skills_upsert", {
+            "name": "authz-matrix", "body": "# Authz\n\nTest each role.",
+            "tags": ["authz"]}, actor="test/1")[0]
+        self.assertEqual(skill["version"], 1)
+        fetched = self.registry.call("skills_get", {"name": "authz-matrix"}, actor="test/1")[0]
+        self.assertIn("each role", fetched["body"])
+
+        actions = self.call("next_actions", mission_id=mission["id"])[0]
+        self.assertEqual(actions["mission_id"], mission["id"])
+        self.assertTrue(actions["actions"])
+
+
         finding = self.call("findings_create", title="artifact finding",
                             severity="high")[0]
         artifact = self.registry.call("finding_artifact_add", {

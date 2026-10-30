@@ -169,6 +169,46 @@ class ServerTests(unittest.TestCase):
                      {"title": "x", "severity": "high", "confidence": 2}):
             self.assertEqual(self.call("POST", "/api/v1/findings", body=body).status, 400)
 
+    def test_lessons_skills_and_next_actions(self):
+        mission = self.data(self.call("POST", "/api/v1/missions", body={
+            "title": "Learning routes", "target": "example.com",
+            "scope": ["example.com"]}))
+        lesson_response = self.call("POST", "/api/v1/lessons", body={
+            "title": "Encode the last path segment", "lesson": "The gate skipped the encoded route.",
+            "technique": "http_path_diff", "outcome": "success",
+            "tags": ["encoding", "authz"], "mission_id": mission["id"],
+            "confidence": 0.9})
+        self.assertEqual(lesson_response.status, 201)
+        lesson = self.data(lesson_response)
+        self.assertEqual(self.data(self.call(
+            "GET", "/api/v1/lessons", query={"q": "encoded"}))["total"], 1)
+        self.assertEqual(self.data(self.call(
+            "GET", f"/api/v1/lessons/{lesson['id']}"))["technique"], "http_path_diff")
+
+        first = self.data(self.call("POST", "/api/v1/skills", body={
+            "name": "idor-checklist", "body": "# IDOR\n\nCheck ids.", "tags": ["idor"]}))
+        self.assertEqual(first["version"], 1)
+        second = self.data(self.call("POST", "/api/v1/skills", body={
+            "name": "idor-checklist", "body": "# IDOR\n\nCheck ids and roles."}))
+        self.assertEqual(second["version"], 2)
+        self.assertEqual(second["id"], first["id"])
+        self.assertIn("roles", self.data(self.call(
+            "GET", "/api/v1/skills/idor-checklist"))["body"])
+
+        call = self.index.add_tool_call(
+            "http_probe", status="error", mission_id=mission["id"],
+            args={"target": "https://example.com"},
+            error="target is outside the declared scope")
+        reflected = self.data(self.call("POST", "/api/v1/lessons/reflect",
+                                        body={"tool_call_id": call["id"]}))
+        self.assertEqual(reflected["outcome"], "failure")
+        self.assertIn("scope", reflected["tags"])
+
+        actions = self.data(self.call(
+            "GET", f"/api/v1/missions/{mission['id']}/next-actions"))
+        self.assertEqual(actions["mission_id"], mission["id"])
+        self.assertTrue(actions["actions"])
+
     def test_finding_artifacts_round_trip(self):
         finding = self.data(self.call("POST", "/api/v1/findings", body={
             "title": "artifact test", "severity": "medium"}))

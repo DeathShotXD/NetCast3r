@@ -58,6 +58,20 @@ Notable changes to NetCast3r, newest first.
 - `fetch_artifact` downloads one in-scope URL to a 0600 file for offline
   analysis, without following redirects. `http_request` and `http_path_diff`
   accept `verify_tls=false` only for an authorized self-signed target.
+- Learning loop: `lessons_record`, `lessons_list`, `lessons_get`,
+  `lesson_reflect`, `skills_list`, `skills_get`, `skills_upsert`, and
+  `next_actions` persist operational memory in SQLite. The mission agent now
+  plans a `recall` step, loads matching lessons and skills, and writes one
+  deterministic lesson after a failed or blocked task. Built-in seed skills
+  cover path-encoding differentials, the login-method x 2FA matrix, account
+  rebind takeover, and the two-account object matrix.
+- Outbound MCP registry: `mcp_servers_list`, `mcp_server_tools`, and
+  `mcp_server_call` drive operator-configured HTTP/SSE or stdio MCP servers
+  (Hermes Agent, Agent Zero, HexStrike, OpenCode, internal servers). Target
+  arguments are scope-checked; calls are high risk and approval-gated.
+- Research note: `docs/research/agentic-frameworks.md` maps Hermes Agent, Agent
+  Zero, HexStrike, Strix, STIX/TAXII, MCP/A2A, and planner-executor patterns to
+  a phased NetCast3r roadmap.
 
 ### Security
 

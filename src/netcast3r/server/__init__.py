@@ -26,7 +26,7 @@ from .events import EventBus
 from .index import Index
 from .jobs import JobManager
 from .keys import KeyStore, mask
-from .. import control, integrations, reveng
+from .. import control, integrations, learning, reveng
 
 API_VERSION = "v1"
 ALLOWED_HOSTS = {"127.0.0.1", "localhost", "::1", "[::1]"}
@@ -168,6 +168,10 @@ class Server:
         self._agent_lock = threading.Lock()
         self.agent_runtime = None
         self._routes = self._build_routes()
+        try:
+            learning.seed_builtin_skills(self.index)
+        except Exception:  # noqa: BLE001 - seeding must never stop the server
+            pass
 
     # -- mission agent ----------------------------------------------------
     def _agent(self):
@@ -547,6 +551,105 @@ class Server:
         def delete_finding_artifact(ctx):
             deleted = self.index.delete_finding_artifact(ctx.params["id"], ctx.params["aid"])
             return _json({"deleted": True}) if deleted else _problem(404, "artifact not found")
+
+        @add("GET", r"/api/v1/lessons")
+        def list_lessons(ctx):
+            items, total = self.index.list_lessons(
+                q=ctx.query.get("q", ""), tag=ctx.query.get("tag", ""),
+                outcome=ctx.query.get("outcome", ""), limit=ctx.limit)
+            return _json({"items": items, "total": total})
+
+        @add("POST", r"/api/v1/lessons")
+        def create_lesson(ctx):
+            body = ctx.json()
+            body = body if isinstance(body, dict) else {}
+            try:
+                lesson = self.index.add_lesson(
+                    title=str(body.get("title", "")),
+                    lesson=str(body.get("lesson", "")),
+                    technique=str(body.get("technique", "")),
+                    context=str(body.get("context", "")),
+                    outcome=str(body.get("outcome", "success")),
+                    next_step=str(body.get("next_step", "")),
+                    tags=body.get("tags") if isinstance(body.get("tags"), list) else [],
+                    mission_id=str(body.get("mission_id", "")),
+                    run_id=str(body.get("run_id", "")),
+                    task_id=str(body.get("task_id", "")),
+                    source=str(body.get("source", "")),
+                    confidence=body.get("confidence", 0.5),
+                )
+            except (TypeError, ValueError) as exc:
+                return _problem(400, str(exc))
+            return _json(lesson, 201)
+
+        @add("GET", r"/api/v1/lessons/(?P<id>[A-Za-z0-9_]+)")
+        def get_lesson(ctx):
+            lesson = self.index.get_lesson(ctx.params["id"])
+            return _json(lesson) if lesson else _problem(404, "lesson not found")
+
+        @add("DELETE", r"/api/v1/lessons/(?P<id>[A-Za-z0-9_]+)")
+        def delete_lesson(ctx):
+            return _json({"deleted": True}) if self.index.delete_lesson(
+                ctx.params["id"]) else _problem(404, "lesson not found")
+
+        @add("POST", r"/api/v1/lessons/reflect")
+        def reflect(ctx):
+            body = ctx.json()
+            body = body if isinstance(body, dict) else {}
+            tool_call_id = str(body.get("tool_call_id", ""))
+            run_id = str(body.get("run_id", ""))
+            try:
+                if tool_call_id:
+                    call = self.index.get_tool_call(tool_call_id)
+                    if not call:
+                        return _problem(404, "tool call not found")
+                    draft = learning.reflect_tool_call(call)
+                elif run_id:
+                    draft = learning.reflect_run(self.index, run_id)
+                else:
+                    return _problem(400, "tool_call_id or run_id is required")
+                lesson = self.index.add_lesson(**draft)
+            except (TypeError, ValueError) as exc:
+                return _problem(400, str(exc))
+            return _json(lesson, 201)
+
+        @add("GET", r"/api/v1/skills")
+        def list_skills(ctx):
+            items, total = self.index.list_skills(q=ctx.query.get("q", ""), limit=ctx.limit)
+            return _json({"items": items, "total": total})
+
+        @add("POST", r"/api/v1/skills")
+        def upsert_skill(ctx):
+            body = ctx.json()
+            body = body if isinstance(body, dict) else {}
+            try:
+                skill = self.index.upsert_skill(
+                    name=str(body.get("name", "")), body=str(body.get("body", "")),
+                    title=str(body.get("title", "")),
+                    description=str(body.get("description", "")),
+                    tags=body.get("tags") if isinstance(body.get("tags"), list) else [],
+                    source=str(body.get("source", "")),
+                )
+            except (TypeError, ValueError) as exc:
+                return _problem(400, str(exc))
+            return _json(skill, 201)
+
+        @add("GET", r"/api/v1/skills/(?P<name>[A-Za-z0-9_.-]+)")
+        def get_skill(ctx):
+            skill = self.index.get_skill(ctx.params["name"])
+            return _json(skill) if skill else _problem(404, "skill not found")
+
+        @add("DELETE", r"/api/v1/skills/(?P<name>[A-Za-z0-9_.-]+)")
+        def delete_skill(ctx):
+            return _json({"deleted": True}) if self.index.delete_skill(
+                ctx.params["name"]) else _problem(404, "skill not found")
+
+        @add("GET", r"/api/v1/missions/(?P<id>[A-Za-z0-9_]+)/next-actions")
+        def mission_next_actions(ctx):
+            try:
+                return _json(learning.suggest_next(self.index, ctx.params["id"]))
+            except ValueError as exc:
+                return _problem(404, str(exc))
 
         @add("GET", r"/api/v1/missions")
         def list_missions(ctx):

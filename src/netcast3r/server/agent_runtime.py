@@ -21,6 +21,7 @@ import time
 from datetime import datetime, timezone
 from urllib.parse import urlsplit
 
+from .. import learning
 from ..mcp.plane import PlaneError
 
 DEFAULT_TASKS = 8
@@ -345,6 +346,8 @@ class AgentRuntime:
             {"kind": "scope", "title": "Confirm the target is inside the declared scope",
              "tool": "scope_check", "risk": "low",
              "args": {"target": target, "mission_id": mission["id"]}},
+            {"kind": "recall", "title": "Recall lessons and skills for this target",
+             "tool": "", "risk": "low", "args": {}},
             {"kind": "probe", "title": "Fetch the target and keep the real response",
              "tool": "http_probe", "risk": "medium",
              "args": {"target": target, "mission_id": mission["id"],
@@ -474,6 +477,9 @@ class AgentRuntime:
             elif task["kind"] == "inventory":
                 status, result, evidence, verification, notes = self._inventory(
                     mission_id, task)
+            elif task["kind"] == "recall":
+                status, result, evidence, verification, notes = self._recall(
+                    mission_id, task)
             elif task["kind"] in {"auth_inventory", "api_inventory",
                                   "findings_inventory", "reports_inventory"}:
                 status, result, evidence, verification, notes = self._role_inventory(
@@ -491,6 +497,7 @@ class AgentRuntime:
                 verification=verification, verifier_notes=notes, finished_at=_now())
             self._sync_counts(mission_id)
             if status in {"failed", "blocked"}:
+                self._record_task_lesson(mission_id, task, status, result, notes)
                 return notes or f"{task['kind']} failed"
             return ""
         except Exception as exc:  # noqa: BLE001 - record the refusal, keep the timeline
@@ -593,6 +600,64 @@ class AgentRuntime:
                 if not findings else
                 f"inventoried {len(findings)} existing finding(s); the runtime created none")
         return ("verified", result, evidence, "verified", note)
+
+    def _recall(self, mission_id: str, task: dict) -> tuple:
+        """Load prior lessons and skills before planning the active steps."""
+        registry = self._registry(mission_id)
+        mission = self._tool(registry, "missions_get", {"mission_id": mission_id})
+        host = _host(str(mission.get("target") or ""))
+        lessons = self._tool(registry, "lessons_list", {"q": host, "limit": 10})
+        skills = self._tool(registry, "skills_list", {"q": host, "limit": 5})
+        lesson_items = lessons.get("items") or []
+        skill_items = skills.get("items") or []
+        evidence = {
+            "lessons": [{
+                "id": item.get("id"), "title": item.get("title"),
+                "outcome": item.get("outcome"), "next_step": item.get("next_step"),
+            } for item in lesson_items],
+            "skills": [{
+                "name": item.get("name"), "title": item.get("title"),
+                "description": item.get("description"),
+            } for item in skill_items],
+        }
+        result = {
+            "lesson_count": len(lesson_items),
+            "skill_count": len(skill_items),
+            "lessons": evidence["lessons"],
+            "skills": evidence["skills"],
+        }
+        if lesson_items or skill_items:
+            note = (f"recalled {len(lesson_items)} lesson(s) and "
+                    f"{len(skill_items)} skill(s) for {host}")
+        else:
+            note = f"no prior lessons or skills for {host}; this is a first pass"
+        return ("verified", result, evidence, "verified", note)
+
+    def _record_task_lesson(self, mission_id: str, task: dict, status: str,
+                            result: dict, notes: str) -> None:
+        """Write one deterministic lesson after a failed or blocked task."""
+        source = f"task:{task.get('id', '')}"
+        try:
+            existing, _ = self.index.list_lessons(q=source, limit=1)
+            if existing:
+                return
+            record = {
+                "id": source,
+                "tool": task.get("tool") or task.get("kind") or "task",
+                "status": "denied" if status == "blocked" else "error",
+                "error": notes or status,
+                "args": task.get("args") or {},
+                "result": result or {},
+                "mission_id": mission_id,
+                "run_id": "",
+            }
+            draft = learning.reflect_tool_call(record)
+            draft["source"] = source
+            draft["task_id"] = task.get("id", "")
+            draft["mission_id"] = mission_id
+            self.index.add_lesson(**draft)
+        except (TypeError, ValueError):
+            pass
 
     def _role_inventory(self, mission_id: str, task: dict) -> tuple:
         """Role-specific read-only inventory. Never creates or changes evidence."""

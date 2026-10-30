@@ -648,6 +648,43 @@ def _burp_scope_check(ctx: ToolContext, arguments: dict, mission_id: str,
                 _require_scope(ctx, match.group(1), mission_id, scope, probe=True)
 
 
+def mcp_servers_list(ctx: ToolContext, args: dict) -> dict:
+    servers = integrations.load_mcp_servers(ctx.base)
+    return {"items": [{"name": name, "transport": item["transport"],
+                       "target": item.get("url", "") or " ".join(item.get("command") or [])}
+                      for name, item in servers.items()],
+            "total": len(servers),
+            "note": ("Configure outbound servers under mcp_servers in "
+                     "~/.netcast3r/integrations.json. Tokens are never returned.")}
+
+
+def mcp_server_tools(ctx: ToolContext, args: dict) -> dict:
+    servers = integrations.load_mcp_servers(ctx.base)
+    config = servers.get(str(args.get("server") or ""))
+    if not config:
+        raise ToolError("not_found", "configured MCP server not found")
+    try:
+        return integrations.mcp_server_tools(config)
+    except integrations.BurpError as exc:
+        raise ToolError("control_plane", f"MCP server failed: {exc}")
+
+
+def mcp_server_call(ctx: ToolContext, args: dict) -> dict:
+    servers = integrations.load_mcp_servers(ctx.base)
+    config = servers.get(str(args.get("server") or ""))
+    if not config:
+        raise ToolError("not_found", "configured MCP server not found")
+    arguments = args.get("arguments") or {}
+    if not isinstance(arguments, dict):
+        raise ToolError("invalid_arguments", "arguments must be an object")
+    _burp_scope_check(ctx, arguments, str(args.get("mission_id") or ""),
+                      args.get("scope"))
+    try:
+        return integrations.mcp_server_call(config, str(args["tool"]), arguments)
+    except integrations.BurpError as exc:
+        raise ToolError("control_plane", f"MCP server call failed: {exc}")
+
+
 def burp_call(ctx: ToolContext, args: dict) -> dict:
     config = integrations.load_burp_config(ctx.base)
     if not config["configured"]:
@@ -663,6 +700,49 @@ def burp_call(ctx: ToolContext, args: dict) -> dict:
         return client.call_tool(str(args["tool"]), arguments)
     except integrations.BurpError as exc:
         raise ToolError("control_plane", f"Burp MCP call failed: {exc}")
+
+
+def lessons_record(ctx: ToolContext, args: dict) -> dict:
+    body = {key: args[key] for key in (
+        "title", "lesson", "technique", "context", "outcome", "next_step", "tags",
+        "mission_id", "run_id", "task_id", "source", "confidence") if key in args}
+    return _call(ctx, "POST", "/api/v1/lessons", body=body)
+
+
+def lessons_list(ctx: ToolContext, args: dict) -> dict:
+    return _call(ctx, "GET", "/api/v1/lessons", {
+        "q": args.get("q", ""), "tag": args.get("tag", ""),
+        "outcome": args.get("outcome", ""), "limit": args.get("limit", 50)})
+
+
+def lessons_get(ctx: ToolContext, args: dict) -> dict:
+    return _call(ctx, "GET", f"/api/v1/lessons/{args['lesson_id']}")
+
+
+def lesson_reflect(ctx: ToolContext, args: dict) -> dict:
+    body = {key: args[key] for key in ("tool_call_id", "run_id") if args.get(key)}
+    if not body:
+        raise ToolError("invalid_arguments", "tool_call_id or run_id is required")
+    return _call(ctx, "POST", "/api/v1/lessons/reflect", body=body)
+
+
+def skills_list(ctx: ToolContext, args: dict) -> dict:
+    return _call(ctx, "GET", "/api/v1/skills", {
+        "q": args.get("q", ""), "limit": args.get("limit", 50)})
+
+
+def skills_get(ctx: ToolContext, args: dict) -> dict:
+    return _call(ctx, "GET", f"/api/v1/skills/{args['name']}")
+
+
+def skills_upsert(ctx: ToolContext, args: dict) -> dict:
+    body = {key: args[key] for key in (
+        "name", "body", "title", "description", "tags", "source") if key in args}
+    return _call(ctx, "POST", "/api/v1/skills", body=body)
+
+
+def next_actions(ctx: ToolContext, args: dict) -> dict:
+    return _call(ctx, "GET", f"/api/v1/missions/{args['mission_id']}/next-actions")
 
 
 def threatintel_query(ctx: ToolContext, args: dict) -> dict:
@@ -1425,10 +1505,21 @@ _HANDLERS.update({
     "recon_active": recon_active,
     "burp_status": burp_status,
     "burp_call": burp_call,
+    "mcp_servers_list": mcp_servers_list,
+    "mcp_server_tools": mcp_server_tools,
+    "mcp_server_call": mcp_server_call,
     "token_pivot": token_pivot,
     "threatintel_query": threatintel_query,
     "threatintel_cve": threatintel_cve,
     "threatintel_repro": threatintel_repro,
+    "lessons_record": lessons_record,
+    "lessons_list": lessons_list,
+    "lessons_get": lessons_get,
+    "lesson_reflect": lesson_reflect,
+    "skills_list": skills_list,
+    "skills_get": skills_get,
+    "skills_upsert": skills_upsert,
+    "next_actions": next_actions,
     "finding_triage": finding_triage,
     "submissions_list": submissions_list,
     "submissions_get": submissions_get,
@@ -1752,6 +1843,29 @@ TOOLS: tuple[Tool, ...] = (
                   "approval_id": _string("approved approval id"),
                   "confirm": _boolean("explicit confirmation (full policy)")},
                  ["tool"]), "burp_call", open_world=True),
+    Tool("mcp_servers_list", "List outbound MCP servers",
+         "List the operator-configured MCP servers NetCast3r can call (HTTP or stdio). "
+         "Use this to bridge Hermes Agent, Agent Zero, HexStrike, OpenCode, or an "
+         "internal MCP server. Tokens are never returned.",
+         "low", "integrations", _schema({}), "mcp_servers_list", read_only=True),
+    Tool("mcp_server_tools", "List an MCP server's tools",
+         "Start one configured outbound MCP server, initialize it, and list its tools.",
+         "medium", "integrations",
+         _schema({"server": _string("configured server name")}, ["server"]),
+         "mcp_server_tools", open_world=True),
+    Tool("mcp_server_call", "Call an outbound MCP tool",
+         "Invoke one tool on a configured outbound MCP server. URL, host, and raw Host "
+         "headers in the arguments are checked against the mission scope first. High "
+         "risk: needs an approval under supervised policy.",
+         "high", "integrations",
+         _schema({"server": _string("configured server name"),
+                  "tool": _string("remote tool name"),
+                  "arguments": _object("remote tool arguments"),
+                  "mission_id": _string("mission whose scope authorizes the call"),
+                  "scope": _array("explicit scope entries when no mission is used"),
+                  "approval_id": _string("approved approval id"),
+                  "confirm": _boolean("explicit confirmation (full policy)")},
+                 ["server", "tool"]), "mcp_server_call", open_world=True),
     Tool("token_pivot", "Credential pivot",
          "Send a captured token, cookie, or API key to a bounded list of in-scope hosts "
          "and compare each response with an unauthenticated baseline. Reports where the "
@@ -1791,6 +1905,71 @@ TOOLS: tuple[Tool, ...] = (
          _schema({"cve_id": _string("CVE id"),
                   "target": _string("optional in-scope target to mention in the plan")},
                  ["cve_id"]), "threatintel_repro", open_world=True),
+    Tool("lessons_record", "Record a lesson",
+         "Persist a technique, failure, or correction you actually observed. Lessons are "
+         "stored with the mission/run/task, tags, and confidence, and are recalled before "
+         "later plans. Do not record a guess.",
+         "medium", "learning",
+         _schema({"title": _string("short lesson title"),
+                  "lesson": _string("what happened and what to do differently"),
+                  "technique": _string("tool or technique"),
+                  "context": _string("target class or environment"),
+                  "outcome": _string("success, failure, partial, or blocked", enum=[
+                      "success", "failure", "partial", "blocked"]),
+                  "next_step": _string("one concrete next action"),
+                  "tags": _array("tags"),
+                  "mission_id": _string("optional mission id"),
+                  "run_id": _string("optional run id"),
+                  "task_id": _string("optional agent task id"),
+                  "source": _string("where the observation came from"),
+                  "confidence": {"type": "number", "minimum": 0, "maximum": 1,
+                                 "description": "0 to 1"}},
+                 ["title", "lesson"]), "lessons_record"),
+    Tool("lessons_list", "List lessons",
+         "Search operational lessons by text, tag, or outcome.",
+         "low", "learning",
+         _schema({"q": _string("search text"), "tag": _string("tag filter"),
+                  "outcome": _string("outcome filter", enum=[
+                      "success", "failure", "partial", "blocked"]),
+                  "limit": _integer("page size", 1, 500, 50)}),
+         "lessons_list", read_only=True),
+    Tool("lessons_get", "Get lesson", "Read one lesson in full.",
+         "low", "learning",
+         _schema({"lesson_id": _string("lesson id")}, ["lesson_id"]),
+         "lessons_get", read_only=True),
+    Tool("lesson_reflect", "Reflect on a record",
+         "Derive a lesson from a stored tool call or run. Deterministic: it reads the real "
+         "status and error, classifies the cause, and records the next step.",
+         "low", "learning",
+         _schema({"tool_call_id": _string("tool call id"),
+                  "run_id": _string("run id")}), "lesson_reflect"),
+    Tool("skills_list", "List skills",
+         "List the operational skill documents agents can load before planning.",
+         "low", "learning",
+         _schema({"q": _string("search text"),
+                  "limit": _integer("page size", 1, 200, 50)}),
+         "skills_list", read_only=True),
+    Tool("skills_get", "Read a skill",
+         "Return one skill document by name or id.", "low", "learning",
+         _schema({"name": _string("skill name or id")}, ["name"]),
+         "skills_get", read_only=True),
+    Tool("skills_upsert", "Write a skill",
+         "Create or version a markdown skill: a technique, checklist, or write-up digest. "
+         "Use it when a test produced a reusable procedure, not for one-off noise.",
+         "medium", "learning",
+         _schema({"name": _string("stable skill name"),
+                  "body": _string("markdown body"),
+                  "title": _string("display title"),
+                  "description": _string("one-line description"),
+                  "tags": _array("tags"),
+                  "source": _string("URL or record the skill came from")},
+                 ["name", "body"]), "skills_upsert"),
+    Tool("next_actions", "Suggest next actions",
+         "Rank concrete next actions from the mission, findings, tool calls, and lessons. "
+         "Deterministic and based only on stored records; confirm scope before running one.",
+         "low", "learning",
+         _schema({"mission_id": _string("mission id")}, ["mission_id"]),
+         "next_actions", read_only=True),
     Tool("finding_triage", "Triage finding",
          "Set triage status, notes, tags, or a severity override on a finding.",
          "medium", "findings",

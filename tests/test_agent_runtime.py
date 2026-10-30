@@ -87,22 +87,22 @@ class RuntimeCases(RuntimeHarness):
         self.assertEqual(state["status"], "done", state["last_error"])
         self.assertIn("created 0 findings", state["summary"])
         self.assertEqual([task["kind"] for task in state["tasks"]],
-                         ["scope", "probe", "inventory", "verify"])
+                         ["scope", "recall", "probe", "inventory", "verify"])
         for task in state["tasks"]:
             self.assertEqual(task["status"], "verified", task)
         probe = next(task for task in state["tasks"] if task["kind"] == "probe")
         self.assertEqual(probe["evidence"]["status"], 200)
         self.assertEqual(probe["evidence"]["title"], "Lab target")
         self.assertIn("reachability, not a finding", probe["verifier_notes"])
-        self.assertEqual(state["usage"]["tasks_done"], 4)
+        self.assertEqual(state["usage"]["tasks_done"], 5)
         self.assertEqual(state["usage"]["calls"], 0)
         self.assertFalse(state["usage"]["cost_reported"])
 
         calls, total = self.server.index.list_tool_calls(mission_id=mission["id"], limit=50)
-        self.assertEqual(total, 5)
+        self.assertEqual(total, 8)
         self.assertEqual({call["tool"] for call in calls},
                          {"scope_check", "http_probe", "missions_get",
-                          "runs_list", "findings_summary"})
+                          "runs_list", "findings_summary", "lessons_list", "skills_list"})
         self.assertTrue(all(call["actor"] == "agent:runtime" for call in calls))
         self.assertTrue(all(call["status"] == "ok" for call in calls))
         self.assertEqual(self.server.index.list_findings(limit=10)[1], 0)
@@ -250,7 +250,8 @@ class AgentMCPTests(unittest.TestCase):
             time.sleep(0.1)
         self.assertEqual(status["status"], "error")
         self.assertEqual(status["tasks"][0]["status"], "verified")
-        self.assertEqual(status["tasks"][1]["status"], "failed")
+        probe_task = next(task for task in status["tasks"] if task["kind"] == "probe")
+        self.assertEqual(probe_task["status"], "failed")
         self.assertIn("probe", status["last_error"])
 
         audit, is_error = self.call("tool_calls_list", mission_id=mission_id, limit=50)

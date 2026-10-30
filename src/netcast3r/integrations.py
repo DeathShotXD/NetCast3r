@@ -282,6 +282,170 @@ def load_burp_config(base: str | Path | None = None) -> dict:
     return {"url": url.strip(), "token": token, "configured": bool(url.strip())}
 
 
+def load_mcp_servers(base: str | Path | None = None) -> dict[str, dict]:
+    """Return the operator-configured outbound MCP servers, without secrets."""
+    path = Path(base or Path.home() / ".netcast3r") / "integrations.json"
+    try:
+        config = json.loads(path.read_text() or "{}")
+    except (OSError, ValueError):
+        return {}
+    servers = config.get("mcp_servers")
+    if not isinstance(servers, dict):
+        return {}
+    result: dict[str, dict] = {}
+    for name, raw in servers.items():
+        if not isinstance(raw, dict):
+            continue
+        transport = str(raw.get("transport") or "http").lower()
+        item = {"transport": transport}
+        if transport == "stdio":
+            command = raw.get("command")
+            if isinstance(command, str):
+                command = [command]
+            if not isinstance(command, list) or not command:
+                continue
+            item["command"] = [str(part) for part in command]
+            item["args"] = [str(part) for part in (raw.get("args") or [])]
+            item["cwd"] = str(raw.get("cwd") or "")
+            item["env"] = {str(k): str(v) for k, v in (raw.get("env") or {}).items()}
+        else:
+            item["url"] = str(raw.get("url") or "").strip()
+            item["token"] = str(raw.get("token") or "")
+            if not item["url"]:
+                continue
+        result[str(name)] = item
+    return result
+
+
+class StdioMCPClient:
+    """Minimal MCP stdio client for a local command the operator configured."""
+
+    def __init__(self, command: list[str], args: list[str] | None = None,
+                 env: dict | None = None, cwd: str = "", timeout: float = 20.0):
+        self.command = [*command, *(args or [])]
+        if not self.command:
+            raise BurpError("stdio MCP command is empty")
+        import subprocess
+        merged = os.environ.copy()
+        merged.update(env or {})
+        try:
+            self.proc = subprocess.Popen(
+                self.command, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE, text=True, bufsize=1, cwd=cwd or None,
+                env=merged)
+        except OSError as exc:
+            raise BurpError(f"could not start stdio MCP server: {exc.strerror or exc}") from exc
+        self.timeout = timeout
+        self._id = 0
+
+    def _send(self, payload: dict) -> None:
+        assert self.proc.stdin is not None
+        self.proc.stdin.write(json.dumps(payload) + "\n")
+        self.proc.stdin.flush()
+
+    def _read(self, wanted: int) -> dict:
+        import select
+        assert self.proc.stdout is not None
+        deadline = time.time() + self.timeout
+        while time.time() < deadline:
+            ready, _, _ = select.select([self.proc.stdout], [], [], 0.5)
+            if not ready:
+                if self.proc.poll() is not None:
+                    break
+                continue
+            line = self.proc.stdout.readline()
+            if not line:
+                break
+            try:
+                message = json.loads(line)
+            except ValueError:
+                continue
+            if message.get("id") == wanted:
+                return message
+        raise BurpError("stdio MCP server did not answer; check its stderr")
+
+    def request(self, method: str, params: dict | None = None) -> dict:
+        self._id += 1
+        self._send({"jsonrpc": "2.0", "id": self._id, "method": method,
+                    "params": params or {}})
+        message = self._read(self._id)
+        if "error" in message:
+            error = message["error"] or {}
+            raise BurpError(f"{error.get('code')}: {error.get('message')}")
+        return message.get("result") or {}
+
+    def initialize(self) -> dict:
+        result = self.request("initialize", {
+            "protocolVersion": "2025-06-18", "capabilities": {},
+            "clientInfo": {"name": "netcast3r", "version": "0.1.0"}})
+        self._send({"jsonrpc": "2.0", "method": "notifications/initialized",
+                    "params": {}})
+        return result
+
+    def list_tools(self) -> list[dict]:
+        return self.request("tools/list", {}).get("tools") or []
+
+    def call_tool(self, name: str, arguments: dict | None = None) -> dict:
+        result = self.request("tools/call", {"name": name, "arguments": arguments or {}})
+        if result.get("isError"):
+            raise BurpError("stdio MCP tool returned an error")
+        return result
+
+    def close(self) -> None:
+        try:
+            if self.proc.stdin:
+                self.proc.stdin.close()
+        except OSError:
+            pass
+        try:
+            self.proc.terminate()
+            self.proc.wait(timeout=3)
+        except Exception:
+            try:
+                self.proc.kill()
+            except Exception:
+                pass
+
+
+def mcp_server_tools(config: dict) -> dict:
+    """Start a configured outbound MCP server, list its tools, then stop it."""
+    if config.get("transport") == "stdio":
+        client = StdioMCPClient(config.get("command") or [], config.get("args") or [],
+                                config.get("env") or {}, config.get("cwd") or "")
+        try:
+            info = client.initialize()
+            tools = client.list_tools()
+        finally:
+            client.close()
+    else:
+        client = BurpClient(config.get("url", ""), config.get("token", ""))
+        info = client.initialize()
+        tools = client.list_tools()
+    return {
+        "ok": True,
+        "transport": config.get("transport", "http"),
+        "server": info.get("serverInfo") or {},
+        "protocol": info.get("protocolVersion", ""),
+        "tools": [{"name": item.get("name"), "description": (item.get("description") or "")[:240]}
+                  for item in tools],
+        "tool_count": len(tools),
+    }
+
+
+def mcp_server_call(config: dict, tool: str, arguments: dict) -> dict:
+    if config.get("transport") == "stdio":
+        client = StdioMCPClient(config.get("command") or [], config.get("args") or [],
+                                config.get("env") or {}, config.get("cwd") or "")
+        try:
+            client.initialize()
+            return client.call_tool(tool, arguments)
+        finally:
+            client.close()
+    client = BurpClient(config.get("url", ""), config.get("token", ""))
+    client.initialize()
+    return client.call_tool(tool, arguments)
+
+
 def _parse_sse(text: str) -> list[dict]:
     messages: list[dict] = []
     for block in re.split(r"\r?\n\r?\n", text or ""):

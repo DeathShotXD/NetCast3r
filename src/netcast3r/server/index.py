@@ -78,6 +78,41 @@ CREATE TABLE IF NOT EXISTS finding_artifacts (
 );
 CREATE INDEX IF NOT EXISTS idx_artifact_finding ON finding_artifacts(finding_id, created_at);
 
+CREATE TABLE IF NOT EXISTS lessons (
+    id TEXT PRIMARY KEY,
+    mission_id TEXT,
+    run_id TEXT,
+    task_id TEXT,
+    title TEXT,
+    technique TEXT,
+    context TEXT,
+    outcome TEXT DEFAULT 'success',
+    lesson TEXT,
+    next_step TEXT,
+    tags_json TEXT DEFAULT '[]',
+    source TEXT DEFAULT '',
+    confidence REAL DEFAULT 0.5,
+    created_at TEXT,
+    updated_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_lessons_created ON lessons(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_lessons_mission ON lessons(mission_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_lessons_outcome ON lessons(outcome, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS skills (
+    id TEXT PRIMARY KEY,
+    name TEXT UNIQUE,
+    title TEXT,
+    description TEXT,
+    body TEXT,
+    tags_json TEXT DEFAULT '[]',
+    source TEXT DEFAULT '',
+    version INTEGER DEFAULT 1,
+    created_at TEXT,
+    updated_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_skills_updated ON skills(updated_at DESC);
+
 CREATE TABLE IF NOT EXISTS providers (
     id TEXT PRIMARY KEY,
     name TEXT,
@@ -262,7 +297,7 @@ AGENT_STATUSES = {"idle", "planning", "running", "paused", "stopping",
                   "stopped", "done", "error"}
 AGENT_TASK_STATUSES = {"pending", "running", "verified", "unverified",
                        "failed", "skipped", "blocked"}
-AGENT_TASK_KINDS = {"scope", "probe", "inventory", "analysis", "verify",
+AGENT_TASK_KINDS = {"scope", "recall", "probe", "inventory", "analysis", "verify",
                     "auth_inventory", "api_inventory", "findings_inventory",
                     "reports_inventory"}
 MODEL_CALL_STATUSES = {"ok", "error", "unavailable", "budget"}
@@ -274,6 +309,7 @@ SUBMISSION_STATUSES = {"draft", "ready", "submitted", "triaged", "accepted",
                        "informative", "duplicate", "rejected", "paid", "withdrawn"}
 SUBMISSION_SEVERITIES = {"critical", "high", "medium", "low", "info"}
 OUTCOME_STATUSES = {"accepted", "informative", "duplicate", "rejected", "paid"}
+LESSON_OUTCOMES = {"success", "failure", "partial", "blocked"}
 
 
 def _now() -> str:
@@ -637,6 +673,163 @@ class Index:
             "content_type": row["content_type"], "created_at": row["created_at"],
             "download_url": f"/api/v1/findings/{row['finding_id']}/artifacts/"
                             f"{row['id']}?download=1",
+        }
+
+    # -- lessons and skills ------------------------------------------------
+    def add_lesson(self, title: str, lesson: str, technique: str = "",
+                   context: str = "", outcome: str = "success", next_step: str = "",
+                   tags: list | None = None, mission_id: str = "", run_id: str = "",
+                   task_id: str = "", source: str = "", confidence: float = 0.5) -> dict:
+        title = (title or "").strip()
+        lesson = (lesson or "").strip()
+        if not title:
+            raise ValueError("title required")
+        if not lesson:
+            raise ValueError("lesson required")
+        outcome = (outcome or "success").strip().lower()
+        if outcome not in LESSON_OUTCOMES:
+            raise ValueError(f"unknown outcome: {outcome}")
+        if mission_id and not self.get_mission(mission_id):
+            raise ValueError(f"unknown mission: {mission_id}")
+        try:
+            confidence = float(confidence or 0.0)
+        except (TypeError, ValueError):
+            raise ValueError("confidence must be a number") from None
+        if not 0.0 <= confidence <= 1.0:
+            raise ValueError("confidence must be between 0 and 1")
+        tags = [str(tag) for tag in (tags or []) if str(tag).strip()]
+        lesson_id = _new_id("lsn")
+        now = _now()
+        with self._lock:
+            self.conn.execute(
+                "INSERT INTO lessons (id, mission_id, run_id, task_id, title, technique, "
+                "context, outcome, lesson, next_step, tags_json, source, confidence, "
+                "created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (lesson_id, mission_id, run_id, task_id, title, technique.strip(),
+                 context.strip(), outcome, lesson, next_step.strip(), json.dumps(tags),
+                 source.strip(), confidence, now, now),
+            )
+            self.conn.commit()
+        return self.get_lesson(lesson_id)
+
+    def list_lessons(self, q: str = "", tag: str = "", outcome: str = "",
+                     limit: int = 50) -> tuple[list[dict], int]:
+        where, values = [], []
+        if q:
+            like = f"%{q}%"
+            where.append("(title LIKE ? OR technique LIKE ? OR context LIKE ? OR "
+                         "lesson LIKE ? OR next_step LIKE ?)")
+            values.extend([like] * 5)
+        if tag:
+            where.append("tags_json LIKE ?")
+            values.append(f"%{tag}%")
+        if outcome:
+            where.append("outcome = ?")
+            values.append(outcome)
+        clause = (" WHERE " + " AND ".join(where)) if where else ""
+        with self._lock:
+            total = self.conn.execute(
+                f"SELECT COUNT(*) AS n FROM lessons{clause}", values).fetchone()["n"]
+            rows = self.conn.execute(
+                f"SELECT * FROM lessons{clause} ORDER BY created_at DESC LIMIT ?",
+                [*values, max(1, min(int(limit or 50), 500))]).fetchall()
+        return [self._lesson_row(row) for row in rows], total
+
+    def get_lesson(self, lesson_id: str) -> dict | None:
+        with self._lock:
+            row = self.conn.execute("SELECT * FROM lessons WHERE id = ?",
+                                    (lesson_id,)).fetchone()
+        return self._lesson_row(row) if row else None
+
+    def delete_lesson(self, lesson_id: str) -> bool:
+        with self._lock:
+            cur = self.conn.execute("DELETE FROM lessons WHERE id = ?", (lesson_id,))
+            self.conn.commit()
+        return cur.rowcount > 0
+
+    @staticmethod
+    def _lesson_row(row: sqlite3.Row) -> dict:
+        return {
+            "id": row["id"], "mission_id": row["mission_id"], "run_id": row["run_id"],
+            "task_id": row["task_id"], "title": row["title"],
+            "technique": row["technique"], "context": row["context"],
+            "outcome": row["outcome"], "lesson": row["lesson"],
+            "next_step": row["next_step"], "tags": _loads(row["tags_json"], []),
+            "source": row["source"], "confidence": row["confidence"],
+            "created_at": row["created_at"], "updated_at": row["updated_at"],
+        }
+
+    def upsert_skill(self, name: str, body: str, title: str = "",
+                     description: str = "", tags: list | None = None,
+                     source: str = "") -> dict:
+        name = (name or "").strip().lower().replace(" ", "-")
+        if not name or len(name) > 120:
+            raise ValueError("skill name is required and must be at most 120 characters")
+        body = (body or "").strip()
+        if not body:
+            raise ValueError("skill body is required")
+        title = (title or name.replace("-", " ").title()).strip()
+        tags = [str(tag) for tag in (tags or []) if str(tag).strip()]
+        now = _now()
+        with self._lock:
+            row = self.conn.execute("SELECT * FROM skills WHERE name = ?",
+                                    (name,)).fetchone()
+            if row:
+                self.conn.execute(
+                    "UPDATE skills SET title = ?, description = ?, body = ?, tags_json = ?, "
+                    "source = ?, version = version + 1, updated_at = ? WHERE name = ?",
+                    (title, (description or "").strip(), body, json.dumps(tags),
+                     (source or row["source"] or "").strip(), now, name),
+                )
+                skill_id = row["id"]
+            else:
+                skill_id = _new_id("skl")
+                self.conn.execute(
+                    "INSERT INTO skills (id, name, title, description, body, tags_json, "
+                    "source, version, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    (skill_id, name, title, (description or "").strip(), body,
+                     json.dumps(tags), (source or "").strip(), 1, now, now),
+                )
+            self.conn.commit()
+        return self.get_skill(skill_id)
+
+    def list_skills(self, q: str = "", limit: int = 50) -> tuple[list[dict], int]:
+        where, values = [], []
+        if q:
+            like = f"%{q}%"
+            where.append("(name LIKE ? OR title LIKE ? OR description LIKE ? OR body LIKE ?)")
+            values.extend([like] * 4)
+        clause = (" WHERE " + " AND ".join(where)) if where else ""
+        with self._lock:
+            total = self.conn.execute(
+                f"SELECT COUNT(*) AS n FROM skills{clause}", values).fetchone()["n"]
+            rows = self.conn.execute(
+                f"SELECT * FROM skills{clause} ORDER BY updated_at DESC LIMIT ?",
+                [*values, max(1, min(int(limit or 50), 200))]).fetchall()
+        return [self._skill_row(row) for row in rows], total
+
+    def get_skill(self, name_or_id: str) -> dict | None:
+        with self._lock:
+            row = self.conn.execute(
+                "SELECT * FROM skills WHERE id = ? OR name = ?",
+                (name_or_id, name_or_id)).fetchone()
+        return self._skill_row(row) if row else None
+
+    def delete_skill(self, name_or_id: str) -> bool:
+        with self._lock:
+            cur = self.conn.execute(
+                "DELETE FROM skills WHERE id = ? OR name = ?", (name_or_id, name_or_id))
+            self.conn.commit()
+        return cur.rowcount > 0
+
+    @staticmethod
+    def _skill_row(row: sqlite3.Row) -> dict:
+        return {
+            "id": row["id"], "name": row["name"], "title": row["title"],
+            "description": row["description"], "body": row["body"],
+            "tags": _loads(row["tags_json"], []), "source": row["source"],
+            "version": row["version"], "created_at": row["created_at"],
+            "updated_at": row["updated_at"],
         }
 
     @staticmethod

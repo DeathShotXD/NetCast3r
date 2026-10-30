@@ -372,6 +372,60 @@ smallest safe proof against an authorized target. It never runs the payload and
 explicitly stops at a benign marker. This is the input an agent should use
 before testing a recent CVE, not a scanner that fires exploits.
 
+### Learning loop
+
+NetCast3r keeps operational memory in the same SQLite index as runs and
+findings. A lesson is written only from a record the control plane already
+stored, so experience cannot be invented:
+
+| Tool | Risk | Purpose |
+| --- | --- | --- |
+| `lessons_record` | medium | Persist a technique, failure, or correction with mission/run/task links |
+| `lessons_list` / `lessons_get` | low | Search and read lessons by text, tag, or outcome |
+| `lesson_reflect` | low | Derive a lesson from a stored tool call or run |
+| `skills_list` / `skills_get` | low | Read the markdown skill library |
+| `skills_upsert` | medium | Create or version a technique/checklist/write-up digest |
+| `next_actions` | low | Rank the next concrete steps from stored records |
+
+The mission agent now plans a `recall` task before the active probe. It loads
+lessons and skills that match the target, then writes one deterministic lesson
+after a failed or blocked task. Reflection classifies the cause (scope, policy,
+approval, auth, routing, input, reliability, tooling) and records one concrete
+next step.
+
+Four skills are seeded on first start: path-encoding scope differentials, the
+login-method x 2FA matrix, account rebind takeover, and the two-account object
+matrix. They are generic procedures, not target notes. Add a new skill with
+`skills_upsert` after a test produces a reusable method.
+
+### Outbound MCP registry
+
+NetCast3r can call other MCP servers, not only expose its own tools. Configure
+them in `~/.netcast3r/integrations.json`:
+
+```json
+{
+  "mcp_servers": {
+    "hexstrike": {"transport": "stdio", "command": ["python3", "/opt/hexstrike/server.py"]},
+    "hermes": {"transport": "http", "url": "http://127.0.0.1:9876", "token": ""}
+  }
+}
+```
+
+| Tool | Risk | Purpose |
+| --- | --- | --- |
+| `mcp_servers_list` | low | List configured servers and transports; tokens are hidden |
+| `mcp_server_tools` | medium | Start one server, initialize it, and list its tools |
+| `mcp_server_call` | high | Invoke one remote tool; URL/Host arguments are scope-checked |
+
+`mcp_server_call` is high risk and needs an approval under supervised policy.
+A remote tool is not an authorization: every target-bearing argument is checked
+against the mission before the call, and the result is audited. This is the
+bridge for Hermes Agent, Agent Zero, HexStrike, OpenCode, and an internal MCP
+server.
+
+
+
 
 
 ### Browser
