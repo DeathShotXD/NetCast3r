@@ -163,6 +163,19 @@ CREATE TABLE IF NOT EXISTS skills (
 );
 CREATE INDEX IF NOT EXISTS idx_skills_updated ON skills(updated_at DESC);
 
+CREATE TABLE IF NOT EXISTS knowledge_items (
+    id TEXT PRIMARY KEY,
+    source TEXT,
+    title TEXT,
+    url TEXT UNIQUE,
+    published TEXT,
+    summary TEXT,
+    tags_json TEXT DEFAULT '[]',
+    fetched_at TEXT,
+    status TEXT DEFAULT 'new'
+);
+CREATE INDEX IF NOT EXISTS idx_knowledge_source ON knowledge_items(source, fetched_at DESC);
+
 CREATE TABLE IF NOT EXISTS expertise (
     tech TEXT PRIMARY KEY,
     exposures INTEGER DEFAULT 0,
@@ -1144,6 +1157,62 @@ class Index:
                     "failures = failures + excluded.failures, last_seen = excluded.last_seen",
                     (tech, success, failure, now))
             self.conn.commit()
+
+    # -- public knowledge feed --------------------------------------------
+    @staticmethod
+    def _knowledge_row(row: sqlite3.Row) -> dict:
+        item = dict(row)
+        item["tags"] = _loads(item.pop("tags_json"), [])
+        return item
+
+    def add_knowledge_item(self, source: str, title: str, url: str,
+                           published: str = "", summary: str = "",
+                           tags: list | None = None) -> dict:
+        url = (url or "").strip()
+        if not url:
+            raise ValueError("knowledge item needs a url")
+        now = _now()
+        with self._lock:
+            existing = self.conn.execute(
+                "SELECT * FROM knowledge_items WHERE url = ?", (url,)).fetchone()
+            if existing:
+                return self._knowledge_row(existing)
+            item_id = _new_id("knw")
+            self.conn.execute(
+                "INSERT INTO knowledge_items (id, source, title, url, published, "
+                "summary, tags_json, fetched_at, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'new')",
+                (item_id, source.strip(), (title or url).strip()[:500], url,
+                 (published or "").strip()[:100], (summary or "").strip()[:2000],
+                 json.dumps([str(tag) for tag in (tags or [])]), now))
+            self.conn.commit()
+        return self.get_knowledge(item_id) or {}
+
+    def get_knowledge(self, item_id: str) -> dict | None:
+        with self._lock:
+            row = self.conn.execute(
+                "SELECT * FROM knowledge_items WHERE id = ?", (item_id,)).fetchone()
+        return self._knowledge_row(row) if row else None
+
+    def list_knowledge(self, source: str = "", limit: int = 50) -> list[dict]:
+        clause, params = "", []
+        if source:
+            clause = "WHERE source = ?"
+            params.append(source)
+        with self._lock:
+            rows = self.conn.execute(
+                f"SELECT * FROM knowledge_items {clause} "
+                "ORDER BY fetched_at DESC, published DESC LIMIT ?",
+                [*params, max(1, min(int(limit or 50), 500))]).fetchall()
+        return [self._knowledge_row(row) for row in rows]
+
+    def mark_knowledge(self, item_id: str, status: str) -> dict | None:
+        if status not in {"new", "read", "ingested", "ignored"}:
+            raise ValueError("knowledge status must be new, read, ingested, or ignored")
+        with self._lock:
+            self.conn.execute(
+                "UPDATE knowledge_items SET status = ? WHERE id = ?", (status, item_id))
+            self.conn.commit()
+        return self.get_knowledge(item_id)
 
     def list_expertise(self, limit: int = 50) -> list[dict]:
         with self._lock:

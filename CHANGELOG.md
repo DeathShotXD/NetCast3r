@@ -100,6 +100,12 @@ Notable changes to NetCast3r, newest first.
   bypass, unprotected admin functionality, web shell upload, and JWT
   unverified-signature bypass. A failed recipe is a real capability signal, not
   a solved record.
+- Public knowledge watcher: a curated feed list for MSRC, Project Zero, Google
+  Security, GitHub Advisories, PortSwigger Research, Bugcrowd, and CISA KEV.
+  `knowledge_sources`, `knowledge_refresh`, `knowledge_list`, and
+  `knowledge_read` store new items with source URLs and a bounded excerpt.
+  Feed items are leads, not findings; `research_ingest` is still the only path
+  that turns a report into a reusable skill.
 - `docs/research/penligent-public-comparison.md` records what Penligent's
   public repository and site actually expose. The application source is not
   public, so the note does not claim a source-code review.

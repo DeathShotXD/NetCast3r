@@ -454,6 +454,9 @@ stored, so experience cannot be invented:
 | `technique_search` / `technique_plan` | low | Rank a 38-entry public-research technique library against a target |
 | `research_sources` | low | Coverage of the technique library by class and rarity |
 | `research_ingest` | medium | Store a sourced write-up digest as an active skill |
+| `knowledge_sources` | low | Curated advisory and research feeds |
+| `knowledge_refresh` | medium | Fetch new public report and advisory items |
+| `knowledge_list` / `knowledge_read` | low | Read one captured report before writing a lesson |
 | `hunt_plan` | low | Turn a mission and its fingerprint into scope, baseline, identity, technique, validation, and evidence phases |
 
 The mission agent now plans a `recall` task before the active probe. It loads

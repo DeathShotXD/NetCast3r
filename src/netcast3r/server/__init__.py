@@ -26,8 +26,8 @@ from .events import EventBus
 from .index import Index, is_training_target
 from .jobs import JobManager
 from .keys import KeyStore, mask
-from .. import (control, integrations, learning, quality, research, reveng,
-                selfaudit, selfmodel, stix, surface, training)
+from .. import (control, feedwatch, integrations, learning, quality, research,
+                reveng, selfaudit, selfmodel, stix, surface, training)
 
 API_VERSION = "v1"
 ALLOWED_HOSTS = {"127.0.0.1", "localhost", "::1", "[::1]"}
@@ -777,6 +777,39 @@ class Server:
             except ValueError as exc:
                 return _problem(400, str(exc))
             return _json(result, 201)
+
+        @add("GET", r"/api/v1/knowledge/sources")
+        def knowledge_sources(ctx):
+            items = list(feedwatch.sources())
+            return _json({"items": items, "total": len(items)})
+
+        @add("POST", r"/api/v1/knowledge/refresh")
+        def knowledge_refresh(ctx):
+            body = ctx.json()
+            body = body if isinstance(body, dict) else {}
+            try:
+                return _json(feedwatch.refresh(
+                    self.index, source_id=str(body.get("source") or ""),
+                    limit=_int_or(body.get("limit"), 20)), 201)
+            except ValueError as exc:
+                return _problem(400, str(exc))
+
+        @add("GET", r"/api/v1/knowledge")
+        def knowledge_list(ctx):
+            return _json(feedwatch.recent(
+                self.index, source=ctx.query.get("source", ""),
+                limit=_int_or(ctx.query.get("limit"), 50)))
+
+        @add("POST", r"/api/v1/knowledge/(?P<id>[A-Za-z0-9_]+)/read")
+        def knowledge_read(ctx):
+            body = ctx.json()
+            body = body if isinstance(body, dict) else {}
+            try:
+                return _json(feedwatch.read(
+                    self.index, ctx.params["id"],
+                    max_chars=_int_or(body.get("max_chars"), 8000)))
+            except ValueError as exc:
+                return _problem(400, str(exc))
 
         @add("GET", r"/api/v1/selfmodel")
         def selfmodel_status(ctx):

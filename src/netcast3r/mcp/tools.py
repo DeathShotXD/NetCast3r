@@ -971,6 +971,26 @@ def research_sources(ctx: ToolContext, args: dict) -> dict:
     return _call(ctx, "GET", "/api/v1/research/sources")
 
 
+def knowledge_sources(ctx: ToolContext, args: dict) -> dict:
+    return _call(ctx, "GET", "/api/v1/knowledge/sources")
+
+
+def knowledge_refresh(ctx: ToolContext, args: dict) -> dict:
+    return _call(ctx, "POST", "/api/v1/knowledge/refresh",
+                 body={"source": args.get("source", ""),
+                       "limit": args.get("limit", 20)})
+
+
+def knowledge_list(ctx: ToolContext, args: dict) -> dict:
+    return _call(ctx, "GET", "/api/v1/knowledge", {
+        "source": args.get("source", ""), "limit": args.get("limit", 50)})
+
+
+def knowledge_read(ctx: ToolContext, args: dict) -> dict:
+    return _call(ctx, "POST", f"/api/v1/knowledge/{args['item_id']}/read",
+                 body={"max_chars": args.get("max_chars", 8000)})
+
+
 def hunt_plan(ctx: ToolContext, args: dict) -> dict:
     return _call(ctx, "GET", "/api/v1/hunt-plan", {
         "mission_id": args["mission_id"], "tech": args.get("tech", ""),
@@ -2306,6 +2326,10 @@ _HANDLERS.update({
     "technique_plan": technique_plan,
     "research_sources": research_sources,
     "research_ingest": research_ingest,
+    "knowledge_sources": knowledge_sources,
+    "knowledge_refresh": knowledge_refresh,
+    "knowledge_list": knowledge_list,
+    "knowledge_read": knowledge_read,
     "hunt_plan": hunt_plan,
     "selfmodel_snapshot": selfmodel_snapshot,
     "selfmodel_gaps": selfmodel_gaps,
@@ -2867,6 +2891,31 @@ TOOLS: tuple[Tool, ...] = (
          "Show the technique count by class and rarity. Use it to see which bug "
          "classes the library covers before choosing a hunt.",
          "low", "research", _schema({}), "research_sources", read_only=True),
+    Tool("knowledge_sources", "List public knowledge feeds",
+         "List the curated advisory and research feeds: MSRC, Project Zero, "
+         "Google Security, GitHub Advisories, PortSwigger Research, Bugcrowd, "
+         "and CISA KEV.",
+         "low", "research", _schema({}), "knowledge_sources", read_only=True),
+    Tool("knowledge_refresh", "Refresh public knowledge feeds",
+         "Fetch one feed or all curated feeds and store new items with their "
+         "source URL. A feed item is a lead, not a finding.",
+         "medium", "research",
+         _schema({"source": _string("source id; omit for all"),
+                  "limit": _integer("items per source", 1, 40, 20)}),
+         "knowledge_refresh", open_world=True),
+    Tool("knowledge_list", "List captured knowledge",
+         "List captured public reports and advisories, newest first.",
+         "low", "research",
+         _schema({"source": _string("source id filter"),
+                  "limit": _integer("how many", 1, 500, 50)}),
+         "knowledge_list", read_only=True),
+    Tool("knowledge_read", "Read one captured report",
+         "Fetch one captured public report, return a bounded text excerpt, and "
+         "mark it read. Use research_ingest to keep a distilled technique.",
+         "low", "research",
+         _schema({"item_id": _string("knowledge item id"),
+                  "max_chars": _integer("excerpt cap", 500, 20000, 8000)},
+                 ["item_id"]), "knowledge_read", open_world=True),
     Tool("research_ingest", "Ingest a write-up",
          "Store a written digest of a public write-up, post, or talk as an active "
          "skill with its source URL. The caller must supply the distilled notes; "

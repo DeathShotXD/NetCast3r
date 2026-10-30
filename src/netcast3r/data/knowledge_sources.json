@@ -1,0 +1,53 @@
+{
+  "sources": [
+    {
+      "id": "msrc",
+      "name": "Microsoft Security Response Center",
+      "url": "https://msrc.microsoft.com/blog/feed",
+      "kind": "rss",
+      "tags": ["microsoft", "windows", "cloud"]
+    },
+    {
+      "id": "project-zero",
+      "name": "Google Project Zero",
+      "url": "https://googleprojectzero.blogspot.com/feeds/posts/default",
+      "kind": "rss",
+      "tags": ["research", "browser", "kernel"]
+    },
+    {
+      "id": "google-security",
+      "name": "Google Security Blog",
+      "url": "https://security.googleblog.com/feeds/posts/default",
+      "kind": "rss",
+      "tags": ["google", "android", "cloud"]
+    },
+    {
+      "id": "github-advisories",
+      "name": "GitHub Security Advisories",
+      "url": "https://github.com/advisories.atom",
+      "kind": "rss",
+      "tags": ["supply-chain", "advisory"]
+    },
+    {
+      "id": "portswigger-research",
+      "name": "PortSwigger Research",
+      "url": "https://portswigger.net/research/rss",
+      "kind": "rss",
+      "tags": ["web", "research", "burp"]
+    },
+    {
+      "id": "bugcrowd-blog",
+      "name": "Bugcrowd Blog",
+      "url": "https://www.bugcrowd.com/blog/feed/",
+      "kind": "rss",
+      "tags": ["bug-bounty", "methodology"]
+    },
+    {
+      "id": "cisa-kev",
+      "name": "CISA Known Exploited Vulnerabilities",
+      "url": "https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json",
+      "kind": "json",
+      "tags": ["kev", "cve", "exploited"]
+    }
+  ]
+}
