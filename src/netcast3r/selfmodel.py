@@ -14,7 +14,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from . import training
+from . import research, training
 
 DIMENSIONS = {
     "recon": {
@@ -117,6 +117,7 @@ def _level(score: int) -> str:
 def snapshot(index) -> dict:
     """Read stored records and return a reproducible capability snapshot."""
     labs = training.catalog()
+    techniques = research.techniques()
     progress = {row["lab_slug"]: row for row in index.list_training(limit=1000)}
     skills, _ = index.list_skills(limit=200)
     active_skills = [skill for skill in skills if skill.get("status", "active") == "active"]
@@ -138,6 +139,8 @@ def snapshot(index) -> dict:
                           if _matches([row.get("tech")], spec["tags"])]
         finding_hits = [item for item in findings
                         if _matches(item.get("tags"), spec["tags"])]
+        technique_hits = [item for item in techniques
+                          if _matches(item.get("tags"), spec["tags"])]
         exposures = sum(int(row.get("exposures") or 0) for row in expertise_hits)
         coverage = len(solved) / len(in_scope) if in_scope else 0.0
         score = (round(coverage * 40)
@@ -156,6 +159,7 @@ def snapshot(index) -> dict:
             "expertise": [row["tech"] for row in expertise_hits],
             "exposures": exposures,
             "findings": len(finding_hits),
+            "techniques": len(technique_hits),
             "next_lab": next((lab["slug"] for lab in in_scope
                               if (progress.get(lab["slug"]) or {}).get("status")
                               != "solved"), ""),
@@ -171,6 +175,7 @@ def snapshot(index) -> dict:
             "training_solved": sum(1 for row in progress.values()
                                    if row.get("status") == "solved"),
             "skills": len(active_skills),
+            "techniques": len(techniques),
             "expertise": len(expertise),
             "findings": finding_total,
             "missions": mission_total,

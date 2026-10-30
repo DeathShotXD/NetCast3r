@@ -40,6 +40,7 @@ class SelfModelTests(unittest.TestCase):
         learning.seed_builtin_skills(self.index)
         state = selfmodel.snapshot(self.index)
         self.assertGreaterEqual(state["counts"]["training_solved"], 1)
+        self.assertGreaterEqual(state["counts"]["techniques"], 30)
         injection = next(item for item in state["dimensions"]
                          if item["dimension"] == "injection")
         self.assertGreater(injection["score"], 0)

@@ -23,7 +23,7 @@ import re
 from pathlib import Path
 from urllib.parse import urlsplit
 
-from . import selfmodel
+from . import research, selfmodel
 
 SCOPE_HINTS = ("scope", "out of scope", "scope_denied", "target is outside")
 APPROVAL_HINTS = ("approval", "confirm", "policy_denied", "readonly")
@@ -283,6 +283,16 @@ def suggest_next(index, mission_id: str, limit: int = 8) -> dict:
                 gap["tool"], gap["args"], "low")
     except Exception:  # noqa: BLE001 - a gap read must not break planning
         capability = {}
+    try:
+        plan = research.plan(index, target=target, tech=slug, limit=2)
+        for item in plan.get("items", [])[:1]:
+            why = ", ".join(item.get("why") or []) or item["class"]
+            add(f"Test the technique: {item['title']}",
+                f"research match ({why}); proof: {item['proof'][:120]}",
+                "technique_plan",
+                {"target": target, "tech": slug, "limit": 3}, "low")
+    except Exception:  # noqa: BLE001 - research ranking must not break planning
+        plan = {}
     if not actions:
         add("Re-read the latest run output and pick one unexplained response",
             "the obvious paths are covered; deepen the evidence instead of widening",
@@ -292,6 +302,8 @@ def suggest_next(index, mission_id: str, limit: int = 8) -> dict:
             "expertise": expertise[:5],
             "capability": {"overall": capability.get("overall", 0),
                            "gaps": len(capability.get("items", []))},
+            "research": {"catalogue": plan.get("catalogue", 0),
+                         "matched": len(plan.get("items", []))},
             "actions": actions[:limit],
             "note": ("Suggestions are deterministic and based on stored records; they are "
                      "not a model's guess. Confirm scope before running one.")}

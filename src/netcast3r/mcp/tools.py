@@ -29,7 +29,8 @@ from urllib.parse import urlencode, urljoin, urlsplit
 import httpx
 
 from .. import (authstore, browser, integrations, oast, pathdiff, pivot, quality,
-                reveng, selfmodel, stix, surface, tempmail, threatintel, training)
+                research, reveng, selfmodel, stix, surface, tempmail, threatintel,
+                training)
 from ..scope import ScopeManager
 
 POLICIES = ("readonly", "supervised", "full")
@@ -921,6 +922,31 @@ def training_verify(ctx: ToolContext, args: dict) -> dict:
 
 def skill_packs(ctx: ToolContext, args: dict) -> dict:
     return _call(ctx, "GET", "/api/v1/skill-packs")
+
+
+def technique_search(ctx: ToolContext, args: dict) -> dict:
+    return _call(ctx, "GET", "/api/v1/techniques", {
+        "q": args.get("query", ""), "tag": args.get("tag", ""),
+        "rarity": args.get("rarity", ""), "impact": args.get("impact", ""),
+        "limit": args.get("limit", 20)})
+
+
+def technique_plan(ctx: ToolContext, args: dict) -> dict:
+    return _call(ctx, "GET", "/api/v1/techniques/plan", {
+        "target": args.get("target", ""), "tech": args.get("tech", ""),
+        "signals": ",".join(str(item) for item in (args.get("signals") or [])),
+        "tags": ",".join(str(item) for item in (args.get("tags") or [])),
+        "limit": args.get("limit", 6)})
+
+
+def research_sources(ctx: ToolContext, args: dict) -> dict:
+    return _call(ctx, "GET", "/api/v1/research/sources")
+
+
+def research_ingest(ctx: ToolContext, args: dict) -> dict:
+    body = {key: args[key] for key in ("url", "title", "notes", "tags")
+            if key in args}
+    return _call(ctx, "POST", "/api/v1/research/ingest", body=body)
 
 
 def selfmodel_snapshot(ctx: ToolContext, args: dict) -> dict:
@@ -1894,6 +1920,10 @@ _HANDLERS.update({
     "training_record": training_record,
     "training_verify": training_verify,
     "skill_packs": skill_packs,
+    "technique_search": technique_search,
+    "technique_plan": technique_plan,
+    "research_sources": research_sources,
+    "research_ingest": research_ingest,
     "selfmodel_snapshot": selfmodel_snapshot,
     "selfmodel_gaps": selfmodel_gaps,
     "upgrade_propose": upgrade_propose,
@@ -2397,6 +2427,43 @@ TOOLS: tuple[Tool, ...] = (
          "auth, GraphQL, deserialization, upload, cache/smuggling, race, cloud, mobile, "
          "reversing, LLM, recon, reporting, and business logic. Read one with skills_get.",
          "low", "training", _schema({}), "skill_packs", read_only=True),
+    Tool("technique_search", "Search the technique library",
+         "Search a curated library of less-saturated, high-impact techniques drawn "
+         "from public 2025-2026 research: CSPT, cache deception, ORM leaks, "
+         "error-based SSTI, OAuth/SCIM/MCP identity bugs, parser differentials, "
+         "Next.js cache chains, XS-Leaks, and more.",
+         "low", "research",
+         _schema({"query": _string("text, class, signal, or tag"),
+                  "tag": _string("exact tag, e.g. cspt or orm"),
+                  "rarity": _string("rare, uncommon, or common"),
+                  "impact": _string("critical, high, medium, or low"),
+                  "limit": _integer("how many", 1, 100, 20)}),
+         "technique_search", read_only=True),
+    Tool("technique_plan", "Plan techniques for a target",
+         "Rank techniques against a target host, technology, or observed signals. "
+         "Each result carries the test steps, the minimum proof, tools, and public "
+         "sources. A high score is a reason to test, not a finding.",
+         "low", "research",
+         _schema({"target": _string("target host or URL"),
+                  "tech": _string("framework or stack, e.g. nextjs, django, graphql"),
+                  "signals": _array("observed signals", {"type": "string"}),
+                  "tags": _array("desired tags", {"type": "string"}),
+                  "limit": _integer("how many", 1, 30, 6)}),
+         "technique_plan", read_only=True),
+    Tool("research_sources", "Technique library coverage",
+         "Show the technique count by class and rarity. Use it to see which bug "
+         "classes the library covers before choosing a hunt.",
+         "low", "research", _schema({}), "research_sources", read_only=True),
+    Tool("research_ingest", "Ingest a write-up",
+         "Store a written digest of a public write-up, post, or talk as an active "
+         "skill with its source URL. The caller must supply the distilled notes; "
+         "the tool does not fetch or invent content.",
+         "medium", "research",
+         _schema({"url": _string("public source URL"),
+                  "title": _string("short title"),
+                  "notes": _string("distilled technique, at least 80 characters"),
+                  "tags": _array("tags", {"type": "string"})},
+                 ["url", "title", "notes"]), "research_ingest"),
     Tool("selfmodel_snapshot", "Capability self-model",
          "Show a deterministic capability snapshot derived from stored training, skills, "
          "expertise, findings, missions, and submissions. No model guess is included.",

@@ -193,6 +193,50 @@
         "payments"
       ],
       "body": "# Business logic and money flows\n\n1. Draw the workflow: cart, coupon, checkout, payment, refund, cancellation, and payout. Note every server-side assumption.\n2. Test quantity and price: negative, zero, fractional, very large, and unit mismatch. A client-side total that the server trusts is a finding.\n3. Test coupon stacking, reuse, and race. Redeem the same code twice concurrently and check the balance and order total.\n4. Test step skipping: call the confirmation or refund endpoint without the prerequisite step, and replay a completed step.\n5. Test currency and rounding: change the currency, the decimal scale, or the exchange-rate source.\n6. Test refund and cancellation after fulfilment, and partial refunds that exceed the captured amount.\n7. Prove financial impact with a test account and the smallest possible amount. Revert state.\n\nEvidence: the sequence, the server response, and the resulting balance or order state. Do not complete a real payout.\n"
+    },
+    {
+      "name": "modern-web-research-2025",
+      "title": "Modern web research: ORM leaks, error SSTI, parser gaps",
+      "description": "Less-saturated server-side classes from 2025 research: ORM leaking, error-based SSTI, Unicode normalization, redirect-loop SSRF, Next.js cache chains, and parser differentials.",
+      "tags": [
+        "orm",
+        "ssti",
+        "ssrf",
+        "nextjs",
+        "parser",
+        "unicode",
+        "research"
+      ],
+      "body": "# Modern web research: ORM leaks, error SSTI, parser gaps\n\nThese classes are under-tested because they do not look like classic injection.\n\n## ORM leaking\nAny user-controlled filter, search, sort, or `where` object can become a database oracle.\n- Django: try a denied field, then a relational path: `created_by__password__startswith=a`.\n- Prisma: replace a string with an operator object: `{\"resetToken\":{\"not\":\"x\"}}`; try `contains` and time-based extraction.\n- Beego: `parseExprs` may overwrite the first segment, so `email__password__startswith` reaches `password`.\n- OData/Entity Framework: read `/$metadata`, use `$expand` on a related user, then `gt`/`lt` comparisons if string functions are disabled.\n- Oracle choices: response length, status, timing, sort order, and ReDoS. Stop at one proven prefix.\n\n## Error-based SSTI\nWhen output is not reflected, force the evaluated value into an error.\n- Universal probe: `(1/0).zxy.zxy` to fingerprint the engine.\n- Jinja2: put the class walker inside `getattr()` so the `AttributeError` contains the data.\n- Twig: `{{include(system('id'))}}` often leaks the command output in a template-not-found error.\n- If errors are clean, use conditional division by zero as a one-bit oracle.\n- Prove a harmless read; never a destructive command.\n\n## Unicode normalization\nIf a WAF blocks a token, try fullwidth, compatibility, overlong UTF-8, and NFC/NFD/NFKC/NFKD differences. Confirm the backend actually normalized the input into an executable form.\n\n## Redirect-loop SSRF\nIf a server fetches a URL but hides the body, make it follow a loop that increments 3xx status codes. Some clients leak the full redirect chain and final 200 body on an unhandled status (305, 306, 309, 310). End at a controlled host first.\n\n## Next.js cache chains\n`?__nextDataReq=1` returns page props as JSON. Add `x-now-route-matches: 1` and check whether `Cache-Control` becomes public. A reflected header or cookie in `getServerSideProps` can become stored XSS at the edge. Test on an unimportant route only.\n\n## Parser differentials\nCompare the parser that validates with the parser that consumes: SAML XML (signature vs assertion), YAML (Ruby vs Go), JSON (duplicate keys, escapes), HTTP (front-end vs back-end). The gap is the vulnerability.\n\nSources: PortSwigger Top 10 2025, Elttam ORM leak series, SL Cyber redirect-loop SSRF, zhero Next.js cache research.\n"
+    },
+    {
+      "name": "modern-client-research-2025",
+      "title": "Modern client research: CSPT, cache deception, XS-Leaks",
+      "description": "Client-side path traversal, CSPT2CSRF, cache deception chains, and cross-site leaks that turn low-impact behavior into account takeover or data disclosure.",
+      "tags": [
+        "cspt",
+        "cache",
+        "xs-leak",
+        "spa",
+        "ato",
+        "research"
+      ],
+      "body": "# Modern client research: CSPT, cache deception, XS-Leaks\n\n## Client-side path traversal (CSPT)\nFind a fetch/XHR that builds a URL from a query, fragment, path, or stored value:\n`/v1/users/info/${userId}`. Inject `../` to reroute the authenticated request.\n- The browser adds cookies, CSRF headers, and custom auth headers automatically.\n- A GET sink can be chained with an upload or file-read gadget to control the next request.\n- Test encoded variants and double traversal when a front-end normalises once.\n\n## CSPT to CSRF\nIf the rerouted request reaches a state-changing route with the same method, the site's own CSRF token is attached. This is CSPT2CSRF: SameSite and anti-CSRF tokens do not help. Use a test object and revert it.\n\n## CSPT plus cache deception\nFind a sensitive endpoint that becomes cacheable with `.css`, `.js`, `.png`, or a normalized path suffix. Use CSPT to make the victim's browser send the authenticated request to that cacheable path. Then fetch the cached URL anonymously. If the response contains the victim's token or data, the chain is account takeover.\n\n## Next.js cache poisoning\n`__nextDataReq=1` plus `x-now-route-matches: 1` can turn an SSR page into a cacheable data response. A reflected header or cookie becomes stored XSS at the edge. Never poison a production home page.\n\n## XS-Leaks\nSmall browser behaviors become oracles:\n- ETag length encodes response size; a boundary change plus a 431 can leak one bit.\n- Chrome's connection pool orders by host; exhaust it and race two requests to binary-search a hostname.\n- Cache timing, redirect timing, and error pages can reveal authentication state.\n\nA side channel is only a finding when it discloses data the attacker should not have. Prove the oracle with two controlled values first.\n\nSources: Zere CSPT+cache deception ATO, Doyensec CSPT2CSRF, PortSwigger Top 10 2025 (#6, #7, #8).\n"
+    },
+    {
+      "name": "modern-identity-research-2026",
+      "title": "Modern identity research: OAuth, SCIM, and MCP",
+      "description": "Identity attacks beyond basic SSO: mutable claims, client confusion, scope upgrade, redirect parsers, SCIM provisioning, and MCP authorization confusion.",
+      "tags": [
+        "oauth",
+        "oidc",
+        "saml",
+        "scim",
+        "mcp",
+        "identity",
+        "research"
+      ],
+      "body": "# Modern identity research: OAuth, SCIM, and MCP\n\n## OAuth mutable claims\nThe client must key accounts on `sub`, not `email`, `preferred_username`, or another mutable claim. If it uses email, create an identity on an IdP you control with a second account's address, complete the flow, and see whether the session lands on that account. Prove with two accounts you own.\n\n## Client confusion\nAn implicit-flow client that accepts an access token from a query, fragment, cookie, or JSON body may not verify the token's client id or audience. Obtain a token for a client you control and replay it to the target. A token minted for another client must be rejected.\n\n## Scope upgrade\nComplete an authorization-code flow with a low scope, then replay the code exchange with a higher `scope`. If the token endpoint honours it, call a resource that requires the higher scope.\n\n## Redirect parser\nRegister a client you own and test exact matching: path traversal, extra slashes, `@`, encoded separators, an allowed origin with an open redirect, and a subdomain you control. Capture the code at your endpoint.\n\n## SCIM beyond SSO\nSCIM is often less tested than SAML/OIDC.\n- Try `/scim/v2/Users`, `/Groups`, and `/Bulk` unauthenticated; some libraries ship without auth.\n- Test `userName`/`email` updates without the normal verification flow.\n- Test group `id` or `displayName` values that collide with internal role names.\n- Test a PATCH with `path` omitted and a value object, duplicate JSON keys, and Bulk ordering.\n- Check whether a deprovisioned user is re-provisioned by an unrelated update.\n\n## MCP authorization\nRead `/.well-known/oauth-protected-resource` and the authorization-server metadata. Test whether a token for one resource is accepted by another, whether `aud`/`resource` is bound, and whether a low-privilege token can invoke a high-risk tool without per-action consent. Treat every transition in the flow as an injection point.\n\nAlways use test identities and a test tenant. Do not touch real user data.\n"
     }
   ]
 }

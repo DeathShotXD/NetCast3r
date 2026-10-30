@@ -411,6 +411,9 @@ stored, so experience cannot be invented:
 | `selfmodel_snapshot` | low | Capability scores from stored training, skills, expertise, and findings |
 | `selfmodel_gaps` | low | Rank the weakest areas with one concrete next step |
 | `upgrade_propose` / `upgrade_list` / `upgrade_update` | medium | Human-gated improvement proposals with evidence |
+| `technique_search` / `technique_plan` | low | Rank a 38-entry public-research technique library against a target |
+| `research_sources` | low | Coverage of the technique library by class and rarity |
+| `research_ingest` | medium | Store a sourced write-up digest as an active skill |
 
 The mission agent now plans a `recall` task before the active probe. It loads
 lessons and skills that match the target, then writes one deterministic lesson

@@ -26,8 +26,8 @@ from .events import EventBus
 from .index import Index
 from .jobs import JobManager
 from .keys import KeyStore, mask
-from .. import (control, integrations, learning, quality, reveng, selfaudit,
-                selfmodel, stix, surface, training)
+from .. import (control, integrations, learning, quality, research, reveng,
+                selfaudit, selfmodel, stix, surface, training)
 
 API_VERSION = "v1"
 ALLOWED_HOSTS = {"127.0.0.1", "localhost", "::1", "[::1]"}
@@ -684,6 +684,43 @@ class Server:
         def toolbook(ctx):
             return _json(training.toolbook(query=ctx.query.get("q", ""),
                                            name=ctx.query.get("name", "")))
+
+        @add("GET", r"/api/v1/techniques")
+        def technique_search(ctx):
+            return _json(research.search(
+                query=ctx.query.get("q", ""), tag=ctx.query.get("tag", ""),
+                rarity=ctx.query.get("rarity", ""),
+                impact=ctx.query.get("impact", ""),
+                limit=_int_or(ctx.query.get("limit"), 20)))
+
+        @add("GET", r"/api/v1/techniques/plan")
+        def technique_plan(ctx):
+            signals = [item for item in
+                       str(ctx.query.get("signals", "")).split(",") if item.strip()]
+            tags = [item for item in
+                    str(ctx.query.get("tags", "")).split(",") if item.strip()]
+            return _json(research.plan(
+                self.index, target=ctx.query.get("target", ""),
+                tech=ctx.query.get("tech", ""), signals=signals, tags=tags,
+                limit=_int_or(ctx.query.get("limit"), 6)))
+
+        @add("GET", r"/api/v1/research/sources")
+        def research_sources(ctx):
+            return _json(research.sources())
+
+        @add("POST", r"/api/v1/research/ingest")
+        def research_ingest(ctx):
+            body = ctx.json()
+            body = body if isinstance(body, dict) else {}
+            try:
+                result = research.ingest(
+                    self.index, url=str(body.get("url", "")),
+                    title=str(body.get("title", "")),
+                    notes=str(body.get("notes", "")),
+                    tags=body.get("tags") if isinstance(body.get("tags"), list) else [])
+            except ValueError as exc:
+                return _problem(400, str(exc))
+            return _json(result, 201)
 
         @add("GET", r"/api/v1/selfmodel")
         def selfmodel_status(ctx):

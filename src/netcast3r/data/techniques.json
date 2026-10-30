@@ -1,0 +1,1529 @@
+{
+  "techniques": [
+    {
+      "id": "cspt-cache-deception-ato",
+      "title": "CSPT chained with cache deception to account takeover",
+      "class": "cache",
+      "rarity": "rare",
+      "impact": "critical",
+      "signals": [
+        "spa",
+        "client-side fetch",
+        "cdn",
+        "cache-control",
+        "path parameter",
+        "x-auth-token"
+      ],
+      "prereqs": [
+        "A client-side path value reaches a fetch URL without encoding.",
+        "The API response is cacheable under a static-looking path.",
+        "The authenticated request carries a token the browser adds automatically."
+      ],
+      "steps": [
+        "Find a fetch that builds a URL from a query, fragment, path, or stored value, for example `/v1/users/info/${userId}`.",
+        "Send `../` sequences in that value and observe whether the request reaches a different API route.",
+        "Look for a sensitive endpoint that becomes cacheable when it ends in `.css`, `.js`, `.png`, or another static extension.",
+        "Chain the CSPT into that endpoint so the victim's browser sends the authenticated request and the CDN caches the response.",
+        "Fetch the cached URL as an anonymous user and compare it with the victim's data."
+      ],
+      "proof": "An unauthenticated request returns the victim's token or personal data from the cache. Show the CSPT URL, the authenticated cache fill, and the anonymous read.",
+      "tools": [
+        "browser DevTools",
+        "Burp Repeater",
+        "curl"
+      ],
+      "sources": [
+        "https://zere.es/posts/cache-deception-cspt-account-takeover",
+        "https://blog.doyensec.com/2024/07/02/cspt2csrf.html",
+        "https://swisskyrepo.github.io/PayloadsAllTheThings/Client%20Side%20Path%20Traversal"
+      ],
+      "tags": [
+        "cspt",
+        "cache",
+        "ato",
+        "cdn"
+      ]
+    },
+    {
+      "id": "cspt2csrf",
+      "title": "Client-side path traversal to CSRF",
+      "class": "csrf",
+      "rarity": "rare",
+      "impact": "high",
+      "signals": [
+        "spa",
+        "client-side fetch",
+        "anti-csrf token",
+        "samesite",
+        "path parameter"
+      ],
+      "prereqs": [
+        "A front-end request path is attacker-controlled.",
+        "The request carries cookies and a CSRF header the front end adds.",
+        "A state-changing API route shares the same origin and method."
+      ],
+      "steps": [
+        "Map every fetch/XHR sink and the HTTP method it uses.",
+        "Inject `../` to reroute the request to a state-changing route while keeping the front end's headers.",
+        "Test GET, POST, PATCH, PUT, and DELETE sinks; a GET sink can be chained with an upload or file-read gadget to control the next request.",
+        "Deliver the crafted page URL to a session you own and verify the state change.",
+        "Do not test destructive actions on a real account; use a test object and revert it."
+      ],
+      "proof": "The victim's browser performs the state change with the site's own CSRF token. Record both the crafted URL and the changed server state.",
+      "tools": [
+        "browser",
+        "Burp Repeater"
+      ],
+      "sources": [
+        "https://blog.doyensec.com/2024/07/02/cspt2csrf.html",
+        "https://swisskyrepo.github.io/PayloadsAllTheThings/Client%20Side%20Path%20Traversal"
+      ],
+      "tags": [
+        "cspt",
+        "csrf",
+        "spa"
+      ]
+    },
+    {
+      "id": "orm-leak-django",
+      "title": "ORM leak through relational filter traversal",
+      "class": "injection",
+      "rarity": "uncommon",
+      "impact": "high",
+      "signals": [
+        "django",
+        "drf",
+        "filter",
+        "search",
+        "ordering",
+        "graphql"
+      ],
+      "prereqs": [
+        "A user-controlled filter field or lookup reaches `QuerySet.filter`.",
+        "Sensitive model fields are reachable through a relation.",
+        "A response-length, status, or timing oracle exists."
+      ],
+      "steps": [
+        "Identify filter parameters such as `filter`, `search`, `q`, `ordering`, or `where`.",
+        "Try a field that should be forbidden: `password`, `api_key`, `reset_token`.",
+        "Traverse relations with Django's double underscore: `created_by__password__startswith=a`.",
+        "Use a boolean or length oracle and extract one character at a time; stop at the first proven prefix.",
+        "Check `ordering` and `distinct` too; they can leak field values through sort order."
+      ],
+      "proof": "A response changes only when the guessed prefix of a sensitive field is correct. Capture the two requests that differ.",
+      "tools": [
+        "Burp Repeater",
+        "curl"
+      ],
+      "sources": [
+        "https://www.elttam.com/blog/leaking-more-than-you-joined-for",
+        "https://portswigger.net/research/top-10-web-hacking-techniques-of-2025"
+      ],
+      "tags": [
+        "orm",
+        "django",
+        "idor",
+        "database"
+      ]
+    },
+    {
+      "id": "orm-leak-prisma-operator",
+      "title": "Prisma operator injection and ORM leak",
+      "class": "injection",
+      "rarity": "rare",
+      "impact": "critical",
+      "signals": [
+        "prisma",
+        "node",
+        "express",
+        "typescript",
+        "filter",
+        "reset-token"
+      ],
+      "prereqs": [
+        "A JSON, form, or cookie value is passed to a Prisma `where` without type validation.",
+        "The endpoint returns different errors or lengths for matches."
+      ],
+      "steps": [
+        "Change a scalar to an object: `{\"resetToken\": {\"not\": \"x\"}}` or `{\"contains\": \"a\"}`.",
+        "Try URL-encoded and cookie variants: `resetToken[not]=x` and `Cookie: resetToken=j:{\"not\":\"x\"}`.",
+        "Use `contains` when `not` matches too many rows; binary-search a token or password prefix.",
+        "For time-based leaks, use `plormber` with a bounded request rate.",
+        "Stop at the first authenticated session or one sensitive field."
+      ],
+      "proof": "An object where a string was expected changes the query result, or a reset/authentication flow succeeds without the real token.",
+      "tools": [
+        "Burp Repeater",
+        "curl",
+        "plormber"
+      ],
+      "sources": [
+        "https://www.elttam.com/blog/leaking-more-than-you-joined-for",
+        "https://www.elttam.com/blog/plorming-your-primsa-orm"
+      ],
+      "tags": [
+        "orm",
+        "prisma",
+        "nosql",
+        "auth"
+      ]
+    },
+    {
+      "id": "orm-leak-beego-odata",
+      "title": "Beego and OData filter-parser bypass",
+      "class": "injection",
+      "rarity": "rare",
+      "impact": "high",
+      "signals": [
+        "beego",
+        "golang",
+        "odata",
+        "entity-framework",
+        "dotnet",
+        "filter"
+      ],
+      "prereqs": [
+        "A filter expression parser accepts a field and an operator.",
+        "A deny-list protects sensitive fields.",
+        "The API exposes `$filter`, `$expand`, or `q`."
+      ],
+      "steps": [
+        "Try the denied field directly to establish the baseline block.",
+        "For Beego, test `email__password__startswith`; `parseExprs` may overwrite the first segment.",
+        "For OData, retrieve `/$metadata`, look for related entity sets, and use `$expand` on an association.",
+        "If `startswith`/`contains` are disabled, use `gt`/`lt` comparisons and the database collation order to binary-search the value.",
+        "Account for case-insensitive collations; use `tolower` or a case-sensitive operator where available."
+      ],
+      "proof": "A deny-list bypass returns a different result for the sensitive field. Show the metadata, the filter, and the oracle.",
+      "tools": [
+        "curl",
+        "Burp Repeater"
+      ],
+      "sources": [
+        "https://www.elttam.com/blog/leaking-more-than-you-joined-for"
+      ],
+      "tags": [
+        "orm",
+        "beego",
+        "odata",
+        "dotnet"
+      ]
+    },
+    {
+      "id": "error-based-ssti",
+      "title": "Error-based and boolean-error SSTI",
+      "class": "injection",
+      "rarity": "uncommon",
+      "impact": "critical",
+      "signals": [
+        "template",
+        "jinja2",
+        "twig",
+        "freemarker",
+        "velocity",
+        "spring",
+        "render",
+        "pdf"
+      ],
+      "prereqs": [
+        "User input reaches a template engine.",
+        "Output is not directly reflected, or only errors are visible."
+      ],
+      "steps": [
+        "Send the universal probe `(1/0).zxy.zxy` and compare the error signature across engines.",
+        "For Jinja2, force the evaluated value into an attribute name: `{{getattr('', (...).__subclasses__())}}`; the AttributeError may contain the data.",
+        "For Twig, use `{{include(system('id'))}}`; the template-not-found error may contain the command output.",
+        "When errors are not verbose, use a conditional division by zero as a boolean oracle and extract one bit at a time.",
+        "Confirm with a harmless command or file read, never a destructive payload."
+      ],
+      "proof": "The error text or the boolean oracle changes with the injected expression. Capture the baseline and the evaluated result.",
+      "tools": [
+        "Burp Repeater",
+        "SSTImap"
+      ],
+      "sources": [
+        "https://github.com/vladko312/Research_Successful_Errors",
+        "https://portswigger.net/research/top-10-web-hacking-techniques-of-2025"
+      ],
+      "tags": [
+        "ssti",
+        "rce",
+        "template"
+      ]
+    },
+    {
+      "id": "unicode-normalization-waf",
+      "title": "Unicode normalization WAF bypass",
+      "class": "evasion",
+      "rarity": "uncommon",
+      "impact": "high",
+      "signals": [
+        "waf",
+        "cloudflare",
+        "akamai",
+        "imperva",
+        "unicode",
+        "normalization"
+      ],
+      "prereqs": [
+        "A WAF blocks a payload and the backend accepts Unicode.",
+        "The WAF and the backend use different normalization forms."
+      ],
+      "steps": [
+        "Identify the WAF and the backend stack from headers and error pages.",
+        "Try fullwidth characters, compatibility forms, and overlong UTF-8 for the blocked token.",
+        "Try NFC/NFD/NFKC/NFKD differences, especially around quotes, slashes, and angle brackets.",
+        "Test Turkish `\u0130` and other case-mapping length changes against length-based validation.",
+        "Confirm the backend actually normalized the input into an executable form; a WAF bypass without execution is not a finding."
+      ],
+      "proof": "The same semantic payload executes or traverses after normalization while the WAF allows it. Show both the blocked and bypassed requests.",
+      "tools": [
+        "Burp Repeater",
+        "Shazzer"
+      ],
+      "sources": [
+        "https://portswigger.net/research/top-10-web-hacking-techniques-of-2025",
+        "https://www.blackhat.com/us-25/briefings/schedule/#lost-in-translation-exploiting-unicode-normalizations-44926"
+      ],
+      "tags": [
+        "waf",
+        "unicode",
+        "evasion"
+      ]
+    },
+    {
+      "id": "nextjs-cache-poison",
+      "title": "Next.js data-request cache poisoning to stored XSS",
+      "class": "cache",
+      "rarity": "uncommon",
+      "impact": "critical",
+      "signals": [
+        "nextjs",
+        "react",
+        "vercel",
+        "cdn",
+        "ssr",
+        "pages-router"
+      ],
+      "prereqs": [
+        "Pages Router with `getServerSideProps` on a non-dynamic route.",
+        "A request value is reflected in the page.",
+        "A shared cache or the framework cache stores the data response."
+      ],
+      "steps": [
+        "Check for `__NEXT_DATA__` and the build id on a page.",
+        "Request the page with `?__nextDataReq=1`; if JSON is returned, the data route is exposed.",
+        "Add `x-now-route-matches: 1` and check whether `Cache-Control` changes from private to public.",
+        "Poison with a unique marker in a reflected header or cookie; fetch the clean URL without the marker.",
+        "If the clean response is HTML and contains the marker, escalate the marker to a script payload. Test on an unimportant route and never poison a production home page."
+      ],
+      "proof": "A clean request returns attacker-controlled HTML from the cache. Record the poison request, the clean read, and the cache header.",
+      "tools": [
+        "curl",
+        "Burp Repeater"
+      ],
+      "sources": [
+        "https://zhero-web-sec.github.io/research-and-things/nextjs-cache-and-chains-the-stale-elixir",
+        "https://portswigger.net/research/top-10-web-hacking-techniques-of-2025"
+      ],
+      "tags": [
+        "nextjs",
+        "cache",
+        "xss"
+      ]
+    },
+    {
+      "id": "http2-connect-tunnel",
+      "title": "HTTP/2 CONNECT stream tunneling",
+      "class": "network",
+      "rarity": "rare",
+      "impact": "medium",
+      "signals": [
+        "http2",
+        "envoy",
+        "apache",
+        "proxy",
+        "connect",
+        "internal-network"
+      ],
+      "prereqs": [
+        "The edge supports HTTP/2 CONNECT.",
+        "The proxy allows dynamic or unrestricted CONNECT targets."
+      ],
+      "steps": [
+        "Establish one HTTP/2 connection to the proxy.",
+        "Open CONNECT streams to internal `IP:port` candidates over separate streams.",
+        "Read the HEADERS frame: `:status 200` suggests an open port; `503` plus `RST_STREAM` suggests closed.",
+        "Keep the scan small and read-only; do not send application payloads through a tunnel without explicit scope.",
+        "Correlate an open port with a known internal service before claiming impact."
+      ],
+      "proof": "A multiplexed CONNECT stream reaches an internal service and returns a protocol response. Show the stream id and status.",
+      "tools": [
+        "curl --http2",
+        "h2csmuggler"
+      ],
+      "sources": [
+        "https://blog.flomb.net/posts/http2connect/",
+        "https://portswigger.net/research/top-10-web-hacking-techniques-of-2025"
+      ],
+      "tags": [
+        "http2",
+        "ssrf",
+        "network"
+      ]
+    },
+    {
+      "id": "xs-leak-etag-length",
+      "title": "ETag length cross-site leak",
+      "class": "side-channel",
+      "rarity": "rare",
+      "impact": "medium",
+      "signals": [
+        "etag",
+        "nodejs",
+        "express",
+        "xs-leak",
+        "cross-site",
+        "cache"
+      ],
+      "prereqs": [
+        "The response ETag encodes the body length in hex.",
+        "The browser sends `If-None-Match` on repeat navigation.",
+        "The header size can cross the server's limit."
+      ],
+      "steps": [
+        "Check whether the ETag matches `W/\"<hex-size>-<hex-time>\"`.",
+        "Find a page whose response size you can influence with CSRF-created padding.",
+        "Pad request headers to sit near the 16 KiB Node.js limit.",
+        "Navigate twice and measure `history.length`; a 431 replaces the history entry.",
+        "Use the length change as a one-bit oracle and binary-search a value you are authorised to read."
+      ],
+      "proof": "A cross-site measurement changes only when the guessed value changes the response size. Prove the oracle with two controlled sizes.",
+      "tools": [
+        "browser",
+        "Burp Repeater"
+      ],
+      "sources": [
+        "https://blog.arkark.dev/2025/12/26/etag-length-leak",
+        "https://portswigger.net/research/top-10-web-hacking-techniques-of-2025"
+      ],
+      "tags": [
+        "xs-leak",
+        "etag",
+        "side-channel"
+      ]
+    },
+    {
+      "id": "xs-leak-connection-pool",
+      "title": "Connection-pool ordering cross-origin leak",
+      "class": "side-channel",
+      "rarity": "rare",
+      "impact": "medium",
+      "signals": [
+        "chrome",
+        "xs-leak",
+        "cross-origin",
+        "redirect",
+        "connection-pool"
+      ],
+      "prereqs": [
+        "Chrome's per-origin connection limit and host ordering are observable.",
+        "A cross-origin request encodes a secret in a hostname or redirect."
+      ],
+      "steps": [
+        "Exhaust the connection pool with long-running requests.",
+        "Trigger the target's cross-origin request and a comparison request to a host you control.",
+        "Free one socket and observe which completes first.",
+        "Binary-search the hostname by alphabetical ordering.",
+        "Treat this as a privacy/identity oracle; do not use it to read data outside scope."
+      ],
+      "proof": "A controlled comparison reveals one bit of the secret host or authentication state. Repeat enough trials to exclude noise.",
+      "tools": [
+        "browser",
+        "curl"
+      ],
+      "sources": [
+        "https://blog.babelo.xyz/posts/cross-site-subdomain-leak/",
+        "https://portswigger.net/research/top-10-web-hacking-techniques-of-2025"
+      ],
+      "tags": [
+        "xs-leak",
+        "side-channel",
+        "browser"
+      ]
+    },
+    {
+      "id": "ssrf-redirect-loop",
+      "title": "SSRF response leak through redirect loops",
+      "class": "ssrf",
+      "rarity": "rare",
+      "impact": "high",
+      "signals": [
+        "ssrf",
+        "redirect",
+        "libcurl",
+        "url-fetch",
+        "pdf",
+        "preview"
+      ],
+      "prereqs": [
+        "The server fetches an attacker URL and follows redirects.",
+        "Direct 200 responses are not returned to the attacker."
+      ],
+      "steps": [
+        "Send a callback URL and count how many redirects the server follows.",
+        "Test 3xx statuses the client treats differently: 301-310, especially 305/306/309/310.",
+        "Run a loop that increments the status code and ends at a 200; some clients leak the full chain or the final body on an unhandled status.",
+        "Point the final hop at a controlled endpoint, then at an internal read-only endpoint only if scope allows.",
+        "Confirm the leaked body is server-side, not your own browser's response."
+      ],
+      "proof": "The external response contains a redirect chain or final body fetched by the server. Capture the callback timestamps and the leaked response.",
+      "tools": [
+        "curl",
+        "interactsh",
+        "Burp Collaborator"
+      ],
+      "sources": [
+        "https://slcyber.io/research-center/novel-ssrf-technique-involving-http-redirect-loops/",
+        "https://portswigger.net/research/top-10-web-hacking-techniques-of-2025"
+      ],
+      "tags": [
+        "ssrf",
+        "redirect",
+        "cloud"
+      ]
+    },
+    {
+      "id": "oauth-mutable-claims",
+      "title": "OAuth mutable claim takeover",
+      "class": "auth",
+      "rarity": "uncommon",
+      "impact": "critical",
+      "signals": [
+        "oauth",
+        "oidc",
+        "azure",
+        "entra",
+        "email",
+        "sub",
+        "sso"
+      ],
+      "prereqs": [
+        "The client maps users by `email`, `preferred_username`, or another mutable claim.",
+        "The IdP lets a user control that claim without verification."
+      ],
+      "steps": [
+        "Decode the ID token and compare `sub` with the claim used for account lookup.",
+        "Create an account on an IdP you control with the victim's email if the IdP allows unverified email.",
+        "Complete the OAuth flow and see whether the target logs you into the victim's account.",
+        "Try multiple IdPs and tenant types; a multi-tenant app may accept an external tenant.",
+        "Do not use a real victim's address; use a second account you own for the proof."
+      ],
+      "proof": "The session lands on an account that belongs to your other identity, not the IdP subject you authenticated with.",
+      "tools": [
+        "browser",
+        "jwt_tool",
+        "Burp Repeater"
+      ],
+      "sources": [
+        "https://blog.doyensec.com/2025/01/30/oauth-common-vulnerabilities.html"
+      ],
+      "tags": [
+        "oauth",
+        "oidc",
+        "ato",
+        "auth"
+      ]
+    },
+    {
+      "id": "oauth-client-confusion",
+      "title": "OAuth client confusion",
+      "class": "auth",
+      "rarity": "uncommon",
+      "impact": "critical",
+      "signals": [
+        "oauth",
+        "implicit",
+        "access-token",
+        "client-id",
+        "audience",
+        "sso"
+      ],
+      "prereqs": [
+        "The app accepts an access token from a user-controlled parameter or header.",
+        "It does not verify the token's client id or audience."
+      ],
+      "steps": [
+        "Create a client you control on the same IdP and obtain a token for a user you own.",
+        "Send that token to the target's login or account-link endpoint.",
+        "If the target accepts it, check which account it maps to.",
+        "Try the token in a cookie, query, fragment, and JSON body; implicit-flow clients often accept all four.",
+        "Verify the token was issued for your client, not the target's."
+      ],
+      "proof": "A token issued to a different client authenticates a session on the target. Record the token claims and the resulting session.",
+      "tools": [
+        "browser",
+        "jwt_tool",
+        "Burp Repeater"
+      ],
+      "sources": [
+        "https://blog.doyensec.com/2025/01/30/oauth-common-vulnerabilities.html"
+      ],
+      "tags": [
+        "oauth",
+        "jwt",
+        "ato"
+      ]
+    },
+    {
+      "id": "oauth-scope-upgrade",
+      "title": "OAuth scope upgrade at the token endpoint",
+      "class": "auth",
+      "rarity": "uncommon",
+      "impact": "high",
+      "signals": [
+        "oauth",
+        "authorization-code",
+        "scope",
+        "token-endpoint"
+      ],
+      "prereqs": [
+        "The authorization server accepts a `scope` parameter during code exchange.",
+        "The issued token is not bound to the originally consented scope."
+      ],
+      "steps": [
+        "Complete an authorization-code flow with a low-privilege scope.",
+        "Replay the code exchange with a higher-privilege `scope` value.",
+        "Inspect the access token or introspect it to see the granted scope.",
+        "Call a resource that requires the higher scope.",
+        "Repeat with a second client to see whether scope is bound to the client."
+      ],
+      "proof": "The token endpoint issues a token with a scope the user never consented to, and the resource server honours it.",
+      "tools": [
+        "curl",
+        "Burp Repeater",
+        "jwt_tool"
+      ],
+      "sources": [
+        "https://blog.doyensec.com/2025/01/30/oauth-common-vulnerabilities.html"
+      ],
+      "tags": [
+        "oauth",
+        "authz"
+      ]
+    },
+    {
+      "id": "oauth-redirect-parser",
+      "title": "OAuth redirect_uri parser differential",
+      "class": "auth",
+      "rarity": "uncommon",
+      "impact": "critical",
+      "signals": [
+        "oauth",
+        "redirect-uri",
+        "open-redirect",
+        "parser",
+        "sso"
+      ],
+      "prereqs": [
+        "The authorization server validates `redirect_uri` with a prefix, regex, or origin-only check.",
+        "An allowed origin has an open redirect or user-controlled path."
+      ],
+      "steps": [
+        "Register a client you own and observe the exact `redirect_uri` validation.",
+        "Try path traversal, extra slashes, `@`, encoded separators, and a subdomain you control.",
+        "If only the origin is checked, find an open redirect on that origin.",
+        "Capture the authorization code or token at your endpoint.",
+        "Exchange the code with the client's PKCE verifier or secret only if you own the client."
+      ],
+      "proof": "The authorization server redirects to a host you control with a valid code or token. Show the exact `redirect_uri` and the callback.",
+      "tools": [
+        "browser",
+        "Burp Repeater"
+      ],
+      "sources": [
+        "https://blog.doyensec.com/2025/01/30/oauth-common-vulnerabilities.html"
+      ],
+      "tags": [
+        "oauth",
+        "open-redirect",
+        "ato"
+      ]
+    },
+    {
+      "id": "scim-attribute-takeover",
+      "title": "SCIM attribute manipulation to account takeover",
+      "class": "auth",
+      "rarity": "rare",
+      "impact": "critical",
+      "signals": [
+        "scim",
+        "sso",
+        "okta",
+        "azure",
+        "provisioning",
+        "multi-tenant"
+      ],
+      "prereqs": [
+        "SCIM provisioning is reachable with a token you can obtain or influence.",
+        "SCIM `userName`, `emails`, or group IDs map to internal identity fields."
+      ],
+      "steps": [
+        "Find `/scim/v2/Users`, `/Groups`, and `/Bulk`; read the schema and auth model.",
+        "Try an unauthenticated request first; some libraries ship without auth.",
+        "As an authorised tenant admin, create or update a user you own and watch which internal fields change.",
+        "Test `userName`/`email` changes without the normal verification flow.",
+        "Test group `id` or `displayName` values that collide with internal role names.",
+        "Check whether a deprovisioned user is re-provisioned by any unrelated update."
+      ],
+      "proof": "A SCIM write changes an internal identity or role that the UI would protect. Prove it with two accounts you own.",
+      "tools": [
+        "curl",
+        "Burp Repeater"
+      ],
+      "sources": [
+        "https://blog.doyensec.com/2025/05/08/scim-hunting.html"
+      ],
+      "tags": [
+        "scim",
+        "sso",
+        "ato",
+        "auth"
+      ]
+    },
+    {
+      "id": "scim-json-interop",
+      "title": "SCIM JSON interoperability bypass",
+      "class": "auth",
+      "rarity": "rare",
+      "impact": "high",
+      "signals": [
+        "scim",
+        "json",
+        "parser",
+        "bulk",
+        "patch"
+      ],
+      "prereqs": [
+        "The SCIM implementation uses multiple JSON parsers or a catch-all PATCH branch.",
+        "`path` is optional for add/replace operations."
+      ],
+      "steps": [
+        "Send a PATCH with `Operations[].path` omitted and a `value` object that targets a protected attribute.",
+        "Test duplicate keys, different Unicode escapes, and content-type changes across parsers.",
+        "Test `Bulk` ordering and circular references for a check-then-act gap.",
+        "Compare what the validator sees with what the user store persists.",
+        "Confirm the changed attribute is used for authorization, not only displayed."
+      ],
+      "proof": "A protected attribute changes through a syntax the validator did not inspect. Show both parses and the persisted value.",
+      "tools": [
+        "curl",
+        "Burp Repeater"
+      ],
+      "sources": [
+        "https://blog.doyensec.com/2025/05/08/scim-hunting.html"
+      ],
+      "tags": [
+        "scim",
+        "json",
+        "parser"
+      ]
+    },
+    {
+      "id": "mcp-oauth-mixup",
+      "title": "MCP OAuth discovery and audience confusion",
+      "class": "ai",
+      "rarity": "rare",
+      "impact": "high",
+      "signals": [
+        "mcp",
+        "oauth",
+        "dynamic-client-registration",
+        "resource-indicator",
+        "audience",
+        "agent"
+      ],
+      "prereqs": [
+        "An MCP server uses OAuth discovery and dynamic client registration.",
+        "The authorization server does not bind `aud` or `resource` to the MCP server."
+      ],
+      "steps": [
+        "Read `/.well-known/oauth-protected-resource` and `/.well-known/oauth-authorization-server`.",
+        "Register a client and request a token for a low-privilege resource.",
+        "Replay the token against a different MCP server that shares the same authorization server.",
+        "Test whether a token for one resource is accepted by another; check scope namespace collisions.",
+        "Test whether a high-risk tool can be invoked without a per-action consent step."
+      ],
+      "proof": "A token minted for one resource invokes tools on another, or a low-privilege token reaches a high-risk tool.",
+      "tools": [
+        "curl",
+        "Burp Repeater"
+      ],
+      "sources": [
+        "https://blog.doyensec.com/2026/03/05/mcp-nightmare.html"
+      ],
+      "tags": [
+        "mcp",
+        "oauth",
+        "ai",
+        "authz"
+      ]
+    },
+    {
+      "id": "saml-parser-differential",
+      "title": "SAML parser differential and signature wrapping",
+      "class": "auth",
+      "rarity": "rare",
+      "impact": "critical",
+      "signals": [
+        "saml",
+        "xml",
+        "sso",
+        "signature",
+        "parser",
+        "ruby-saml"
+      ],
+      "prereqs": [
+        "The SP accepts a SAML response from an IdP you can influence or a test IdP.",
+        "Validation and signature verification use different XML parsers."
+      ],
+      "steps": [
+        "Capture a valid assertion and decode the base64 XML.",
+        "Try signature stripping, XSW1-XSW8, and comment injection in NameID.",
+        "Test namespace and entity differences between the validator and verifier.",
+        "Try a signed assertion from a different audience or IdP.",
+        "Replay the assertion within its validity window."
+      ],
+      "proof": "The SP creates a session for a NameID that was not in the signed assertion, or accepts an assertion for another audience.",
+      "tools": [
+        "SAML Raider",
+        "browser",
+        "Burp Repeater"
+      ],
+      "sources": [
+        "https://portswigger.net/research/top-10-web-hacking-techniques-of-2025",
+        "https://portswigger.net/web-security/saml"
+      ],
+      "tags": [
+        "saml",
+        "sso",
+        "ato",
+        "parser"
+      ]
+    },
+    {
+      "id": "graphql-gid-authz",
+      "title": "GraphQL global-id and field-level authorization",
+      "class": "api",
+      "rarity": "common",
+      "impact": "high",
+      "signals": [
+        "graphql",
+        "node",
+        "relay",
+        "global-id",
+        "introspection"
+      ],
+      "prereqs": [
+        "The API exposes `node(id:)` or a similar global-id lookup.",
+        "The resolver checks the type but not the object owner."
+      ],
+      "steps": [
+        "Introspect the schema and list every type, field, mutation, and deprecated field.",
+        "Decode a global id (`base64(Type:id)`), change the type or id, and re-encode.",
+        "Query the object as its owner, as a second account, and anonymously; request every field, not just the UI fields.",
+        "Test mutations with a swapped id and mass-assigned fields.",
+        "Try aliases and batching only for rate-limit analysis, not for data enumeration."
+      ],
+      "proof": "A second account or anonymous caller receives fields or objects it should not see. Capture the introspection excerpt and the query.",
+      "tools": [
+        "Burp Repeater",
+        "graphql-cop",
+        "clairvoyance"
+      ],
+      "sources": [
+        "https://portswigger.net/web-security/graphql"
+      ],
+      "tags": [
+        "graphql",
+        "idor",
+        "api"
+      ]
+    },
+    {
+      "id": "second-order-idor",
+      "title": "Second-order and asynchronous IDOR",
+      "class": "authz",
+      "rarity": "uncommon",
+      "impact": "high",
+      "signals": [
+        "api",
+        "async",
+        "export",
+        "job",
+        "webhook",
+        "tenant"
+      ],
+      "prereqs": [
+        "An object id is stored by one request and used later by a worker, export, or notification.",
+        "The later job uses a different authorization context."
+      ],
+      "steps": [
+        "Map write-then-process flows: imports, exports, reports, webhooks, emails, and PDF jobs.",
+        "Create a job under account A, then change the object or tenant id in the stored record.",
+        "Trigger the worker and read the result from account B.",
+        "Test parent ids, nested ids, and batch ids, not only the top-level id.",
+        "Check whether a deleted or transferred object still resolves in the worker."
+      ],
+      "proof": "Account B receives a report or notification containing account A's data. Show the write, the trigger, and the cross-account read.",
+      "tools": [
+        "Burp Repeater",
+        "curl"
+      ],
+      "sources": [
+        "https://portswigger.net/web-security/access-control"
+      ],
+      "tags": [
+        "idor",
+        "authz",
+        "async"
+      ]
+    },
+    {
+      "id": "mass-assignment-optional",
+      "title": "Mass assignment on optional and nested fields",
+      "class": "api",
+      "rarity": "common",
+      "impact": "high",
+      "signals": [
+        "api",
+        "json",
+        "patch",
+        "profile",
+        "role",
+        "tenant"
+      ],
+      "prereqs": [
+        "A profile or object update accepts a JSON body.",
+        "The server binds more fields than the UI sends."
+      ],
+      "steps": [
+        "Capture the legitimate update and diff it against the object schema.",
+        "Add fields one at a time: `role`, `is_admin`, `verified`, `tenant_id`, `owner_id`, `permissions`.",
+        "Try nested objects and arrays; a nested `organization.role` may bypass a top-level check.",
+        "Re-read the object with a fresh session and confirm the field persisted.",
+        "Check whether the field changes authorization, not just display."
+      ],
+      "proof": "A field the UI never exposes changes server-side and alters access. Show the request, the persisted value, and the resulting permission.",
+      "tools": [
+        "Burp Repeater",
+        "curl"
+      ],
+      "sources": [
+        "https://portswigger.net/web-security/api-testing"
+      ],
+      "tags": [
+        "api",
+        "mass-assignment",
+        "authz"
+      ]
+    },
+    {
+      "id": "race-single-packet",
+      "title": "Single-packet race on a state machine",
+      "class": "race",
+      "rarity": "uncommon",
+      "impact": "high",
+      "signals": [
+        "race",
+        "http2",
+        "payment",
+        "coupon",
+        "otp",
+        "balance"
+      ],
+      "prereqs": [
+        "A check-then-act flow has no atomic constraint.",
+        "The state change is idempotent-looking but actually repeats."
+      ],
+      "steps": [
+        "Model the invariant: balance, redemption count, vote count, or active session count.",
+        "Send 10-20 identical requests over one HTTP/2 connection with the last byte gated.",
+        "Compare the invariant before and after; stop at the first duplicate side effect.",
+        "Test partial failure: one success and one error after the side effect is still a race.",
+        "Revert state and record the timing window."
+      ],
+      "proof": "The invariant changes more than once for a single intended action. Show the concurrent requests and the final state.",
+      "tools": [
+        "Turbo Intruder",
+        "Burp Repeater",
+        "curl"
+      ],
+      "sources": [
+        "https://portswigger.net/web-security/race-conditions"
+      ],
+      "tags": [
+        "race",
+        "logic",
+        "payment"
+      ]
+    },
+    {
+      "id": "cache-deception-path",
+      "title": "Cache deception through path normalization",
+      "class": "cache",
+      "rarity": "uncommon",
+      "impact": "high",
+      "signals": [
+        "cdn",
+        "cache",
+        "path-normalization",
+        "static-extension",
+        "account"
+      ],
+      "prereqs": [
+        "A CDN caches responses by extension or path while the origin ignores the suffix.",
+        "A private page is reachable with a static-looking suffix."
+      ],
+      "steps": [
+        "Request a private page with `.css`, `.js`, `.png`, `%2f`, `;`, and trailing-slash variants.",
+        "Check `Cache-Control`, `X-Cache`, `Age`, and `Vary` on each variant.",
+        "Log in as account A, request the variant, then fetch it anonymously and as account B.",
+        "Test encoded separators and case variations; normalization often differs by layer.",
+        "Do not cache a real user's data on a shared edge without permission."
+      ],
+      "proof": "A private response is served from the cache to a different session. Show the authenticated fill and the anonymous hit.",
+      "tools": [
+        "curl",
+        "Burp Repeater"
+      ],
+      "sources": [
+        "https://portswigger.net/web-security/web-cache-deception"
+      ],
+      "tags": [
+        "cache",
+        "cdn",
+        "idor"
+      ]
+    },
+    {
+      "id": "host-header-reset",
+      "title": "Host header poisoning of password reset",
+      "class": "auth",
+      "rarity": "uncommon",
+      "impact": "high",
+      "signals": [
+        "host-header",
+        "password-reset",
+        "email",
+        "reverse-proxy"
+      ],
+      "prereqs": [
+        "The reset email builds an absolute URL from the request Host or `X-Forwarded-Host`.",
+        "The mailer does not use a fixed canonical origin."
+      ],
+      "steps": [
+        "Request a reset for an account you own and capture the email link.",
+        "Change `Host`, `X-Forwarded-Host`, and `X-Forwarded-Server` to a host you control.",
+        "If the link changes, request a reset for a second owned account and confirm the token arrives at your host.",
+        "Check whether the token is valid on the real origin.",
+        "Do not request a reset for another user's account."
+      ],
+      "proof": "The reset email contains an attacker-controlled origin and the token works on the real site. Show the request and the email.",
+      "tools": [
+        "Burp Repeater",
+        "inbox"
+      ],
+      "sources": [
+        "https://portswigger.net/web-security/host-header"
+      ],
+      "tags": [
+        "host-header",
+        "ato",
+        "auth"
+      ]
+    },
+    {
+      "id": "jwt-claim-confusion",
+      "title": "JWT claim and key confusion",
+      "class": "auth",
+      "rarity": "common",
+      "impact": "high",
+      "signals": [
+        "jwt",
+        "jku",
+        "kid",
+        "alg",
+        "audience",
+        "role"
+      ],
+      "prereqs": [
+        "A JWT controls identity, role, tenant, or audience.",
+        "The verifier accepts a key or algorithm you can influence."
+      ],
+      "steps": [
+        "Decode the token and list every claim the server acts on.",
+        "Test `alg=none`, HS256 with the public key as the secret, and `kid` path traversal.",
+        "Point `jku`/`x5u` at a JWKS you control; check whether the server fetches it.",
+        "Change one claim at a time: `sub`, `role`, `tenant`, `aud`, `iss`.",
+        "A changed claim is only a finding when the server acts on it."
+      ],
+      "proof": "The server accepts a token with a changed claim or a key it should not trust, and the session gains the corresponding access.",
+      "tools": [
+        "jwt_tool",
+        "Burp Repeater"
+      ],
+      "sources": [
+        "https://portswigger.net/web-security/jwt"
+      ],
+      "tags": [
+        "jwt",
+        "auth",
+        "ato"
+      ]
+    },
+    {
+      "id": "mfa-step-skip",
+      "title": "MFA step skip and OTP race",
+      "class": "auth",
+      "rarity": "common",
+      "impact": "high",
+      "signals": [
+        "mfa",
+        "otp",
+        "totp",
+        "session",
+        "login"
+      ],
+      "prereqs": [
+        "The password step issues a session before the second factor.",
+        "The MFA check is a separate endpoint, not a middleware gate."
+      ],
+      "steps": [
+        "After the password step, call a sensitive endpoint directly without completing MFA.",
+        "Inspect cookies for a `verified` flag or a second token.",
+        "Replay the same OTP twice and race two verifications.",
+        "Test backup codes and SMS fallback for weaker rate limits.",
+        "Check whether a password reset or email change skips the second factor."
+      ],
+      "proof": "A session reaches post-MFA functionality without a valid second factor, or one OTP creates two sessions.",
+      "tools": [
+        "Burp Repeater",
+        "browser"
+      ],
+      "sources": [
+        "https://portswigger.net/web-security/authentication/multi-factor"
+      ],
+      "tags": [
+        "mfa",
+        "auth",
+        "ato"
+      ]
+    },
+    {
+      "id": "file-upload-polyglot",
+      "title": "File upload polyglot to execution",
+      "class": "upload",
+      "rarity": "common",
+      "impact": "high",
+      "signals": [
+        "upload",
+        "php",
+        "java",
+        "aspnet",
+        "image",
+        "avatar"
+      ],
+      "prereqs": [
+        "An upload accepts a file that is later served or processed.",
+        "The extension, MIME, or magic-byte check is incomplete."
+      ],
+      "steps": [
+        "Map the upload field, size limit, storage path, and serving URL.",
+        "Test double extension, case, trailing dot/space, null byte, and `.htaccess`/`web.config`.",
+        "Add a valid image header to a script and check whether the server re-encodes or stores raw bytes.",
+        "Request the stored file and see whether the handler executes it.",
+        "Prove execution with `id` or a DNS callback only on a lab or authorised host."
+      ],
+      "proof": "The uploaded file executes server-side code or is served as active HTML/JS to another user. Show the upload, path, and response.",
+      "tools": [
+        "Burp Repeater",
+        "curl"
+      ],
+      "sources": [
+        "https://portswigger.net/web-security/file-upload"
+      ],
+      "tags": [
+        "upload",
+        "rce",
+        "xss"
+      ]
+    },
+    {
+      "id": "deserialization-gadget",
+      "title": "Deserialization gadget chain",
+      "class": "injection",
+      "rarity": "uncommon",
+      "impact": "critical",
+      "signals": [
+        "java",
+        "php",
+        "python",
+        "ruby",
+        "dotnet",
+        "serialize",
+        "cookie"
+      ],
+      "prereqs": [
+        "The app deserializes a client-controlled value.",
+        "A library with a usable gadget is on the classpath."
+      ],
+      "steps": [
+        "Recognise the format: PHP `O:`, Java `AC ED`, Python pickle, .NET `AAEAAAD`, Ruby Marshal.",
+        "Round-trip the value unchanged; if accepted, you control the object.",
+        "Enumerate libraries and versions from headers, errors, and dependencies.",
+        "Choose a callback or file-read gadget first; avoid destructive commands.",
+        "Prove the effect server-side, not only in a local harness."
+      ],
+      "proof": "A benign gadget produces a DNS callback or a controlled file read on the server. Show the payload and the server-side effect.",
+      "tools": [
+        "ysoserial",
+        "marshalsec",
+        "Burp Repeater"
+      ],
+      "sources": [
+        "https://portswigger.net/web-security/deserialization"
+      ],
+      "tags": [
+        "deserialization",
+        "rce",
+        "java",
+        "php"
+      ]
+    },
+    {
+      "id": "cloud-imds-ssrf",
+      "title": "Cloud metadata SSRF to identity",
+      "class": "cloud",
+      "rarity": "uncommon",
+      "impact": "critical",
+      "signals": [
+        "ssrf",
+        "aws",
+        "gcp",
+        "azure",
+        "metadata",
+        "imds",
+        "cloud"
+      ],
+      "prereqs": [
+        "A server-side fetch reaches an internal address.",
+        "The workload has a cloud identity."
+      ],
+      "steps": [
+        "Confirm the fetch with a unique callback.",
+        "Try AWS IMDSv1, then the IMDSv2 token flow; GCP with `Metadata-Flavor: Google`; Azure with `Metadata: true`.",
+        "Read only the identity document or the shortest credential path.",
+        "Use the credential for one read-only identity call; do not create resources.",
+        "If IMDSv2 blocks you, look for a proxy or header-forging path instead of brute force."
+      ],
+      "proof": "A metadata response returns a role name or token that you can use for one read-only call. Show the request and the identity.",
+      "tools": [
+        "curl",
+        "interactsh"
+      ],
+      "sources": [
+        "https://portswigger.net/web-security/ssrf"
+      ],
+      "tags": [
+        "ssrf",
+        "cloud",
+        "aws",
+        "gcp",
+        "azure"
+      ]
+    },
+    {
+      "id": "subdomain-takeover-oauth",
+      "title": "Subdomain takeover chained to OAuth",
+      "class": "takeover",
+      "rarity": "uncommon",
+      "impact": "critical",
+      "signals": [
+        "subdomain",
+        "dns",
+        "cname",
+        "oauth",
+        "redirect-uri",
+        "sso"
+      ],
+      "prereqs": [
+        "A dangling CNAME or unclaimed service hostname exists in scope.",
+        "The hostname is an allowed OAuth redirect or cookie domain."
+      ],
+      "steps": [
+        "Enumerate CNAMEs and check for provider 404s or unclaimed buckets.",
+        "Claim the resource only on a provider and hostname the programme authorises.",
+        "Check whether the hostname is registered as an OAuth `redirect_uri` or a cookie domain.",
+        "Complete an OAuth flow through the claimed host and capture the code.",
+        "Do not impersonate the brand or collect real user data."
+      ],
+      "proof": "The claimed host receives an OAuth code or a session cookie scoped to the parent domain. Show the DNS record and the callback.",
+      "tools": [
+        "dig",
+        "subzy",
+        "browser"
+      ],
+      "sources": [
+        "https://portswigger.net/web-security/oauth"
+      ],
+      "tags": [
+        "subdomain",
+        "oauth",
+        "ato"
+      ]
+    },
+    {
+      "id": "prototype-pollution-gadget",
+      "title": "Client-side prototype pollution to DOM XSS",
+      "class": "xss",
+      "rarity": "uncommon",
+      "impact": "high",
+      "signals": [
+        "javascript",
+        "spa",
+        "prototype-pollution",
+        "dom",
+        "client-side"
+      ],
+      "prereqs": [
+        "A merge, clone, or query parser writes attacker keys into `Object.prototype`.",
+        "A gadget later reads the polluted property into a sink."
+      ],
+      "steps": [
+        "Find recursive merges, `Object.assign`, lodash `merge`, and query parsers.",
+        "Inject `__proto__[x]=y`, `constructor[prototype][x]=y`, and JSON `{\"__proto__\":{\"x\":\"y\"}}`.",
+        "Search for gadgets that read the polluted key into `innerHTML`, `srcdoc`, `href`, or `eval`.",
+        "Prove execution in the browser with a benign marker.",
+        "Check server-side pollution separately; it may reach a template or child process."
+      ],
+      "proof": "A polluted property reaches a sink and executes in the browser. Show the pollution source and the sink.",
+      "tools": [
+        "browser DevTools",
+        "Burp Repeater"
+      ],
+      "sources": [
+        "https://portswigger.net/web-security/prototype-pollution"
+      ],
+      "tags": [
+        "prototype-pollution",
+        "xss",
+        "javascript"
+      ]
+    },
+    {
+      "id": "web-cache-poison-unkeyed",
+      "title": "Unkeyed-header cache poisoning",
+      "class": "cache",
+      "rarity": "common",
+      "impact": "high",
+      "signals": [
+        "cdn",
+        "cache",
+        "x-forwarded-host",
+        "x-host",
+        "unkeyed",
+        "reflection"
+      ],
+      "prereqs": [
+        "A reverse proxy caches by path but forwards an unkeyed header.",
+        "The origin reflects that header into a link, redirect, or script."
+      ],
+      "steps": [
+        "Find cache headers and a cacheable page.",
+        "Send a unique marker in `X-Forwarded-Host`, `X-Host`, `X-Forwarded-Scheme`, and `X-Original-URL`.",
+        "Request the clean URL without the header; if the marker persists, the cache is poisoned.",
+        "Escalate the marker to a redirect or script only on a test path.",
+        "Purge or wait out the cache and never poison a production login page."
+      ],
+      "proof": "A clean request returns the attacker's marker from the cache. Show the poison and the clean hit.",
+      "tools": [
+        "curl",
+        "Burp Repeater"
+      ],
+      "sources": [
+        "https://portswigger.net/web-security/web-cache-poisoning"
+      ],
+      "tags": [
+        "cache",
+        "cdn",
+        "xss"
+      ]
+    },
+    {
+      "id": "ci-expression-injection",
+      "title": "CI/CD expression injection to secret exfiltration",
+      "class": "supply-chain",
+      "rarity": "uncommon",
+      "impact": "critical",
+      "signals": [
+        "github-actions",
+        "ci",
+        "workflow",
+        "pull-request",
+        "artifact",
+        "oidc"
+      ],
+      "prereqs": [
+        "A workflow interpolates attacker-controlled event text into a `run:` block or an env file.",
+        "The job has secrets or a write token."
+      ],
+      "steps": [
+        "Read `.github/workflows/*.yml`; grep for `${{ github.event.* }}` inside `run:` and `$GITHUB_ENV`/`$GITHUB_PATH`.",
+        "Check the trigger: `issues`, `issue_comment`, `pull_request_target`, and `workflow_run` are externally reachable.",
+        "Follow `uses:` into composite actions; the sink may live in another repository.",
+        "Confirm secrets reachable by the job and the token permissions.",
+        "Prove with a callback from a fork or a test repo you own; do not exfiltrate real secrets."
+      ],
+      "proof": "A workflow run you triggered sends a callback or writes a marker using the job's token. Show the workflow, trigger, and callback.",
+      "tools": [
+        "gh",
+        "curl",
+        "sisakulint"
+      ],
+      "sources": [
+        "https://portswigger.net/web-security/ssrf",
+        "https://docs.github.com/en/actions/security-guides/security-hardening-for-github-actions"
+      ],
+      "tags": [
+        "ci",
+        "supply-chain",
+        "rce"
+      ]
+    },
+    {
+      "id": "ai-indirect-tool-exfil",
+      "title": "Indirect prompt injection to tool exfiltration",
+      "class": "ai",
+      "rarity": "rare",
+      "impact": "high",
+      "signals": [
+        "llm",
+        "agent",
+        "rag",
+        "mcp",
+        "tool-use",
+        "prompt-injection"
+      ],
+      "prereqs": [
+        "The assistant reads documents, web pages, or tickets you can influence.",
+        "It has a fetch, email, or tool-call capability."
+      ],
+      "steps": [
+        "Map the retrieval sources and every tool the assistant can call.",
+        "Place a unique instruction in a document the assistant summarises: ask it to fetch a URL you control.",
+        "Check whether the tool call happens without confirmation and whether data is included in the URL.",
+        "Test cross-user retrieval with two accounts you own.",
+        "Test invisible Unicode tags for instructions hidden from human reviewers."
+      ],
+      "proof": "The assistant follows injected content and sends data or a request to your endpoint. Show the document, the model output, and the callback.",
+      "tools": [
+        "browser",
+        "interactsh",
+        "Burp Repeater"
+      ],
+      "sources": [
+        "https://portswigger.net/web-security/llm-attacks",
+        "https://blog.doyensec.com/2026/03/05/mcp-nightmare.html"
+      ],
+      "tags": [
+        "llm",
+        "ai",
+        "prompt-injection",
+        "mcp"
+      ]
+    },
+    {
+      "id": "mobile-oauth-scheme",
+      "title": "Mobile OAuth custom-scheme hijack",
+      "class": "mobile",
+      "rarity": "uncommon",
+      "impact": "critical",
+      "signals": [
+        "android",
+        "ios",
+        "apk",
+        "oauth",
+        "deeplink",
+        "intent"
+      ],
+      "prereqs": [
+        "The app receives OAuth codes through a custom scheme.",
+        "Another app can register a broader or matching intent filter."
+      ],
+      "steps": [
+        "Decompile the APK and read the manifest for `BROWSABLE` intent filters and custom schemes.",
+        "Check whether the redirect uses a verified App Link or a bare custom scheme.",
+        "Build a test app with a broader filter for the same scheme and see whether it receives the code.",
+        "Verify whether PKCE is enforced; without it, the intercepted code is exchangeable.",
+        "Use only your own test accounts and device."
+      ],
+      "proof": "A second app receives the authorization code, and the code can be exchanged. Show the manifest, the interception, and the token.",
+      "tools": [
+        "jadx",
+        "apktool",
+        "adb",
+        "browser"
+      ],
+      "sources": [
+        "https://blog.doyensec.com/2025/01/30/oauth-common-vulnerabilities.html"
+      ],
+      "tags": [
+        "mobile",
+        "oauth",
+        "ato"
+      ]
+    },
+    {
+      "id": "apk-secret-to-api",
+      "title": "APK secret to live API access",
+      "class": "mobile",
+      "rarity": "common",
+      "impact": "high",
+      "signals": [
+        "android",
+        "apk",
+        "secret",
+        "api-key",
+        "firebase",
+        "endpoint"
+      ],
+      "prereqs": [
+        "An authorised APK is available.",
+        "It embeds a key, endpoint, or signing material."
+      ],
+      "steps": [
+        "Decompile with jadx and decode resources with apktool.",
+        "Grep for URLs, cloud keys, JWTs, Firebase config, and basic-auth strings.",
+        "Classify each secret and its scope; do not use it beyond a read-only check.",
+        "Replay the mobile request with the extracted key and a test account.",
+        "Confirm the server accepts it and returns data or an action the user should not have."
+      ],
+      "proof": "The extracted credential authenticates to the live service and returns data or an action. Show the static string and the live request.",
+      "tools": [
+        "jadx",
+        "apktool",
+        "curl"
+      ],
+      "sources": [
+        "https://portswigger.net/web-security/api-testing"
+      ],
+      "tags": [
+        "mobile",
+        "apk",
+        "secret",
+        "api"
+      ]
+    }
+  ]
+}

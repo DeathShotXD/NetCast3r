@@ -31,6 +31,18 @@ Notable changes to NetCast3r, newest first.
   expertise, findings, missions, and submissions. `upgrade_propose`,
   `upgrade_list`, and `upgrade_update` keep improvement proposals with
   evidence; nothing is applied automatically.
+- Research technique library: 38 entries from public 2025-2026 work, each with
+  signals, prerequisites, test steps, the minimum proof, tools, and source
+  URLs. `technique_search`, `technique_plan`, and `research_sources` rank the
+  library against a target fingerprint; `research_ingest` stores a written
+  write-up digest as a sourced skill. Coverage includes CSPT and cache
+  deception chains, ORM leaks (Django, Prisma, Beego, OData), error-based
+  SSTI, Unicode WAF bypass, Next.js cache poisoning, redirect-loop SSRF,
+  XS-Leaks, OAuth mutable claims/client confusion/scope upgrade, SCIM, MCP
+  authorization, parser differentials, race, mobile OAuth scheme hijack, and
+  AI tool exfiltration.
+- Three further bundled skill packs summarize the modern web, client, and
+  identity research corpora for agents that prefer prose playbooks.
 - `test_case_run` executes up to 12 ordered, scope-checked requests with
   explicit status, body, and header assertions, replacing broad scanners in
   the active path.
