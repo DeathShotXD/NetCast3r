@@ -455,6 +455,13 @@ class MCPIntegrationTests(unittest.TestCase):
             self.assertEqual(echoed["headers"]["x-csrf"], "csrf-value")
             self.assertEqual(echoed["body"], '{"hello": "world"}')
 
+            override, is_error = self.call(
+                "http_request", target=f"{base}/echo", mission_id=mission["id"],
+                auth_profile="test-session", headers={"Cookie": "manual=1"})
+            self.assertFalse(is_error, override)
+            manual = json.loads(override["body"])
+            self.assertEqual(manual["headers"]["cookie"], "manual=1")
+
             follow, is_error = self.call(
                 "http_request", target=f"{base}/redirect", mission_id=mission["id"],
                 follow_redirects=True)

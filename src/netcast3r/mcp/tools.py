@@ -1266,15 +1266,17 @@ def http_request(ctx: ToolContext, args: dict) -> dict:
     supplied = args.get("headers") or {}
     if not isinstance(supplied, dict):
         raise ToolError("invalid_arguments", "headers must be an object")
-    has_cookie = any(str(name).lower() == "cookie" for name in supplied)
+    has_cookie = any(str(name).strip().lower() == "cookie" for name in supplied)
+    if has_cookie:
+        # A caller-supplied cookie replaces the profile cookie in any casing.
+        headers = {key: value for key, value in headers.items()
+                   if key.lower() != "cookie"}
     for raw_name, raw_value in supplied.items():
         name = str(raw_name).strip()
         value = str(raw_value)
         if not name or any(char in name for char in "\r\n:") or "\r" in value or "\n" in value:
             raise ToolError("invalid_arguments", f"invalid header: {name[:40]!r}")
         headers[name] = value
-    if has_cookie:
-        headers.pop("Cookie", None)
 
     body = args.get("body")
     payload_json = args.get("json")
