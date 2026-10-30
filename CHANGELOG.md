@@ -72,6 +72,22 @@ Notable changes to NetCast3r, newest first.
 - Research note: `docs/research/agentic-frameworks.md` maps Hermes Agent, Agent
   Zero, HexStrike, Strix, STIX/TAXII, MCP/A2A, and planner-executor patterns to
   a phased NetCast3r roadmap.
+- Skill lifecycle: skills now carry `status`, `use_count`, `success_count`, and
+  `last_used_at`; `skills_use` and `skills_status` manage them, and the agent
+  recalls active skills only.
+- `sandbox_run` runs one short command in a locked-down Docker container with
+  no network, read-only root, dropped capabilities, non-root user, and no host
+  mount. High risk and approval-gated.
+- `report_quality` scores a finding's report completeness and lists missing
+  evidence; `program_rank` aggregates the submission ledger by program,
+  platform, and currency. No estimated payouts or currency conversion.
+- STIX 2.1: `stix_export` builds a bundle with an identity, vulnerability
+  objects, and a report; `taxii_collections` and `taxii_poll` read a configured
+  TAXII 2.1 server.
+- Research note: `docs/research/penligent-and-commercial-features.md` studies
+  Penligent AI's public product pattern and lists profit-making features
+  (surface diff, presets, quality gate, payout ROI, verified pipeline, CI gate,
+  workspace/RBAC) without copying proprietary code.
 
 ### Security
 

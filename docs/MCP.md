@@ -424,6 +424,48 @@ against the mission before the call, and the result is audited. This is the
 bridge for Hermes Agent, Agent Zero, HexStrike, OpenCode, and an internal MCP
 server.
 
+### Sandbox
+
+`sandbox_run` executes one short command in a locked-down Docker container:
+no network, read-only root, all capabilities dropped, no-new-privileges, a
+non-root user, 256 MB memory, one CPU, and no host mount. Use it to read or
+reproduce a PoC without touching the host or a target. It is high risk and
+needs an approval under supervised policy.
+
+Allowlisted images: `python:3.12-slim`, `alpine:3.20`, `debian:12-slim`,
+`ubuntu:24.04`. The command is an argv list, never a shell string.
+
+### Report quality and payout ROI
+
+`report_quality` scores one finding on title, impact, evidence, attached
+artifacts, reproduction, CVSS/CVE context, and confidence. It returns the score,
+a grade, and the exact missing pieces. This is report completeness, not a
+prediction that the program will pay.
+
+`program_rank` aggregates the submission ledger by program, platform, and
+currency: submissions, acceptances, paid rows, bounty totals, acceptance rate,
+and average bounty. It uses only rows you recorded, never estimated ranges, and
+never converts currencies.
+
+### STIX 2.1 and TAXII 2.1
+
+`stix_export` turns findings into a STIX 2.1 bundle: an identity, one
+`vulnerability` object per finding (with a CVE external reference when one is
+present), and a `report` that references them. No indicators are invented from
+scanner output.
+
+`taxii_collections` discovers a configured TAXII 2.1 server and lists its
+collections. `taxii_poll` reads objects from one collection with an optional
+`added_after` cursor. Configure:
+
+```json
+{"taxii": {"url": "https://taxii.example/taxii2/", "token": ""}}
+```
+
+Polling is read-only. Pushing to a remote collection is a separate approved
+action.
+
+
 
 
 

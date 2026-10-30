@@ -169,6 +169,26 @@ class ServerTests(unittest.TestCase):
                      {"title": "x", "severity": "high", "confidence": 2}):
             self.assertEqual(self.call("POST", "/api/v1/findings", body=body).status, 400)
 
+    def test_quality_and_stix_routes(self):
+        finding = self.data(self.call("POST", "/api/v1/findings", body={
+            "title": "CVE-2025-12345 in Example", "severity": "high",
+            "impact": "An unauthenticated request reaches the admin handler. " * 3,
+            "evidence": "POST /admin returned 200 from a zero-cookie context. " * 3,
+            "confidence": 0.9, "tags": ["authz"]}))
+        quality = self.data(self.call(
+            "GET", f"/api/v1/findings/{finding['id']}/quality"))
+        self.assertEqual(quality["finding_id"], finding["id"])
+        self.assertGreater(quality["score"], 0)
+        self.assertIn("checks", quality)
+
+        bundle = self.data(self.call("GET", "/api/v1/stix/export"))
+        self.assertEqual(bundle["type"], "bundle")
+        self.assertIn("report", [item["type"] for item in bundle["objects"]])
+        self.assertIn("vulnerability", [item["type"] for item in bundle["objects"]])
+
+        ranked = self.data(self.call("GET", "/api/v1/programs/rank"))
+        self.assertIn("items", ranked)
+
     def test_lessons_skills_and_next_actions(self):
         mission = self.data(self.call("POST", "/api/v1/missions", body={
             "title": "Learning routes", "target": "example.com",

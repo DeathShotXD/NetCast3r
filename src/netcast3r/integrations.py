@@ -152,6 +152,61 @@ def _command(tool: str, target: str, timeout: int) -> list[str]:
 # ---------------------------------------------------------------------------
 
 MAX_DOWNLOAD = 20 * 1024 * 1024
+SANDBOX_IMAGES = ("python:3.12-slim", "alpine:3.20", "debian:12-slim", "ubuntu:24.04")
+
+
+def sandbox_run(image: str, command: list[str], stdin: str = "", timeout: int = 60,
+                base: str | Path | None = None) -> dict:
+    """Run one command in a locked-down Docker container.
+
+    No network, read-only root, dropped capabilities, no new privileges, a
+    non-root user, and a small tmpfs. The caller supplies a short command or a
+    script on stdin; there is no host mount. This is for reading a PoC, not for
+    reaching a target.
+    """
+    if image not in SANDBOX_IMAGES:
+        raise ToolRunError(f"image is not allowlisted: {image}")
+    if not isinstance(command, list) or not command:
+        raise ToolRunError("command must be a non-empty list")
+    if not all(isinstance(part, str) and part for part in command):
+        raise ToolRunError("every command argument must be a non-empty string")
+    if shutil.which("docker") is None:
+        raise ToolRunError("docker is not installed")
+    timeout = max(5, min(int(timeout or 60), 300))
+    argv = [
+        "docker", "run", "--rm", "-i", "--network", "none",
+        "--memory", "256m", "--cpus", "1", "--pids-limit", "128",
+        "--read-only", "--tmpfs", "/tmp:rw,size=64m",
+        "--cap-drop", "ALL", "--security-opt", "no-new-privileges",
+        "--user", "65534:65534", image, *command,
+    ]
+    started = time.monotonic()
+    timed_out = False
+    try:
+        proc = subprocess.run(argv, capture_output=True, text=True, timeout=timeout,
+                              check=False, input=stdin or "")
+        stdout, stderr, code = proc.stdout, proc.stderr, proc.returncode
+    except subprocess.TimeoutExpired as exc:
+        stdout = (exc.stdout or b"").decode("utf-8", "ignore") if isinstance(exc.stdout, bytes) else (exc.stdout or "")
+        stderr = (exc.stderr or b"").decode("utf-8", "ignore") if isinstance(exc.stderr, bytes) else (exc.stderr or "")
+        code = 124
+        timed_out = True
+    output = (stdout or "").strip()
+    truncated = len(output) > MAX_OUTPUT
+    return {
+        "image": image,
+        "command": command,
+        "exit_code": code,
+        "timed_out": timed_out,
+        "elapsed_ms": int((time.monotonic() - started) * 1000),
+        "stdout": output[:MAX_OUTPUT],
+        "stderr": (stderr or "").strip()[:20_000],
+        "truncated": truncated,
+        "sandbox": {"network": "none", "read_only": True, "cap_drop": "ALL",
+                    "user": "65534:65534", "memory": "256m"},
+        "note": ("Sandboxed local execution. The container has no network and no host "
+                 "mount; read the output before trusting it."),
+    }
 
 
 def fetch_to_file(url: str, name: str, base: str | Path | None = None,

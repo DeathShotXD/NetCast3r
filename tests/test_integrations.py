@@ -129,5 +129,37 @@ class ConfigTests(unittest.TestCase):
         self.assertTrue(config["configured"])
 
 
+class SandboxTests(unittest.TestCase):
+    def test_sandbox_is_locked_down(self):
+        completed = mock.Mock(returncode=0, stdout="ok\n", stderr="")
+        with mock.patch.object(integrations.shutil, "which", return_value="/usr/bin/docker"), \
+                mock.patch.object(integrations.subprocess, "run", return_value=completed) as run:
+            result = integrations.sandbox_run("python:3.12-slim",
+                                              ["python", "-c", "print(1)"])
+        argv = run.call_args.args[0]
+        self.assertEqual(result["exit_code"], 0)
+        self.assertIn("--network", argv)
+        self.assertIn("none", argv)
+        self.assertIn("--read-only", argv)
+        self.assertIn("--cap-drop", argv)
+        self.assertIn("ALL", argv)
+        self.assertIn("--user", argv)
+        self.assertIn("65534:65534", argv)
+
+    def test_sandbox_rejects_unknown_image_and_empty_command(self):
+        with self.assertRaises(integrations.ToolRunError):
+            integrations.sandbox_run("evil:latest", ["sh"])
+        with self.assertRaises(integrations.ToolRunError):
+            integrations.sandbox_run("python:3.12-slim", [])
+
+    def test_sandbox_timeout_is_reported(self):
+        with mock.patch.object(integrations.shutil, "which", return_value="/usr/bin/docker"), \
+                mock.patch.object(integrations.subprocess, "run",
+                                  side_effect=integrations.subprocess.TimeoutExpired("docker", 5)):
+            result = integrations.sandbox_run("python:3.12-slim", ["sleep", "60"], timeout=5)
+        self.assertTrue(result["timed_out"])
+        self.assertEqual(result["exit_code"], 124)
+
+
 if __name__ == "__main__":
     unittest.main()

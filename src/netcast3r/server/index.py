@@ -353,6 +353,15 @@ class Index:
         approvals = {row["name"] for row in self.conn.execute("PRAGMA table_info(approvals)")}
         if "used_at" not in approvals:
             self.conn.execute("ALTER TABLE approvals ADD COLUMN used_at TEXT")
+        skills = {row["name"] for row in self.conn.execute("PRAGMA table_info(skills)")}
+        for column, ddl in (
+            ("status", "ALTER TABLE skills ADD COLUMN status TEXT DEFAULT 'active'"),
+            ("use_count", "ALTER TABLE skills ADD COLUMN use_count INTEGER DEFAULT 0"),
+            ("success_count", "ALTER TABLE skills ADD COLUMN success_count INTEGER DEFAULT 0"),
+            ("last_used_at", "ALTER TABLE skills ADD COLUMN last_used_at TEXT"),
+        ):
+            if column not in skills:
+                self.conn.execute(ddl)
 
     def close(self) -> None:
         with self._lock:
@@ -793,20 +802,54 @@ class Index:
             self.conn.commit()
         return self.get_skill(skill_id)
 
-    def list_skills(self, q: str = "", limit: int = 50) -> tuple[list[dict], int]:
+    def list_skills(self, q: str = "", limit: int = 50, status: str = "") -> tuple[list[dict], int]:
         where, values = [], []
         if q:
             like = f"%{q}%"
             where.append("(name LIKE ? OR title LIKE ? OR description LIKE ? OR body LIKE ?)")
             values.extend([like] * 4)
+        if status:
+            where.append("status = ?")
+            values.append(status)
         clause = (" WHERE " + " AND ".join(where)) if where else ""
         with self._lock:
             total = self.conn.execute(
                 f"SELECT COUNT(*) AS n FROM skills{clause}", values).fetchone()["n"]
             rows = self.conn.execute(
-                f"SELECT * FROM skills{clause} ORDER BY updated_at DESC LIMIT ?",
-                [*values, max(1, min(int(limit or 50), 200))]).fetchall()
+                f"SELECT * FROM skills{clause} ORDER BY "
+                "CASE status WHEN 'active' THEN 0 ELSE 1 END, use_count DESC, updated_at DESC "
+                "LIMIT ?", [*values, max(1, min(int(limit or 50), 200))]).fetchall()
         return [self._skill_row(row) for row in rows], total
+
+    def use_skill(self, name_or_id: str, success: bool = True) -> dict | None:
+        with self._lock:
+            row = self.conn.execute(
+                "SELECT * FROM skills WHERE id = ? OR name = ?",
+                (name_or_id, name_or_id)).fetchone()
+            if not row:
+                return None
+            self.conn.execute(
+                "UPDATE skills SET use_count = use_count + 1, "
+                "success_count = success_count + ?, last_used_at = ?, updated_at = ? "
+                "WHERE id = ?",
+                (1 if success else 0, _now(), _now(), row["id"]))
+            self.conn.commit()
+        return self.get_skill(row["id"])
+
+    def set_skill_status(self, name_or_id: str, status: str) -> dict | None:
+        if status not in {"draft", "active", "retired"}:
+            raise ValueError("skill status must be draft, active, or retired")
+        with self._lock:
+            row = self.conn.execute(
+                "SELECT id FROM skills WHERE id = ? OR name = ?",
+                (name_or_id, name_or_id)).fetchone()
+            if not row:
+                return None
+            self.conn.execute(
+                "UPDATE skills SET status = ?, updated_at = ? WHERE id = ?",
+                (status, _now(), row["id"]))
+            self.conn.commit()
+        return self.get_skill(row["id"])
 
     def get_skill(self, name_or_id: str) -> dict | None:
         with self._lock:
@@ -830,6 +873,10 @@ class Index:
             "tags": _loads(row["tags_json"], []), "source": row["source"],
             "version": row["version"], "created_at": row["created_at"],
             "updated_at": row["updated_at"],
+            "status": row["status"] if "status" in row.keys() else "active",
+            "use_count": row["use_count"] if "use_count" in row.keys() else 0,
+            "success_count": row["success_count"] if "success_count" in row.keys() else 0,
+            "last_used_at": row["last_used_at"] if "last_used_at" in row.keys() else None,
         }
 
     @staticmethod

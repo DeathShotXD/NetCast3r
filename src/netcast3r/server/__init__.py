@@ -26,7 +26,7 @@ from .events import EventBus
 from .index import Index
 from .jobs import JobManager
 from .keys import KeyStore, mask
-from .. import control, integrations, learning, reveng
+from .. import control, integrations, learning, quality, reveng, stix
 
 API_VERSION = "v1"
 ALLOWED_HOSTS = {"127.0.0.1", "localhost", "::1", "[::1]"}
@@ -552,6 +552,61 @@ class Server:
             deleted = self.index.delete_finding_artifact(ctx.params["id"], ctx.params["aid"])
             return _json({"deleted": True}) if deleted else _problem(404, "artifact not found")
 
+        @add("GET", r"/api/v1/findings/(?P<id>[A-Za-z0-9_]+)/quality")
+        def finding_quality(ctx):
+            try:
+                return _json(quality.score_finding(self.index, ctx.params["id"]))
+            except ValueError as exc:
+                return _problem(404, str(exc))
+
+        @add("GET", r"/api/v1/programs/rank")
+        def program_rank(ctx):
+            return _json(quality.program_stats(self.index))
+
+        @add("GET", r"/api/v1/stix/export")
+        def stix_export(ctx):
+            try:
+                return _json(stix.export_bundle(
+                    self.index, mission_id=ctx.query.get("mission_id", ""),
+                    severity=ctx.query.get("severity", ""), limit=ctx.limit))
+            except ValueError as exc:
+                return _problem(404, str(exc))
+
+        @add("GET", r"/api/v1/taxii/collections")
+        def taxii_collections(ctx):
+            config = stix.load_taxii_config(self.index.path.parent)
+            if not config["configured"]:
+                return _problem(400, "TAXII is not configured")
+            try:
+                client = stix.TaxiiClient(config["url"], config["token"],
+                                          config["user"], config["password"])
+                api_root = ctx.query.get("api_root", "")
+                if not api_root:
+                    discovery = client.discovery()
+                    api_root = (discovery.get("api_roots") or [discovery.get("default", "")])[0]
+                return _json({"api_root": api_root,
+                              "collections": client.collections(api_root)})
+            except (ValueError, RuntimeError) as exc:
+                return _problem(400, str(exc))
+
+        @add("GET", r"/api/v1/taxii/objects")
+        def taxii_objects(ctx):
+            config = stix.load_taxii_config(self.index.path.parent)
+            if not config["configured"]:
+                return _problem(400, "TAXII is not configured")
+            api_root = ctx.query.get("api_root", "")
+            collection = ctx.query.get("collection_id", "")
+            if not api_root or not collection:
+                return _problem(400, "api_root and collection_id are required")
+            try:
+                client = stix.TaxiiClient(config["url"], config["token"],
+                                          config["user"], config["password"])
+                return _json(client.objects(
+                    api_root, collection, added_after=ctx.query.get("added_after", ""),
+                    limit=ctx.limit))
+            except (ValueError, RuntimeError) as exc:
+                return _problem(400, str(exc))
+
         @add("GET", r"/api/v1/lessons")
         def list_lessons(ctx):
             items, total = self.index.list_lessons(
@@ -615,7 +670,9 @@ class Server:
 
         @add("GET", r"/api/v1/skills")
         def list_skills(ctx):
-            items, total = self.index.list_skills(q=ctx.query.get("q", ""), limit=ctx.limit)
+            items, total = self.index.list_skills(
+                q=ctx.query.get("q", ""), limit=ctx.limit,
+                status=ctx.query.get("status", ""))
             return _json({"items": items, "total": total})
 
         @add("POST", r"/api/v1/skills")
@@ -637,6 +694,25 @@ class Server:
         @add("GET", r"/api/v1/skills/(?P<name>[A-Za-z0-9_.-]+)")
         def get_skill(ctx):
             skill = self.index.get_skill(ctx.params["name"])
+            return _json(skill) if skill else _problem(404, "skill not found")
+
+        @add("POST", r"/api/v1/skills/(?P<name>[A-Za-z0-9_.-]+)/use")
+        def use_skill(ctx):
+            body = ctx.json()
+            body = body if isinstance(body, dict) else {}
+            skill = self.index.use_skill(ctx.params["name"],
+                                         success=bool(body.get("success", True)))
+            return _json(skill) if skill else _problem(404, "skill not found")
+
+        @add("PATCH", r"/api/v1/skills/(?P<name>[A-Za-z0-9_.-]+)")
+        def patch_skill(ctx):
+            body = ctx.json()
+            body = body if isinstance(body, dict) else {}
+            try:
+                skill = self.index.set_skill_status(
+                    ctx.params["name"], str(body.get("status", "")))
+            except ValueError as exc:
+                return _problem(400, str(exc))
             return _json(skill) if skill else _problem(404, "skill not found")
 
         @add("DELETE", r"/api/v1/skills/(?P<name>[A-Za-z0-9_.-]+)")

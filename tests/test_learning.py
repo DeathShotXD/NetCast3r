@@ -88,6 +88,22 @@ class StoreTests(unittest.TestCase):
         self.assertEqual(self.index.get_skill("idor-checklist")["id"], first["id"])
         self.assertTrue(self.index.delete_skill("idor-checklist"))
 
+    def test_skill_lifecycle_counts_and_status(self):
+        skill = self.index.upsert_skill("path-diff", "# Path diff\n\nEncode the segment.")
+        self.assertEqual(skill["status"], "active")
+        used = self.index.use_skill("path-diff", success=True)
+        self.assertEqual(used["use_count"], 1)
+        self.assertEqual(used["success_count"], 1)
+        failed = self.index.use_skill(skill["id"], success=False)
+        self.assertEqual(failed["use_count"], 2)
+        self.assertEqual(failed["success_count"], 1)
+        retired = self.index.set_skill_status("path-diff", "retired")
+        self.assertEqual(retired["status"], "retired")
+        active, total = self.index.list_skills(status="active")
+        self.assertEqual(total, 0)
+        with self.assertRaises(ValueError):
+            self.index.set_skill_status("path-diff", "bogus")
+
     def test_reflect_run_and_suggest_next(self):
         call = self.index.add_tool_call(
             "http_probe", status="error", mission_id=self.mission["id"],

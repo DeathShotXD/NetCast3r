@@ -28,7 +28,7 @@ from urllib.parse import urlencode, urljoin, urlsplit
 
 import httpx
 
-from .. import authstore, browser, integrations, oast, pathdiff, pivot, reveng, tempmail, threatintel
+from .. import authstore, browser, integrations, oast, pathdiff, pivot, quality, reveng, stix, tempmail, threatintel
 from ..scope import ScopeManager
 
 POLICIES = ("readonly", "supervised", "full")
@@ -563,6 +563,34 @@ def finding_artifact_get(ctx: ToolContext, args: dict) -> dict:
                  {"content": 1})
 
 
+def report_quality(ctx: ToolContext, args: dict) -> dict:
+    return _call(ctx, "GET", f"/api/v1/findings/{args['finding_id']}/quality")
+
+
+def program_rank(ctx: ToolContext, args: dict) -> dict:
+    return _call(ctx, "GET", "/api/v1/programs/rank")
+
+
+def stix_export(ctx: ToolContext, args: dict) -> dict:
+    return _call(ctx, "GET", "/api/v1/stix/export", {
+        "mission_id": args.get("mission_id", ""),
+        "severity": args.get("severity", ""),
+        "limit": args.get("limit", 100)})
+
+
+def taxii_collections(ctx: ToolContext, args: dict) -> dict:
+    return _call(ctx, "GET", "/api/v1/taxii/collections", {
+        "api_root": args.get("api_root", "")})
+
+
+def taxii_poll(ctx: ToolContext, args: dict) -> dict:
+    return _call(ctx, "GET", "/api/v1/taxii/objects", {
+        "api_root": args.get("api_root", ""),
+        "collection_id": args.get("collection_id", ""),
+        "added_after": args.get("added_after", ""),
+        "limit": args.get("limit", 100)})
+
+
 def _run_recon(ctx: ToolContext, args: dict, mode: str) -> dict:
     tool = str(args.get("tool") or "").strip().lower()
     catalog = integrations.TOOL_CATALOG
@@ -648,6 +676,19 @@ def _burp_scope_check(ctx: ToolContext, arguments: dict, mission_id: str,
                 _require_scope(ctx, match.group(1), mission_id, scope, probe=True)
 
 
+def sandbox_run(ctx: ToolContext, args: dict) -> dict:
+    command = args.get("command")
+    if not isinstance(command, list):
+        raise ToolError("invalid_arguments", "command must be an array of strings")
+    try:
+        return integrations.sandbox_run(
+            str(args.get("image") or "python:3.12-slim"), [str(part) for part in command],
+            stdin=str(args.get("stdin") or ""), timeout=int(args.get("timeout", 60)),
+            base=ctx.base)
+    except integrations.ToolRunError as exc:
+        raise ToolError("invalid_arguments", str(exc))
+
+
 def mcp_servers_list(ctx: ToolContext, args: dict) -> dict:
     servers = integrations.load_mcp_servers(ctx.base)
     return {"items": [{"name": name, "transport": item["transport"],
@@ -728,11 +769,22 @@ def lesson_reflect(ctx: ToolContext, args: dict) -> dict:
 
 def skills_list(ctx: ToolContext, args: dict) -> dict:
     return _call(ctx, "GET", "/api/v1/skills", {
-        "q": args.get("q", ""), "limit": args.get("limit", 50)})
+        "q": args.get("q", ""), "limit": args.get("limit", 50),
+        "status": args.get("status", "")})
 
 
 def skills_get(ctx: ToolContext, args: dict) -> dict:
     return _call(ctx, "GET", f"/api/v1/skills/{args['name']}")
+
+
+def skills_use(ctx: ToolContext, args: dict) -> dict:
+    return _call(ctx, "POST", f"/api/v1/skills/{args['name']}/use",
+                 body={"success": bool(args.get("success", True))})
+
+
+def skills_status(ctx: ToolContext, args: dict) -> dict:
+    return _call(ctx, "PATCH", f"/api/v1/skills/{args['name']}",
+                 body={"status": args["status"]})
 
 
 def skills_upsert(ctx: ToolContext, args: dict) -> dict:
@@ -1500,12 +1552,18 @@ _HANDLERS.update({
     "finding_artifact_add": finding_artifact_add,
     "finding_artifact_list": finding_artifact_list,
     "finding_artifact_get": finding_artifact_get,
+    "report_quality": report_quality,
+    "program_rank": program_rank,
+    "stix_export": stix_export,
+    "taxii_collections": taxii_collections,
+    "taxii_poll": taxii_poll,
     "recon_passive": recon_passive,
     "fetch_artifact": fetch_artifact,
     "recon_active": recon_active,
     "burp_status": burp_status,
     "burp_call": burp_call,
     "mcp_servers_list": mcp_servers_list,
+    "sandbox_run": sandbox_run,
     "mcp_server_tools": mcp_server_tools,
     "mcp_server_call": mcp_server_call,
     "token_pivot": token_pivot,
@@ -1519,6 +1577,8 @@ _HANDLERS.update({
     "skills_list": skills_list,
     "skills_get": skills_get,
     "skills_upsert": skills_upsert,
+    "skills_use": skills_use,
+    "skills_status": skills_status,
     "next_actions": next_actions,
     "finding_triage": finding_triage,
     "submissions_list": submissions_list,
@@ -1787,6 +1847,42 @@ TOOLS: tuple[Tool, ...] = (
          _schema({"finding_id": _string("finding id"),
                   "artifact_id": _string("artifact id")},
                  ["finding_id", "artifact_id"]), "finding_artifact_get", read_only=True),
+    Tool("report_quality", "Score a report",
+         "Score one finding's report completeness from stored fields and evidence "
+         "artifacts, and list what is missing. This measures the report, not whether "
+         "the bug is valid or payable.",
+         "low", "findings",
+         _schema({"finding_id": _string("finding id")}, ["finding_id"]),
+         "report_quality", read_only=True),
+    Tool("program_rank", "Rank programs by recorded payout",
+         "Aggregate the submission ledger by program, platform, and currency: real "
+         "submissions, acceptances, paid rows, and bounty totals. No estimates and no "
+         "currency conversion.",
+         "low", "reports", _schema({}), "program_rank", read_only=True),
+    Tool("stix_export", "Export findings as STIX 2.1",
+         "Export findings as a STIX 2.1 bundle: an identity, one vulnerability object per "
+         "finding with its CVE reference when present, and a report. No indicators are "
+         "invented from scanner lines.",
+         "low", "threat-intel",
+         _schema({"mission_id": _string("optional mission id"),
+                  "severity": _string("optional severity filter"),
+                  "limit": _integer("finding cap", 1, 1000, 100)}),
+         "stix_export", read_only=True),
+    Tool("taxii_collections", "List TAXII collections",
+         "Discover a configured TAXII 2.1 server and list its collections. Configure "
+         "taxii.url (and token or user/password) in ~/.netcast3r/integrations.json.",
+         "medium", "threat-intel",
+         _schema({"api_root": _string("optional TAXII API root URL")}),
+         "taxii_collections", open_world=True),
+    Tool("taxii_poll", "Poll a TAXII collection",
+         "Read objects from one TAXII 2.1 collection, optionally after a timestamp. "
+         "Read-only; pushing to a remote server is a separate approved action.",
+         "medium", "threat-intel",
+         _schema({"api_root": _string("TAXII API root URL"),
+                  "collection_id": _string("collection id"),
+                  "added_after": _string("ISO timestamp cursor"),
+                  "limit": _integer("object cap", 1, 1000, 100)},
+                 ["api_root", "collection_id"]), "taxii_poll", open_world=True),
     Tool("recon_passive", "Passive recon tool",
          "Run an allowlisted passive tool (subfinder, httpx, katana, whatweb, gau, "
          "waybackurls) against one in-scope target. The command is fixed and run "
@@ -1848,6 +1944,19 @@ TOOLS: tuple[Tool, ...] = (
          "Use this to bridge Hermes Agent, Agent Zero, HexStrike, OpenCode, or an "
          "internal MCP server. Tokens are never returned.",
          "low", "integrations", _schema({}), "mcp_servers_list", read_only=True),
+    Tool("sandbox_run", "Run in a Docker sandbox",
+         "Run one short command in a locked-down container: no network, read-only root, "
+         "dropped capabilities, non-root user, 256 MB memory, and no host mount. Use it to "
+         "read or reproduce a PoC without touching the host or a target. High risk: needs "
+         "an approval under supervised policy.",
+         "high", "sandbox",
+         _schema({"image": _string("allowlisted image", enum=list(integrations.SANDBOX_IMAGES)),
+                  "command": _array("argv, no shell", {"type": "string"}),
+                  "stdin": _string("optional script or data on stdin"),
+                  "timeout": _integer("timeout in seconds", 5, 300, 60),
+                  "approval_id": _string("approved approval id"),
+                  "confirm": _boolean("explicit confirmation (full policy)")},
+                 ["image", "command"]), "sandbox_run"),
     Tool("mcp_server_tools", "List an MCP server's tools",
          "Start one configured outbound MCP server, initialize it, and list its tools.",
          "medium", "integrations",
@@ -1944,9 +2053,12 @@ TOOLS: tuple[Tool, ...] = (
          _schema({"tool_call_id": _string("tool call id"),
                   "run_id": _string("run id")}), "lesson_reflect"),
     Tool("skills_list", "List skills",
-         "List the operational skill documents agents can load before planning.",
+         "List the operational skill documents agents can load before planning. "
+         "Active skills are ranked first by use count.",
          "low", "learning",
          _schema({"q": _string("search text"),
+                  "status": _string("draft, active, or retired", enum=[
+                      "draft", "active", "retired"]),
                   "limit": _integer("page size", 1, 200, 50)}),
          "skills_list", read_only=True),
     Tool("skills_get", "Read a skill",
@@ -1964,6 +2076,21 @@ TOOLS: tuple[Tool, ...] = (
                   "tags": _array("tags"),
                   "source": _string("URL or record the skill came from")},
                  ["name", "body"]), "skills_upsert"),
+    Tool("skills_use", "Mark a skill used",
+         "Increment a skill's use count and, when the attempt succeeded, its success "
+         "count. This is how the library learns which procedures actually work.",
+         "medium", "learning",
+         _schema({"name": _string("skill name or id"),
+                  "success": _boolean("did the procedure work", True)},
+                 ["name"]), "skills_use"),
+    Tool("skills_status", "Change skill status",
+         "Move a skill between draft, active, and retired. Retired skills are not "
+         "recalled by the agent.",
+         "medium", "learning",
+         _schema({"name": _string("skill name or id"),
+                  "status": _string("draft, active, or retired", enum=[
+                      "draft", "active", "retired"])},
+                 ["name", "status"]), "skills_status"),
     Tool("next_actions", "Suggest next actions",
          "Rank concrete next actions from the mission, findings, tool calls, and lessons. "
          "Deterministic and based only on stored records; confirm scope before running one.",

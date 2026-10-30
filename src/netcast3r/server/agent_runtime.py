@@ -613,7 +613,8 @@ class AgentRuntime:
             existing = {item.get("id") for item in lessons.get("items") or []}
             lessons["items"] = (lessons.get("items") or []) + [
                 item for item in tagged.get("items") or [] if item.get("id") not in existing]
-        skills = self._tool(registry, "skills_list", {"q": host, "limit": 5})
+        skills = self._tool(registry, "skills_list", {"q": host, "limit": 5,
+                                                      "status": "active"})
         lesson_items = lessons.get("items") or []
         skill_items = skills.get("items") or []
         evidence = {
