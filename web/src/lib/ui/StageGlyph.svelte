@@ -65,6 +65,24 @@
     <path d="M17.4 3.6 L21.6 4.9 L17.4 6.2 Z" />
     <path d="M4.4 7.4 L6.8 5 L4.4 2.6" />
     <path d="M4.4 13.8 L6.8 11.4 L4.4 9" />
+  {:else if stage === 'reason'}
+    <!-- reasoning core with a radial spark -->
+    <circle cx="12" cy="12" r="2.4" />
+    <path d="M12 3.4 V7.2 M12 16.8 V20.6 M3.4 12 H7.2 M16.8 12 H20.6" />
+    <path d="M6 6 L8.6 8.6 M15.4 15.4 L18 18 M18 6 L15.4 8.6 M8.6 15.4 L6 18" />
+  {:else if stage === 'act'}
+    <!-- execution bolt -->
+    <path d="M13.6 3.2 L6.8 12.8 H11.4 L10.4 20.8 L17.2 11.2 H12.6 Z" />
+  {:else if stage === 'observe'}
+    <!-- observant eye -->
+    <path
+      d="M2.8 12 C5 7.8 8.3 5.6 12 5.6 C15.7 5.6 19 7.8 21.2 12 C19 16.2 15.7 18.4 12 18.4 C8.3 18.4 5 16.2 2.8 12 Z"
+    />
+    <circle cx="12" cy="12" r="3" />
+  {:else if stage === 'decide'}
+    <!-- decision diamond with a check -->
+    <path d="M12 3.2 L20.8 12 L12 20.8 L3.2 12 Z" />
+    <path d="M8.8 12.2 L11.2 14.6 L15.4 9.6" />
   {:else}
     <!-- submission-ready document with an approval seal -->
     <path

@@ -68,6 +68,16 @@
     store.syncState === 'error' ? 'sync lost' : store.syncState === 'syncing' ? 'syncing' : 'synced'
   );
 
+  const tone = (status: string) =>
+    ({
+      running: 'running',
+      queued: 'queued',
+      done: 'done',
+      failed: 'failed',
+      stopped: 'muted',
+      interrupted: 'muted'
+    })[status] ?? 'muted';
+
   function go(id: Screen) {
     store.go(id);
     onNavigate();
@@ -123,13 +133,21 @@
     </div>
   </div>
 
-  <div class="obs-workspace">
-    <span class="obs-workspace-avatar">NC</span>
-    <span class="obs-workspace-copy">
-      <span class="obs-workspace-name">Local control plane</span>
-      <span class="obs-workspace-plan">single operator - SQLite</span>
+  <div class="obs-plane" class:is-live={!!running} aria-label="active workspace">
+    <span class="obs-plane-orb" aria-hidden="true"><span class="obs-plane-orb-core"></span></span>
+    <span class="obs-plane-copy">
+      <span class="obs-plane-name">Local control plane</span>
+      <span class="obs-plane-meta">
+        <span class="obs-plane-state" class:live={!!running}>{running ? 'casting' : 'ready'}</span>
+        <span class="obs-plane-sep" aria-hidden="true">&middot;</span>
+        <span>loopback</span>
+        <span class="obs-plane-sep" aria-hidden="true">&middot;</span>
+        <span>SQLite</span>
+      </span>
     </span>
-    <Icon name="lock" size={12} />
+    <span class="obs-plane-lock" title="Bound to loopback, single operator">
+      <Icon name="lock" size={11} />
+    </span>
   </div>
 
   <nav class="obs-nav">
@@ -169,21 +187,35 @@
     {/each}
   </nav>
 
-  {#if store.runs.length > 0}
-    <div class="obs-sidebar-recent">
-      <div class="obs-nav-label">Recent casts</div>
+  <div class="obs-sidebar-recent">
+    <div class="obs-recent-head">
+      <span class="obs-recent-title">Recent casts</span>
+      <span class="obs-recent-count">{store.runs.length}</span>
+    </div>
+    {#if store.runs.length === 0}
+      <p class="obs-recent-empty">No casts recorded yet.</p>
+    {:else}
       {#each store.runs.slice(0, 5) as run (run.id)}
-        <button class="obs-sidebar-run" type="button" onclick={() => store.watch(run.id)} title={run.target}>
-          <span class="obs-sidebar-run-dot" style="background:{run.id === store.activeRunId ? 'var(--obs-acid)' : 'var(--obs-faint)'}" aria-hidden="true"></span>
+        <button
+          class="obs-sidebar-run tone-{tone(run.status)}"
+          class:is-active={run.id === store.activeRunId}
+          type="button"
+          onclick={() => store.watch(run.id)}
+          title={run.target}
+        >
+          <span class="obs-sidebar-run-dot" aria-hidden="true"></span>
           <span class="obs-sidebar-run-copy">
             <span class="obs-sidebar-run-target">{run.target}</span>
-            <span class="obs-sidebar-run-meta">{run.status} - {ago(run.created_at)}</span>
+            <span class="obs-sidebar-run-meta">
+              <span class="obs-sidebar-run-status">{run.status}</span>
+              <span class="obs-sidebar-run-time">{ago(run.created_at)}</span>
+            </span>
           </span>
-          <Icon name="arrow-right" size={10} />
+          <Icon name="arrow-right" size={11} />
         </button>
       {/each}
-    </div>
-  {/if}
+    {/if}
+  </div>
 
   <div class="obs-sidebar-stats">
     <div><span>runs</span><strong>{store.totals?.runs ?? 0}</strong></div>

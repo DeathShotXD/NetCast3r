@@ -352,6 +352,14 @@ Notable changes to NetCast3r, newest first.
 
 ### Changed
 
+- The sidebar's workspace strip is now a control-plane card: a violet signal
+  orb that turns acid and pulses while a cast runs, a ready/casting state, and
+  loopback/SQLite tags. Recent casts became status-toned rows: a colored accent
+  bar and dot (acid running, orange queued, green done, red failed, grey
+  interrupted), the target and status/time on their own lines, a count chip,
+  and an empty state. The bounded model loop got bespoke Reason, Act, Observe,
+  and Decide stage glyphs, and its stage header defaults to reason instead of
+  crawl.
 - The default openrouter model list names models that exist again
   (`openrouter/free`, nemotron 3.5 lightning, nemotron super 120b); the old
   qwen and gemma entries had been withdrawn. The Keys preset hints mirror the

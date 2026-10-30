@@ -678,7 +678,7 @@
             class="mono text-[10px] tracking-[0.14em]"
             style="color:{running ? 'var(--nc-acid)' : 'var(--nc-ash)'}"
           >
-            {running ? `${(currentStage || 'crawl').toLowerCase()} // live` : statusLabel(run.status)}
+            {running ? `${(currentStage || displayStages[0]?.key || 'crawl').toLowerCase()} // live` : statusLabel(run.status)}
           </span>
         </div>
         <StageSignal stages={displayStages} counts={stageCount} current={currentStage} {running} />
