@@ -87,6 +87,18 @@ Notable changes to NetCast3r, newest first.
 - `surface_diff` compares two runs' subdomains, assets, JavaScript, endpoints,
   secret candidates, and findings; it reports added, removed, and
   severity-changed items from the stored run inventories.
+- Self-audit and diagnostics: `self_audit` checks base/database/state-file
+  permissions, remote MCP settings, and the remote-access switch; `diagnostics`
+  reports SQLite integrity, table counts, modes, routes, and tools. The index
+  and base directory are now created 0600/0700.
+- Technology expertise: lessons with technology tags update an `expertise`
+  table (exposures, successes, failures, confidence, level); `expertise_profile`
+  exposes it, and `next_actions` adds WordPress, GraphQL, OAuth/SAML, PHP, and
+  API checks based on this instance's real exposure.
+- Security hardening from the self-audit: recon wrappers no longer follow
+  redirects (`httpx`, `nuclei`, `katana`, `whatweb` stay on the registered
+  domain), request and sandbox stdin are capped at 1 MiB, and remote MCP
+  argument checking now covers nested objects and more target keys.
 - Research note: `docs/research/penligent-and-commercial-features.md` studies
   Penligent AI's public product pattern and lists profit-making features
   (surface diff, presets, quality gate, payout ROI, verified pipeline, CI gate,

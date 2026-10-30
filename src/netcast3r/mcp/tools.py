@@ -576,6 +576,18 @@ def surface_diff(ctx: ToolContext, args: dict) -> dict:
         "against": args["against"], "limit": args.get("limit", 200)})
 
 
+def self_audit(ctx: ToolContext, args: dict) -> dict:
+    return _call(ctx, "GET", "/api/v1/self-audit")
+
+
+def diagnostics(ctx: ToolContext, args: dict) -> dict:
+    return _call(ctx, "GET", "/api/v1/diagnostics")
+
+
+def expertise_profile(ctx: ToolContext, args: dict) -> dict:
+    return _call(ctx, "GET", "/api/v1/expertise", {"limit": args.get("limit", 50)})
+
+
 def stix_export(ctx: ToolContext, args: dict) -> dict:
     return _call(ctx, "GET", "/api/v1/stix/export", {
         "mission_id": args.get("mission_id", ""),
@@ -671,10 +683,18 @@ def burp_status(ctx: ToolContext, args: dict) -> dict:
 
 def _burp_scope_check(ctx: ToolContext, arguments: dict, mission_id: str,
                       scope) -> None:
-    target_keys = {"url", "target", "host", "hostname", "endpoint", "base_url"}
+    target_keys = {"url", "uri", "target", "host", "hostname", "endpoint", "base_url",
+                   "domain", "destination", "dest", "address", "origin",
+                   "redirect", "redirect_uri", "callback"}
     for key, value in (arguments or {}).items():
         if key in target_keys and isinstance(value, str) and value.strip():
             _require_scope(ctx, value, mission_id, scope, probe=True)
+        elif isinstance(value, dict):
+            _burp_scope_check(ctx, value, mission_id, scope)
+        elif isinstance(value, list):
+            for item in value:
+                if isinstance(item, dict):
+                    _burp_scope_check(ctx, item, mission_id, scope)
         elif key in {"request", "raw", "raw_request"} and isinstance(value, str):
             match = __import__("re").search(r"(?im)^host:\s*(\S+)", value)
             if match:
@@ -1079,6 +1099,8 @@ def http_request(ctx: ToolContext, args: dict) -> dict:
         if not isinstance(body, str):
             raise ToolError("invalid_arguments", "body must be a string")
         content = body.encode("utf-8")
+    if content is not None and len(content) > 1_048_576:
+        raise ToolError("invalid_arguments", "request body is larger than 1 MiB")
 
     maximum = int(args.get("max_bytes", 65536))
     maximum = max(1024, min(maximum, 524288))
@@ -1561,6 +1583,9 @@ _HANDLERS.update({
     "program_rank": program_rank,
     "stix_export": stix_export,
     "surface_diff": surface_diff,
+    "self_audit": self_audit,
+    "diagnostics": diagnostics,
+    "expertise_profile": expertise_profile,
     "taxii_collections": taxii_collections,
     "taxii_poll": taxii_poll,
     "recon_passive": recon_passive,
@@ -1874,6 +1899,21 @@ TOOLS: tuple[Tool, ...] = (
                   "against": _string("newer run id to compare"),
                   "limit": _integer("sample cap per category", 1, 1000, 200)},
                  ["run_id", "against"]), "surface_diff", read_only=True),
+    Tool("self_audit", "Audit NetCast3r itself",
+         "Check the local control plane's file permissions, secret-bearing state files, "
+         "remote MCP configuration, remote-access switch, and posture. Read-only; does not "
+         "scan the host or network.",
+         "low", "workspace", _schema({}), "self_audit", read_only=True),
+    Tool("diagnostics", "Run diagnostics",
+         "Check SQLite integrity, table counts, file modes, route count, and tool count. "
+         "Read-only and local.",
+         "low", "workspace", _schema({}), "diagnostics", read_only=True),
+    Tool("expertise_profile", "Show technology expertise",
+         "Show this instance's per-technology exposure and success profile, derived only "
+         "from recorded lessons. Different researchers build different expertise.",
+         "low", "learning",
+         _schema({"limit": _integer("technology cap", 1, 200, 50)}),
+         "expertise_profile", read_only=True),
     Tool("stix_export", "Export findings as STIX 2.1",
          "Export findings as a STIX 2.1 bundle: an identity, one vulnerability object per "
          "finding with its CVE reference when present, and a report. No indicators are "

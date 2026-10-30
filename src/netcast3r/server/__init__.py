@@ -26,7 +26,7 @@ from .events import EventBus
 from .index import Index
 from .jobs import JobManager
 from .keys import KeyStore, mask
-from .. import control, integrations, learning, quality, reveng, stix, surface
+from .. import control, integrations, learning, quality, reveng, selfaudit, stix, surface
 
 API_VERSION = "v1"
 ALLOWED_HOSTS = {"127.0.0.1", "localhost", "::1", "[::1]"}
@@ -558,6 +558,26 @@ class Server:
                 return _json(quality.score_finding(self.index, ctx.params["id"]))
             except ValueError as exc:
                 return _problem(404, str(exc))
+
+        @add("GET", r"/api/v1/self-audit")
+        def self_audit(ctx):
+            from ..mcp.tools import TOOLS
+            return _json(selfaudit.audit(self.index.path.parent,
+                                         routes=len(self._routes), tools=len(TOOLS)))
+
+        @add("GET", r"/api/v1/diagnostics")
+        def diagnostics(ctx):
+            from ..mcp.tools import TOOLS
+            return _json(selfaudit.diagnostics(self.index, self.index.path.parent,
+                                               routes=len(self._routes),
+                                               tools=len(TOOLS)))
+
+        @add("GET", r"/api/v1/expertise")
+        def expertise_profile(ctx):
+            items = self.index.list_expertise(limit=ctx.limit)
+            return _json({"items": items, "total": len(items),
+                          "note": ("Per-instance technology exposure from recorded "
+                                   "lessons; this is not a global ranking.")})
 
         @add("GET", r"/api/v1/runs/(?P<id>[A-Za-z0-9_]+)/diff")
         def run_diff(ctx):

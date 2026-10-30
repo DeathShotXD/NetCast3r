@@ -45,6 +45,18 @@ class CommandTests(unittest.TestCase):
         command = integrations._command("httpx", "example.com", 60)
         self.assertEqual(command[0], "httpx")
         self.assertIn("https://example.com", command)
+        self.assertNotIn("-follow-redirects", command)
+
+    def test_crawl_and_scan_tools_stay_in_scope(self):
+        katana = integrations._command("katana", "example.com", 60)
+        self.assertIn("-fs", katana)
+        self.assertIn("rdn", katana)
+        self.assertIn("-dr", katana)
+        nuclei = integrations._command("nuclei", "example.com", 60)
+        self.assertIn("-disable-redirects", nuclei)
+        whatweb = integrations._command("whatweb", "example.com", 60)
+        self.assertIn("--follow-redirect=never", whatweb)
+        self.assertIn("--color=never", whatweb)
 
     def test_unknown_tool_is_refused(self):
         with self.assertRaises(integrations.ToolRunError):
@@ -151,6 +163,8 @@ class SandboxTests(unittest.TestCase):
             integrations.sandbox_run("evil:latest", ["sh"])
         with self.assertRaises(integrations.ToolRunError):
             integrations.sandbox_run("python:3.12-slim", [])
+        with self.assertRaises(integrations.ToolRunError):
+            integrations.sandbox_run("python:3.12-slim", ["sh"], stdin="x" * 1_048_577)
 
     def test_sandbox_timeout_is_reported(self):
         with mock.patch.object(integrations.shutil, "which", return_value="/usr/bin/docker"), \

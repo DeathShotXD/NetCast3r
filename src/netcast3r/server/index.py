@@ -7,6 +7,7 @@ pageable, and diffable, and it remembers triage so a re-scan does not lose it.
 from __future__ import annotations
 
 import json
+import os
 import secrets
 import sqlite3
 import threading
@@ -112,6 +113,16 @@ CREATE TABLE IF NOT EXISTS skills (
     updated_at TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_skills_updated ON skills(updated_at DESC);
+
+CREATE TABLE IF NOT EXISTS expertise (
+    tech TEXT PRIMARY KEY,
+    exposures INTEGER DEFAULT 0,
+    successes INTEGER DEFAULT 0,
+    failures INTEGER DEFAULT 0,
+    last_seen TEXT,
+    notes TEXT DEFAULT ''
+);
+CREATE INDEX IF NOT EXISTS idx_expertise_seen ON expertise(last_seen DESC);
 
 CREATE TABLE IF NOT EXISTS providers (
     id TEXT PRIMARY KEY,
@@ -310,6 +321,16 @@ SUBMISSION_STATUSES = {"draft", "ready", "submitted", "triaged", "accepted",
 SUBMISSION_SEVERITIES = {"critical", "high", "medium", "low", "info"}
 OUTCOME_STATUSES = {"accepted", "informative", "duplicate", "rejected", "paid"}
 LESSON_OUTCOMES = {"success", "failure", "partial", "blocked"}
+TECH_TAGS = {
+    "wordpress", "php", "graphql", "oauth", "oidc", "saml", "jwt", "aws", "gcp",
+    "azure", "kubernetes", "docker", "apache", "nginx", "nodejs", "nextjs", "nuxt",
+    "react", "vue", "java", "spring", "rails", "django", "laravel", "shopify",
+    "firebase", "cloudflare", "api", "rest", "jmap", "imap", "smtp", "redis",
+    "mysql", "postgres", "mongodb", "s3", "idp", "sso", "mfa", "2fa", "idor",
+    "ssrf", "xss", "sqli", "rce", "lfi", "csrf", "auth", "encoding", "scim",
+    "wireguard", "vpn", "email", "dns", "cdn", "waf", "mobile", "android",
+    "ios", "solana", "ethereum", "solidity", "defi", "driver", "kernel",
+}
 
 
 def _now() -> str:
@@ -339,6 +360,11 @@ class Index:
         self.conn.executescript(SCHEMA)
         self._migrate()
         self.conn.commit()
+        try:
+            os.chmod(self.path, 0o600)
+            os.chmod(self.path.parent, 0o700)
+        except OSError:
+            pass
 
     def _migrate(self) -> None:
         """Columns added after the first release, for existing databases."""
@@ -719,7 +745,50 @@ class Index:
                  source.strip(), confidence, now, now),
             )
             self.conn.commit()
+        self.bump_expertise(tags, outcome)
         return self.get_lesson(lesson_id)
+
+    def bump_expertise(self, tags: list, outcome: str = "success") -> None:
+        """Raise the exposure count for every technology tag in a real lesson."""
+        names = {str(tag).strip().lower() for tag in tags or []}
+        techs = sorted(names & TECH_TAGS)
+        if not techs:
+            return
+        success = 1 if outcome == "success" else 0
+        failure = 1 if outcome in {"failure", "blocked"} else 0
+        now = _now()
+        with self._lock:
+            for tech in techs:
+                self.conn.execute(
+                    "INSERT INTO expertise (tech, exposures, successes, failures, last_seen) "
+                    "VALUES (?, 1, ?, ?, ?) "
+                    "ON CONFLICT(tech) DO UPDATE SET exposures = exposures + 1, "
+                    "successes = successes + excluded.successes, "
+                    "failures = failures + excluded.failures, last_seen = excluded.last_seen",
+                    (tech, success, failure, now))
+            self.conn.commit()
+
+    def list_expertise(self, limit: int = 50) -> list[dict]:
+        with self._lock:
+            rows = self.conn.execute(
+                "SELECT * FROM expertise ORDER BY (successes + failures) DESC, "
+                "exposures DESC, last_seen DESC LIMIT ?",
+                (max(1, min(int(limit or 50), 200)),)).fetchall()
+        items = []
+        for row in rows:
+            attempts = int(row["successes"] or 0) + int(row["failures"] or 0)
+            confidence = round(int(row["successes"] or 0) / attempts, 2) if attempts else 0.0
+            exposures = int(row["exposures"] or 0)
+            level = ("expert" if exposures >= 10 and confidence >= 0.6 else
+                     "familiar" if exposures >= 4 else "novice")
+            items.append({
+                "tech": row["tech"], "exposures": exposures,
+                "successes": int(row["successes"] or 0),
+                "failures": int(row["failures"] or 0),
+                "confidence": confidence, "level": level,
+                "last_seen": row["last_seen"], "notes": row["notes"],
+            })
+        return items
 
     def list_lessons(self, q: str = "", tag: str = "", outcome: str = "",
                      limit: int = 50) -> tuple[list[dict], int]:

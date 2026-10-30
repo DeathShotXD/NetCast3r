@@ -398,6 +398,39 @@ login-method x 2FA matrix, account rebind takeover, and the two-account object
 matrix. They are generic procedures, not target notes. Add a new skill with
 `skills_upsert` after a test produces a reusable method.
 
+### Technology expertise
+
+Every lesson whose tags name a technology (wordpress, php, graphql, oauth,
+saml, api, aws, nginx, react, nuxt, and so on) increments a per-instance
+`expertise` row: exposures, successes, failures, confidence, and level. This is
+deliberately local. Two researchers running the same build against different
+targets end up with different expertise, because the lessons are different.
+
+`expertise_profile` returns the ranked technology profile. `next_actions`
+uses it: a WordPress-heavy instance is told to enumerate plugins, themes, and
+REST users; a GraphQL-heavy instance is told to test introspection and
+field-level authorization; an OAuth/SAML-heavy instance is told to test
+redirects, state, and audience. A technology needs at least two recorded
+exposures before it changes the suggested plan.
+
+### Self-audit and diagnostics
+
+`self_audit` checks the local posture: the base directory and database modes,
+secret-bearing state files (`control-plane.json`, `auth-profiles.json`,
+`secrets.json`, `integrations.json`, `config.toml`), remote MCP URLs, and the
+`NETCAST3R_MCP_ALLOW_REMOTE` switch. It returns a score, grade, and fixes.
+
+`diagnostics` checks SQLite integrity, table counts, file modes, route count,
+and tool count. Both are read-only and local; they do not scan the host or the
+network.
+
+The index database is created `0600` and the base directory `0700`. The recon
+wrappers do not follow redirects: `httpx` and `whatweb` run without redirect
+following, `katana` uses `-fs rdn -dr`, and `nuclei` uses
+`-disable-redirects`. Request and sandbox stdin are capped at 1 MiB. Remote MCP
+argument checks walk nested objects and cover host-like keys.
+
+
 ### Outbound MCP registry
 
 NetCast3r can call other MCP servers, not only expose its own tools. Configure

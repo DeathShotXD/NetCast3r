@@ -60,7 +60,7 @@ class BrowserUnitTests(unittest.TestCase):
         names = {tool.name for tool in TOOLS}
         self.assertIn("browser_open", names)
         self.assertIn("browser_capture", names)
-        self.assertEqual(len(TOOLS), 102)
+        self.assertEqual(len(TOOLS), 105)
 
 
 class GuerrillaMailTests(unittest.TestCase):

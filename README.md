@@ -206,7 +206,7 @@ netcast3r mcp --print-config   # paste into opencode.jsonc under mcp.servers
 opencode mcp list
 ```
 
-The server has 102 typed tools with risk tiers, scope enforcement, single-use
+The server has 105 typed tools with risk tiers, scope enforcement, single-use
 approvals, rate limits, and a full tool-call audit, plus disposable inboxes,
 OAST callbacks, named auth profiles, a scoped authenticated `http_request`, a
 path-variant differential, run-to-run surface diffing, local reverse-engineering
@@ -214,9 +214,10 @@ analyzers for source, APKs, contracts, and binaries, allowlisted passive/active
 recon tools, a Burp MCP bridge, an outbound MCP registry for HTTP and stdio
 servers, a locked-down Docker sandbox, credential pivoting, threat-intel search
 with CVE/PoC reproduction plans, STIX 2.1 export and TAXII 2.1 polling,
-report-quality scoring and payout ROI, a persistent lesson/skill memory that
-the agent recalls before planning, and a bounded mission agent (`agent_start`)
-that plans, probes, inventories, and verifies inside the mission's scope. See
+report-quality scoring and payout ROI, a persistent lesson/skill memory with a
+per-technology expertise profile that the agent recalls before planning,
+self-audit and diagnostics, and a bounded mission agent (`agent_start`) that
+plans, probes, inventories, and verifies inside the mission's scope. See
 [docs/MCP.md](docs/MCP.md). It is a real control surface, not an autonomous
 scanner: the runtime never fabricates findings; `findings_create` records only
 what an operator or agent validated, and every bounty result still comes from

@@ -178,6 +178,7 @@ def suggest_next(index, mission_id: str, limit: int = 8) -> dict:
         seen = {item["id"] for item in lessons}
         lessons.extend(item for item in tagged if item["id"] not in seen)
     calls, _ = index.list_tool_calls(mission_id=mission_id, limit=50)
+    expertise = index.list_expertise(limit=10)
     actions: list[dict] = []
 
     def add(title: str, why: str, tool: str, args: dict, risk: str = "low") -> None:
@@ -216,12 +217,45 @@ def suggest_next(index, mission_id: str, limit: int = 8) -> dict:
             "authorization layers often disagree with the router about encoding",
             "http_path_diff", {"target": target, "mission_id": mission_id,
                                "max_variants": 12}, "medium")
+    tech_actions = {
+        "wordpress": ("Enumerate WordPress plugins, themes, and REST users",
+                      "this instance has WordPress exposure in its lessons",
+                      "recon_passive", {"tool": "whatweb", "target": target,
+                                        "mission_id": mission_id}),
+        "graphql": ("Test GraphQL introspection and field-level authorization",
+                    "this instance has GraphQL exposure in its lessons",
+                    "http_request", {"target": target, "mission_id": mission_id,
+                                     "method": "POST", "json": {"query": "{__typename}"}}),
+        "oauth": ("Test OAuth redirect_uri, state, and audience handling",
+                  "this instance has OAuth exposure in its lessons",
+                  "http_request", {"target": target, "mission_id": mission_id,
+                                   "method": "GET"}),
+        "saml": ("Test SAML signature wrapping and audience validation",
+                 "this instance has SAML exposure in its lessons",
+                 "http_request", {"target": target, "mission_id": mission_id,
+                                  "method": "GET"}),
+        "php": ("Check for exposed backups, .env, phpinfo, and debug pages",
+                "this instance has PHP exposure in its lessons",
+                "http_request", {"target": target, "mission_id": mission_id,
+                                 "method": "GET"}),
+        "api": ("Run the two-account object matrix on the documented API",
+                "this instance has API exposure in its lessons",
+                "http_request", {"target": target, "mission_id": mission_id,
+                                 "method": "GET"}),
+    }
+    for item in expertise[:3]:
+        action = tech_actions.get(item["tech"])
+        if action and item["exposures"] >= 2:
+            add(action[0], f"{action[1]} ({item['exposures']} exposures, "
+                           f"{item['confidence']:.0%} success)",
+                action[2], action[3], "medium")
     if not actions:
         add("Re-read the latest run output and pick one unexplained response",
             "the obvious paths are covered; deepen the evidence instead of widening",
             "runs_events", {"run_id": mission.get("last_run_id") or ""}, "low")
     return {"mission_id": mission_id, "target": target,
             "findings": len(findings), "lessons": len(lessons),
+            "expertise": expertise[:5],
             "actions": actions[:limit],
             "note": ("Suggestions are deterministic and based on stored records; they are "
                      "not a model's guess. Confirm scope before running one.")}

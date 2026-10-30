@@ -126,19 +126,20 @@ def _command(tool: str, target: str, timeout: int) -> list[str]:
         return ["subfinder", "-d", host, "-silent", "-timeout", str(min(timeout, 120))]
     if tool == "httpx":
         return ["httpx", "-u", url, "-silent", "-status-code", "-title",
-                "-tech-detect", "-follow-redirects", "-timeout", "10"]
+                "-tech-detect", "-timeout", "10"]
     if tool == "katana":
         return ["katana", "-u", url, "-silent", "-d", "2", "-jc", "-kf", "all",
-                "-timeout", "10"]
+                "-fs", "rdn", "-dr", "-timeout", "10"]
     if tool == "whatweb":
-        return ["whatweb", "--no-color", "--quiet", url]
+        return ["whatweb", "--color=never", "--follow-redirect=never", url]
     if tool == "gau":
         return ["gau", "--subs", host]
     if tool == "waybackurls":
         return ["waybackurls", host]
     if tool == "nuclei":
         return ["nuclei", "-u", url, "-silent", "-severity", "critical,high",
-                "-stats", "-timeout", "10", "-retries", "1", "-no-color"]
+                "-stats", "-timeout", "10", "-retries", "1", "-no-color",
+                "-disable-redirects"]
     if tool == "dalfox":
         return ["dalfox", "url", url, "--silence", "--no-color",
                 "--timeout", "10"]
@@ -173,6 +174,8 @@ def sandbox_run(image: str, command: list[str], stdin: str = "", timeout: int = 
     if shutil.which("docker") is None:
         raise ToolRunError("docker is not installed")
     timeout = max(5, min(int(timeout or 60), 300))
+    if len(stdin or "") > 1_048_576:
+        raise ToolRunError("stdin is larger than 1 MiB")
     argv = [
         "docker", "run", "--rm", "-i", "--network", "none",
         "--memory", "256m", "--cpus", "1", "--pids-limit", "128",
