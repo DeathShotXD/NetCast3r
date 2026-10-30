@@ -734,6 +734,38 @@ class Server:
         def hunt_stop(ctx):
             return _json({"stopped": self._hunts().cancel(ctx.params["id"])})
 
+        @add("POST", r"/api/v1/labs/run-all")
+        def lab_run_all(ctx):
+            body = ctx.json()
+            body = body if isinstance(body, dict) else {}
+            try:
+                runs = self._labs().start_all(
+                    mission_id=str(body.get("mission_id") or ""))
+            except ValueError as exc:
+                return _problem(400, str(exc))
+            return _json({"runs": runs, "total": len(runs)}, 201)
+
+        @add("POST", r"/api/v1/training/model-study")
+        def training_model_study(ctx):
+            body = ctx.json()
+            body = body if isinstance(body, dict) else {}
+            slug = str(body.get("slug") or "all")
+            from .. import model_training
+            from .lab_runner import RECIPES
+            try:
+                if slug == "all":
+                    result = model_training.study_all(
+                        self.index, RECIPES,
+                        limit=_int_or(body.get("limit"), 20))
+                else:
+                    recipe = RECIPES.get(slug)
+                    if not recipe:
+                        return _problem(400, f"no recipe for lab: {slug}")
+                    result = model_training.study_recipe(self.index, slug, recipe)
+            except ValueError as exc:
+                return _problem(400, str(exc))
+            return _json(result, 201)
+
         @add("POST", r"/api/v1/labs/run")
         def lab_run(ctx):
             body = ctx.json()

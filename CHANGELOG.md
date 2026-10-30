@@ -131,6 +131,13 @@ Notable changes to NetCast3r, newest first.
 - `host_probe` performs an explicit-port banner grab (max 20 ports) on a
   scoped host, including TLS certificate details. It is deliberately not a
   full port scanner.
+- Batch lab runner: `POST /api/v1/labs/run-all` and `lab_run_all` queue every
+  scripted recipe; the worker pool bounds concurrency and each run still
+  verifies independently.
+- Model training memory: `lab_model_study` asks a configured free model to
+  summarize a verified recipe, stores the result as a retrievable skill, and
+  keeps the verified chain as the authoritative section. The model does not
+  decide that a lab is solved.
 - Standalone dashboard hunt: `POST /api/v1/missions/{id}/hunt` and the
   **Hunt now** action run scope, fingerprint, safe surface paths, technique
   and chain ranking, and hypothesis creation without OpenCode, Hermes, or an

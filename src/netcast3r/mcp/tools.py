@@ -830,6 +830,17 @@ def lab_run(ctx: ToolContext, args: dict) -> dict:
     return _call(ctx, "POST", "/api/v1/labs/run", body=body)
 
 
+def lab_run_all(ctx: ToolContext, args: dict) -> dict:
+    body = {"mission_id": args.get("mission_id", "")}
+    return _call(ctx, "POST", "/api/v1/labs/run-all", body=body)
+
+
+def lab_model_study(ctx: ToolContext, args: dict) -> dict:
+    body = {"slug": args.get("slug", "all"),
+            "limit": args.get("limit", 20)}
+    return _call(ctx, "POST", "/api/v1/training/model-study", body=body)
+
+
 def training_plan(ctx: ToolContext, args: dict) -> dict:
     return _call(ctx, "GET", "/api/v1/training/plan", {
         "category": args.get("category", ""),
@@ -2488,6 +2499,8 @@ _HANDLERS.update({
     "hypothesis_promote": hypothesis_promote,
     "lab_recipes": lab_recipes,
     "lab_run": lab_run,
+    "lab_run_all": lab_run_all,
+    "lab_model_study": lab_model_study,
     "training_plan": training_plan,
     "training_status": training_status,
     "training_sources": training_sources,
@@ -2985,6 +2998,21 @@ TOOLS: tuple[Tool, ...] = (
          _schema({"slug": _string("lab slug or auto"),
                   "mission_id": _string("optional training mission")},
                  []), "lab_run", open_world=True),
+    Tool("lab_run_all", "Run every scripted lab",
+         "Queue all supported recipe runs. The pool bounds concurrency and each "
+         "run verifies before recording. This is not a claim that every "
+         "Academy lab is covered; only the scripted recipes are.",
+         "medium", "training",
+         _schema({"mission_id": _string("optional training mission")},
+                 []), "lab_run_all", open_world=True),
+    Tool("lab_model_study", "Turn verified labs into model playbooks",
+         "Ask a configured (including free) model to summarize one or all "
+         "verified lab chains, then store the result as a retrievable skill. "
+         "The model does not decide that a lab is solved; the recipe does.",
+         "medium", "training",
+         _schema({"slug": _string("lab slug or all"),
+                  "limit": _integer("max labs", 1, 50, 20)}),
+         "lab_model_study"),
     Tool("training_plan", "Plan training",
          "Choose the next labs across every bundled source (PortSwigger Academy, "
          "Acunetix testphp, local Juice Shop/DVWA/WebGoat ranges). The plan rotates "

@@ -269,6 +269,16 @@ class LabRunner:
         self.pool.submit(self._run, run["id"], slug, recipe, mission_id, cancel)
         return run
 
+    def start_all(self, mission_id: str = "") -> list[dict]:
+        """Queue every scripted recipe once. The pool bounds the concurrency."""
+        runs = []
+        for slug in RECIPES:
+            try:
+                runs.append(self.start(slug, mission_id))
+            except ValueError:
+                continue
+        return runs
+
     def cancel(self, run_id: str) -> bool:
         with self._lock:
             cancel = self._handles.get(run_id)
