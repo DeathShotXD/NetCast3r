@@ -27,7 +27,7 @@ from .index import Index
 from .jobs import JobManager
 from .keys import KeyStore, mask
 from .. import (control, integrations, learning, quality, reveng, selfaudit,
-                stix, surface, training)
+                selfmodel, stix, surface, training)
 
 API_VERSION = "v1"
 ALLOWED_HOSTS = {"127.0.0.1", "localhost", "::1", "[::1]"}
@@ -626,7 +626,16 @@ class Server:
 
         @add("GET", r"/api/v1/training")
         def training_status(ctx):
-            return _json(training.status(self.index))
+            try:
+                return _json(training.status(
+                    self.index, source=ctx.query.get("source", "")))
+            except ValueError as exc:
+                return _problem(400, str(exc))
+
+        @add("GET", r"/api/v1/training/sources")
+        def training_sources(ctx):
+            items = training.sources(self.index)
+            return _json({"items": items, "total": len(items)})
 
         @add("GET", r"/api/v1/training/plan")
         def training_plan(ctx):
@@ -634,7 +643,8 @@ class Server:
                 return _json(training.plan(
                     self.index, category=ctx.query.get("category", ""),
                     difficulty=ctx.query.get("difficulty", ""),
-                    limit=_int_or(ctx.query.get("limit"), 5)))
+                    limit=_int_or(ctx.query.get("limit"), 5),
+                    source=ctx.query.get("source", "")))
             except ValueError as exc:
                 return _problem(400, str(exc))
 
@@ -657,10 +667,69 @@ class Server:
                 return _problem(400, str(exc))
             return _json(result, 201)
 
+        @add("GET", r"/api/v1/skill-packs")
+        def skill_packs(ctx):
+            installed = {skill["name"] for skill in
+                         self.index.list_skills(limit=200)[0]}
+            items = []
+            for pack in learning.bundled_skill_packs():
+                item = dict(pack)
+                item["installed"] = pack["name"] in installed
+                items.append(item)
+            return _json({"items": items, "total": len(items),
+                          "note": ("Bundled playbooks are installed at startup for "
+                                   "every agent. Read one with skills_get.")})
+
         @add("GET", r"/api/v1/toolbook")
         def toolbook(ctx):
             return _json(training.toolbook(query=ctx.query.get("q", ""),
                                            name=ctx.query.get("name", "")))
+
+        @add("GET", r"/api/v1/selfmodel")
+        def selfmodel_status(ctx):
+            return _json(selfmodel.snapshot(self.index))
+
+        @add("GET", r"/api/v1/selfmodel/gaps")
+        def selfmodel_gaps(ctx):
+            return _json(selfmodel.gaps(
+                self.index, limit=_int_or(ctx.query.get("limit"), 6)))
+
+        @add("GET", r"/api/v1/upgrades")
+        def list_upgrades(ctx):
+            items = self.index.list_upgrade_proposals(
+                status=ctx.query.get("status", ""),
+                area=ctx.query.get("area", ""),
+                limit=_int_or(ctx.query.get("limit"), 100))
+            return _json({"items": items, "total": len(items)})
+
+        @add("POST", r"/api/v1/upgrades")
+        def propose_upgrade(ctx):
+            body = ctx.json()
+            body = body if isinstance(body, dict) else {}
+            try:
+                result = selfmodel.propose(
+                    self.index, title=str(body.get("title", "")),
+                    rationale=str(body.get("rationale", "")),
+                    evidence=str(body.get("evidence", "")),
+                    area=str(body.get("area", "")),
+                    priority=str(body.get("priority", "")))
+            except ValueError as exc:
+                return _problem(400, str(exc))
+            return _json(result, 201)
+
+        @add("PATCH", r"/api/v1/upgrades/(?P<proposal_id>[A-Za-z0-9_-]+)")
+        def update_upgrade(ctx):
+            body = ctx.json()
+            body = body if isinstance(body, dict) else {}
+            try:
+                result = self.index.update_upgrade_proposal(
+                    ctx.params["proposal_id"], status=str(body.get("status", "")),
+                    rationale=str(body.get("rationale", "")))
+            except ValueError as exc:
+                return _problem(400, str(exc))
+            if result is None:
+                return _problem(404, "upgrade proposal not found")
+            return _json(result)
 
         @add("GET", r"/api/v1/self-audit")
         def self_audit(ctx):

@@ -11,12 +11,26 @@ Notable changes to NetCast3r, newest first.
   an explicit test, a supported/refuted result, and an evidence artifact before
   it can become a finding. Open and supported hypotheses appear in
   `next_actions`.
-- Training subsystem: a bundled 273-lab PortSwigger Web Security Academy
-  catalogue (`training_plan`, `training_status`, `training_record`,
-  `training_verify`) and a 45-entry toolbook. A lab counts as solved only after
-  a recorded result with evidence and a written lesson; the lesson feeds
-  technology expertise. Labs are teaching targets and cannot reuse a bounty
-  mission.
+- Training subsystem: multi-source catalogue and progress. It bundles the
+  273-lab PortSwigger Web Security Academy index, the Acunetix
+  testphp.vulnweb.com exercise pack, and local Juice Shop, DVWA, and WebGoat
+  ranges (`training_plan`, `training_status`, `training_sources`,
+  `training_record`, `training_verify`). Each entry carries its source, hosts,
+  setup command, objective, and proof. `training_verify` accepts the Academy
+  banner or explicit `expect` markers, and can read a managed browser profile
+  for client-rendered exercises. A lab counts as solved only after a recorded
+  result with evidence and a written lesson; the lesson feeds technology
+  expertise. Labs are teaching targets and cannot reuse a bounty mission.
+- 17 bundled advanced skill packs (`skill_packs`, seeded at startup for every
+  agent): SQLi, XSS context, SSRF/cloud pivot, IDOR, JWT/OAuth/SAML,
+  GraphQL, deserialization, file upload, cache/smuggling, race, cloud IMDS,
+  mobile APK, binary reversing, LLM features, recon, evidence/reporting, and
+  business logic.
+- Self-model and human-gated self-upgrade: `selfmodel_snapshot` and
+  `selfmodel_gaps` derive capability scores only from stored training, skills,
+  expertise, findings, missions, and submissions. `upgrade_propose`,
+  `upgrade_list`, and `upgrade_update` keep improvement proposals with
+  evidence; nothing is applied automatically.
 - `test_case_run` executes up to 12 ordered, scope-checked requests with
   explicit status, body, and header assertions, replacing broad scanners in
   the active path.
@@ -122,6 +136,17 @@ Notable changes to NetCast3r, newest first.
   Penligent AI's public product pattern and lists profit-making features
   (surface diff, presets, quality gate, payout ROI, verified pipeline, CI gate,
   workspace/RBAC) without copying proprietary code.
+
+### Fixed
+
+- A caller-supplied `Cookie` header now replaces a profile cookie in any
+  casing. The previous code removed only a capital-C header and could silently
+  send the profile session instead.
+- Academy lab slugs are unique: colliding final path segments (reflected vs
+  stored XSS, OS command vs path traversal) are prefixed with their parent
+  segment so one progress row cannot count as solved in two categories.
+- Mission lessons now appear in `next_actions`; the mission surface filters
+  lessons by `mission_id` instead of relying on a target-host text match.
 
 ### Security
 

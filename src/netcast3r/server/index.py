@@ -97,10 +97,24 @@ CREATE TABLE IF NOT EXISTS hypotheses (
 CREATE INDEX IF NOT EXISTS idx_hyp_mission ON hypotheses(mission_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_hyp_status ON hypotheses(status, created_at DESC);
 
+CREATE TABLE IF NOT EXISTS upgrade_proposals (
+    id TEXT PRIMARY KEY,
+    title TEXT,
+    area TEXT DEFAULT 'general',
+    priority TEXT DEFAULT 'medium',
+    rationale TEXT,
+    evidence TEXT,
+    status TEXT DEFAULT 'proposed',
+    created_at TEXT,
+    updated_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_upgrade_status ON upgrade_proposals(status, created_at DESC);
+
 CREATE TABLE IF NOT EXISTS training_progress (
     lab_slug TEXT PRIMARY KEY,
     category TEXT,
     difficulty TEXT,
+    source TEXT DEFAULT '',
     status TEXT DEFAULT 'planned',
     attempts INTEGER DEFAULT 0,
     instance_url TEXT DEFAULT '',
@@ -429,6 +443,13 @@ class Index:
         ):
             if column not in skills:
                 self.conn.execute(ddl)
+        training = {row["name"] for row in
+                    self.conn.execute("PRAGMA table_info(training_progress)")}
+        if "source" not in training:
+            self.conn.execute("ALTER TABLE training_progress ADD COLUMN source TEXT DEFAULT ''")
+            # Rows created before packs existed are Academy labs.
+            self.conn.execute(
+                "UPDATE training_progress SET source = 'portswigger' WHERE source IS NULL OR source = ''")
 
     def close(self) -> None:
         with self._lock:
@@ -908,7 +929,7 @@ class Index:
         return item
 
     def list_training(self, status: str = "", category: str = "",
-                      limit: int = 500) -> list[dict]:
+                      limit: int = 500, source: str = "") -> list[dict]:
         clause, params = [], []
         if status:
             if status not in TRAINING_STATUSES:
@@ -918,6 +939,9 @@ class Index:
         if category:
             clause.append("category = ?")
             params.append(category)
+        if source:
+            clause.append("source = ?")
+            params.append(source)
         where = f"WHERE {' AND '.join(clause)}" if clause else ""
         with self._lock:
             rows = self.conn.execute(
@@ -936,7 +960,7 @@ class Index:
     def record_training(self, lab_slug: str, category: str, difficulty: str,
                         status: str, instance_url: str = "", evidence: str = "",
                         notes: str = "", verified: bool = False,
-                        lesson_id: str = "") -> dict:
+                        lesson_id: str = "", source: str = "") -> dict:
         lab_slug = (lab_slug or "").strip()
         if not lab_slug:
             raise ValueError("lab_slug required")
@@ -946,21 +970,89 @@ class Index:
         now = _now()
         with self._lock:
             self.conn.execute(
-                "INSERT INTO training_progress (lab_slug, category, difficulty, status, "
-                "attempts, instance_url, evidence, notes, verified, lesson_id, "
-                "created_at, updated_at) VALUES (?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?) "
+                "INSERT INTO training_progress (lab_slug, category, difficulty, source, "
+                "status, attempts, instance_url, evidence, notes, verified, lesson_id, "
+                "created_at, updated_at) VALUES (?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?) "
                 "ON CONFLICT(lab_slug) DO UPDATE SET category = excluded.category, "
-                "difficulty = excluded.difficulty, status = excluded.status, "
+                "difficulty = excluded.difficulty, source = excluded.source, "
+                "status = excluded.status, "
                 "attempts = training_progress.attempts + 1, instance_url = excluded.instance_url, "
                 "evidence = excluded.evidence, notes = excluded.notes, "
                 "verified = excluded.verified, lesson_id = excluded.lesson_id, "
                 "updated_at = excluded.updated_at",
-                (lab_slug, category, difficulty, status, instance_url.strip(),
-                 evidence.strip(), notes.strip(), 1 if verified else 0,
-                 lesson_id, now, now),
+                (lab_slug, category, difficulty, (source or "").strip(), status,
+                 instance_url.strip(), evidence.strip(), notes.strip(),
+                 1 if verified else 0, lesson_id, now, now),
             )
             self.conn.commit()
         return self.get_training(lab_slug) or {}
+
+    # -- improvement proposals --------------------------------------------
+    @staticmethod
+    def _upgrade_row(row: sqlite3.Row) -> dict:
+        return dict(row)
+
+    def add_upgrade_proposal(self, title: str, rationale: str, evidence: str,
+                             area: str = "general", priority: str = "medium") -> dict:
+        proposal_id = _new_id("upg")
+        now = _now()
+        with self._lock:
+            self.conn.execute(
+                "INSERT INTO upgrade_proposals (id, title, area, priority, rationale, "
+                "evidence, status, created_at, updated_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, 'proposed', ?, ?)",
+                (proposal_id, title.strip(), area.strip() or "general",
+                 priority.strip() or "medium", rationale.strip(),
+                 evidence.strip(), now, now))
+            self.conn.commit()
+        return self.get_upgrade_proposal(proposal_id) or {}
+
+    def get_upgrade_proposal(self, proposal_id: str) -> dict | None:
+        with self._lock:
+            row = self.conn.execute(
+                "SELECT * FROM upgrade_proposals WHERE id = ?",
+                (proposal_id,)).fetchone()
+        return self._upgrade_row(row) if row else None
+
+    def list_upgrade_proposals(self, status: str = "", area: str = "",
+                               limit: int = 100) -> list[dict]:
+        clause, params = [], []
+        if status:
+            clause.append("status = ?")
+            params.append(status)
+        if area:
+            clause.append("area = ?")
+            params.append(area)
+        where = f"WHERE {' AND '.join(clause)}" if clause else ""
+        with self._lock:
+            rows = self.conn.execute(
+                f"SELECT * FROM upgrade_proposals {where} "
+                "ORDER BY CASE priority WHEN 'critical' THEN 0 WHEN 'high' THEN 1 "
+                "WHEN 'medium' THEN 2 ELSE 3 END, created_at DESC LIMIT ?",
+                [*params, max(1, min(int(limit or 100), 500))]).fetchall()
+        return [self._upgrade_row(row) for row in rows]
+
+    def update_upgrade_proposal(self, proposal_id: str, status: str = "",
+                                rationale: str = "") -> dict | None:
+        if status and status not in {"proposed", "accepted", "rejected", "implemented"}:
+            raise ValueError("status must be proposed, accepted, rejected, or implemented")
+        sets, params = [], []
+        if status:
+            sets.append("status = ?")
+            params.append(status)
+        if rationale:
+            sets.append("rationale = ?")
+            params.append(rationale.strip())
+        if not sets:
+            return self.get_upgrade_proposal(proposal_id)
+        sets.append("updated_at = ?")
+        params.extend([_now(), proposal_id])
+        with self._lock:
+            self.conn.execute(
+                f"UPDATE upgrade_proposals SET {', '.join(sets)} WHERE id = ?",
+                params)
+            self.conn.commit()
+        return self.get_upgrade_proposal(proposal_id)
 
     # -- lessons and skills ------------------------------------------------
     def add_lesson(self, title: str, lesson: str, technique: str = "",

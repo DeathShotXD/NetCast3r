@@ -1,0 +1,198 @@
+{
+  "packs": [
+    {
+      "name": "sqli-advanced",
+      "title": "SQL injection: parser to proof",
+      "description": "Move from a quote probe to a reproducible, minimal proof across string, numeric, and second-order contexts.",
+      "tags": [
+        "sqli",
+        "database",
+        "injection"
+      ],
+      "body": "# SQL injection: parser to proof\n\n1. Baseline the request. Save the exact method, path, headers, and body.\n2. Decide the context: numeric, single-quoted string, double-quoted identifier, or an ORDER/LIMIT clause. A quote that produces an error or a different page is a lead, not a finding.\n3. Prove a boolean pair. Send `AND 1=1` and `AND 1=2` (or `OR` when the predicate is already false). The response must differ in a way tied to the predicate, not to caching or rate limiting.\n4. Count columns before a UNION. Use `ORDER BY n` until the error, or `UNION SELECT NULL...`. Then place one readable value in the reflected column.\n5. Try the same parameter with the opposite quote style and with a comment; a WAF may normalise one form.\n6. Escalate to second-order only when input is stored and reused in a query. Save the write request and the later trigger request together.\n7. Stop at the minimum row that proves the bug. Do not dump tables, and never touch credentials you do not own.\n\nCommon misses: parameterised code that still concatenates a table or column name; a filtered keyword that can be split with comments; a numeric id that is safe but a sort parameter that is not.\n"
+    },
+    {
+      "name": "xss-context-engine",
+      "title": "XSS: context, sink, and execution proof",
+      "description": "Pick a payload from the actual reflection context and prove execution in a real browser without payload floods.",
+      "tags": [
+        "xss",
+        "javascript",
+        "dom"
+      ],
+      "body": "# XSS: context, sink, and execution proof\n\n1. Find every reflection: query, path, header, cookie, stored field, error message, and JSON embedded in a script.\n2. Classify the context before choosing a payload:\n   - raw HTML body: a tag with an event handler or a script tag;\n   - attribute value: close the quote, add an event, and repair the rest;\n   - JavaScript string: close the string and the statement;\n   - URL attribute: `javascript:` where the browser still allows it;\n   - DOM sink: trace `location`, `postMessage`, or storage into `innerHTML`, `eval`, `document.write`, or a framework bypass.\n3. Account for encoding: HTML entities, URL encoding, JavaScript escaping, and framework sanitisation each need a different break-out.\n4. Prove execution in the managed browser. Capture the alert, the DOM change, or the callback. A payload that appears in the response but never executes is not XSS.\n5. For stored XSS, read the value in a fresh context and record the write plus the later read.\n6. Check CSP, HttpOnly, and SameSite only after execution is proven; they change impact, not existence.\n\nDo not send a dictionary of payloads. One context-specific payload with a screenshot and the request is stronger evidence than a scanner's hit.\n"
+    },
+    {
+      "name": "ssrf-cloud-pivot",
+      "title": "SSRF: callback, metadata, and cloud pivot",
+      "description": "Prove server-side fetch with an out-of-band callback, then test whether the fetch identity reaches cloud metadata.",
+      "tags": [
+        "ssrf",
+        "cloud",
+        "oob"
+      ],
+      "body": "# SSRF: callback, metadata, and cloud pivot\n\n1. Enumerate every server-side fetch: image import, URL preview, webhook test, PDF renderer, feed reader, avatar fetch, and redirect follower.\n2. Start with a unique callback URL you control. A DNS or HTTP hit proves the server made the request.\n3. Test scheme and parser handling: `http`, `https`, `file`, `gopher`, redirects, `@` authority tricks, decimal/hex IPs, and IPv6 forms. Record which normalisation the client applies.\n4. Only after a callback, test cloud metadata with a read-only request:\n   - AWS `http://169.254.169.254/latest/meta-data/` and IMDSv2 token flow;\n   - GCP `http://metadata.google.internal/computeMetadata/v1/` with the metadata header;\n   - Azure `http://169.254.169.254/metadata/instance?api-version=...` with `Metadata: true`.\n5. A metadata response is high impact only when it yields a credential or identity you can use. Do not use a discovered credential beyond a read-only validation that the programme allows.\n6. Check DNS rebinding only when the fetch resolves the hostname per request; a single resolve at validation time is usually enough to block it.\n\nEvidence: callback timestamp, the exact injected URL, the server response, and the minimum metadata field that proves the identity.\n"
+    },
+    {
+      "name": "idor-two-account",
+      "title": "IDOR and object-level authorisation",
+      "description": "Use two accounts you own to test read, write, and delete authorisation on every object shape.",
+      "tags": [
+        "idor",
+        "authz",
+        "api"
+      ],
+      "body": "# IDOR and object-level authorisation\n\n1. Create two accounts you own. Record both identities and every object id each account creates.\n2. Build a matrix: object type, id shape (integer, UUID, slug, composite), owner read, other read, anonymous read, owner write, other write.\n3. Test the same object through every route: HTML page, JSON API, export, PDF, GraphQL node, and mobile endpoint. One route often skips the check the others enforce.\n4. Change one variable at a time: path id, body id, tenant header, parent id, and nested object id.\n5. Compare status, body length, and a stable owner-only field. A 200 with an empty body is not exposure; a 403 with a different error can still leak existence.\n6. Chain a read into a write only when the programme allows state changes, and revert anything you change.\n7. Never enumerate ids outside your two accounts. Stop when the ownership boundary is proven.\n\nReport the request pairs side by side and name the missing check: route-level, object-level, field-level, or tenant-level.\n"
+    },
+    {
+      "name": "auth-token-attack",
+      "title": "JWT, OAuth, and SAML decision points",
+      "description": "Test whether identity is derived from a verified token or from client-supplied fields.",
+      "tags": [
+        "auth",
+        "jwt",
+        "oauth",
+        "saml"
+      ],
+      "body": "# JWT, OAuth, and SAML decision points\n\nJWT:\n- Decode header, payload, and signature. Test `alg=none` only on your own token.\n- Try HS256 with the public key as the HMAC secret, `kid` path traversal, and `jku`/`x5u` pointing at a key you control.\n- Change one claim at a time: `sub`, `role`, `tenant`, `aud`, `iss`, `exp`.\n- A token accepted with a changed claim is only a finding if the server acts on it.\n\nOAuth/OIDC:\n- Map the flow: authorization code, implicit, hybrid, device, or client credentials.\n- Test `redirect_uri` exact matching, state binding, PKCE downgrade, mix-up between clients, and token audience.\n- Check whether the callback trusts `email` or `username` from the request body instead of the token subject.\n- Test account linking with two accounts you own; a link CSRF can become takeover.\n\nSAML:\n- Try signature stripping, XML signature wrapping, comment injection in NameID, audience omission, and replay within the validity window.\n- A signed assertion from a different IdP or for a different audience must be rejected.\n\nAlways bind identity to the verified subject. A client-supplied email is not authentication.\n"
+    },
+    {
+      "name": "graphql-deep",
+      "title": "GraphQL: schema, fields, and resolver auth",
+      "description": "Introspect the schema, then test object, field, and mutation authorisation rather than only the visible query.",
+      "tags": [
+        "graphql",
+        "api",
+        "authz"
+      ],
+      "body": "# GraphQL: schema, fields, and resolver auth\n\n1. Find the endpoint: `/graphql`, `/api/graphql`, `/v1/graphql`, `/graphql/v1`, or a path hidden in the JS bundle.\n2. Introspect: `{__schema{queryType{fields{name args{name type{name kind ofType{name}}}} mutationType{fields{name}}}}}`.\n3. Enumerate every type and field, including deprecated and undocumented ones. Hidden fields often skip field-level authorisation.\n4. Query an object you own, then the same object from a second account, then anonymously. Compare the full field set, not just `id`.\n5. Test mutations: change the object id, the tenant id, and mass-assign fields the UI never sends.\n6. Test node-style global ids: decode the base64 `Type:id`, change the type or id, and re-encode.\n7. Test batching and aliases for rate-limit bypass only when the programme allows it; keep the request count low.\n8. Check error behaviour: a resolver stack trace can disclose the schema and internal services.\n\nEvidence: the introspection excerpt, the exact query, and the response field that should not be visible.\n"
+    },
+    {
+      "name": "deserialization-gadget",
+      "title": "Deserialization: format, gadget, and safe proof",
+      "description": "Identify the serialized format, find a reachable gadget, and prove one controlled effect.",
+      "tags": [
+        "deserialization",
+        "rce",
+        "java",
+        "php"
+      ],
+      "body": "# Deserialization: format, gadget, and safe proof\n\n1. Recognise the format from bytes: PHP `O:`, Java `AC ED 00 05`, Python pickle `8004`, .NET `AAEAAAD`, Ruby `Marshal`, Node `_$$ND_FUNC$$_`.\n2. Decode and re-encode without changing the value. If the server accepts the round trip, you control the object.\n3. Look for a signature or MAC. If present, do not attack the crypto; test whether the signature is verified on every path.\n4. Enumerate libraries and versions from headers, error pages, and the app's own dependencies.\n5. Choose a gadget that produces a harmless, observable effect: a DNS callback, a sleep, or a file read. Avoid commands that change state.\n6. For Java, test `ysoserial` with a callback payload first. For PHP, test a magic-method chain with a benign property change. For Python, use a pickle that calls a harmless function you control.\n7. Prove the effect server-side, then explain the reachable gadget path. A payload that only deserializes locally is not a finding.\n\nNever run destructive commands, open a reverse shell on a shared host, or retain third-party data.\n"
+    },
+    {
+      "name": "upload-to-rce",
+      "title": "File upload: from stored file to execution",
+      "description": "Test extension, content-type, magic bytes, storage path, and the handler that finally serves the file.",
+      "tags": [
+        "upload",
+        "rce",
+        "web"
+      ],
+      "body": "# File upload: from stored file to execution\n\n1. Map the upload: field name, size limit, allowed types, storage location, and the URL that serves the result.\n2. Test the checks separately:\n   - extension allow-list vs deny-list, double extension, case, trailing dot/space, null byte;\n   - `Content-Type` vs actual bytes; add a valid magic header to a script;\n   - image re-encoding vs raw storage;\n   - `.htaccess`/`web.config` upload where the server honours it.\n3. Find the served path. A file stored outside the web root is not executable; a file served by a static handler may still execute if the handler maps the extension.\n4. Test filename traversal in the multipart filename and in a separate path parameter.\n5. Prove execution with a harmless command (`id` or a DNS callback) only on a lab or authorised host. For image uploads, prove XSS via SVG/HTML when script execution is the impact.\n6. Check whether the file is reachable before authentication or from another tenant.\n\nEvidence: the upload request, the stored path, and the response that proves execution or cross-user access.\n"
+    },
+    {
+      "name": "cache-poison-smuggle",
+      "title": "Cache poisoning and request smuggling",
+      "description": "Prove a parser or cache-key differential with a minimal request pair, then show the victim effect.",
+      "tags": [
+        "cache",
+        "smuggling",
+        "http"
+      ],
+      "body": "# Cache poisoning and request smuggling\n\nCache poisoning:\n1. Identify the cache: `Age`, `X-Cache`, `CF-Cache-Status`, `Via`, and response-time jumps.\n2. Find unkeyed inputs: `X-Forwarded-Host`, `X-Forwarded-Scheme`, `X-Host`, `X-Original-URL`, cookies, and headers reflected into links or redirects.\n3. Poison with a unique marker, then request the clean URL without the header. The marker appearing for the clean request proves the cache stored the poisoned response.\n4. Check cache deception: request `/account.css` or `/account%3F.css` and see whether a private page is cached under a static extension.\n\nSmuggling:\n1. Fingerprint front-end and back-end: header casing, `Server`, response to malformed chunks.\n2. Test CL.TE, TE.CL, and H2.CL with a timing probe first. A delay on the next request is a lead; a queued response is proof.\n3. Keep smuggled requests read-only and within scope. Never poison a shared cache with a destructive payload.\n4. For H2, test `:path` normalisation and header injection during downgrade.\n\nEvidence: the exact byte sequence, the timing or marker, and the victim request that observes the effect.\n"
+    },
+    {
+      "name": "race-condition",
+      "title": "Race conditions and state-machine timing",
+      "description": "Turn a sequential workflow into a concurrent one and prove a state that should be impossible.",
+      "tags": [
+        "race",
+        "logic",
+        "http2"
+      ],
+      "body": "# Race conditions and state-machine timing\n\n1. Model the state machine: coupon redeem, gift-card spend, vote, follow, password reset, MFA verify, withdrawal, and invite accept.\n2. Identify the check-then-act gap. The vulnerable pattern is a read, a decision, then a write with no atomic constraint.\n3. Send the same request concurrently. Start with a small burst (10-20), not thousands. Use HTTP/2 single-packet where available, or a last-byte sync.\n4. Measure the invariant: balance, redemption count, vote count, or number of active sessions. A duplicate side effect is the proof.\n5. Test partial failures: one request succeeds and another returns an error after the side effect. That is still a race.\n6. Test the same flow across different endpoints and sessions; a per-route lock may not cover the shared resource.\n7. Revert state and record the timing window.\n\nDo not run a high-volume race on production. Keep the burst bounded and stop at the first proven duplicate.\n"
+    },
+    {
+      "name": "cloud-imds",
+      "title": "Cloud identity from the outside",
+      "description": "Turn a leaked credential or SSRF into a bounded map of what the identity can do.",
+      "tags": [
+        "cloud",
+        "aws",
+        "azure",
+        "gcp",
+        "iam"
+      ],
+      "body": "# Cloud identity from the outside\n\n1. Classify the credential: access key, session token, service-account JSON, managed identity token, or Kubernetes service-account token.\n2. Establish identity read-only:\n   - AWS `aws sts get-caller-identity`;\n   - Azure `az account show` or decode the JWT claims;\n   - GCP `gcloud auth print-access-token` and `gcloud config list`.\n3. Enumerate permissions only with read-only calls. Prefer the provider's own policy simulator or `list-*` APIs over brute force.\n4. Look for the classic escalation edges: `iam:PassRole` + compute create, `iam:CreatePolicyVersion`, `sts:AssumeRole` trust bugs, Azure role assignment write, GCP `setIamPolicy`.\n5. Test cross-account trust with a role you own. A trust policy that allows a wildcard principal is the finding; assuming the role is the proof.\n6. For Kubernetes, check the service-account token's namespace, RBAC verbs, and whether the API server is reachable.\n7. Stop at the first sensitive read that proves impact. Do not create resources, persist, or exfiltrate data.\n\nEvidence: identity output, the policy or trust document, and the one read that proves the granted access.\n"
+    },
+    {
+      "name": "mobile-apk-reversing",
+      "title": "Mobile APK: static map to runtime proof",
+      "description": "Decompile an authorised APK, extract endpoints and secrets, then confirm the important ones at runtime.",
+      "tags": [
+        "mobile",
+        "android",
+        "apk",
+        "frida"
+      ],
+      "body": "# Mobile APK: static map to runtime proof\n\n1. Acquire the APK from the official store or the vendor's own distribution. Record the version and hash.\n2. Decompile with `jadx -d out app.apk` and decode resources with `apktool d app.apk`.\n3. Read `AndroidManifest.xml`: exported activities/services/receivers, deep links, backup flags, network-security config, and permissions.\n4. Grep for endpoints, API keys, Firebase URLs, JWT signing material, and internal hostnames. A key is a lead; test only the minimum read it allows.\n5. Inspect certificate pinning and root/tamper checks. Do not bypass them until you have a test device and authorisation.\n6. Run the app on an owned device with a proxy you control. Use Frida only to observe or hook the function under test.\n7. Confirm each static lead on the live service: an endpoint that rejects the mobile client is not a finding; one that returns another user's data is.\n\nReport the static evidence (file, class, string) and the runtime request/response that confirms reachability.\n"
+    },
+    {
+      "name": "binary-reversing",
+      "title": "Agentic binary reversing",
+      "description": "A repeatable loop for triaging and understanding an authorised binary or firmware image.",
+      "tags": [
+        "reverse",
+        "binary",
+        "ghidra",
+        "firmware"
+      ],
+      "body": "# Agentic binary reversing\n\n1. Inventory: file type, architecture, bitness, packing, and hardening (`checksec`, `rabin2 -I`).\n2. Triage strings and imports first. Look for URLs, file paths, crypto APIs, command execution, and update mechanisms.\n3. Map the entry path: `main`, exported functions, init arrays, and the request handler. In Ghidra, rename as you learn; keep a short notes file.\n4. Follow data, not every branch. Trace the input from the parser to the sink, and record the offset or structure layout.\n5. For firmware, binwalk the image, identify the filesystem, and extract read-only. Check for hardcoded keys and debug services before exploitation.\n6. Write a minimal harness or use the app's own protocol. A crash is a lead; a controlled read or write is the proof.\n7. Keep exploitation read-only and reproducible. Document the exact build hash and the command that reproduces the effect.\n\nDo not run unknown binaries on the host. Use a disposable VM or container with no credentials.\n"
+    },
+    {
+      "name": "ai-llm-hunting",
+      "title": "LLM and agentic feature testing",
+      "description": "Test prompt injection, tool-use exfiltration, and cross-user data access in AI features.",
+      "tags": [
+        "llm",
+        "ai",
+        "prompt-injection",
+        "agent"
+      ],
+      "body": "# LLM and agentic feature testing\n\n1. Map the feature: chat, RAG, summarisation, document upload, tool calls, and autonomous actions.\n2. Test direct injection: ask the model to reveal its instructions, ignore prior rules, or call a tool. Treat the system prompt as a hypothesis, not a target to assume.\n3. Test indirect injection: put instructions in a document, web page, calendar invite, or filename the model reads. The model may follow content it was asked to summarise.\n4. Test cross-user access: ask for another user's document by id or name, use a shared retrieval index, and compare two owned accounts.\n5. Test tool-use exfiltration: if the model can fetch a URL or send email, inject a destination you control and see whether data leaves.\n6. Test output handling: markdown image callbacks, HTML injection, and ASCII smuggling in invisible Unicode tags.\n7. Keep the proof read-only. Do not let an agent perform destructive actions or reach third-party data.\n\nEvidence: the exact prompt or document, the model output, and the tool call or data boundary that was crossed.\n"
+    },
+    {
+      "name": "recon-attack-surface",
+      "title": "Recon that produces leads, not noise",
+      "description": "Build a scoped asset map and rank it by what an attacker can actually reach and prove.",
+      "tags": [
+        "recon",
+        "osint",
+        "surface"
+      ],
+      "body": "# Recon that produces leads, not noise\n\n1. Start from the programme scope. Write the allowed hosts and the exclusions down before any request.\n2. Passive first: certificate transparency, DNS history, public code, package registries, and archived URLs.\n3. Active only where allowed: resolve, probe HTTP, capture titles and tech, then crawl within the registered domain.\n4. Build an asset table: host, IP, ASN, TLS names, status, title, tech, auth type, and owner. Mark each row with the evidence source.\n5. Prioritise by reachability and impact: authenticated APIs, admin surfaces, file upload, SSO callbacks, and anything that returns other users' data.\n6. Read JavaScript as source: endpoints, feature flags, internal hosts, and keys. Confirm each string on the live service.\n7. Kill duplicates and dead hosts. A subdomain that resolves to a parking page is not an asset.\n8. Stop expanding when the next host cannot plausibly produce a distinct bug class. Depth beats a larger list.\n"
+    },
+    {
+      "name": "evidence-and-reporting",
+      "title": "Evidence that survives triage",
+      "description": "Capture the minimum proof, redact secrets, and write an impact-first report.",
+      "tags": [
+        "reporting",
+        "evidence",
+        "triage"
+      ],
+      "body": "# Evidence that survives triage\n\n1. Capture the request and response for the baseline and the exploit. Include method, path, relevant headers, and the exact payload.\n2. Redact cookies, tokens, and other users' PII. Keep the fields that prove the bug, mask the rest. Never paste a live secret into a report.\n3. Prove impact with the smallest action: one other-user record, one changed field, one command output. Do not dump data.\n4. State the precondition honestly: authenticated? two accounts? a specific role? a race window?\n5. Write the title as `[bug class] in [component] allows [impact]`.\n6. Impact first: who can do what, to whose data, and what changes. Then reproduction, then root cause, then fix.\n7. Include a cleanup note for every account, object, or state you created.\n8. Pre-submit check: can a triager reproduce it from the report alone? If not, add the missing request or step.\n\nNever write \"could potentially\". Either the effect was observed or it was not.\n"
+    },
+    {
+      "name": "business-logic",
+      "title": "Business logic and money flows",
+      "description": "Model the intended workflow, then test the assumptions the code makes about price, quantity, and state.",
+      "tags": [
+        "logic",
+        "business",
+        "payments"
+      ],
+      "body": "# Business logic and money flows\n\n1. Draw the workflow: cart, coupon, checkout, payment, refund, cancellation, and payout. Note every server-side assumption.\n2. Test quantity and price: negative, zero, fractional, very large, and unit mismatch. A client-side total that the server trusts is a finding.\n3. Test coupon stacking, reuse, and race. Redeem the same code twice concurrently and check the balance and order total.\n4. Test step skipping: call the confirmation or refund endpoint without the prerequisite step, and replay a completed step.\n5. Test currency and rounding: change the currency, the decimal scale, or the exchange-rate source.\n6. Test refund and cancellation after fulfilment, and partial refunds that exceed the captured amount.\n7. Prove financial impact with a test account and the smallest possible amount. Revert state.\n\nEvidence: the sequence, the server response, and the resulting balance or order state. Do not complete a real payout.\n"
+    }
+  ]
+}

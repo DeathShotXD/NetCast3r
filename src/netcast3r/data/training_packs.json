@@ -1,0 +1,372 @@
+{
+  "packs": [
+    {
+      "source": "acunetix-testphp",
+      "title": "Acunetix testphp.vulnweb.com",
+      "kind": "public-lab",
+      "hosts": ["testphp.vulnweb.com"],
+      "base_url": "http://testphp.vulnweb.com",
+      "setup": "Intentionally vulnerable public training site published by Acunetix. No account or authorisation beyond the site's stated purpose is needed. Check reachability first; this host has been intermittently unreachable. Never reuse captured data outside the lab.",
+      "note": "Treat every request as training. Do not attack other hosts that share the IP or certificate.",
+      "labs": [
+        {
+          "slug": "testphp-sqli-artists",
+          "title": "SQL injection in the artist filter",
+          "category": "SQL injection",
+          "difficulty": "apprentice",
+          "path": "/artists.php?artist=1",
+          "objective": "Prove that the artist parameter reaches a SQL string and changes the result set.",
+          "proof": "A boolean pair (true vs false) that changes the page, or one controlled UNION row. Save the request and the differing response.",
+          "focus": "Start with a quote, then a boolean pair; keep the proof to one row.",
+          "tools": ["Burp Repeater", "curl", "sqlmap"],
+          "checks": ["quote and comment probe", "boolean differential", "column count", "error text"]
+        },
+        {
+          "slug": "testphp-sqli-listproducts",
+          "title": "SQL injection in the product category filter",
+          "category": "SQL injection",
+          "difficulty": "apprentice",
+          "path": "/listproducts.php?cat=1",
+          "objective": "Determine whether cat is numeric or quoted and prove one controlled difference.",
+          "proof": "A stable true/false difference, or a single UNION row that belongs to the lab.",
+          "focus": "Compare a numeric probe with a quoted probe before assuming a context.",
+          "tools": ["Burp Repeater", "curl"],
+          "checks": ["numeric vs quoted context", "boolean pair", "ORDER BY column count"]
+        },
+        {
+          "slug": "testphp-sqli-product-pic",
+          "title": "SQL injection in the product picture parameter",
+          "category": "SQL injection",
+          "difficulty": "apprentice",
+          "path": "/product.php?pic=1",
+          "objective": "Test a second parameter on the same application to compare parser behaviour.",
+          "proof": "A response difference tied to the injected value, captured with the baseline request.",
+          "focus": "Same application, different handler; do not assume one fix covers both.",
+          "tools": ["Burp Repeater", "curl"],
+          "checks": ["baseline vs injected", "error suppression", "boolean pair"]
+        },
+        {
+          "slug": "testphp-sqli-userinfo",
+          "title": "SQL injection in the user info lookup",
+          "category": "SQL injection",
+          "difficulty": "practitioner",
+          "path": "/userinfo.php?uname=test",
+          "objective": "Test whether the uname lookup is parameterised and whether it exposes other rows.",
+          "proof": "A boolean difference or a single row that is clearly not the requested user.",
+          "focus": "Read only the minimum row needed to prove the injection.",
+          "tools": ["Burp Repeater", "curl"],
+          "checks": ["string context", "row count change", "error handling", "object ownership"]
+        },
+        {
+          "slug": "testphp-xss-search",
+          "title": "Reflected XSS in the search box",
+          "category": "Cross-site scripting",
+          "difficulty": "apprentice",
+          "path": "/search.php?test=query",
+          "objective": "Find the reflection context and prove script execution in a browser.",
+          "proof": "The payload executes in the managed browser and the response shows the unencoded reflection.",
+          "focus": "Identify HTML, attribute, or script context before choosing a payload.",
+          "tools": ["browser", "Burp Repeater", "curl"],
+          "checks": ["reflection context", "encoding", "CSP", "cookie flags"]
+        },
+        {
+          "slug": "testphp-xss-artist",
+          "title": "Reflected XSS in the artist parameter",
+          "category": "Cross-site scripting",
+          "difficulty": "apprentice",
+          "path": "/artists.php?artist=1",
+          "objective": "Test the same parameter that carries SQL for a client-side sink as well.",
+          "proof": "A browser alert or DOM change from the injected value, with the exact request.",
+          "focus": "A server-side parser bug and a client-side sink can share one parameter.",
+          "tools": ["browser", "Burp Repeater"],
+          "checks": ["reflection context", "stored vs reflected", "encoding"]
+        },
+        {
+          "slug": "testphp-stored-xss-guestbook",
+          "title": "Stored XSS in the guestbook",
+          "category": "Cross-site scripting",
+          "difficulty": "practitioner",
+          "path": "/guestbook.php",
+          "objective": "Prove that a submitted entry persists and executes for a later viewer.",
+          "proof": "Submit once, reload in a fresh browser context, and capture execution.",
+          "focus": "Stored bugs need a second read; do not trust the immediate response.",
+          "tools": ["browser", "Burp Repeater"],
+          "checks": ["persistence", "second read", "encoding on output", "CSP"]
+        },
+        {
+          "slug": "testphp-xss-signup",
+          "title": "Reflected XSS in the signup form",
+          "category": "Cross-site scripting",
+          "difficulty": "apprentice",
+          "path": "/signup.php",
+          "objective": "Test whether validation errors reflect submitted values without encoding.",
+          "proof": "The error response reflects the payload and it executes in the browser.",
+          "focus": "Error paths often encode less carefully than success paths.",
+          "tools": ["browser", "Burp Repeater"],
+          "checks": ["error reflection", "field-by-field", "encoding"]
+        },
+        {
+          "slug": "testphp-xss-referer-header",
+          "title": "XSS through the Referer header",
+          "category": "Cross-site scripting",
+          "difficulty": "practitioner",
+          "path": "/header.php",
+          "objective": "Test whether a request header is written into the page without encoding.",
+          "proof": "A header value appears in the response and executes in the browser.",
+          "focus": "Headers are input too; test one at a time.",
+          "tools": ["Burp Repeater", "browser"],
+          "checks": ["Referer reflection", "User-Agent reflection", "encoding", "cache effects"]
+        },
+        {
+          "slug": "testphp-lfi-showimage",
+          "title": "Path traversal in the image loader",
+          "category": "Path traversal",
+          "difficulty": "practitioner",
+          "path": "/showimage.php?file=images/1.jpg",
+          "objective": "Determine whether the file parameter can leave its intended directory.",
+          "proof": "A read-only file outside the image directory, or a clear error differential, captured once.",
+          "focus": "Try one traversal depth at a time and compare with a valid file.",
+          "tools": ["Burp Repeater", "curl"],
+          "checks": ["absolute vs relative", "encoding", "null byte", "allow-list behaviour"]
+        },
+        {
+          "slug": "testphp-auth-login",
+          "title": "Authentication and session handling",
+          "category": "Authentication",
+          "difficulty": "apprentice",
+          "path": "/login.php",
+          "objective": "Map the login flow, cookie flags, and post-login authorisation checks.",
+          "proof": "A recorded flow showing whether the session is HttpOnly/Secure and what it can reach.",
+          "focus": "Use the published test account only; never guess third-party credentials.",
+          "tools": ["browser", "Burp Repeater"],
+          "checks": ["cookie flags", "logout invalidation", "role checks", "error messages"]
+        },
+        {
+          "slug": "testphp-idor-userinfo-object",
+          "title": "Object authorisation on the user profile",
+          "category": "Access control vulnerabilities",
+          "difficulty": "practitioner",
+          "path": "/userinfo.php?uname=test",
+          "objective": "Compare what an owned identity can read with what another identity can read.",
+          "proof": "A response that returns another user's fields to a session that should not see them.",
+          "focus": "Only use the lab's published accounts; do not enumerate real people.",
+          "tools": ["Burp Repeater", "browser profiles"],
+          "checks": ["object id shape", "owner vs other", "field-level exposure", "anonymous access"]
+        }
+      ]
+    },
+    {
+      "source": "local-juice-shop",
+      "title": "OWASP Juice Shop (local)",
+      "kind": "local-range",
+      "hosts": ["localhost", "127.0.0.1", "::1"],
+      "base_url": "http://localhost:3000",
+      "setup": "docker run --rm -d -p 3000:3000 --name nc3r-juiceshop bkimminich/juice-shop",
+      "note": "Run only on loopback. The container is disposable; reset it between exercises if state matters.",
+      "labs": [
+        {
+          "slug": "juice-search-dom-xss",
+          "title": "DOM XSS in the product search",
+          "category": "Cross-site scripting",
+          "difficulty": "apprentice",
+          "path": "/#/search?q=test",
+          "objective": "Trace the search value from the URL into a DOM sink and prove execution.",
+          "proof": "The payload executes in the managed browser and the source-to-sink path is recorded.",
+          "focus": "Use DevTools to find the sink before trying payloads.",
+          "tools": ["browser DevTools", "browser"],
+          "checks": ["source-to-sink", "innerHTML", "Angular sanitisation", "CSP"]
+        },
+        {
+          "slug": "juice-login-sqli",
+          "title": "Authentication bypass with SQL injection",
+          "category": "SQL injection",
+          "difficulty": "apprentice",
+          "path": "/#/login",
+          "objective": "Test whether the login query is parameterised without locking any account.",
+          "proof": "A session created with an injected email that is not a real account.",
+          "focus": "One request, one proof; do not brute force.",
+          "tools": ["Burp Repeater", "browser"],
+          "checks": ["quoted context", "boolean pair", "rate limits", "session state"]
+        },
+        {
+          "slug": "juice-basket-idor",
+          "title": "Basket object authorisation",
+          "category": "Access control vulnerabilities",
+          "difficulty": "practitioner",
+          "path": "/rest/basket/1",
+          "objective": "Use two owned accounts and compare basket reads.",
+          "proof": "Account B can read or modify account A's basket, or the reverse.",
+          "focus": "Create both accounts yourself and record object ids.",
+          "tools": ["Burp Repeater", "browser profiles"],
+          "checks": ["owner vs other", "read vs write", "anonymous", "id encoding"]
+        },
+        {
+          "slug": "juice-forged-review",
+          "title": "Stored XSS in a product review",
+          "category": "Cross-site scripting",
+          "difficulty": "practitioner",
+          "path": "/#/product/1",
+          "objective": "Submit a review and prove it executes for a later reader.",
+          "proof": "A fresh browser context loads the product page and the payload executes.",
+          "focus": "Validate persistence, not the immediate echo.",
+          "tools": ["browser", "Burp Repeater"],
+          "checks": ["persistence", "second reader", "encoding", "CSP"]
+        },
+        {
+          "slug": "juice-mass-assignment-admin",
+          "title": "Mass assignment on the user object",
+          "category": "API testing",
+          "difficulty": "practitioner",
+          "path": "/api/Users/1",
+          "objective": "Test whether a profile update accepts fields the UI never sends.",
+          "proof": "A field such as role changes for an account you own and is reflected in a later read.",
+          "focus": "Diff the UI payload against the object schema.",
+          "tools": ["Burp Repeater", "curl"],
+          "checks": ["extra fields", "role field", "server-side validation", "re-read after write"]
+        },
+        {
+          "slug": "juice-broken-access-feedback",
+          "title": "Access control on the feedback API",
+          "category": "Access control vulnerabilities",
+          "difficulty": "apprentice",
+          "path": "/api/Feedbacks",
+          "objective": "Check whether a collection endpoint leaks other users' records.",
+          "proof": "A record that belongs to another owned account appears in the collection.",
+          "focus": "Prefer read-only collection checks over destructive writes.",
+          "tools": ["curl", "Burp Repeater"],
+          "checks": ["collection scope", "pagination", "field filtering", "anonymous access"]
+        }
+      ]
+    },
+    {
+      "source": "local-dvwa",
+      "title": "Damn Vulnerable Web Application (local)",
+      "kind": "local-range",
+      "hosts": ["localhost", "127.0.0.1", "::1"],
+      "base_url": "http://localhost:8080",
+      "setup": "docker run --rm -d -p 8080:80 --name nc3r-dvwa vulnerables/web-dvwa  # then set the security level to low in the UI",
+      "note": "Loopback only. Reset the database after exercises that change state.",
+      "labs": [
+        {
+          "slug": "dvwa-sqli-low",
+          "title": "SQL injection at the low security level",
+          "category": "SQL injection",
+          "difficulty": "apprentice",
+          "path": "/vulnerabilities/sqli/?id=1&Submit=Submit",
+          "objective": "Prove injection and then compare the same request at a higher level.",
+          "proof": "A boolean pair at low, and a recorded difference at medium or high.",
+          "focus": "The level changes the defence; explain exactly what changed.",
+          "tools": ["Burp Repeater", "sqlmap"],
+          "checks": ["quote probe", "boolean pair", "UNION column count", "level comparison"]
+        },
+        {
+          "slug": "dvwa-xss-reflected-low",
+          "title": "Reflected XSS at the low security level",
+          "category": "Cross-site scripting",
+          "difficulty": "apprentice",
+          "path": "/vulnerabilities/xss_r/?name=test",
+          "objective": "Prove execution, then record which encoding stops it at medium.",
+          "proof": "Execution at low and a clearly different response at medium.",
+          "focus": "Compare defences, not only payloads.",
+          "tools": ["browser", "Burp Repeater"],
+          "checks": ["context", "encoding", "level comparison", "CSP"]
+        },
+        {
+          "slug": "dvwa-command-injection-low",
+          "title": "OS command injection at the low security level",
+          "category": "OS command injection",
+          "difficulty": "apprentice",
+          "path": "/vulnerabilities/exec/",
+          "objective": "Prove command execution with a harmless command on the local container.",
+          "proof": "The output of id or whoami from the container, not the host.",
+          "focus": "Stay inside the disposable container.",
+          "tools": ["Burp Repeater", "curl"],
+          "checks": ["separator", "blind timing", "output channel", "container boundary"]
+        },
+        {
+          "slug": "dvwa-file-inclusion-low",
+          "title": "Local file inclusion at the low security level",
+          "category": "Path traversal",
+          "difficulty": "apprentice",
+          "path": "/vulnerabilities/fi/?page=include.php",
+          "objective": "Read one local file and compare the defence at medium.",
+          "proof": "A read-only local file whose contents prove the traversal.",
+          "focus": "Read one file; never write or execute.",
+          "tools": ["Burp Repeater", "curl"],
+          "checks": ["relative traversal", "absolute path", "wrapper behaviour", "level comparison"]
+        },
+        {
+          "slug": "dvwa-csrf-low",
+          "title": "CSRF at the low security level",
+          "category": "Cross-site request forgery (CSRF)",
+          "difficulty": "apprentice",
+          "path": "/vulnerabilities/csrf/",
+          "objective": "Prove a cross-site password change and identify the missing token check.",
+          "proof": "A stored HTML page changes the password in a browser session you own.",
+          "focus": "Use your own test account and restore the password afterwards.",
+          "tools": ["browser", "Burp Repeater"],
+          "checks": ["token presence", "token binding", "SameSite", "state change"]
+        }
+      ]
+    },
+    {
+      "source": "local-webgoat",
+      "title": "OWASP WebGoat (local)",
+      "kind": "local-range",
+      "hosts": ["localhost", "127.0.0.1", "::1"],
+      "base_url": "http://localhost:8081/WebGoat",
+      "setup": "docker run --rm -d -p 8081:8080 -p 9090:9090 --name nc3r-webgoat webgoat/goatandwolf",
+      "note": "Loopback only. WebGoat records lesson completion; use it as a guided lesson, not a scanner target.",
+      "labs": [
+        {
+          "slug": "webgoat-sqli-intro",
+          "title": "SQL injection introduction",
+          "category": "SQL injection",
+          "difficulty": "apprentice",
+          "path": "/start.mvc#lesson/SqlInjection.lesson",
+          "objective": "Complete the guided injection lesson and explain the sink in your own words.",
+          "proof": "The lesson reports completion and you can name the vulnerable query.",
+          "focus": "Understand the query before using a tool.",
+          "tools": ["browser", "Burp Repeater"],
+          "checks": ["query shape", "quote context", "boolean pair", "lesson completion"]
+        },
+        {
+          "slug": "webgoat-jwt",
+          "title": "JWT lesson",
+          "category": "JWT",
+          "difficulty": "practitioner",
+          "path": "/start.mvc#lesson/JWT.lesson",
+          "objective": "Test algorithm confusion and signature validation on a token you own.",
+          "proof": "A modified token is accepted or rejected, with the server response recorded.",
+          "focus": "Decode first, then change one claim at a time.",
+          "tools": ["jwt_tool", "Burp Repeater"],
+          "checks": ["header", "signature", "alg", "claim trust"]
+        },
+        {
+          "slug": "webgoat-xxe",
+          "title": "XXE lesson",
+          "category": "XML external entity (XXE) injection",
+          "difficulty": "practitioner",
+          "path": "/start.mvc#lesson/XXE.lesson",
+          "objective": "Prove entity expansion against a local file or a controlled callback.",
+          "proof": "A local file read or a callback to your own listener.",
+          "focus": "Start with a harmless file and no external network.",
+          "tools": ["Burp Repeater", "interactsh"],
+          "checks": ["DOCTYPE", "entity", "parser response", "callback"]
+        },
+        {
+          "slug": "webgoat-deserialization",
+          "title": "Insecure deserialization lesson",
+          "category": "Insecure deserialization",
+          "difficulty": "practitioner",
+          "path": "/start.mvc#lesson/InsecureDeserialization.lesson",
+          "objective": "Identify the serialized format and prove one controlled object change.",
+          "proof": "A changed field or gadget produces a measurable server-side effect.",
+          "focus": "Read the bytes before generating a payload.",
+          "tools": ["Burp Repeater", "ysoserial"],
+          "checks": ["format", "magic bytes", "gadget availability", "controlled effect"]
+        }
+      ]
+    }
+  ]
+}

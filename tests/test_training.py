@@ -31,6 +31,41 @@ class TrainingTests(unittest.TestCase):
             self.assertTrue(lab["title"])
             self.assertIn(lab["difficulty"], {"apprentice", "practitioner", "expert"})
             self.assertTrue(lab["url"].startswith("https://portswigger.net/web-security/"))
+        self.assertGreaterEqual(
+            len({lab.get("source") for lab in self.labs}), 4)
+
+    def test_multi_source_catalogue_and_plan(self):
+        sources = {item["source"] for item in training.sources(self.index)}
+        self.assertIn("portswigger", sources)
+        self.assertIn("acunetix-testphp", sources)
+        self.assertIn("local-juice-shop", sources)
+        item = training.plan(self.index, source="acunetix-testphp", limit=3)
+        self.assertEqual(len(item["items"]), 3)
+        self.assertTrue(all(entry["source"] == "acunetix-testphp"
+                            for entry in item["items"]))
+        self.assertTrue(all(entry["objective"] for entry in item["items"]))
+        self.assertTrue(all(entry["proof"] for entry in item["items"]))
+        mixed = training.plan(self.index, limit=8)["items"]
+        self.assertEqual(len({entry["category"] for entry in mixed}), 8)
+
+    def test_pack_record_keeps_its_source(self):
+        lab = next(item for item in self.labs
+                   if item.get("source") == "local-juice-shop")
+        result = training.record(
+            self.index, lab["slug"], "solved",
+            instance_url="http://127.0.0.1:3000/#/search?q=test",
+            evidence="The payload executed in the browser on the local range.",
+            lesson="Traced the search value from the URL into an innerHTML sink "
+                   "and proved execution in the managed browser.")
+        self.assertEqual(result["progress"]["source"], "local-juice-shop")
+        lesson = self.index.get_lesson(result["progress"]["lesson_id"])
+        self.assertIn("Training exercise", lesson["title"])
+        with self.assertRaises(ValueError):
+            training.record(self.index, lab["slug"], "in_progress",
+                            instance_url="https://example.com/")
+        status = training.status(self.index, source="local-juice-shop")
+        self.assertEqual(status["solved"], 1)
+        self.assertEqual(status["source"], "local-juice-shop")
 
     def test_plan_rotates_categories_and_prefers_apprentice(self):
         result = training.plan(self.index, limit=6)

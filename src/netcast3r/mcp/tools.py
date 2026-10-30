@@ -29,7 +29,7 @@ from urllib.parse import urlencode, urljoin, urlsplit
 import httpx
 
 from .. import (authstore, browser, integrations, oast, pathdiff, pivot, quality,
-                reveng, stix, surface, tempmail, threatintel, training)
+                reveng, selfmodel, stix, surface, tempmail, threatintel, training)
 from ..scope import ScopeManager
 
 POLICIES = ("readonly", "supervised", "full")
@@ -812,11 +812,17 @@ def training_plan(ctx: ToolContext, args: dict) -> dict:
     return _call(ctx, "GET", "/api/v1/training/plan", {
         "category": args.get("category", ""),
         "difficulty": args.get("difficulty", ""),
+        "source": args.get("source", ""),
         "limit": args.get("limit", 5)})
 
 
 def training_status(ctx: ToolContext, args: dict) -> dict:
-    return _call(ctx, "GET", "/api/v1/training")
+    return _call(ctx, "GET", "/api/v1/training",
+                 {"source": args.get("source", "")})
+
+
+def training_sources(ctx: ToolContext, args: dict) -> dict:
+    return _call(ctx, "GET", "/api/v1/training/sources")
 
 
 def training_record(ctx: ToolContext, args: dict) -> dict:
@@ -829,32 +835,113 @@ def training_record(ctx: ToolContext, args: dict) -> dict:
 def training_verify(ctx: ToolContext, args: dict) -> dict:
     target = str(args.get("instance_url") or "").strip()
     host = (urlsplit(target).hostname or "").lower()
-    if not host or not (host == "web-security-academy.net"
-                        or host.endswith(".web-security-academy.net")):
-        raise ToolError("invalid_arguments",
-                        "instance_url must be a PortSwigger Academy lab host")
-    try:
-        response = http_request(ctx, {
-            "target": target, "method": "GET",
-            "scope": ["web-security-academy.net", "*.web-security-academy.net"],
-            "max_bytes": 262144, "timeout": 30, "follow_redirects": True})
-    except ToolError as exc:
-        raise ToolError("request_failed", f"lab check failed: {exc.message}")
-    body = str(response.get("body") or "")
-    solved = training.verify_signal(body)
+    if not host:
+        raise ToolError("invalid_arguments", "instance_url must be an http(s) URL")
+    academy = host == "web-security-academy.net" or host.endswith(
+        ".web-security-academy.net")
+    loopback = host in {"localhost", "127.0.0.1", "::1", "[::1]"}
+    lab = next((item for item in training.catalog()
+                if any(str(entry).lower() == host or
+                       (str(entry).lower().startswith("*.")
+                        and host.endswith(str(entry).lower()[1:]))
+                       for entry in item.get("hosts") or [])), None)
+    if not academy:
+        if lab is None:
+            raise ToolError(
+                "invalid_arguments",
+                "instance_url must belong to a bundled training pack")
+        if not loopback:
+            mission_id = str(args.get("mission_id") or "").strip()
+            scope = args.get("scope")
+            if not mission_id and not scope:
+                raise ToolError(
+                    "scope_denied",
+                    "a non-local training host needs a mission_id or explicit scope")
+    expects = args.get("expect") or []
+    if isinstance(expects, str):
+        expects = [expects]
+    if not academy and not expects:
+        raise ToolError(
+            "invalid_arguments",
+            "non-Academy verification needs the expect markers that prove the exercise")
+    profile = str(args.get("browser_profile") or "").strip()
+    verified_via = "http"
+    if profile:
+        try:
+            snap = browser.snapshot(profile, base=ctx.base)
+        except Exception as exc:  # browser failures are transport failures here
+            raise ToolError("request_failed", f"browser check failed: {exc}")
+        body = str(snap.get("text") or "") + "\n" + str(snap.get("html") or "")
+        status = 200
+        verified_via = "browser"
+    else:
+        request = {
+            "target": target, "method": "GET", "max_bytes": 262144,
+            "timeout": 30, "follow_redirects": True}
+        if academy:
+            request["scope"] = ["web-security-academy.net",
+                                "*.web-security-academy.net"]
+        elif loopback:
+            request["scope"] = [host]
+        else:
+            request["mission_id"] = str(args.get("mission_id") or "")
+            request["scope"] = args.get("scope")
+        try:
+            response = http_request(ctx, request)
+        except ToolError as exc:
+            raise ToolError("request_failed", f"lab check failed: {exc.message}")
+        body = str(response.get("body") or "")
+        status = response.get("status")
+    solved = (training.verify_signal(body) if academy
+              else training.verify_text(body, expects))
     excerpt = ""
-    if solved:
+    marker = "congratulations" if academy else (
+        str(expects[0]).strip().lower() if expects else "")
+    if solved and marker:
         lower = body.lower()
-        index = lower.find("congratulations")
-        excerpt = body[max(0, index - 100):index + 300].replace("\n", " ")
+        index = lower.find(marker)
+        if index >= 0:
+            excerpt = body[max(0, index - 100):index + 300].replace("\n", " ")
     return {
         "instance_url": target,
+        "source": (lab or {}).get("source", "portswigger"),
         "solved": solved,
-        "status": response.get("status"),
-        "evidence": excerpt or "no congratulations banner in the response",
-        "note": ("A banner is the Academy's own solved signal. Record the lab with "
-                 "training_record and attach the same evidence."),
+        "status": status,
+        "verified_via": verified_via,
+        "evidence": excerpt or "the expected marker was not found in the response",
+        "note": ("Academy labs expose their own congratulations banner. Other packs "
+                 "need explicit expect markers. Record the evidence with training_record."),
     }
+
+
+def skill_packs(ctx: ToolContext, args: dict) -> dict:
+    return _call(ctx, "GET", "/api/v1/skill-packs")
+
+
+def selfmodel_snapshot(ctx: ToolContext, args: dict) -> dict:
+    return _call(ctx, "GET", "/api/v1/selfmodel")
+
+
+def selfmodel_gaps(ctx: ToolContext, args: dict) -> dict:
+    return _call(ctx, "GET", "/api/v1/selfmodel/gaps",
+                 {"limit": args.get("limit", 6)})
+
+
+def upgrade_propose(ctx: ToolContext, args: dict) -> dict:
+    body = {key: args[key] for key in
+            ("title", "rationale", "evidence", "area", "priority") if key in args}
+    return _call(ctx, "POST", "/api/v1/upgrades", body=body)
+
+
+def upgrade_list(ctx: ToolContext, args: dict) -> dict:
+    return _call(ctx, "GET", "/api/v1/upgrades", {
+        "status": args.get("status", ""), "area": args.get("area", ""),
+        "limit": args.get("limit", 100)})
+
+
+def upgrade_update(ctx: ToolContext, args: dict) -> dict:
+    body = {key: args[key] for key in ("status", "rationale") if key in args}
+    return _call(ctx, "PATCH", f"/api/v1/upgrades/{args['proposal_id']}", body=body)
 
 
 def toolbook(ctx: ToolContext, args: dict) -> dict:
@@ -1798,8 +1885,15 @@ _HANDLERS.update({
     "hypothesis_promote": hypothesis_promote,
     "training_plan": training_plan,
     "training_status": training_status,
+    "training_sources": training_sources,
     "training_record": training_record,
     "training_verify": training_verify,
+    "skill_packs": skill_packs,
+    "selfmodel_snapshot": selfmodel_snapshot,
+    "selfmodel_gaps": selfmodel_gaps,
+    "upgrade_propose": upgrade_propose,
+    "upgrade_list": upgrade_list,
+    "upgrade_update": upgrade_update,
     "toolbook": toolbook,
     "burp_status": burp_status,
     "burp_call": burp_call,
@@ -2242,20 +2336,28 @@ TOOLS: tuple[Tool, ...] = (
                   "source": _string("source label")},
                  ["hypothesis_id", "title", "severity", "impact"]),
          "hypothesis_promote"),
-    Tool("training_plan", "Plan Academy training",
-         "Choose the next PortSwigger Academy labs. The plan rotates across categories, "
-         "prefers an in-progress lab, then apprentice before practitioner before expert. "
-         "Labs are teaching targets, not bounty targets.",
+    Tool("training_plan", "Plan training",
+         "Choose the next labs across every bundled source (PortSwigger Academy, "
+         "Acunetix testphp, local Juice Shop/DVWA/WebGoat ranges). The plan rotates "
+         "across source and category, prefers an in-progress lab, then apprentice "
+         "before practitioner before expert.",
          "low", "training",
          _schema({"category": _string("optional exact category"),
                   "difficulty": _string("apprentice, practitioner, or expert", enum=[
                       "apprentice", "practitioner", "expert"]),
+                  "source": _string("optional pack source, e.g. acunetix-testphp"),
                   "limit": _integer("how many labs", 1, 25, 5)}),
          "training_plan", read_only=True),
-    Tool("training_status", "Academy training status",
-         "Show solved and in-progress labs by category and difficulty, plus recent "
-         "records. Progress is explicit and never inferred from a page view.",
-         "low", "training", _schema({}), "training_status", read_only=True),
+    Tool("training_status", "Training status",
+         "Show solved and in-progress labs by source, category, and difficulty, plus "
+         "recent records. Progress is explicit and never inferred from a page view.",
+         "low", "training",
+         _schema({"source": _string("optional pack source")}),
+         "training_status", read_only=True),
+    Tool("training_sources", "List training sources",
+         "List every bundled training source with its lab count, solved count, hosts, "
+         "and setup command. Use it before planning a session.",
+         "low", "training", _schema({}), "training_sources", read_only=True),
     Tool("training_record", "Record a lab result",
          "Record in-progress, solved, blocked, or skipped for one lab. A solved record "
          "needs evidence and a written lesson; that lesson updates expertise.",
@@ -2266,18 +2368,68 @@ TOOLS: tuple[Tool, ...] = (
                   "lesson": _string("what you learned (required when solved)"),
                   "evidence": _string("banner text or artifact path (required when solved)"),
                   "notes": _string("private notes or next step"),
-                  "instance_url": _string("the Academy lab URL you tested"),
-                  "verified": _boolean("the solved banner was verified", False),
+                  "instance_url": _string("the lab instance URL you tested"),
+                  "verified": _boolean("the solved signal was verified", False),
                   "technique": _string("technique label"),
                   "mission_id": _string("optional training mission")},
                  ["lab_slug", "status"]), "training_record"),
-    Tool("training_verify", "Verify a solved lab",
-         "Fetch one PortSwigger Academy lab instance and check for its congratulations "
-         "banner. Only *.web-security-academy.net hosts are accepted; the host is "
-         "scope-checked before the request.",
+    Tool("training_verify", "Verify a lab result",
+         "Fetch one lab instance and check its solved signal. Academy hosts use the "
+         "congratulations banner. Other bundled packs need explicit expect markers and "
+         "a mission or scope; loopback ranges are allowed directly.",
          "low", "training",
-         _schema({"instance_url": _string("Academy lab instance URL")},
+         _schema({"instance_url": _string("lab instance URL"),
+                  "expect": _array("strings that must all appear in the response",
+                                   {"type": "string"}),
+                  "browser_profile": _string(
+                      "read the current page of this managed profile instead of HTTP"),
+                  "mission_id": _string("mission authorising a non-local host"),
+                  "scope": _array("explicit scope for a non-local host",
+                                  {"type": "string"})},
                  ["instance_url"]), "training_verify", open_world=True),
+    Tool("skill_packs", "List bundled skill packs",
+         "List the advanced playbooks installed for every agent: injection, XSS, SSRF, "
+         "auth, GraphQL, deserialization, upload, cache/smuggling, race, cloud, mobile, "
+         "reversing, LLM, recon, reporting, and business logic. Read one with skills_get.",
+         "low", "training", _schema({}), "skill_packs", read_only=True),
+    Tool("selfmodel_snapshot", "Capability self-model",
+         "Show a deterministic capability snapshot derived from stored training, skills, "
+         "expertise, findings, missions, and submissions. No model guess is included.",
+         "low", "learning", _schema({}), "selfmodel_snapshot", read_only=True),
+    Tool("selfmodel_gaps", "Capability gap analysis",
+         "Rank the weakest capability areas with one concrete next step each. Gaps come "
+         "from the stored self-model, not from a prompt.",
+         "low", "learning",
+         _schema({"limit": _integer("how many gaps", 1, 30, 6)}),
+         "selfmodel_gaps", read_only=True),
+    Tool("upgrade_propose", "Propose a framework upgrade",
+         "Write a human-gated improvement proposal with evidence. Nothing is applied "
+         "automatically; an operator decides whether to implement it.",
+         "medium", "learning",
+         _schema({"title": _string("short improvement title"),
+                  "rationale": _string("why it matters, at least 20 characters"),
+                  "evidence": _string("record, path, or observed gap that motivates it"),
+                  "area": _string("capability area or general"),
+                  "priority": _string("priority", enum=[
+                      "low", "medium", "high", "critical"])},
+                 ["title", "rationale", "evidence"]), "upgrade_propose"),
+    Tool("upgrade_list", "List upgrade proposals",
+         "List framework improvement proposals by status and area, highest priority "
+         "first.",
+         "low", "learning",
+         _schema({"status": _string("proposed, accepted, rejected, or implemented"),
+                  "area": _string("capability area"),
+                  "limit": _integer("how many", 1, 500, 100)}),
+         "upgrade_list", read_only=True),
+    Tool("upgrade_update", "Decide on an upgrade proposal",
+         "Move a proposal between proposed, accepted, rejected, and implemented. This "
+         "records a human decision; it does not edit code.",
+         "medium", "learning",
+         _schema({"proposal_id": _string("upgrade proposal id"),
+                  "status": _string("new status", enum=[
+                      "proposed", "accepted", "rejected", "implemented"]),
+                  "rationale": _string("decision note")},
+                 ["proposal_id"]), "upgrade_update"),
     Tool("toolbook", "Search the toolbook",
          "Look up a Linux/web security tool: what it does, when to use it, one focused "
          "command, and the scope or rate-limit caution. Pass name for one entry.",

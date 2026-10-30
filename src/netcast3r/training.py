@@ -1,9 +1,15 @@
-"""Training mode: PortSwigger Academy labs, progress, and tool knowledge.
+"""Training mode: multi-source labs, progress, and tool knowledge.
 
 Training is deliberately separate from hunting. A lab is a known-vulnerable
-teaching target; a bug bounty target is not. The catalogue is a public snapshot
-of the Academy lab index, and progress is only recorded from an explicit
-operator/agent result with evidence and a written lesson.
+teaching target; a bug bounty target is not. The catalogue bundles three kinds
+of source:
+
+* PortSwigger Web Security Academy labs (a public snapshot of the lab index);
+* the Acunetix testphp.vulnweb.com public training site;
+* local ranges (Juice Shop, DVWA, WebGoat) started on loopback by the operator.
+
+Progress is only recorded from an explicit operator/agent result with evidence
+and a written lesson. A catalogue entry is never a finding.
 """
 
 from __future__ import annotations
@@ -11,9 +17,14 @@ from __future__ import annotations
 import json
 from functools import lru_cache
 from pathlib import Path
+from urllib.parse import urlsplit
 
 CATALOG_PATH = Path(__file__).with_name("data") / "portswigger_labs.json"
+PACKS_PATH = Path(__file__).with_name("data") / "training_packs.json"
 DIFFICULTY_ORDER = {"apprentice": 0, "practitioner": 1, "expert": 2, "unknown": 3}
+
+PORTSWIGGER_HOSTS = ["portswigger.net", "*.portswigger.net",
+                     "web-security-academy.net", "*.web-security-academy.net"]
 
 CATEGORY_TAGS = {
     "SQL injection": ["sqli", "database"],
@@ -115,12 +126,68 @@ def _guide_group(category: str) -> str:
 
 
 @lru_cache(maxsize=1)
+def packs() -> tuple[dict, ...]:
+    """Bundled non-Academy packs, flattened into lab records."""
+    try:
+        raw = json.loads(PACKS_PATH.read_text())
+    except (OSError, ValueError):
+        return ()
+    items: list[dict] = []
+    for pack in raw.get("packs", []):
+        if not isinstance(pack, dict):
+            continue
+        source = str(pack.get("source") or "").strip()
+        if not source:
+            continue
+        base_url = str(pack.get("base_url") or "").rstrip("/")
+        for lab in pack.get("labs", []):
+            if not isinstance(lab, dict) or not lab.get("slug") or not lab.get("title"):
+                continue
+            item = dict(lab)
+            item["source"] = source
+            item["source_title"] = str(pack.get("title") or source)
+            item["kind"] = str(pack.get("kind") or "lab")
+            item["hosts"] = list(lab.get("hosts") or pack.get("hosts") or [])
+            item["setup"] = str(lab.get("setup") or pack.get("setup") or "")
+            item["note"] = str(lab.get("note") or pack.get("note") or "")
+            item["base_url"] = str(lab.get("base_url") or base_url)
+            if not item.get("url"):
+                path = str(lab.get("path") or "").lstrip("/")
+                item["url"] = f"{item['base_url']}/{path}" if path else item["base_url"]
+            items.append(item)
+    return tuple(items)
+
+
+@lru_cache(maxsize=1)
 def catalog() -> tuple[dict, ...]:
+    """The merged catalogue, Academy labs first, then bundled packs."""
     try:
         raw = json.loads(CATALOG_PATH.read_text())
     except (OSError, ValueError):
-        return ()
-    return tuple(item for item in raw if item.get("slug") and item.get("title"))
+        raw = []
+    academy = []
+    for item in raw:
+        if not item.get("slug") or not item.get("title"):
+            continue
+        lab = dict(item)
+        lab["source"] = "portswigger"
+        lab["source_title"] = "PortSwigger Web Security Academy"
+        lab["kind"] = "academy"
+        lab["hosts"] = list(PORTSWIGGER_HOSTS)
+        lab["setup"] = ("Launch the lab from its Academy page while signed in; the "
+                        "instance host is a fresh *.web-security-academy.net subdomain.")
+        lab["objective"] = "Solve the objective stated on the lab page."
+        lab["proof"] = ("The Academy congratulations banner, plus the request/response "
+                        "pair that produced it.")
+        academy.append(lab)
+    combined: list[dict] = []
+    seen: set[str] = set()
+    for lab in [*academy, *packs()]:
+        if lab["slug"] in seen:
+            continue
+        seen.add(lab["slug"])
+        combined.append(lab)
+    return tuple(combined)
 
 
 def find_lab(slug: str) -> dict | None:
@@ -128,6 +195,47 @@ def find_lab(slug: str) -> dict | None:
         if lab["slug"] == slug:
             return lab
     return None
+
+
+def sources(index=None) -> list[dict]:
+    """Every bundled source with its size and, when an index is supplied, progress."""
+    progress = _progress_map(index) if index is not None else {}
+    grouped: dict[str, dict] = {}
+    for lab in catalog():
+        source = lab.get("source") or "portswigger"
+        entry = grouped.setdefault(source, {
+            "source": source,
+            "title": lab.get("source_title") or source,
+            "kind": lab.get("kind") or "lab",
+            "hosts": list(lab.get("hosts") or []),
+            "setup": lab.get("setup") or "",
+            "total": 0,
+            "solved": 0,
+            "in_progress": 0,
+        })
+        entry["total"] += 1
+        state = (progress.get(lab["slug"]) or {}).get("status", "new")
+        if state == "solved":
+            entry["solved"] += 1
+        elif state == "in_progress":
+            entry["in_progress"] += 1
+    return sorted(grouped.values(), key=lambda row: (row["kind"] != "academy",
+                                                     row["title"].lower()))
+
+
+def _host_allowed(lab: dict, url: str) -> bool:
+    """True when a recorded URL belongs to one of the lab's declared hosts."""
+    host = (urlsplit(url).hostname or "").lower()
+    if not host:
+        return False
+    for entry in lab.get("hosts") or []:
+        allowed = str(entry).lower()
+        if allowed.startswith("*."):
+            if host.endswith(allowed[1:]):
+                return True
+        elif host == allowed:
+            return True
+    return False
 
 
 def _progress_map(index) -> dict[str, dict]:
@@ -141,21 +249,30 @@ def _lab_payload(lab: dict, guide: dict, progress: dict | None) -> dict:
         "category": lab["category"],
         "difficulty": lab.get("difficulty", "unknown"),
         "url": lab["url"],
+        "source": lab.get("source", "portswigger"),
+        "source_title": lab.get("source_title", "PortSwigger Web Security Academy"),
+        "kind": lab.get("kind", "academy"),
+        "hosts": list(lab.get("hosts") or []),
+        "setup": lab.get("setup", ""),
+        "objective": lab.get("objective", ""),
+        "proof": lab.get("proof", ""),
         "status": (progress or {}).get("status", "new"),
         "attempts": (progress or {}).get("attempts", 0),
-        "focus": guide["focus"],
-        "tools": guide["tools"],
-        "checks": guide["checks"],
+        "focus": lab.get("focus") or guide["focus"],
+        "tools": lab.get("tools") or guide["tools"],
+        "checks": lab.get("checks") or guide["checks"],
         "tags": CATEGORY_TAGS.get(lab["category"], []),
     }
 
 
-def plan(index, category: str = "", difficulty: str = "", limit: int = 5) -> dict:
+def plan(index, category: str = "", difficulty: str = "", limit: int = 5,
+         source: str = "") -> dict:
     """Pick the next labs.
 
     The default plan is breadth-first: rotate across categories, prefer an
     in-progress lab, then apprentice before practitioner before expert. This
-    builds transferable technique instead of grinding one category.
+    builds transferable technique instead of grinding one category. Pass
+    ``source`` to stay inside one pack.
     """
     labs = catalog()
     if not labs:
@@ -167,24 +284,27 @@ def plan(index, category: str = "", difficulty: str = "", limit: int = 5) -> dic
         difficulty = difficulty.strip().lower()
         if difficulty not in DIFFICULTY_ORDER:
             raise ValueError("difficulty must be apprentice, practitioner, or expert")
+    source = (source or "").strip().lower()
     filtered = [lab for lab in labs
                 if (not category or lab["category"].lower() == category.strip().lower())
-                and (not difficulty or lab.get("difficulty") == difficulty)]
+                and (not difficulty or lab.get("difficulty") == difficulty)
+                and (not source or (lab.get("source") or "").lower() == source)]
     if not filtered:
         return {"items": [], "total": 0,
-                "note": "No lab matches that category or difficulty."}
+                "note": "No lab matches that category, difficulty, or source."}
 
-    by_category: dict[str, list[dict]] = {}
+    by_category: dict[tuple[str, str], list[dict]] = {}
     for lab in filtered:
-        by_category.setdefault(lab["category"], []).append(lab)
+        key = (lab.get("source") or "portswigger", lab["category"])
+        by_category.setdefault(key, []).append(lab)
     for items in by_category.values():
         items.sort(key=lambda lab: (DIFFICULTY_ORDER.get(lab.get("difficulty"), 9),
                                     lab["title"].lower()))
 
-    # Categories with less progress come first; within each, the easiest
-    # unsolved lab is next. An in-progress lab always wins its category slot.
+    # Source/category pairs with less progress come first; within each, the
+    # easiest unsolved lab is next. An in-progress lab wins its slot.
     ranked = []
-    for name, items in by_category.items():
+    for key, items in by_category.items():
         solved = sum(1 for lab in items
                      if (progress.get(lab["slug"]) or {}).get("status") == "solved")
         in_progress = [lab for lab in items
@@ -193,53 +313,77 @@ def plan(index, category: str = "", difficulty: str = "", limit: int = 5) -> dic
                     if (progress.get(lab["slug"]) or {}).get("status") != "solved"]
         next_lab = (in_progress or unsolved or [None])[0]
         if next_lab:
-            ranked.append((solved, len(items), name, next_lab))
-    ranked.sort(key=lambda row: (row[0], row[1], row[2]))
+            ranked.append((solved, len(items), key[0], key[1], next_lab))
+    ranked.sort(key=lambda row: (row[0], row[1], row[2], row[3]))
 
     items = []
     used = set()
-    while len(items) < limit and ranked:
-        for solved, total, name, lab in list(ranked):
+    used_categories: set[str] = set()
+    deferred = []
+    while len(items) < limit and (ranked or deferred):
+        progressed = False
+        for solved, total, source_name, name, lab in list(ranked):
             if len(items) >= limit:
                 break
             if lab["slug"] in used:
-                ranked.remove((solved, total, name, lab))
+                ranked.remove((solved, total, source_name, name, lab))
+                continue
+            if name in used_categories and len(ranked) > 1:
+                # Keep the plan breadth-first: do not fill it with one category.
+                deferred.append((solved, total, source_name, name, lab))
+                ranked.remove((solved, total, source_name, name, lab))
                 continue
             used.add(lab["slug"])
+            used_categories.add(name)
+            progressed = True
             guide = GUIDES[_guide_group(name)]
             items.append(_lab_payload(lab, guide, progress.get(lab["slug"])))
-            # Advance this category to its next unsolved lab.
-            unsolved = [candidate for candidate in by_category[name]
+            # Advance this source/category pair to its next unsolved lab.
+            unsolved = [candidate for candidate in by_category[(source_name, name)]
                         if candidate["slug"] not in used
                         and (progress.get(candidate["slug"]) or {}).get("status") != "solved"]
-            ranked.remove((solved, total, name, lab))
+            ranked.remove((solved, total, source_name, name, lab))
             if unsolved:
-                ranked.append((solved, total, name, unsolved[0]))
-            ranked.sort(key=lambda row: (row[0], row[1], row[2]))
+                ranked.append((solved, total, source_name, name, unsolved[0]))
+            ranked.sort(key=lambda row: (row[0], row[1], row[2], row[3]))
+        if not progressed:
+            # Every remaining category is already represented, or only deferred
+            # items are left. Fill the rest without the breadth constraint.
+            ranked, deferred = deferred, []
+            if not ranked:
+                break
     return {
         "items": items,
         "total": len(items),
         "catalogue": len(labs),
-        "solved": sum(1 for lab in labs
+        "source": source,
+        "solved": sum(1 for lab in filtered
                       if (progress.get(lab["slug"]) or {}).get("status") == "solved"),
-        "note": ("These are teaching targets. Use a dedicated mission with the "
-                 "Academy host in scope; do not reuse a bounty mission."),
+        "note": ("These are teaching targets. Use a dedicated training mission with "
+                 "the host in scope; do not reuse a bounty mission. Local ranges are "
+                 "loopback only and the public testphp host is a published lab."),
     }
 
 
-def status(index) -> dict:
+def status(index, source: str = "") -> dict:
     labs = catalog()
     progress = _progress_map(index)
+    source = (source or "").strip().lower()
+    scoped = [lab for lab in labs
+              if not source or (lab.get("source") or "").lower() == source]
     by_category: dict[str, dict] = {}
     by_difficulty: dict[str, dict] = {}
+    by_source: dict[str, dict] = {}
     solved = 0
-    for lab in labs:
+    for lab in scoped:
         name = lab["category"]
         diff = lab.get("difficulty", "unknown")
+        source_name = lab.get("source") or "portswigger"
         state = (progress.get(lab["slug"]) or {}).get("status", "new")
         if state == "solved":
             solved += 1
-        for bucket, key in ((by_category, name), (by_difficulty, diff)):
+        for bucket, key in ((by_category, name), (by_difficulty, diff),
+                            (by_source, source_name)):
             entry = bucket.setdefault(key, {"total": 0, "solved": 0, "in_progress": 0})
             entry["total"] += 1
             if state == "solved":
@@ -247,11 +391,14 @@ def status(index) -> dict:
             elif state == "in_progress":
                 entry["in_progress"] += 1
     return {
-        "catalogue": len(labs),
+        "catalogue": len(scoped),
+        "source": source,
         "solved": solved,
-        "coverage": round(solved / len(labs), 4) if labs else 0.0,
+        "coverage": round(solved / len(scoped), 4) if scoped else 0.0,
         "by_category": dict(sorted(by_category.items())),
         "by_difficulty": dict(sorted(by_difficulty.items())),
+        "by_source": dict(sorted(by_source.items())),
+        "sources": sources(index),
         "recent": index.list_training(limit=10),
         "note": ("Progress is explicit. A lab is solved only after a recorded result "
                  "with evidence and a written lesson."),
@@ -272,17 +419,23 @@ def record(index, slug: str, status: str, lesson: str = "", evidence: str = "",
             raise ValueError("a solved lab needs evidence (banner text or artifact path)")
         if len((lesson or "").strip()) < 20:
             raise ValueError("a solved lab needs a written lesson of at least 20 characters")
+    if instance_url and not _host_allowed(lab, instance_url):
+        allowed = ", ".join(str(host) for host in lab.get("hosts") or [])
+        raise ValueError(f"instance_url must use one of the lab hosts: {allowed or 'none'}")
+    source = lab.get("source") or "portswigger"
+    label = "PortSwigger lab" if source == "portswigger" else "Training exercise"
     lesson_id = ""
     if status in {"solved", "blocked"} and lesson:
         outcome = "success" if status == "solved" else "blocked"
         created = index.add_lesson(
-            title=f"PortSwigger lab {status}: {lab['title']}",
+            title=f"{label} {status}: {lab['title']}",
             lesson=lesson,
             technique=technique or lab["category"],
-            context=f"PortSwigger Academy {lab['category']} ({lab.get('difficulty')})",
+            context=f"{lab.get('source_title') or source} / {lab['category']} "
+                    f"({lab.get('difficulty')})",
             outcome=outcome,
             next_step=notes,
-            tags=CATEGORY_TAGS.get(lab["category"], []),
+            tags=[*CATEGORY_TAGS.get(lab["category"], []), source],
             mission_id=mission_id,
             source=f"training:{lab['slug']}",
             confidence=0.8 if status == "solved" else 0.5,
@@ -291,7 +444,7 @@ def record(index, slug: str, status: str, lesson: str = "", evidence: str = "",
     row = index.record_training(
         slug, lab["category"], lab.get("difficulty", "unknown"), status,
         instance_url=instance_url, evidence=evidence, notes=notes,
-        verified=verified, lesson_id=lesson_id)
+        verified=verified, lesson_id=lesson_id, source=source)
     return {"lab": lab, "progress": row,
             "note": ("Skipped and in-progress records do not create a lesson. "
                      "A solved record requires both evidence and a lesson.")}
@@ -301,6 +454,15 @@ def verify_signal(body: str) -> bool:
     """PortSwigger prints a congratulations banner on a solved lab."""
     text = (body or "").lower()
     return ("congratulations" in text and "solved" in text) or "lab solved" in text
+
+
+def verify_text(body: str, expect: list | None = None) -> bool:
+    """Generic live check: every expected marker must appear in the response."""
+    text = (body or "").lower()
+    markers = [str(item).strip().lower() for item in (expect or []) if str(item).strip()]
+    if not markers:
+        return False
+    return all(marker in text for marker in markers)
 
 
 TOOLBOOK = [

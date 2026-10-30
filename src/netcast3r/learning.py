@@ -18,8 +18,12 @@ digest) that an agent can load before planning.
 
 from __future__ import annotations
 
+import json
 import re
+from pathlib import Path
 from urllib.parse import urlsplit
+
+from . import selfmodel
 
 SCOPE_HINTS = ("scope", "out of scope", "scope_denied", "target is outside")
 APPROVAL_HINTS = ("approval", "confirm", "policy_denied", "readonly")
@@ -271,6 +275,14 @@ def suggest_next(index, mission_id: str, limit: int = 8) -> dict:
             add(action[0], f"{action[1]} ({item['exposures']} exposures, "
                            f"{item['confidence']:.0%} success)",
                 action[2], action[3], "medium")
+    capability = {}
+    try:
+        capability = selfmodel.gaps(index, limit=3)
+        for gap in capability.get("items", [])[:2]:
+            add(gap["action"], f"capability gap: {gap['label']} ({gap['gap']})",
+                gap["tool"], gap["args"], "low")
+    except Exception:  # noqa: BLE001 - a gap read must not break planning
+        capability = {}
     if not actions:
         add("Re-read the latest run output and pick one unexplained response",
             "the obvious paths are covered; deepen the evidence instead of widening",
@@ -278,6 +290,8 @@ def suggest_next(index, mission_id: str, limit: int = 8) -> dict:
     return {"mission_id": mission_id, "target": target,
             "findings": len(findings), "lessons": len(lessons),
             "expertise": expertise[:5],
+            "capability": {"overall": capability.get("overall", 0),
+                           "gaps": len(capability.get("items", []))},
             "actions": actions[:limit],
             "note": ("Suggestions are deterministic and based on stored records; they are "
                      "not a model's guess. Confirm scope before running one.")}
@@ -378,8 +392,35 @@ Finish with a read-only proof and a cleanup note for every object you created.
 ]
 
 
+SKILL_PACKS_PATH = Path(__file__).with_name("data") / "skill_packs.json"
+
+
+def bundled_skill_packs() -> list[dict]:
+    """The bundled advanced playbooks, loaded from data/skill_packs.json."""
+    try:
+        raw = json.loads(SKILL_PACKS_PATH.read_text())
+    except (OSError, ValueError):
+        return []
+    items = []
+    for pack in raw.get("packs", []):
+        if not isinstance(pack, dict):
+            continue
+        name = str(pack.get("name") or "").strip()
+        body = str(pack.get("body") or "").strip()
+        if not name or not body:
+            continue
+        items.append({
+            "name": name,
+            "title": str(pack.get("title") or name.replace("-", " ").title()),
+            "description": str(pack.get("description") or ""),
+            "tags": [str(tag) for tag in (pack.get("tags") or [])],
+            "body": body,
+        })
+    return items
+
+
 def seed_builtin_skills(index) -> int:
-    """Install the small built-in skill set once. Return how many were added."""
+    """Install the built-in and packaged skill sets once. Return how many were added."""
     added = 0
     for skill in BUILTIN_SKILLS:
         if index.get_skill(skill["name"]):
@@ -389,6 +430,17 @@ def seed_builtin_skills(index) -> int:
                 name=skill["name"], body=skill["body"], title=skill["title"],
                 description=skill["description"], tags=skill["tags"],
                 source="netcast3r:builtin")
+            added += 1
+        except ValueError:
+            continue
+    for pack in bundled_skill_packs():
+        if index.get_skill(pack["name"]):
+            continue
+        try:
+            index.upsert_skill(
+                name=pack["name"], body=pack["body"], title=pack["title"],
+                description=pack["description"], tags=pack["tags"],
+                source="netcast3r:pack")
             added += 1
         except ValueError:
             continue
