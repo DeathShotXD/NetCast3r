@@ -708,6 +708,18 @@ class Server:
         def research_sources(ctx):
             return _json(research.sources())
 
+        @add("GET", r"/api/v1/hunt-plan")
+        def hunt_plan_route(ctx):
+            signals = [item for item in
+                       str(ctx.query.get("signals", "")).split(",") if item.strip()]
+            try:
+                return _json(research.hunt_plan(
+                    self.index, mission_id=str(ctx.query.get("mission_id", "")),
+                    tech=ctx.query.get("tech", ""), signals=signals,
+                    limit=_int_or(ctx.query.get("limit"), 6)))
+            except ValueError as exc:
+                return _problem(400, str(exc))
+
         @add("POST", r"/api/v1/research/ingest")
         def research_ingest(ctx):
             body = ctx.json()

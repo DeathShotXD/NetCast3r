@@ -943,6 +943,13 @@ def research_sources(ctx: ToolContext, args: dict) -> dict:
     return _call(ctx, "GET", "/api/v1/research/sources")
 
 
+def hunt_plan(ctx: ToolContext, args: dict) -> dict:
+    return _call(ctx, "GET", "/api/v1/hunt-plan", {
+        "mission_id": args["mission_id"], "tech": args.get("tech", ""),
+        "signals": ",".join(str(item) for item in (args.get("signals") or [])),
+        "limit": args.get("limit", 6)})
+
+
 def research_ingest(ctx: ToolContext, args: dict) -> dict:
     body = {key: args[key] for key in ("url", "title", "notes", "tags")
             if key in args}
@@ -1924,6 +1931,7 @@ _HANDLERS.update({
     "technique_plan": technique_plan,
     "research_sources": research_sources,
     "research_ingest": research_ingest,
+    "hunt_plan": hunt_plan,
     "selfmodel_snapshot": selfmodel_snapshot,
     "selfmodel_gaps": selfmodel_gaps,
     "upgrade_propose": upgrade_propose,
@@ -2464,6 +2472,16 @@ TOOLS: tuple[Tool, ...] = (
                   "notes": _string("distilled technique, at least 80 characters"),
                   "tags": _array("tags", {"type": "string"})},
                  ["url", "title", "notes"]), "research_ingest"),
+    Tool("hunt_plan", "Build a mission hunt plan",
+         "Combine a mission's target with the technique library into phases: scope, "
+         "baseline, identity, technique tests, validation, and evidence. Read-only; "
+         "it proposes tests and does not authorise a target.",
+         "low", "research",
+         _schema({"mission_id": _string("mission id"),
+                  "tech": _string("framework or stack"),
+                  "signals": _array("observed signals", {"type": "string"}),
+                  "limit": _integer("how many techniques", 1, 30, 6)},
+                 ["mission_id"]), "hunt_plan", read_only=True),
     Tool("selfmodel_snapshot", "Capability self-model",
          "Show a deterministic capability snapshot derived from stored training, skills, "
          "expertise, findings, missions, and submissions. No model guess is included.",

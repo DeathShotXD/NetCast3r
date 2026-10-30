@@ -57,6 +57,19 @@ class ResearchLibraryTests(unittest.TestCase):
         self.assertEqual(len(empty["items"]), 3)
         self.assertGreaterEqual(empty["items"][0]["score"], empty["items"][1]["score"])
 
+    def test_hunt_plan_combines_mission_and_techniques(self):
+        mission = self.index.create_mission(
+            "Example hunt", "https://app.example.com", scope=["app.example.com"])
+        plan = research.hunt_plan(self.index, mission["id"], tech="nextjs", limit=4)
+        self.assertEqual(plan["mission_id"], mission["id"])
+        self.assertEqual(plan["phases"][0]["phase"], "scope")
+        self.assertEqual(plan["techniques"][0]["id"], "nextjs-cache-poison")
+        phases = [item["phase"] for item in plan["phases"]]
+        self.assertIn("technique-tests", phases)
+        self.assertIn("evidence", phases)
+        with self.assertRaises(ValueError):
+            research.hunt_plan(self.index, "msn_missing")
+
     def test_ingest_stores_a_sourced_skill(self):
         with self.assertRaises(ValueError):
             research.ingest(self.index, "not-a-url", "A useful title", "x" * 100)

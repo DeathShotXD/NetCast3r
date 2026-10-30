@@ -43,6 +43,10 @@ Notable changes to NetCast3r, newest first.
   AI tool exfiltration.
 - Three further bundled skill packs summarize the modern web, client, and
   identity research corpora for agents that prefer prose playbooks.
+- `hunt_plan` combines a mission target and fingerprint with the technique
+  library into six phases: scope, baseline, identity, technique tests,
+  validation, and evidence. It is read-only and does not authorise a target.
+- The self-model now reports technique coverage per capability dimension.
 - `test_case_run` executes up to 12 ordered, scope-checked requests with
   explicit status, body, and header assertions, replacing broad scanners in
   the active path.

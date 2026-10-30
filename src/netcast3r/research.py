@@ -180,6 +180,59 @@ def plan(index=None, target: str = "", tech: str = "", signals: list | None = No
     }
 
 
+def hunt_plan(index, mission_id: str, tech: str = "", signals: list | None = None,
+              limit: int = 6) -> dict:
+    """Build a phase plan for one mission from the technique library."""
+    mission = index.get_mission(mission_id)
+    if not mission:
+        raise ValueError("mission not found")
+    target = str(mission.get("target") or "")
+    ranked = plan(index, target=target, tech=tech, signals=signals, limit=limit)
+    items = ranked["items"]
+    phases = [
+        {"phase": "scope", "goal": "Confirm the mission scope and exclusions",
+         "tools": ["scope_check"], "stop": "out-of-scope rules win"},
+        {"phase": "baseline", "goal": "Fingerprint the target and save a clean baseline",
+         "tools": ["http_probe", "http_request"],
+         "stop": "no active test before the baseline is stored"},
+        {"phase": "identity", "goal": "Prepare two owned accounts and a named auth profile",
+         "tools": ["browser_open", "auth_profile_set"],
+         "stop": "never test with a third party's account"},
+    ]
+    if items:
+        steps = []
+        for item in items[:4]:
+            steps.append({
+                "technique": item["id"],
+                "title": item["title"],
+                "why": item["why"],
+                "first_test": item["steps"][0] if item["steps"] else "",
+                "proof": item["proof"],
+                "sources": item["sources"],
+            })
+        phases.append({"phase": "technique-tests", "goal": "Run the smallest test for each match",
+                       "tools": ["technique_plan", "http_request", "browser"],
+                       "tests": steps,
+                       "stop": "stop at the first real effect; do not widen"})
+    phases.extend([
+        {"phase": "validate", "goal": "Turn a signal into a supported hypothesis",
+         "tools": ["hypothesis_create", "hypothesis_test"],
+         "stop": "a signal is not a finding"},
+        {"phase": "evidence", "goal": "Capture the minimum reproducible proof and redact secrets",
+         "tools": ["finding_artifact_add", "report_quality"],
+         "stop": "no PII, cookies, or live secrets in the report"},
+    ])
+    return {
+        "mission_id": mission_id,
+        "target": target,
+        "phases": phases,
+        "techniques": items,
+        "catalogue": ranked["catalogue"],
+        "note": ("The plan is deterministic and read-only. It proposes tests from "
+                 "public research; it does not authorise a target or prove a bug."),
+    }
+
+
 def sources() -> dict:
     by_class: dict[str, int] = {}
     by_rarity: dict[str, int] = {}

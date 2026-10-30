@@ -414,6 +414,7 @@ stored, so experience cannot be invented:
 | `technique_search` / `technique_plan` | low | Rank a 38-entry public-research technique library against a target |
 | `research_sources` | low | Coverage of the technique library by class and rarity |
 | `research_ingest` | medium | Store a sourced write-up digest as an active skill |
+| `hunt_plan` | low | Turn a mission and its fingerprint into scope, baseline, identity, technique, validation, and evidence phases |
 
 The mission agent now plans a `recall` task before the active probe. It loads
 lessons and skills that match the target, then writes one deterministic lesson
