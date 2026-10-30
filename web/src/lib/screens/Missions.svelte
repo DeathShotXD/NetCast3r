@@ -155,6 +155,20 @@
     }
   }
 
+  async function runSolve() {
+    if (!selected) return;
+    busy = 'solve';
+    try {
+      const run = await api.startMissionSolve(selected.id, { max_steps: 3 });
+      store.toast('ok', 'bounded model loop started');
+      store.watch(run.id);
+    } catch (exc) {
+      store.fail(exc instanceof Error ? exc.message : 'could not start the model loop');
+    } finally {
+      busy = '';
+    }
+  }
+
   async function runHunt() {
     if (!selected) return;
     busy = 'hunt';
@@ -526,6 +540,10 @@
                   <button class="obs-btn obs-btn-primary" type="button" disabled={busy === 'hunt'} onclick={() => void runHunt()}>
                     <Icon name="crosshair" size={13} />
                     {busy === 'hunt' ? 'Hunting...' : 'Hunt now'}
+                  </button>
+                  <button class="obs-btn" type="button" disabled={busy === 'solve'} onclick={() => void runSolve()}>
+                    <Icon name="bot" size={13} />
+                    {busy === 'solve' ? 'Solving...' : 'Model loop'}
                   </button>
                   <button class="obs-btn" type="button" disabled={busy === 'launch'} onclick={() => void launch()}>
                     <Icon name="activity" size={13} />

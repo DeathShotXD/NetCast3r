@@ -493,6 +493,13 @@ def mission_hunt(ctx: ToolContext, args: dict) -> dict:
     return _call(ctx, "POST", f"/api/v1/missions/{args['mission_id']}/hunt", body={})
 
 
+def model_solve(ctx: ToolContext, args: dict) -> dict:
+    body = {key: args[key] for key in ("max_steps", "max_seconds", "goal")
+            if key in args}
+    return _call(ctx, "POST", f"/api/v1/missions/{args['mission_id']}/solve",
+                 body=body)
+
+
 def agent_start(ctx: ToolContext, args: dict) -> dict:
     mission = _mission(ctx, args["mission_id"])
     target = str(mission.get("target") or "").strip()
@@ -2587,6 +2594,7 @@ _HANDLERS.update({
     "mission_start_run": mission_start_run,
     "agent_status": agent_status,
     "mission_hunt": mission_hunt,
+    "model_solve": model_solve,
     "agent_start": agent_start,
     "agent_pause": agent_pause,
     "agent_resume": agent_resume,
@@ -2804,6 +2812,17 @@ TOOLS: tuple[Tool, ...] = (
          "low", "missions",
          _schema({"mission_id": _string("mission id")}, ["mission_id"]),
          "agent_status", read_only=True),
+    Tool("model_solve", "Run a bounded model action loop",
+         "Let a configured (including free) model choose up to max_steps typed tool "
+         "calls for a mission. Only low and medium read and probe tools are on the "
+         "allow-list; the loop cannot spend an approval or create a finding. It "
+         "runs as a live run with Reason/Act/Observe/Decide stages.",
+         "medium", "missions",
+         _schema({"mission_id": _string("mission id"),
+                  "max_steps": _integer("model steps", 1, 6, 3),
+                  "max_seconds": _integer("wall-clock cap", 10, 600, 240),
+                  "goal": _string("optional focus for the loop")},
+                 ["mission_id"]), "model_solve", open_world=True),
     Tool("mission_hunt", "Start a standalone hunt",
          "Run a deterministic read-only hunt for a mission: scope, fingerprint, "
          "safe surface paths, technique and chain ranking, and explicit "

@@ -172,10 +172,23 @@ silently ignored.
 | `missions_attach_run` | medium | Link an existing run |
 | `mission_start_run` | medium | Start a scoped scan and link it |
 | `mission_hunt` | medium | Standalone hunt: scope, fingerprint, surface, research, hypotheses |
+| `model_solve` | medium | Bounded model action loop over allow-listed tools |
 | `agent_status` | low | Read the runtime plan, tasks, budget, and model calls |
 | `agent_start` | medium | Plan and run the bounded mission agent |
 | `agent_pause` / `agent_resume` / `agent_stop` | low | Control a live run |
 | `missions_delete` | high | Delete mission, links, approvals |
+
+A mission has three ways to move. `mission_start_run` starts the crawler.
+`mission_hunt` runs a deterministic read-only pass: scope, fingerprint, safe
+surface paths, path-encoding comparison, technique and chain ranking, then
+explicit hypotheses. `model_solve` runs the bounded model action loop: one
+JSON action per step from a small allow-list (`http_probe`, `http_request`,
+`http_path_diff`, `http_upload`, `oracle_extract`, the research planners, and
+`hypothesis_create`), a step and wall-clock budget, and the real result of
+every call fed back. The loop cannot spend an approval, call a high-risk tool,
+or create a finding; a status the model returns is a lead, not evidence. It
+appears in Live Runs as Reason, Act, Observe, Decide. All three refuse a
+training mission; labs use a recipe.
 
 ### Runs and scans
 

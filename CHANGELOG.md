@@ -6,6 +6,13 @@ Notable changes to NetCast3r, newest first.
 
 ### Added
 
+- Bounded model action loop: `model_solve` and
+  `POST /api/v1/missions/{id}/solve` let a configured (including free) model
+  choose up to six typed tool calls through an allow-list of low and medium
+  read/probe tools. It has a step and wall-clock budget, refuses any other
+  tool, strips approval fields from model arguments, records every step, and
+  creates no finding. Live Runs shows Reason, Act, Observe, Decide, and a
+  mission gets a **Model loop** action.
 - Source auditor: `codeaudit_scan` and `codeaudit_rules` (also
   `GET /api/v1/codeaudit`). It walks Python, JavaScript, TypeScript, Svelte,
   and other source trees for defects with a known consequence: swallowed

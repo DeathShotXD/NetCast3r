@@ -29,6 +29,12 @@
     { key: 'research', label: 'Research', detail: 'Rank techniques and chains' },
     { key: 'hypotheses', label: 'Hypotheses', detail: 'Record falsifiable leads' }
   ];
+  const SOLVE_STAGES = [
+    { key: 'reason', label: 'Reason', detail: 'The model proposes one action' },
+    { key: 'act', label: 'Act', detail: 'Run it through the scoped tools' },
+    { key: 'observe', label: 'Observe', detail: 'Feed the real result back' },
+    { key: 'decide', label: 'Decide', detail: 'Stop, or take another step' }
+  ];
   const TERMINAL = ['done', 'failed', 'stopped', 'interrupted'];
   const RESUMABLE = ['stopped', 'interrupted', 'failed'];
   const BUCKET_MS = 250;
@@ -68,8 +74,9 @@
   const runMode = $derived(String((run?.options as Record<string, unknown> | undefined)?.mode ?? ''));
   const isLab = $derived(runMode === 'lab');
   const isHunt = $derived(runMode === 'hunt');
-  const displayStages = $derived(isLab ? LAB_STAGES : isHunt ? HUNT_STAGES : stages);
-  const displayTabs = $derived((isLab || isHunt) ? TABS.filter((item) => item.id === 'feed' || item.id === 'report') : TABS);
+  const isSolve = $derived(runMode === 'solve');
+  const displayStages = $derived(isLab ? LAB_STAGES : isHunt ? HUNT_STAGES : isSolve ? SOLVE_STAGES : stages);
+  const displayTabs = $derived((isLab || isHunt || isSolve) ? TABS.filter((item) => item.id === 'feed' || item.id === 'report') : TABS);
   let events = $state<RunEvent[]>([]);
   let counts = $state<Record<string, number>>({});
   let landed = $state<{ id: number; status: string; secret_type: string; value: string; detail: string }[]>([]);
@@ -132,7 +139,7 @@
   const stageCount = $derived.by(() => {
     const next: Record<string, number> = {};
     for (const stage of displayStages) next[stage.key] = stageCounts[stage.key] ?? 0;
-    if (!isLab && !isHunt) next.crawl = Math.max(next.crawl ?? 0, crawled);
+    if (!isLab && !isHunt && !isSolve) next.crawl = Math.max(next.crawl ?? 0, crawled);
     return next;
   });
 
@@ -716,7 +723,14 @@
     </section>
 
     <section class="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4" aria-label="counters">
-      {#if isHunt}
+      {#if isSolve}
+        {#each [['steps', 'steps'], ['actions', 'actions'], ['model calls', 'model_calls'], ['findings', 'findings']] as [label, key] (key)}
+          <div class="panel kpi px-4 py-3">
+            <p class="eyebrow">{label}</p>
+            <p class="num mt-1 text-xl text-bone" use:countup={counts[key] ?? 0}>0</p>
+          </div>
+        {/each}
+      {:else if isHunt}
         {#each [['pages', 'pages'], ['endpoints', 'endpoints'], ['techniques', 'techniques'], ['hypotheses', 'leads']] as [label, key] (key)}
           <div class="panel kpi px-4 py-3">
             <p class="eyebrow">{label}</p>
@@ -834,7 +848,7 @@
           </div>
 
           <div class="flex flex-col">
-            {#if !isLab && !isHunt}
+            {#if !isLab && !isHunt && !isSolve}
             <div class="border-b border-indigo-deep">
               <div class="flex items-center justify-between px-4 py-2.5">
                 <p class="eyebrow">credentials caught</p>

@@ -170,9 +170,11 @@ class Server:
         self._agent_lock = threading.Lock()
         self._lab_lock = threading.Lock()
         self._hunt_lock = threading.Lock()
+        self._solver_lock = threading.Lock()
         self.agent_runtime = None
         self.lab_runner = None
         self.hunt_runner = None
+        self.solver_runner = None
         self._routes = self._build_routes()
         try:
             learning.seed_builtin_skills(self.index)
@@ -211,6 +213,17 @@ class Server:
                     from .hunt_runner import HuntRunner
                     runtime = HuntRunner(self)
                     self.hunt_runner = runtime
+        return runtime
+
+    def _solvers(self):
+        runtime = self.solver_runner
+        if runtime is None:
+            with self._solver_lock:
+                runtime = self.solver_runner
+                if runtime is None:
+                    from .solver_runner import SolverRunner
+                    runtime = SolverRunner(self)
+                    self.solver_runner = runtime
         return runtime
 
     # -- run helpers ------------------------------------------------------
@@ -733,6 +746,22 @@ class Server:
         @add("POST", r"/api/v1/hunts/(?P<id>[A-Za-z0-9_]+)/stop")
         def hunt_stop(ctx):
             return _json({"stopped": self._hunts().cancel(ctx.params["id"])})
+
+        @add("POST", r"/api/v1/missions/(?P<id>[A-Za-z0-9_]+)/solve")
+        def mission_solve(ctx):
+            body = ctx.json()
+            body = body if isinstance(body, dict) else {}
+            options = {key: body[key] for key in ("max_steps", "max_seconds", "goal")
+                       if key in body}
+            try:
+                run = self._solvers().start(ctx.params["id"], options)
+            except ValueError as exc:
+                return _problem(400, str(exc))
+            return _json(run, 201)
+
+        @add("POST", r"/api/v1/solves/(?P<id>[A-Za-z0-9_]+)/stop")
+        def solve_stop(ctx):
+            return _json({"stopped": self._solvers().cancel(ctx.params["id"])})
 
         @add("POST", r"/api/v1/labs/run-all")
         def lab_run_all(ctx):
@@ -2039,6 +2068,8 @@ def serve(host: str = "127.0.0.1", port: int = 7857, *, open_browser: bool = Tru
             server.lab_runner.shutdown(wait=True)
         if getattr(server, "hunt_runner", None) is not None:
             server.hunt_runner.shutdown(wait=True)
+        if getattr(server, "solver_runner", None) is not None:
+            server.solver_runner.shutdown(wait=True)
         server.jobs.shutdown(wait=True)
         server.index.close()
         httpd.server_close()

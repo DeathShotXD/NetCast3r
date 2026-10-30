@@ -169,6 +169,9 @@ class EmbeddedPlane:
             hunts = getattr(self.server, "hunt_runner", None)
             if hunts is not None:
                 hunts.shutdown(wait=False)
+            solvers = getattr(self.server, "solver_runner", None)
+            if solvers is not None:
+                solvers.shutdown(wait=False)
             self.server.jobs.shutdown(wait=False)
         finally:
             self.server.index.close()

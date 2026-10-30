@@ -92,6 +92,8 @@ export const api = {
     request<{ mission: Mission; run: Run }>('POST', `/missions/${id}/runs`, body),
   startMissionHunt: (id: string) =>
     request<Run>('POST', `/missions/${id}/hunt`, {}),
+  startMissionSolve: (id: string, body: Record<string, unknown> = {}) =>
+    request<Run>('POST', `/missions/${id}/solve`, body),
   missionAgent: (id: string) =>
     request<MissionAgent>('GET', `/missions/${id}/agent`),
   startMissionAgent: (id: string, body: Record<string, unknown>) =>
