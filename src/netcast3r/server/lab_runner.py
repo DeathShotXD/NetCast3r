@@ -134,7 +134,15 @@ class LabRunner:
             slug = next((item["slug"] for item in planned.get("items", [])
                          if item["slug"] in RECIPES), "")
             if not slug:
-                raise ValueError("no supported lab is currently planned")
+                progress = {row["lab_slug"]: row for row in
+                            self.server.index.list_training(limit=1000)}
+                slug = next((candidate for candidate in RECIPES
+                             if (progress.get(candidate) or {}).get("status")
+                             != "solved"), "")
+            if not slug:
+                # Every scripted lab is already solved; re-running one is a
+                # useful regression check and still verifies before recording.
+                slug = next(iter(RECIPES))
         recipe = RECIPES.get(slug)
         if not recipe:
             raise ValueError(f"no recipe for lab: {slug}")

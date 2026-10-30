@@ -24,7 +24,7 @@ from urllib.parse import urlsplit
 from .. import learning
 from ..mcp.plane import PlaneError
 
-DEFAULT_TASKS = 8
+DEFAULT_TASKS = 9
 DEFAULT_SECONDS = 600
 DEFAULT_MODEL_CALLS = 2
 MIN_TASKS = 4
@@ -379,6 +379,10 @@ class AgentRuntime:
                  "title": "Read the capability gaps that this session should close",
                  "tool": "selfmodel_gaps", "risk": "low",
                  "args": {"limit": 3}},
+                {"kind": "training_knowledge",
+                 "title": "Refresh the public report feeds for the next lesson",
+                 "tool": "knowledge_refresh", "risk": "medium",
+                 "args": {"limit": 5}},
             ])
         if use_model:
             tasks.append({
@@ -494,7 +498,7 @@ class AgentRuntime:
                 status, result, evidence, verification, notes = self._inventory(
                     mission_id, task)
             elif task["kind"] in {"training_plan", "training_research",
-                                  "training_gaps"}:
+                                  "training_gaps", "training_knowledge"}:
                 status, result, evidence, verification, notes = self._training(
                     mission_id, task)
             elif task["kind"] == "recall":
@@ -663,6 +667,22 @@ class AgentRuntime:
                         "the research library returned no matching technique")
             return ("verified", result, evidence, "verified",
                     f"{len(items)} technique(s) matched the training target")
+        if kind == "training_knowledge":
+            result = self._tool(registry, "knowledge_refresh", task["args"])
+            items = result.get("items") or []
+            errors = result.get("errors") or []
+            evidence = {
+                "new_items": [{
+                    "id": item.get("id"), "title": item.get("title"),
+                    "url": item.get("url"), "source": item.get("source"),
+                } for item in items],
+                "errors": errors,
+            }
+            if not items and errors:
+                return ("blocked", result, evidence, "blocked",
+                        "the public feeds were unreachable")
+            return ("verified", result, evidence, "verified",
+                    f"{len(items)} new public report(s) captured")
         result = self._tool(registry, "selfmodel_gaps", task["args"])
         items = result.get("items") or []
         evidence = {

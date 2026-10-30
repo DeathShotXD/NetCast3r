@@ -106,6 +106,10 @@ Notable changes to NetCast3r, newest first.
   `knowledge_read` store new items with source URLs and a bounded excerpt.
   Feed items are leads, not findings; `research_ingest` is still the only path
   that turns a report into a reusable skill.
+- A training-agent run now refreshes the public report feeds as one of its
+  tasks and records the captured items in the task evidence. The `auto` lab
+  selector falls back to the first unsolved scripted lab, then to the first
+  recipe for a regression check.
 - `docs/research/penligent-public-comparison.md` records what Penligent's
   public repository and site actually expose. The application source is not
   public, so the note does not claim a source-code review.
