@@ -158,7 +158,7 @@ Denied calls are audited with status `denied`.
 
 ## 3. Tools
 
-164 tools, grouped by job. Every tool publishes a JSON schema with
+170 tools, grouped by job. Every tool publishes a JSON schema with
 `additionalProperties: false`; unknown arguments are rejected rather than
 silently ignored.
 
@@ -189,6 +189,12 @@ silently ignored.
 | `director_status` | low | Read the autonomous director's state and what is in flight |
 | `director_control` | medium | Engage, pause, tune, tick, advise, or kill the director |
 | `director_log` | low | The director's audit feed |
+| `graph_build` | medium | Derive the evidence graph and candidate paths for a mission |
+| `mission_graph` | low | Read a mission's nodes, edges, and paths |
+| `paths_list` | low | List a mission's candidate attack paths |
+| `path_verify` | medium | Verify a path step by step as a live run |
+| `graph_node_add` | medium | Add or update an evidence-graph node |
+| `graph_edge_add` | medium | Add or update an evidence-graph edge |
 | `agent_status` | low | Read the runtime plan, tasks, budget, and model calls |
 | `agent_start` | medium | Plan and run the bounded mission agent |
 | `agent_pause` / `agent_resume` / `agent_stop` | low | Control a live run |

@@ -304,6 +304,59 @@ export interface DirectorLogEntry {
   data: Record<string, unknown>;
 }
 
+export interface GraphNode {
+  id: string;
+  mission_id: string;
+  kind: string;
+  key: string;
+  label: string;
+  severity: string;
+  confidence: string;
+  data: Record<string, unknown>;
+}
+
+export interface GraphEdge {
+  id: string;
+  mission_id: string;
+  src: string;
+  dst: string;
+  kind: string;
+  label: string;
+  confidence: string;
+  evidence: Record<string, unknown>;
+}
+
+export interface GraphStep {
+  kind?: string;
+  goal?: string;
+  target?: string;
+  technique?: string;
+  expected?: string;
+  hypothesis_id?: string;
+  finding_id?: string;
+  tool?: string;
+  args?: Record<string, unknown>;
+}
+
+export interface GraphPath {
+  id: string;
+  mission_id: string;
+  title: string;
+  entry_node: string;
+  impact_node: string;
+  steps: GraphStep[];
+  state: string;
+  verdict: Record<string, unknown>;
+  updated_at?: string;
+}
+
+export interface MissionGraph {
+  mission_id: string;
+  nodes: GraphNode[];
+  edges: GraphEdge[];
+  paths: GraphPath[];
+}
+
 export type Screen =
   | 'home'
   | 'missions'

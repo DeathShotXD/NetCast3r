@@ -172,10 +172,12 @@ class Server:
         self._hunt_lock = threading.Lock()
         self._solver_lock = threading.Lock()
         self._director_lock = threading.Lock()
+        self._path_lock = threading.Lock()
         self.agent_runtime = None
         self.lab_runner = None
         self.hunt_runner = None
         self.solver_runner = None
+        self.path_runner = None
         self.director = None
         self._routes = self._build_routes()
         try:
@@ -238,6 +240,17 @@ class Server:
                     from .director import Director
                     runtime = Director(self)
                     self.director = runtime
+        return runtime
+
+    def _paths(self):
+        runtime = self.path_runner
+        if runtime is None:
+            with self._path_lock:
+                runtime = self.path_runner
+                if runtime is None:
+                    from .path_runner import PathRunner
+                    runtime = PathRunner(self)
+                    self.path_runner = runtime
         return runtime
 
     # -- run helpers ------------------------------------------------------
@@ -855,6 +868,88 @@ class Server:
             return _json(self._director().kill(
                 all_runs=bool(body.get("all", True)),
                 reason=str(body.get("reason") or "kill switch")))
+
+        # -- evidence graph and attack paths -------------------------------
+        @add("POST", r"/api/v1/missions/(?P<id>[A-Za-z0-9_]+)/graph/build")
+        def graph_build(ctx):
+            from .. import graph as graph_module
+
+            try:
+                summary = graph_module.rebuild(self.index, ctx.params["id"])
+            except ValueError as exc:
+                return _problem(400, str(exc))
+            return _json(summary)
+
+        @add("GET", r"/api/v1/missions/(?P<id>[A-Za-z0-9_]+)/graph")
+        def graph_view(ctx):
+            mission_id = ctx.params["id"]
+            if not self.index.get_mission(mission_id):
+                return _problem(404, "mission not found")
+            return _json({
+                "mission_id": mission_id,
+                "nodes": self.index.list_graph_nodes(mission_id),
+                "edges": self.index.list_graph_edges(mission_id),
+                "paths": self.index.list_graph_paths(mission_id),
+            })
+
+        @add("POST", r"/api/v1/missions/(?P<id>[A-Za-z0-9_]+)/graph/nodes")
+        def graph_add_node(ctx):
+            mission_id = ctx.params["id"]
+            if not self.index.get_mission(mission_id):
+                return _problem(404, "mission not found")
+            body = ctx.json()
+            body = body if isinstance(body, dict) else {}
+            try:
+                node = self.index.upsert_graph_node(
+                    mission_id, str(body.get("kind") or ""),
+                    str(body.get("key") or ""), label=str(body.get("label") or ""),
+                    severity=str(body.get("severity") or ""),
+                    confidence=str(body.get("confidence") or "observed"),
+                    data=body.get("data") if isinstance(body.get("data"), dict) else {})
+            except ValueError as exc:
+                return _problem(400, str(exc))
+            return _json(node, 201)
+
+        @add("POST", r"/api/v1/missions/(?P<id>[A-Za-z0-9_]+)/graph/edges")
+        def graph_add_edge(ctx):
+            mission_id = ctx.params["id"]
+            if not self.index.get_mission(mission_id):
+                return _problem(404, "mission not found")
+            body = ctx.json()
+            body = body if isinstance(body, dict) else {}
+            try:
+                edge = self.index.upsert_graph_edge(
+                    mission_id, str(body.get("src") or ""),
+                    str(body.get("dst") or ""), str(body.get("kind") or ""),
+                    label=str(body.get("label") or ""),
+                    confidence=str(body.get("confidence") or "observed"),
+                    evidence=(body.get("evidence")
+                              if isinstance(body.get("evidence"), dict) else {}))
+            except ValueError as exc:
+                return _problem(400, str(exc))
+            return _json(edge, 201)
+
+        @add("GET", r"/api/v1/missions/(?P<id>[A-Za-z0-9_]+)/paths")
+        def paths_list(ctx):
+            mission_id = ctx.params["id"]
+            if not self.index.get_mission(mission_id):
+                return _problem(404, "mission not found")
+            return _json({"items": self.index.list_graph_paths(mission_id)})
+
+        @add("POST", r"/api/v1/paths/(?P<id>[A-Za-z0-9_]+)/verify")
+        def path_verify(ctx):
+            body = ctx.json()
+            body = body if isinstance(body, dict) else {}
+            options = {key: body[key] for key in ("policy",) if key in body}
+            try:
+                run = self._paths().start(ctx.params["id"], options)
+            except ValueError as exc:
+                return _problem(400, str(exc))
+            return _json(run, 201)
+
+        @add("POST", r"/api/v1/paths/(?P<id>[A-Za-z0-9_]+)/stop")
+        def path_stop(ctx):
+            return _json({"stopped": self._paths().cancel(ctx.params["id"])})
 
         @add("POST", r"/api/v1/solves/(?P<id>[A-Za-z0-9_]+)/stop")
         def solve_stop(ctx):
@@ -2332,6 +2427,8 @@ def serve(host: str = "127.0.0.1", port: int = 7857, *, open_browser: bool = Tru
             server.hunt_runner.shutdown(wait=True)
         if getattr(server, "solver_runner", None) is not None:
             server.solver_runner.shutdown(wait=True)
+        if getattr(server, "path_runner", None) is not None:
+            server.path_runner.shutdown(wait=True)
         server.jobs.shutdown(wait=True)
         server.index.close()
         httpd.server_close()

@@ -545,6 +545,41 @@ def director_log(ctx: ToolContext, args: dict) -> dict:
                  query={"limit": args.get("limit", 100)})
 
 
+def graph_build(ctx: ToolContext, args: dict) -> dict:
+    return _call(ctx, "POST",
+                 f"/api/v1/missions/{args['mission_id']}/graph/build", body={})
+
+
+def mission_graph(ctx: ToolContext, args: dict) -> dict:
+    return _call(ctx, "GET", f"/api/v1/missions/{args['mission_id']}/graph")
+
+
+def paths_list(ctx: ToolContext, args: dict) -> dict:
+    return _call(ctx, "GET", f"/api/v1/missions/{args['mission_id']}/paths")
+
+
+def path_verify(ctx: ToolContext, args: dict) -> dict:
+    body = {"policy": args.get("policy", "supervised")}
+    return _call(ctx, "POST", f"/api/v1/paths/{args['path_id']}/verify",
+                 body=body)
+
+
+def graph_node_add(ctx: ToolContext, args: dict) -> dict:
+    body = {key: args[key] for key in
+            ("kind", "key", "label", "severity", "confidence", "data")
+            if key in args}
+    return _call(ctx, "POST",
+                 f"/api/v1/missions/{args['mission_id']}/graph/nodes", body=body)
+
+
+def graph_edge_add(ctx: ToolContext, args: dict) -> dict:
+    body = {key: args[key] for key in
+            ("src", "dst", "kind", "label", "confidence", "evidence")
+            if key in args}
+    return _call(ctx, "POST",
+                 f"/api/v1/missions/{args['mission_id']}/graph/edges", body=body)
+
+
 def agent_start(ctx: ToolContext, args: dict) -> dict:
     mission = _mission(ctx, args["mission_id"])
     target = str(mission.get("target") or "").strip()
@@ -2690,6 +2725,12 @@ _HANDLERS.update({
     "director_status": director_status,
     "director_control": director_control,
     "director_log": director_log,
+    "graph_build": graph_build,
+    "mission_graph": mission_graph,
+    "paths_list": paths_list,
+    "path_verify": path_verify,
+    "graph_node_add": graph_node_add,
+    "graph_edge_add": graph_edge_add,
     "agent_notes_write": agent_notes_write,
     "agent_notes_list": agent_notes_list,
     "agent_notes_clear": agent_notes_clear,
@@ -2995,6 +3036,69 @@ TOOLS: tuple[Tool, ...] = (
          "the no-progress and park decisions. This is the record, not a summary.",
          "low", "missions",
          _schema({"limit": _integer("entries", 1, 2000, 100)}), "director_log"),
+    Tool("graph_build", "Build the mission evidence graph",
+         "Derive the attack-surface graph for one mission from stored, real "
+         "evidence: the target and its scope, discovered endpoints, open "
+         "hypotheses, and findings. Then derive candidate attack paths toward an "
+         "impact. Every edge records its provenance and confidence, so nothing is "
+         "presented as a fact without evidence. Idempotent; rebuild after new "
+         "runs. Creates nothing but graph rows.",
+         "medium", "missions",
+         _schema({"mission_id": _string("mission id")}, ["mission_id"]),
+         "graph_build"),
+    Tool("mission_graph", "Read a mission's evidence graph",
+         "Return the nodes, edges, and candidate paths for one mission. Nodes are "
+         "typed (target, host, ip, endpoint, service, technology, identity, "
+         "credential, hypothesis, finding) and edges carry their evidence.",
+         "low", "missions",
+         _schema({"mission_id": _string("mission id")}, ["mission_id"]),
+         "mission_graph"),
+    Tool("paths_list", "List a mission's candidate attack paths",
+         "Return the candidate paths derived for one mission, each with its steps "
+         "and verification state (candidate, verifying, verified, partial, "
+         "refuted, blocked, inconclusive).",
+         "low", "missions",
+         _schema({"mission_id": _string("mission id")}, ["mission_id"]),
+         "paths_list"),
+    Tool("path_verify", "Verify an attack path step by step",
+         "Run a candidate path's steps in order through the same scoped, "
+         "risk-gated tools every other caller uses, and record what each "
+         "observation supports, refutes, or leaves inconclusive. It appears in "
+         "Live Runs. It never creates a finding.",
+         "medium", "missions",
+         _schema({"path_id": _string("path id"),
+                  "policy": {"type": "string", "description": "tool policy",
+                             "enum": ["readonly", "supervised", "full"]}},
+                 ["path_id"]), "path_verify", open_world=True),
+    Tool("graph_node_add", "Add or update an evidence-graph node",
+         "Record a node an agent actually observed, such as a technology, an "
+         "identity, or a credential (mask the secret value). Use confidence "
+         "'hypothesis' for a claim that is not yet observed. Idempotent by "
+         "(mission, kind, key).",
+         "medium", "missions",
+         _schema({"mission_id": _string("mission id"),
+                  "kind": _string("node kind"),
+                  "key": _string("stable natural key"),
+                  "label": _string("display label"),
+                  "severity": _string("optional severity"),
+                  "confidence": {"type": "string",
+                                 "enum": ["observed", "inferred", "hypothesis"]},
+                  "data": {"type": "object", "description": "extra fields"}},
+                 ["mission_id", "kind", "key"]), "graph_node_add"),
+    Tool("graph_edge_add", "Add or update an evidence-graph edge",
+         "Record a relationship between two graph nodes, with the evidence that "
+         "supports it. Use the node ids returned by mission_graph or "
+         "graph_node_add.",
+         "medium", "missions",
+         _schema({"mission_id": _string("mission id"),
+                  "src": _string("source node id"),
+                  "dst": _string("destination node id"),
+                  "kind": _string("edge kind"),
+                  "label": _string("optional label"),
+                  "confidence": {"type": "string",
+                                 "enum": ["observed", "inferred", "hypothesis"]},
+                  "evidence": {"type": "object", "description": "provenance"}},
+                 ["mission_id", "src", "dst", "kind"]), "graph_edge_add"),
     Tool("mission_hunt", "Start a standalone hunt",
          "Run a deterministic read-only hunt for a mission: scope, fingerprint, "
          "safe surface paths, technique and chain ranking, and explicit "

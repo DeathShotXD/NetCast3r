@@ -3,11 +3,37 @@
   import { api } from '../api';
   import { store } from '../state.svelte';
   import { ago, sevColor, statusLabel } from '../format';
-  import type { AgentStatus, Approval, Autonomy, Mission, MissionAgent, MissionStatus } from '../types';
+  import type { AgentStatus, Approval, Autonomy, GraphNode, GraphPath, Mission, MissionAgent, MissionGraph, MissionStatus } from '../types';
   import Icon from '../ui/Icon.svelte';
   import Sparkline from '../ui/Sparkline.svelte';
 
   type Filter = 'all' | MissionStatus;
+
+  // Evidence graph: layout layers and ink per node kind, kept deterministic
+  // so the same graph always draws the same way.
+  const GRAPH_LAYERS = ['target', 'host', 'ip', 'endpoint', 'technology',
+    'service', 'identity', 'credential', 'hypothesis', 'finding'];
+  const GRAPH_COLORS: Record<string, string> = {
+    target: 'var(--obs-acid)',
+    host: 'var(--obs-violet-3)',
+    ip: 'var(--obs-violet-3)',
+    endpoint: 'var(--obs-text-2)',
+    technology: 'var(--obs-gold)',
+    service: 'var(--obs-gold)',
+    identity: 'var(--obs-violet)',
+    credential: 'var(--obs-red)',
+    hypothesis: 'var(--obs-violet-3)',
+    finding: 'var(--obs-red)'
+  };
+  const PATH_COLORS: Record<string, string> = {
+    verified: 'var(--obs-acid)',
+    refuted: 'var(--obs-red)',
+    partial: 'var(--obs-orange)',
+    blocked: 'var(--obs-red)',
+    verifying: 'var(--obs-violet-3)',
+    candidate: 'var(--obs-muted)',
+    inconclusive: 'var(--obs-muted)'
+  };
 
   let missions = $state<Mission[]>([]);
   let approvals = $state<Approval[]>([]);
@@ -19,7 +45,9 @@
   let loading = $state(true);
   let error = $state('');
   let filter = $state<Filter>('all');
-  let detailTab = $state<'overview' | 'runs' | 'approvals' | 'agent'>('overview');
+  let detailTab = $state<'overview' | 'runs' | 'approvals' | 'graph' | 'agent'>('overview');
+  let graph = $state<MissionGraph | null>(null);
+  let graphBusy = $state('');
   let composer = $state(false);
   let busy = $state('');
   let form = $state({
@@ -105,8 +133,10 @@
     try {
       selected = await api.mission(mission.id);
       agent = null;
+      graph = null;
       detailTab = preserveTab ? tab : 'overview';
       if (preserveTab && tab === 'agent') void loadAgent();
+      if (preserveTab && tab === 'graph') void loadGraph();
       if (scroll && window.innerWidth < 1180) {
         requestAnimationFrame(() => document.querySelector('.obs-mission-detail')?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
       }
@@ -254,6 +284,91 @@
   function selectTab(tab: typeof detailTab) {
     detailTab = tab;
     if (tab === 'agent') void loadAgent();
+    if (tab === 'graph') void loadGraph();
+  }
+
+  async function loadGraph() {
+    if (!selected) return;
+    graphBusy = 'load';
+    try {
+      graph = await api.missionGraph(selected.id);
+    } catch {
+      graph = null;
+    } finally {
+      graphBusy = '';
+    }
+  }
+
+  async function buildGraph() {
+    if (!selected) return;
+    graphBusy = 'build';
+    try {
+      const summary = await api.buildMissionGraph(selected.id);
+      graph = await api.missionGraph(selected.id);
+      store.toast('ok', `graph: ${summary.nodes} nodes, ${summary.edges} edges, ${summary.paths} path(s)`);
+    } catch (exc) {
+      void store.fail(exc instanceof Error ? exc.message : 'could not build the graph');
+    } finally {
+      graphBusy = '';
+    }
+  }
+
+  async function verifyPath(path: GraphPath) {
+    graphBusy = path.id;
+    try {
+      const run = await api.verifyPath(path.id, {});
+      store.toast('ok', 'path verification started');
+      store.watch(run.id);
+    } catch (exc) {
+      void store.fail(exc instanceof Error ? exc.message : 'could not verify the path');
+    } finally {
+      graphBusy = '';
+    }
+  }
+
+  const graphLayout = $derived.by(() => {
+    const nodes = graph?.nodes ?? [];
+    const edges = graph?.edges ?? [];
+    const buckets = new Map<string, GraphNode[]>();
+    for (const node of nodes) {
+      const list = buckets.get(node.kind) ?? [];
+      list.push(node);
+      buckets.set(node.kind, list);
+    }
+    const layers = GRAPH_LAYERS.filter((kind) => (buckets.get(kind)?.length ?? 0) > 0);
+    const W = 640;
+    const H = 300;
+    const pos = new Map<string, { x: number; y: number }>();
+    layers.forEach((kind, li) => {
+      const list = buckets.get(kind) ?? [];
+      const x = layers.length === 1 ? W / 2 : 46 + li * ((W - 92) / (layers.length - 1));
+      list.forEach((node, ni) => {
+        const y = 28 + ((ni + 0.5) * (H - 56)) / list.length;
+        pos.set(node.id, { x, y });
+      });
+    });
+    const lines: Array<{ id: string; x1: number; y1: number; x2: number; y2: number; kind: string }> = [];
+    for (const edge of edges) {
+      const a = pos.get(edge.src);
+      const b = pos.get(edge.dst);
+      if (a && b) lines.push({ id: edge.id, x1: a.x, y1: a.y, x2: b.x, y2: b.y, kind: edge.kind });
+    }
+    const dots: Array<{ id: string; x: number; y: number; kind: string; label: string; color: string; severity: string; layerCount: number }> = [];
+    for (const node of nodes) {
+      const p = pos.get(node.id);
+      const layerCount = (buckets.get(node.kind) ?? []).length;
+      if (p) dots.push({
+        id: node.id, x: p.x, y: p.y, kind: node.kind,
+        label: node.label || node.key,
+        color: GRAPH_COLORS[node.kind] ?? 'var(--obs-muted)',
+        severity: node.severity, layerCount
+      });
+    }
+    return { W, H, lines, dots, layers };
+  });
+
+  function pathStateColor(state: string): string {
+    return PATH_COLORS[state] ?? 'var(--obs-muted)';
   }
 
   function formatCost(cents: number | null): string {
@@ -620,6 +735,7 @@
               ['overview', 'Overview'],
               ['runs', `Runs ${selected.run_count}`],
               ['approvals', `Approvals ${selected.pending_approvals}`],
+              ['graph', 'Graph'],
               ['agent', `Agent${agent && ['planning', 'running', 'paused', 'stopping'].includes(agent.status) ? ' *' : ''}`]
             ] as [id, label] (id)}
               <button
@@ -714,6 +830,73 @@
                   </button>
                 </div>
               {/if}
+            {:else if detailTab === 'graph'}
+              <section class="obs-detail-section">
+                <div class="obs-graph-head">
+                  <div>
+                    <h3>Attack graph</h3>
+                    <p class="obs-graph-copy">
+                      Nodes and edges are derived from real evidence, and every edge carries its provenance. Verification runs each step through the same scoped, risk-gated tools and never creates a finding.
+                    </p>
+                  </div>
+                  <button class="obs-btn" type="button" disabled={graphBusy !== ''} onclick={() => void buildGraph()}>
+                    <Icon name="activity" size={12} />
+                    {graphBusy === 'build' ? 'Building...' : 'Build graph'}
+                  </button>
+                </div>
+                {#if graph && graph.nodes.length}
+                  <div class="obs-graph-chips">
+                    <span class="obs-chip">{graph.nodes.length} nodes</span>
+                    <span class="obs-chip">{graph.edges.length} edges</span>
+                    <span class="obs-chip">{graph.paths.length} path{graph.paths.length === 1 ? '' : 's'}</span>
+                  </div>
+                  <svg class="obs-graph-svg" viewBox="0 0 {graphLayout.W} {graphLayout.H}" role="img" aria-label="mission attack graph">
+                    {#each graphLayout.lines as line (line.id)}
+                      <line x1={line.x1} y1={line.y1} x2={line.x2} y2={line.y2} stroke="var(--obs-line-strong)" stroke-width="1" />
+                    {/each}
+                    {#each graphLayout.dots as dot (dot.id)}
+                      <g>
+                        <title>{dot.kind}: {dot.label}{dot.severity ? ` (${dot.severity})` : ''}</title>
+                        <circle cx={dot.x} cy={dot.y} r="6" fill={dot.color} fill-opacity="0.16" stroke={dot.color} stroke-width="1.3" />
+                        {#if dot.layerCount <= 6}
+                          <text x={dot.x} y={dot.y + 18} text-anchor="middle" class="obs-graph-label" style="fill:{dot.color}">{dot.label.length > 16 ? `${dot.label.slice(0, 15)}...` : dot.label}</text>
+                        {/if}
+                      </g>
+                    {/each}
+                  </svg>
+                {:else}
+                  <div class="obs-empty" style="min-height:130px">
+                    <span class="obs-empty-icon"><Icon name="activity" size={16} /></span>
+                    <div class="obs-empty-title">No graph yet</div>
+                    <p class="obs-empty-copy">
+                      Build the graph to derive the surface, the open leads, and the findings for this mission.
+                    </p>
+                  </div>
+                {/if}
+                <h3 style="margin-top:14px">Candidate paths</h3>
+                {#if graph && graph.paths.length}
+                  <ul class="obs-graph-paths">
+                    {#each graph.paths as path (path.id)}
+                      <li>
+                        <div class="obs-graph-path-head">
+                          <span class="obs-chip" style="color:{pathStateColor(path.state)}">{path.state}</span>
+                          <span class="obs-graph-path-title">{path.title}</span>
+                          <button class="obs-btn obs-btn-ghost" type="button" disabled={graphBusy !== ''} onclick={() => void verifyPath(path)}>
+                            {graphBusy === path.id ? 'Starting...' : 'Verify'}
+                          </button>
+                        </div>
+                        <p class="obs-graph-path-steps">
+                          {path.steps.map((step) => step.goal || step.kind || 'step').join(' -> ')}
+                        </p>
+                      </li>
+                    {/each}
+                  </ul>
+                {:else}
+                  <p class="obs-detail-note">
+                    No candidate path yet. Record a falsifiable lead with hypothesis_create, then rebuild the graph.
+                  </p>
+                {/if}
+              </section>
             {:else if detailTab === 'agent'}
               <section class="obs-detail-section">
                 <div class="obs-mission-agent-head">

@@ -400,6 +400,51 @@ CREATE TABLE IF NOT EXISTS director_log (
     data_json TEXT DEFAULT '{}'
 );
 CREATE INDEX IF NOT EXISTS idx_director_log_id ON director_log(id DESC);
+
+CREATE TABLE IF NOT EXISTS graph_nodes (
+    id TEXT PRIMARY KEY,
+    mission_id TEXT,
+    kind TEXT,
+    key TEXT,
+    label TEXT DEFAULT '',
+    severity TEXT DEFAULT '',
+    confidence TEXT DEFAULT 'observed',
+    data_json TEXT DEFAULT '{}',
+    created_at TEXT,
+    updated_at TEXT,
+    UNIQUE(mission_id, kind, key)
+);
+CREATE INDEX IF NOT EXISTS idx_graph_nodes_mission ON graph_nodes(mission_id, kind);
+
+CREATE TABLE IF NOT EXISTS graph_edges (
+    id TEXT PRIMARY KEY,
+    mission_id TEXT,
+    src TEXT,
+    dst TEXT,
+    kind TEXT,
+    label TEXT DEFAULT '',
+    confidence TEXT DEFAULT 'observed',
+    evidence_json TEXT DEFAULT '{}',
+    created_at TEXT,
+    updated_at TEXT,
+    UNIQUE(mission_id, src, dst, kind)
+);
+CREATE INDEX IF NOT EXISTS idx_graph_edges_mission ON graph_edges(mission_id, kind);
+
+CREATE TABLE IF NOT EXISTS graph_paths (
+    id TEXT PRIMARY KEY,
+    mission_id TEXT,
+    title TEXT,
+    entry_node TEXT DEFAULT '',
+    impact_node TEXT DEFAULT '',
+    steps_json TEXT DEFAULT '[]',
+    state TEXT DEFAULT 'candidate',
+    verdict_json TEXT DEFAULT '{}',
+    created_at TEXT,
+    updated_at TEXT,
+    UNIQUE(mission_id, title)
+);
+CREATE INDEX IF NOT EXISTS idx_graph_paths_mission ON graph_paths(mission_id, state);
 """
 
 SEVERITY_ORDER = {"critical": 0, "high": 1, "medium": 2, "low": 3, "info": 4, "unknown": 5}
@@ -2087,6 +2132,196 @@ class Index:
     def _director_log_row(row: sqlite3.Row) -> dict:
         item = dict(row)
         item["data"] = _loads(item.pop("data_json"), {})
+        return item
+
+    # -- evidence graph ---------------------------------------------------
+    # Nodes and edges are derived from real observations (a run, a tool call,
+    # a hypothesis, a finding) or added explicitly by an agent. An edge always
+    # records where it came from and how confident it is, so the graph never
+    # presents a guess as a fact.
+    def upsert_graph_node(self, mission_id: str, kind: str, key: str,
+                          label: str = "", severity: str = "",
+                          confidence: str = "observed",
+                          data: dict | None = None) -> dict:
+        mission_id = str(mission_id or "")
+        kind = str(kind or "").strip().lower()
+        key = str(key or "").strip()
+        if not mission_id or not kind or not key:
+            raise ValueError("mission_id, kind, and key are required")
+        now = _now()
+        node_id = _new_id("gn")
+        with self._lock:
+            self.conn.execute(
+                "INSERT INTO graph_nodes (id, mission_id, kind, key, label, "
+                "severity, confidence, data_json, created_at, updated_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
+                "ON CONFLICT(mission_id, kind, key) DO UPDATE SET "
+                "label = excluded.label, severity = excluded.severity, "
+                "confidence = excluded.confidence, data_json = excluded.data_json, "
+                "updated_at = excluded.updated_at",
+                (node_id, mission_id, kind, key, str(label or key)[:300],
+                 str(severity or "")[:24], str(confidence or "observed"),
+                 json.dumps(data or {}, default=str), now, now),
+            )
+            self.conn.commit()
+            row = self.conn.execute(
+                "SELECT * FROM graph_nodes WHERE mission_id = ? AND kind = ? "
+                "AND key = ?", (mission_id, kind, key)).fetchone()
+        return self._graph_node_row(row) if row else {}
+
+    def list_graph_nodes(self, mission_id: str, kind: str = "") -> list[dict]:
+        clause, params = "mission_id = ?", [mission_id]
+        if kind:
+            clause += " AND kind = ?"
+            params.append(str(kind).lower())
+        with self._lock:
+            rows = self.conn.execute(
+                f"SELECT * FROM graph_nodes WHERE {clause} "
+                "ORDER BY kind, label", params).fetchall()
+        return [self._graph_node_row(row) for row in rows]
+
+    def get_graph_node(self, node_id: str) -> dict | None:
+        with self._lock:
+            row = self.conn.execute(
+                "SELECT * FROM graph_nodes WHERE id = ?", (node_id,)).fetchone()
+        return self._graph_node_row(row) if row else None
+
+    def upsert_graph_edge(self, mission_id: str, src: str, dst: str, kind: str,
+                          label: str = "", confidence: str = "observed",
+                          evidence: dict | None = None) -> dict:
+        mission_id = str(mission_id or "")
+        kind = str(kind or "").strip().lower()
+        if not mission_id or not src or not dst or not kind:
+            raise ValueError("mission_id, src, dst, and kind are required")
+        now = _now()
+        edge_id = _new_id("ge")
+        with self._lock:
+            self.conn.execute(
+                "INSERT INTO graph_edges (id, mission_id, src, dst, kind, label, "
+                "confidence, evidence_json, created_at, updated_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
+                "ON CONFLICT(mission_id, src, dst, kind) DO UPDATE SET "
+                "label = excluded.label, confidence = excluded.confidence, "
+                "evidence_json = excluded.evidence_json, "
+                "updated_at = excluded.updated_at",
+                (edge_id, mission_id, src, dst, kind, str(label or "")[:300],
+                 str(confidence or "observed"),
+                 json.dumps(evidence or {}, default=str), now, now),
+            )
+            self.conn.commit()
+            row = self.conn.execute(
+                "SELECT * FROM graph_edges WHERE mission_id = ? AND src = ? "
+                "AND dst = ? AND kind = ?",
+                (mission_id, src, dst, kind)).fetchone()
+        return self._graph_edge_row(row) if row else {}
+
+    def list_graph_edges(self, mission_id: str, kind: str = "") -> list[dict]:
+        clause, params = "mission_id = ?", [mission_id]
+        if kind:
+            clause += " AND kind = ?"
+            params.append(str(kind).lower())
+        with self._lock:
+            rows = self.conn.execute(
+                f"SELECT * FROM graph_edges WHERE {clause} ORDER BY kind",
+                params).fetchall()
+        return [self._graph_edge_row(row) for row in rows]
+
+    def clear_graph(self, mission_id: str) -> None:
+        with self._lock:
+            self.conn.execute("DELETE FROM graph_nodes WHERE mission_id = ?",
+                              (mission_id,))
+            self.conn.execute("DELETE FROM graph_edges WHERE mission_id = ?",
+                              (mission_id,))
+            self.conn.execute("DELETE FROM graph_paths WHERE mission_id = ?",
+                              (mission_id,))
+            self.conn.commit()
+
+    def upsert_graph_path(self, mission_id: str, title: str,
+                          entry_node: str = "", impact_node: str = "",
+                          steps: list | None = None, state: str = "candidate",
+                          verdict: dict | None = None) -> dict:
+        mission_id = str(mission_id or "")
+        title = str(title or "").strip()
+        if not mission_id or not title:
+            raise ValueError("mission_id and title are required")
+        now = _now()
+        path_id = _new_id("gp")
+        with self._lock:
+            self.conn.execute(
+                "INSERT INTO graph_paths (id, mission_id, title, entry_node, "
+                "impact_node, steps_json, state, verdict_json, created_at, "
+                "updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
+                "ON CONFLICT(mission_id, title) DO UPDATE SET "
+                "entry_node = excluded.entry_node, "
+                "impact_node = excluded.impact_node, "
+                "steps_json = excluded.steps_json, "
+                "verdict_json = excluded.verdict_json, "
+                "updated_at = excluded.updated_at",
+                (path_id, mission_id, title, entry_node, impact_node,
+                 json.dumps(steps or [], default=str), state,
+                 json.dumps(verdict or {}, default=str), now, now),
+            )
+            self.conn.commit()
+            row = self.conn.execute(
+                "SELECT * FROM graph_paths WHERE mission_id = ? AND title = ?",
+                (mission_id, title)).fetchone()
+        return self._graph_path_row(row) if row else {}
+
+    def list_graph_paths(self, mission_id: str, state: str = "") -> list[dict]:
+        clause, params = "mission_id = ?", [mission_id]
+        if state:
+            clause += " AND state = ?"
+            params.append(str(state))
+        with self._lock:
+            rows = self.conn.execute(
+                f"SELECT * FROM graph_paths WHERE {clause} "
+                "ORDER BY updated_at DESC", params).fetchall()
+        return [self._graph_path_row(row) for row in rows]
+
+    def get_graph_path(self, path_id: str) -> dict | None:
+        with self._lock:
+            row = self.conn.execute(
+                "SELECT * FROM graph_paths WHERE id = ?", (path_id,)).fetchone()
+        return self._graph_path_row(row) if row else None
+
+    def patch_graph_path(self, path_id: str, **fields) -> dict | None:
+        allowed = {"state", "steps", "verdict", "entry_node", "impact_node"}
+        sets, values = [], []
+        for key in allowed:
+            if key in fields and fields[key] is not None:
+                if key in {"steps", "verdict"}:
+                    sets.append(f"{key}_json = ?")
+                    values.append(json.dumps(fields[key], default=str))
+                else:
+                    sets.append(f"{key} = ?")
+                    values.append(str(fields[key]))
+        if sets:
+            sets.append("updated_at = ?")
+            values.extend([_now(), path_id])
+            with self._lock:
+                self.conn.execute(
+                    f"UPDATE graph_paths SET {', '.join(sets)} WHERE id = ?",
+                    values)
+                self.conn.commit()
+        return self.get_graph_path(path_id)
+
+    @staticmethod
+    def _graph_node_row(row: sqlite3.Row) -> dict:
+        item = dict(row)
+        item["data"] = _loads(item.pop("data_json"), {})
+        return item
+
+    @staticmethod
+    def _graph_edge_row(row: sqlite3.Row) -> dict:
+        item = dict(row)
+        item["evidence"] = _loads(item.pop("evidence_json"), {})
+        return item
+
+    @staticmethod
+    def _graph_path_row(row: sqlite3.Row) -> dict:
+        item = dict(row)
+        item["steps"] = _loads(item.pop("steps_json"), [])
+        item["verdict"] = _loads(item.pop("verdict_json"), {})
         return item
 
     # -- approvals --------------------------------------------------------

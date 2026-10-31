@@ -1,5 +1,5 @@
 import type {
-  ConnectInfo, Approval, DirectorLogEntry, DirectorStatus, Finding, Inventory, KeyEntry, McpInfo, Meta, Mission, MissionAgent, Paged, Provider, ProviderHealth, RevengKinds, RevengResult, Run, RunEvent, Submission, SubmissionSummary, ToolCall, Totals } from './types';
+  ConnectInfo, Approval, DirectorLogEntry, DirectorStatus, Finding, Inventory, KeyEntry, McpInfo, Meta, Mission, MissionAgent, MissionGraph, Paged, Provider, ProviderHealth, RevengKinds, RevengResult, Run, RunEvent, Submission, SubmissionSummary, ToolCall, Totals } from './types';
 
 const BASE = '/api/v1';
 
@@ -110,6 +110,11 @@ export const api = {
     request<DirectorStatus>('POST', '/director/control', body),
   directorLog: (limit = 100) =>
     request<{ items: DirectorLogEntry[] }>('GET', `/director/log?limit=${limit}`),
+  missionGraph: (id: string) => request<MissionGraph>('GET', `/missions/${id}/graph`),
+  buildMissionGraph: (id: string) =>
+    request<{ nodes: number; edges: number; paths: number }>('POST', `/missions/${id}/graph/build`, {}),
+  verifyPath: (pathId: string, body: Record<string, unknown> = {}) =>
+    request<Run>('POST', `/paths/${pathId}/verify`, body),
   missionAgent: (id: string) =>
     request<MissionAgent>('GET', `/missions/${id}/agent`),
   startMissionAgent: (id: string, body: Record<string, unknown>) =>

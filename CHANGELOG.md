@@ -6,6 +6,18 @@ Notable changes to NetCast3r, newest first.
 
 ### Added
 
+- Evidence graph and attack paths: `graph_build`, `mission_graph`,
+  `paths_list`, `path_verify`, `graph_node_add`, and `graph_edge_add`, plus
+  `GET/POST /api/v1/missions/{id}/graph*` and `POST /api/v1/paths/{id}/verify`.
+  Nodes and edges are derived only from real evidence - the target and scope,
+  endpoints found in notes, hypotheses, findings, and tool calls - and every
+  edge records its provenance and confidence, so nothing is presented as a
+  fact without evidence. `derive_paths` proposes candidate chains toward an
+  impact, and `path_verify` runs a path step by step through the same scoped,
+  risk-gated tools as every other caller, recording supports, refutes, or
+  inconclusive per step. It never creates a finding. The mission detail gains
+  a **Graph** tab with a deterministic layered SVG, node and edge counts, and
+  a Verify action per candidate path. See `docs/GRAPH.md`.
 - Autonomous director: `prime_portfolio`, `director_status`,
   `director_control`, and `director_log`, plus `GET/POST /api/v1/director*`.
   NetCast3r now drives itself with no external harness. A **Prime** planner
@@ -27,7 +39,7 @@ Notable changes to NetCast3r, newest first.
   Agent Zero, a generic MCP client, and the HTTP API. The session token is
   never returned; a harness reads it from the 0600 control-plane file. A
   **Connect** screen shows the same information with a copyable config per
-  harness, a searchable list of all 164 typed tools, and their risk tiers.
+  harness, a searchable list of all 170 typed tools, and their risk tiers.
   Any harness drives the full surface and shares one database and audit trail.
 - Native operator: `autopilot` and
   `POST /api/v1/missions/{id}/autopilot` make NetCast3r its own harness. It
