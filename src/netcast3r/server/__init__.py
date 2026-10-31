@@ -89,6 +89,18 @@ def _problem(status: int, title: str, detail: str = "") -> Response:
     return Response(status=status, body=body, content_type="application/problem+json")
 
 
+_MENTION_RE = re.compile(r"@(lead|finding|hypothesis):([A-Za-z0-9_]+)")
+
+
+def _parse_mentions(text: str) -> list[dict]:
+    """Resolve @lead:<id> and @finding:<id> mentions in a direction."""
+    found = []
+    for kind, ref in _MENTION_RE.findall(str(text or "")):
+        kind = "hypothesis" if kind == "lead" else kind
+        found.append({"kind": kind, "id": ref})
+    return found
+
+
 def _str_list(value) -> list[str]:
     if isinstance(value, str):
         value = [value]
@@ -950,6 +962,104 @@ class Server:
         @add("POST", r"/api/v1/paths/(?P<id>[A-Za-z0-9_]+)/stop")
         def path_stop(ctx):
             return _json({"stopped": self._paths().cancel(ctx.params["id"])})
+
+        # -- knowledge base, profile, campaign, directions ------------------
+        @add("GET", r"/api/v1/kb")
+        def kb_list(ctx):
+            return _json({"items": self.index.list_kb_entries(
+                scope=str(ctx.query.get("scope", "") or ""),
+                kind=str(ctx.query.get("kind", "") or ""),
+                q=str(ctx.query.get("q", "") or ""),
+                limit=int(ctx.query.get("limit", 100) or 100))})
+
+        @add("POST", r"/api/v1/kb")
+        def kb_write(ctx):
+            body = ctx.json()
+            body = body if isinstance(body, dict) else {}
+            try:
+                entry = self.index.upsert_kb_entry(
+                    str(body.get("scope", "global") or "global"),
+                    str(body.get("kind", "") or ""), str(body.get("key", "") or ""),
+                    title=str(body.get("title", "") or ""),
+                    body=str(body.get("body", "") or ""),
+                    confidence=str(body.get("confidence", "observed") or "observed"),
+                    source=body.get("source") if isinstance(body.get("source"), dict) else {},
+                    data=body.get("data") if isinstance(body.get("data"), dict) else {})
+            except ValueError as exc:
+                return _problem(400, str(exc))
+            return _json(entry, 201)
+
+        @add("GET", r"/api/v1/kb/digest")
+        def kb_digest(ctx):
+            from .. import kb as kb_module
+
+            mission_id = str(ctx.query.get("mission_id", "") or "")
+            limit = int(ctx.query.get("limit", 12) or 12)
+            return _json({"items": kb_module.digest(self.index, mission_id, limit)})
+
+        @add("GET", r"/api/v1/kb/stats")
+        def kb_stats(ctx):
+            from .. import kb as kb_module
+
+            return _json(kb_module.stats(self.index))
+
+        @add("POST", r"/api/v1/missions/(?P<id>[A-Za-z0-9_]+)/kb/learn")
+        def kb_learn(ctx):
+            from .. import kb as kb_module
+
+            if not self.index.get_mission(ctx.params["id"]):
+                return _problem(404, "mission not found")
+            return _json(kb_module.learn_from_mission(self.index, ctx.params["id"]))
+
+        @add("GET", r"/api/v1/missions/(?P<id>[A-Za-z0-9_]+)/profile")
+        def profile_get(ctx):
+            if not self.index.get_mission(ctx.params["id"]):
+                return _problem(404, "mission not found")
+            return _json(self.index.get_target_profile(ctx.params["id"]) or {})
+
+        @add("POST", r"/api/v1/missions/(?P<id>[A-Za-z0-9_]+)/profile")
+        def profile_build(ctx):
+            from .. import target as target_module
+
+            if not self.index.get_mission(ctx.params["id"]):
+                return _problem(404, "mission not found")
+            try:
+                return _json(target_module.build_profile(self.index,
+                                                         ctx.params["id"]))
+            except ValueError as exc:
+                return _problem(400, str(exc))
+
+        @add("GET", r"/api/v1/missions/(?P<id>[A-Za-z0-9_]+)/campaign")
+        def campaign_get(ctx):
+            from .. import campaign as campaign_module
+
+            if not self.index.get_mission(ctx.params["id"]):
+                return _problem(404, "mission not found")
+            return _json(campaign_module.advance(self.index, ctx.params["id"]))
+
+        @add("GET", r"/api/v1/missions/(?P<id>[A-Za-z0-9_]+)/directions")
+        def directions_list(ctx):
+            if not self.index.get_mission(ctx.params["id"]):
+                return _problem(404, "mission not found")
+            return _json({"items": self.index.list_directions(
+                ctx.params["id"], status=str(ctx.query.get("status", "") or ""),
+                limit=int(ctx.query.get("limit", 50) or 50))})
+
+        @add("POST", r"/api/v1/missions/(?P<id>[A-Za-z0-9_]+)/directions")
+        def direction_add(ctx):
+            if not self.index.get_mission(ctx.params["id"]):
+                return _problem(404, "mission not found")
+            body = ctx.json()
+            body = body if isinstance(body, dict) else {}
+            text = str(body.get("body", "") or "")
+            mentions = _parse_mentions(text)
+            try:
+                direction = self.index.create_direction(
+                    ctx.params["id"], text, mentions=mentions,
+                    created_by=str(body.get("created_by", "operator") or "operator"))
+            except ValueError as exc:
+                return _problem(400, str(exc))
+            return _json(direction, 201)
 
         @add("POST", r"/api/v1/solves/(?P<id>[A-Za-z0-9_]+)/stop")
         def solve_stop(ctx):

@@ -376,6 +376,9 @@ class Director:
                       "stop": counts.get("stop", ""),
                       "no_progress": mstate.get("no_progress", 0),
                       "parked": bool(mstate.get("parked"))})
+            # Every finished run matures the mission: rebuild the graph, the
+            # target profile, the campaign stage, and the shared memory.
+            self._mature(mission_id)
             if mstate.get("parked"):
                 self.server.index.add_director_log(
                     "parked",
@@ -398,6 +401,45 @@ class Director:
                          reverse=True)
         return dict(ordered[:60])
 
+    def _mature(self, mission_id: str) -> dict:
+        """Turn a finished run into durable, shared knowledge.
+
+        Rebuild the evidence graph, the target profile, the campaign stage, and
+        the knowledge base from the new evidence. This is what makes each
+        engagement leave the whole platform more capable, regardless of which
+        provider ran it. Every step is derived from stored observations only.
+        """
+        out: dict = {}
+        try:
+            from .. import campaign as campaign_module
+            from .. import graph as graph_module
+            from .. import kb as kb_module
+            from .. import target as target_module
+
+            graph_module.rebuild(self.server.index, mission_id)
+            try:
+                target_module.build_profile(self.server.index, mission_id)
+            except ValueError:
+                pass  # a mission without a usable target has no profile
+            out["learned"] = kb_module.learn_from_mission(self.server.index,
+                                                          mission_id)
+            stage = campaign_module.advance(self.server.index, mission_id)
+            out["stage"] = stage["stage"]
+            self.server.index.add_director_log(
+                "mature", f"stage {stage['stage']}: {stage['reason']}",
+                mission_id=mission_id,
+                data={"stage": stage["stage"], "learned": out["learned"],
+                      "verified_paths": stage["verified_paths"],
+                      "open_leads": stage["open_leads"]})
+        except Exception as exc:  # noqa: BLE001 - maturing must not stop the loop
+            try:
+                self.server.index.add_director_log(
+                    "mature-error", f"{type(exc).__name__}: {exc}",
+                    mission_id=mission_id)
+            except Exception:  # noqa: BLE001
+                pass
+        return out
+
     def _touch(self, active: dict, state: dict) -> None:
         cycles = int(state.get("cycles") or 0) + 1
         self.server.index.patch_director_state(
@@ -412,6 +454,11 @@ class Director:
         policy = "full" if mission.get("autonomy") == "autonomous" else "supervised"
         objective = row.get("objective") or {}
         goal = str(objective.get("goal") or mission.get("objective") or "")
+        # An operator direction outranks the derived goal for this run.
+        queued = self.server.index.list_directions(mission_id, status="queued",
+                                                   limit=3)
+        if queued:
+            goal = f"Operator direction: {queued[0].get('body', '')} | {goal}"
         runs = dict(active.get("runs") or {})
         if mode == "hunt":
             run = self.server._hunts().start(mission_id)
@@ -421,6 +468,10 @@ class Director:
             options.update(MODE_BUDGETS.get(mode, {}))
             run = self.server._solvers().start(mission_id, options)
             runner = "solver"
+        if queued:
+            # Mark the directions consumed so a later run does not repeat them.
+            self.server.index.consume_directions(mission_id, limit=3,
+                                                 run_id=run["id"])
         now = time.time()
         runs[run["id"]] = {
             "mission_id": mission_id, "mode": mode, "runner": runner,

@@ -6,6 +6,19 @@ Notable changes to NetCast3r, newest first.
 
 ### Added
 
+- Shared memory, campaign stages, and the target profile. NetCast3r now keeps
+  its own durable, provider-agnostic memory: `kb_search`, `kb_write`,
+  `kb_digest`, `kb_stats`, and `kb_learn` over a `kb_entries` table. Every
+  brain reads a digest into its brief, so any model provider inherits the same
+  knowledge, and every finished run writes back what it observed. A **campaign**
+  stage machine progresses a bare domain through recon, fingerprint, surface,
+  hypotheses, verify, chain, and report from stored evidence only, and the
+  director re-derives it after each run. A **target profile** consolidates
+  host, IP, technology, WAF/CDN, and observed TLS/DNS data without inventing a
+  field. It also adds operator **directions** - a queue the director consumes
+  into the run goal, with `@lead:` and `@finding:` mentions - and a director
+  `_mature` step that rebuilds the graph, profile, stage, and memory after
+  every run. New routes and MCP tools; 179 tools total. See `docs/MEMORY.md`.
 - Evidence graph and attack paths: `graph_build`, `mission_graph`,
   `paths_list`, `path_verify`, `graph_node_add`, and `graph_edge_add`, plus
   `GET/POST /api/v1/missions/{id}/graph*` and `POST /api/v1/paths/{id}/verify`.
@@ -39,7 +52,7 @@ Notable changes to NetCast3r, newest first.
   Agent Zero, a generic MCP client, and the HTTP API. The session token is
   never returned; a harness reads it from the 0600 control-plane file. A
   **Connect** screen shows the same information with a copyable config per
-  harness, a searchable list of all 170 typed tools, and their risk tiers.
+  harness, a searchable list of all 179 typed tools, and their risk tiers.
   Any harness drives the full surface and shares one database and audit trail.
 - Native operator: `autopilot` and
   `POST /api/v1/missions/{id}/autopilot` make NetCast3r its own harness. It

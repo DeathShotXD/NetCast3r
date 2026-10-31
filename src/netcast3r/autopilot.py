@@ -249,6 +249,16 @@ class Autopilot:
         brief["skills"] = _selection(payload, "items", 8)
         payload, _, _ = self._tool("agent_notes_list", {"mission_id": self.mission_id, "limit": 12})
         brief["memory"] = _selection(payload, "items", 12)
+        # The shared, provider-agnostic memory plus any queued operator
+        # direction and the campaign stage. Any model inherits the same facts.
+        payload, _, _ = self._tool("kb_digest", {"mission_id": self.mission_id, "limit": 10})
+        brief["knowledge"] = _selection(payload, "items", 10)
+        payload, _, _ = self._tool("directions_list", {"mission_id": self.mission_id, "status": "queued", "limit": 5})
+        brief["directions"] = _selection(payload, "items", 5)
+        payload, _, _ = self._tool("campaign_status", {"mission_id": self.mission_id})
+        brief["campaign"] = _compact(payload)
+        payload, _, _ = self._tool("target_profile", {"mission_id": self.mission_id, "build": False})
+        brief["profile"] = _compact(payload)
         return brief
 
     def _fallback_plan(self) -> tuple[list[dict], str]:

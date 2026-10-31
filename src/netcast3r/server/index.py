@@ -445,6 +445,59 @@ CREATE TABLE IF NOT EXISTS graph_paths (
     UNIQUE(mission_id, title)
 );
 CREATE INDEX IF NOT EXISTS idx_graph_paths_mission ON graph_paths(mission_id, state);
+
+CREATE TABLE IF NOT EXISTS kb_entries (
+    id TEXT PRIMARY KEY,
+    scope TEXT DEFAULT 'global',
+    kind TEXT,
+    key TEXT,
+    title TEXT DEFAULT '',
+    body TEXT DEFAULT '',
+    confidence TEXT DEFAULT 'observed',
+    source_json TEXT DEFAULT '{}',
+    data_json TEXT DEFAULT '{}',
+    hits INTEGER DEFAULT 0,
+    created_at TEXT,
+    updated_at TEXT,
+    UNIQUE(scope, kind, key)
+);
+CREATE INDEX IF NOT EXISTS idx_kb_scope ON kb_entries(scope, kind, updated_at DESC);
+
+CREATE TABLE IF NOT EXISTS target_profiles (
+    mission_id TEXT PRIMARY KEY,
+    target TEXT DEFAULT '',
+    host TEXT DEFAULT '',
+    ip TEXT DEFAULT '',
+    summary TEXT DEFAULT '',
+    dns_json TEXT DEFAULT '{}',
+    tls_json TEXT DEFAULT '{}',
+    waf_json TEXT DEFAULT '{}',
+    tech_json TEXT DEFAULT '[]',
+    network_json TEXT DEFAULT '{}',
+    updated_at TEXT
+);
+
+CREATE TABLE IF NOT EXISTS campaigns (
+    mission_id TEXT PRIMARY KEY,
+    stage TEXT DEFAULT 'recon',
+    stages_json TEXT DEFAULT '[]',
+    note TEXT DEFAULT '',
+    updated_at TEXT
+);
+
+CREATE TABLE IF NOT EXISTS mission_directions (
+    id TEXT PRIMARY KEY,
+    mission_id TEXT,
+    body TEXT DEFAULT '',
+    mentions_json TEXT DEFAULT '[]',
+    status TEXT DEFAULT 'queued',
+    created_by TEXT DEFAULT 'operator',
+    run_id TEXT DEFAULT '',
+    created_at TEXT,
+    consumed_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_directions_mission
+    ON mission_directions(mission_id, status, created_at);
 """
 
 SEVERITY_ORDER = {"critical": 0, "high": 1, "medium": 2, "low": 3, "info": 4, "unknown": 5}
@@ -2322,6 +2375,246 @@ class Index:
         item = dict(row)
         item["steps"] = _loads(item.pop("steps_json"), [])
         item["verdict"] = _loads(item.pop("verdict_json"), {})
+        return item
+
+    # -- knowledge base ---------------------------------------------------
+    # The durable, provider-agnostic memory. Every brain reads it into its
+    # brief and every finished engagement writes back what it observed, so the
+    # reasoning does not live in one model's context window.
+    def upsert_kb_entry(self, scope: str, kind: str, key: str, title: str = "",
+                        body: str = "", confidence: str = "observed",
+                        source: dict | None = None,
+                        data: dict | None = None) -> dict:
+        scope = str(scope or "global")
+        kind = str(kind or "").strip().lower()
+        key = str(key or "").strip()
+        if not kind or not key:
+            raise ValueError("kind and key are required")
+        now = _now()
+        entry_id = _new_id("kb")
+        with self._lock:
+            self.conn.execute(
+                "INSERT INTO kb_entries (id, scope, kind, key, title, body, "
+                "confidence, source_json, data_json, created_at, updated_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
+                "ON CONFLICT(scope, kind, key) DO UPDATE SET "
+                "title = excluded.title, body = excluded.body, "
+                "confidence = excluded.confidence, source_json = excluded.source_json, "
+                "data_json = excluded.data_json, updated_at = excluded.updated_at",
+                (entry_id, scope, kind, key, str(title or key)[:300],
+                 str(body or "")[:4000], str(confidence or "observed"),
+                 json.dumps(source or {}, default=str),
+                 json.dumps(data or {}, default=str), now, now),
+            )
+            self.conn.commit()
+            row = self.conn.execute(
+                "SELECT * FROM kb_entries WHERE scope = ? AND kind = ? AND key = ?",
+                (scope, kind, key)).fetchone()
+        return self._kb_row(row) if row else {}
+
+    def list_kb_entries(self, scope: str = "", kind: str = "", q: str = "",
+                        limit: int = 100) -> list[dict]:
+        where, params = [], []
+        if scope:
+            where.append("scope = ?")
+            params.append(scope)
+        if kind:
+            where.append("kind = ?")
+            params.append(str(kind).lower())
+        if q:
+            where.append("(title LIKE ? OR body LIKE ? OR key LIKE ?)")
+            params.extend([f"%{q}%"] * 3)
+        clause = ("WHERE " + " AND ".join(where)) if where else ""
+        with self._lock:
+            rows = self.conn.execute(
+                f"SELECT * FROM kb_entries {clause} "
+                "ORDER BY hits DESC, updated_at DESC LIMIT ?",
+                [*params, max(1, min(int(limit or 100), 1000))]).fetchall()
+        return [self._kb_row(row) for row in rows]
+
+    def get_kb_entry(self, entry_id: str) -> dict | None:
+        with self._lock:
+            row = self.conn.execute(
+                "SELECT * FROM kb_entries WHERE id = ?", (entry_id,)).fetchone()
+        return self._kb_row(row) if row else None
+
+    def bump_kb_hit(self, entry_id: str) -> dict | None:
+        with self._lock:
+            self.conn.execute(
+                "UPDATE kb_entries SET hits = hits + 1, updated_at = ? "
+                "WHERE id = ?", (_now(), entry_id))
+            self.conn.commit()
+        return self.get_kb_entry(entry_id)
+
+    def clear_kb(self, scope: str = "") -> int:
+        with self._lock:
+            if scope:
+                cursor = self.conn.execute(
+                    "DELETE FROM kb_entries WHERE scope = ?", (scope,))
+            else:
+                cursor = self.conn.execute("DELETE FROM kb_entries")
+            self.conn.commit()
+        return int(cursor.rowcount or 0)
+
+    # -- target profile ---------------------------------------------------
+    def upsert_target_profile(self, mission_id: str, **fields) -> dict:
+        mission_id = str(mission_id or "")
+        if not mission_id:
+            raise ValueError("mission_id is required")
+        current = self.get_target_profile(mission_id) or {}
+        merged = {**current, **{k: v for k, v in fields.items() if v is not None}}
+        now = _now()
+        with self._lock:
+            self.conn.execute(
+                "INSERT INTO target_profiles (mission_id, target, host, ip, "
+                "summary, dns_json, tls_json, waf_json, tech_json, network_json, "
+                "updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
+                "ON CONFLICT(mission_id) DO UPDATE SET target = excluded.target, "
+                "host = excluded.host, ip = excluded.ip, summary = excluded.summary, "
+                "dns_json = excluded.dns_json, tls_json = excluded.tls_json, "
+                "waf_json = excluded.waf_json, tech_json = excluded.tech_json, "
+                "network_json = excluded.network_json, "
+                "updated_at = excluded.updated_at",
+                (mission_id, str(merged.get("target") or ""),
+                 str(merged.get("host") or ""), str(merged.get("ip") or ""),
+                 str(merged.get("summary") or "")[:2000],
+                 json.dumps(merged.get("dns") or {}, default=str),
+                 json.dumps(merged.get("tls") or {}, default=str),
+                 json.dumps(merged.get("waf") or {}, default=str),
+                 json.dumps(merged.get("tech") or [], default=str),
+                 json.dumps(merged.get("network") or {}, default=str), now),
+            )
+            self.conn.commit()
+        return self.get_target_profile(mission_id) or {}
+
+    def get_target_profile(self, mission_id: str) -> dict | None:
+        with self._lock:
+            row = self.conn.execute(
+                "SELECT * FROM target_profiles WHERE mission_id = ?",
+                (mission_id,)).fetchone()
+        return self._profile_row(row) if row else None
+
+    # -- campaign ---------------------------------------------------------
+    def ensure_campaign(self, mission_id: str) -> dict:
+        with self._lock:
+            self.conn.execute(
+                "INSERT OR IGNORE INTO campaigns (mission_id, stage, stages_json, "
+                "note, updated_at) VALUES (?, 'recon', '[]', '', ?)",
+                (mission_id, _now()))
+            self.conn.commit()
+        return self.get_campaign(mission_id) or {}
+
+    def get_campaign(self, mission_id: str) -> dict | None:
+        with self._lock:
+            row = self.conn.execute(
+                "SELECT * FROM campaigns WHERE mission_id = ?",
+                (mission_id,)).fetchone()
+        return self._campaign_row(row) if row else None
+
+    def patch_campaign(self, mission_id: str, **fields) -> dict:
+        self.ensure_campaign(mission_id)
+        allowed = {"stage", "note"}
+        sets, values = [], []
+        for key in allowed:
+            if key in fields and fields[key] is not None:
+                sets.append(f"{key} = ?")
+                values.append(str(fields[key]))
+        if "stages" in fields and fields["stages"] is not None:
+            sets.append("stages_json = ?")
+            values.append(json.dumps(fields["stages"], default=str))
+        if sets:
+            sets.append("updated_at = ?")
+            values.extend([_now(), mission_id])
+            with self._lock:
+                self.conn.execute(
+                    f"UPDATE campaigns SET {', '.join(sets)} WHERE mission_id = ?",
+                    values)
+                self.conn.commit()
+        return self.get_campaign(mission_id) or {}
+
+    # -- operator directions ----------------------------------------------
+    def create_direction(self, mission_id: str, body: str,
+                         mentions: list | None = None,
+                         created_by: str = "operator") -> dict:
+        body = str(body or "").strip()
+        if not body:
+            raise ValueError("direction body is required")
+        direction_id = _new_id("dir")
+        with self._lock:
+            self.conn.execute(
+                "INSERT INTO mission_directions (id, mission_id, body, "
+                "mentions_json, status, created_by, created_at) "
+                "VALUES (?, ?, ?, ?, 'queued', ?, ?)",
+                (direction_id, mission_id, body[:2000],
+                 json.dumps(mentions or [], default=str),
+                 str(created_by or "operator")[:80], _now()))
+            self.conn.commit()
+        return self.get_direction(direction_id) or {}
+
+    def get_direction(self, direction_id: str) -> dict | None:
+        with self._lock:
+            row = self.conn.execute(
+                "SELECT * FROM mission_directions WHERE id = ?",
+                (direction_id,)).fetchone()
+        return self._direction_row(row) if row else None
+
+    def list_directions(self, mission_id: str, status: str = "",
+                        limit: int = 50) -> list[dict]:
+        clause, params = "mission_id = ?", [mission_id]
+        if status:
+            clause += " AND status = ?"
+            params.append(status)
+        with self._lock:
+            rows = self.conn.execute(
+                f"SELECT * FROM mission_directions WHERE {clause} "
+                "ORDER BY created_at ASC LIMIT ?",
+                [*params, max(1, min(int(limit or 50), 500))]).fetchall()
+        return [self._direction_row(row) for row in rows]
+
+    def consume_directions(self, mission_id: str, limit: int = 3,
+                           run_id: str = "") -> list[dict]:
+        with self._lock:
+            rows = self.conn.execute(
+                "SELECT * FROM mission_directions WHERE mission_id = ? AND "
+                "status = 'queued' ORDER BY created_at ASC LIMIT ?",
+                (mission_id, max(1, int(limit)))).fetchall()
+            ids = [row["id"] for row in rows]
+            if ids:
+                marks = ",".join("?" for _ in ids)
+                self.conn.execute(
+                    f"UPDATE mission_directions SET status = 'consumed', "
+                    f"run_id = ?, consumed_at = ? WHERE id IN ({marks})",
+                    [run_id, _now(), *ids])
+                self.conn.commit()
+        return [self._direction_row(row) for row in rows]
+
+    @staticmethod
+    def _kb_row(row: sqlite3.Row) -> dict:
+        item = dict(row)
+        item["source"] = _loads(item.pop("source_json"), {})
+        item["data"] = _loads(item.pop("data_json"), {})
+        return item
+
+    @staticmethod
+    def _profile_row(row: sqlite3.Row) -> dict:
+        item = dict(row)
+        item["dns"] = _loads(item.pop("dns_json"), {})
+        item["tls"] = _loads(item.pop("tls_json"), {})
+        item["waf"] = _loads(item.pop("waf_json"), {})
+        item["tech"] = _loads(item.pop("tech_json"), [])
+        item["network"] = _loads(item.pop("network_json"), {})
+        return item
+
+    @staticmethod
+    def _campaign_row(row: sqlite3.Row) -> dict:
+        item = dict(row)
+        item["stages"] = _loads(item.pop("stages_json"), [])
+        return item
+
+    @staticmethod
+    def _direction_row(row: sqlite3.Row) -> dict:
+        item = dict(row)
+        item["mentions"] = _loads(item.pop("mentions_json"), [])
         return item
 
     # -- approvals --------------------------------------------------------

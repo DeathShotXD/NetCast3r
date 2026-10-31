@@ -580,6 +580,57 @@ def graph_edge_add(ctx: ToolContext, args: dict) -> dict:
                  f"/api/v1/missions/{args['mission_id']}/graph/edges", body=body)
 
 
+def kb_search(ctx: ToolContext, args: dict) -> dict:
+    query = {key: args[key] for key in ("scope", "kind", "q", "limit")
+             if key in args}
+    return _call(ctx, "GET", "/api/v1/kb", query=query or None)
+
+
+def kb_write(ctx: ToolContext, args: dict) -> dict:
+    body = {key: args[key] for key in
+            ("scope", "kind", "key", "title", "body", "confidence", "source",
+             "data") if key in args}
+    return _call(ctx, "POST", "/api/v1/kb", body=body)
+
+
+def kb_digest(ctx: ToolContext, args: dict) -> dict:
+    return _call(ctx, "GET", "/api/v1/kb/digest",
+                 query={"mission_id": args.get("mission_id", ""),
+                        "limit": args.get("limit", 12)})
+
+
+def kb_stats(ctx: ToolContext, args: dict) -> dict:
+    return _call(ctx, "GET", "/api/v1/kb/stats")
+
+
+def kb_learn(ctx: ToolContext, args: dict) -> dict:
+    return _call(ctx, "POST",
+                 f"/api/v1/missions/{args['mission_id']}/kb/learn", body={})
+
+
+def target_profile(ctx: ToolContext, args: dict) -> dict:
+    mission_id = args["mission_id"]
+    if args.get("build", True):
+        return _call(ctx, "POST", f"/api/v1/missions/{mission_id}/profile", body={})
+    return _call(ctx, "GET", f"/api/v1/missions/{mission_id}/profile")
+
+
+def campaign_status(ctx: ToolContext, args: dict) -> dict:
+    return _call(ctx, "GET", f"/api/v1/missions/{args['mission_id']}/campaign")
+
+
+def direction_add(ctx: ToolContext, args: dict) -> dict:
+    body = {key: args[key] for key in ("body", "created_by") if key in args}
+    return _call(ctx, "POST",
+                 f"/api/v1/missions/{args['mission_id']}/directions", body=body)
+
+
+def directions_list(ctx: ToolContext, args: dict) -> dict:
+    query = {key: args[key] for key in ("status", "limit") if key in args}
+    return _call(ctx, "GET", f"/api/v1/missions/{args['mission_id']}/directions",
+                 query=query or None)
+
+
 def agent_start(ctx: ToolContext, args: dict) -> dict:
     mission = _mission(ctx, args["mission_id"])
     target = str(mission.get("target") or "").strip()
@@ -2731,6 +2782,15 @@ _HANDLERS.update({
     "path_verify": path_verify,
     "graph_node_add": graph_node_add,
     "graph_edge_add": graph_edge_add,
+    "kb_search": kb_search,
+    "kb_write": kb_write,
+    "kb_digest": kb_digest,
+    "kb_stats": kb_stats,
+    "kb_learn": kb_learn,
+    "target_profile": target_profile,
+    "campaign_status": campaign_status,
+    "direction_add": direction_add,
+    "directions_list": directions_list,
     "agent_notes_write": agent_notes_write,
     "agent_notes_list": agent_notes_list,
     "agent_notes_clear": agent_notes_clear,
@@ -3099,6 +3159,85 @@ TOOLS: tuple[Tool, ...] = (
                                  "enum": ["observed", "inferred", "hypothesis"]},
                   "evidence": {"type": "object", "description": "provenance"}},
                  ["mission_id", "src", "dst", "kind"]), "graph_edge_add"),
+    Tool("kb_search", "Search the shared knowledge base",
+         "The durable, provider-agnostic memory every brain reads. Search "
+         "technologies, endpoint shapes, technique outcomes, dead ends, and "
+         "verified chains. Global entries carry across every mission and every "
+         "model provider.",
+         "low", "learning",
+         _schema({"q": _string("free-text query"),
+                  "scope": _string("global or a mission id"),
+                  "kind": _string("entry kind"),
+                  "limit": _integer("max entries", 1, 1000, 100)}, []),
+         "kb_search"),
+    Tool("kb_write", "Write to the shared knowledge base",
+         "Record one durable fact the mesh should not have to rediscover: a "
+         "technology, an endpoint shape, a technique outcome, a dead end, or a "
+         "verified chain. Use scope 'global' to share it across missions, or a "
+         "mission id to keep it local. Mark an unproven claim 'hypothesis'.",
+         "medium", "learning",
+         _schema({"kind": _string("entry kind"),
+                  "key": _string("stable key within scope and kind"),
+                  "title": _string("short title"),
+                  "body": _string("the fact and its evidence"),
+                  "scope": _string("global (default) or a mission id"),
+                  "confidence": {"type": "string",
+                                 "enum": ["observed", "inferred", "hypothesis"]},
+                  "source": {"type": "object", "description": "provenance"},
+                  "data": {"type": "object", "description": "extra fields"}},
+                 ["kind", "key"]), "kb_write"),
+    Tool("kb_digest", "Read the memory a brain plans from",
+         "The most-used global entries plus this mission's entries, compacted "
+         "for a brief. This is what makes a different model provider inherit "
+         "the same knowledge instantly.",
+         "low", "learning",
+         _schema({"mission_id": _string("mission id"),
+                  "limit": _integer("entries", 1, 50, 12)}), "kb_digest"),
+    Tool("kb_stats", "Knowledge base totals",
+         "Entry counts by kind and scope.", "low", "learning",
+         _schema({}), "kb_stats"),
+    Tool("kb_learn", "Write a mission's lesson into the knowledge base",
+         "Derive knowledge entries from a mission's stored evidence: the "
+         "technologies its graph shows, the endpoint shapes it saw, the "
+         "technique outcomes, the dead ends, and the verified chains. "
+         "Idempotent. Never invents a result.",
+         "medium", "learning",
+         _schema({"mission_id": _string("mission id")}, ["mission_id"]),
+         "kb_learn"),
+    Tool("target_profile", "Build or read the target profile",
+         "Consolidate what is known about the target from real evidence: host, "
+         "IP, technology, WAF/CDN, and any observed TLS or DNS data. A field "
+         "that was never observed stays empty; the profile never invents an "
+         "ASN, a cloud provider, or a certificate. Feeds technology nodes onto "
+         "the evidence graph.",
+         "medium", "recon",
+         _schema({"mission_id": _string("mission id"),
+                  "build": _boolean("rebuild from stored evidence", True)},
+                 ["mission_id"]), "target_profile"),
+    Tool("campaign_status", "Read the mission's campaign stage",
+         "Which stage the engagement is in - recon, fingerprint, surface, "
+         "hypotheses, verify, chain, or report - why, and which brain should "
+         "run next. Computed from stored evidence only.",
+         "low", "missions",
+         _schema({"mission_id": _string("mission id")}, ["mission_id"]),
+         "campaign_status"),
+    Tool("direction_add", "Queue an operator direction for a mission",
+         "Inject a queued instruction into a mission. The director and the "
+         "brains pick it up as a priority objective. Mention a specific lead "
+         "or finding with @lead:<id> or @finding:<id>.",
+         "medium", "missions",
+         _schema({"mission_id": _string("mission id"),
+                  "body": _string("the direction"),
+                  "created_by": _string("who queued it")},
+                 ["mission_id", "body"]), "direction_add"),
+    Tool("directions_list", "List a mission's queued directions",
+         "Show queued, consumed, and done operator directions for a mission.",
+         "low", "missions",
+         _schema({"mission_id": _string("mission id"),
+                  "status": {"type": "string",
+                             "enum": ["queued", "consumed", "done"]},
+                  "limit": _integer("entries", 1, 500, 50)},
+                 ["mission_id"]), "directions_list"),
     Tool("mission_hunt", "Start a standalone hunt",
          "Run a deterministic read-only hunt for a mission: scope, fingerprint, "
          "safe surface paths, technique and chain ranking, and explicit "

@@ -201,6 +201,39 @@ class DirectorTests(unittest.TestCase):
         self.director._tick(force=True)
         self.assertEqual(self.server.index.totals().get("findings", 0), 0)
 
+    def test_a_finished_run_matures_the_mission(self):
+        mission = self.mission("mature")
+        run = self.server.index.create_run("http://127.0.0.1:9/", {"mode": "hunt"})
+        self.server.index.add_mission_run(mission["id"], run["id"])
+        self.server.index.add_tool_call(
+            "http_probe", risk="low", status="ok", actor="agent:swarm",
+            mission_id=mission["id"], run_id=run["id"],
+            args={"target": "http://127.0.0.1:9/api/x"},
+            result={"status": 200, "headers": {"server": "nginx"}})
+        self.server.index.create_hypothesis(
+            "a lead", target="http://127.0.0.1:9/api/x",
+            mission_id=mission["id"], technique="idor")
+        out = self.director._mature(mission["id"])
+        self.assertIn("stage", out)
+        self.assertTrue(self.server.index.list_kb_entries(scope="global"))
+        self.assertIsNotNone(self.server.index.get_campaign(mission["id"]))
+        self.assertTrue(self.server.index.list_graph_nodes(mission["id"]))
+
+    def test_a_queued_direction_becomes_the_run_goal(self):
+        mission = self.mission("directed")
+        prior = self.server.index.create_run("http://127.0.0.1:9/", {"mode": "hunt"})
+        self.server.index.add_mission_run(mission["id"], prior["id"])
+        self.server.index.create_direction(mission["id"], "focus the order API")
+        decision = self.director._tick(force=True)
+        self.assertEqual(decision["action"], "start")
+        self.assertEqual(decision["mode"], "autopilot")
+        self.assertIn("Operator direction: focus the order API",
+                      self.solvers.options.get("goal", ""))
+        self.assertEqual(self.server.index.list_directions(mission["id"],
+                                                           status="queued"), [])
+        self.assertEqual(len(self.server.index.list_directions(
+            mission["id"], status="consumed")), 1)
+
 
 class DirectorSurfaceTests(unittest.TestCase):
     def setUp(self):

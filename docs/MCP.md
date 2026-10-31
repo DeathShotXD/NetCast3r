@@ -158,7 +158,7 @@ Denied calls are audited with status `denied`.
 
 ## 3. Tools
 
-170 tools, grouped by job. Every tool publishes a JSON schema with
+179 tools, grouped by job. Every tool publishes a JSON schema with
 `additionalProperties: false`; unknown arguments are rejected rather than
 silently ignored.
 
@@ -195,6 +195,15 @@ silently ignored.
 | `path_verify` | medium | Verify a path step by step as a live run |
 | `graph_node_add` | medium | Add or update an evidence-graph node |
 | `graph_edge_add` | medium | Add or update an evidence-graph edge |
+| `kb_search` | low | Search the shared knowledge base |
+| `kb_write` | medium | Record a durable fact in the shared memory |
+| `kb_digest` | low | The memory a brain plans from |
+| `kb_stats` | low | Knowledge base totals by kind and scope |
+| `kb_learn` | medium | Write a mission's lessons into the knowledge base |
+| `target_profile` | medium | Build or read the target profile |
+| `campaign_status` | low | The mission's campaign stage and next brain |
+| `direction_add` | medium | Queue an operator direction for a mission |
+| `directions_list` | low | List a mission's queued directions |
 | `agent_status` | low | Read the runtime plan, tasks, budget, and model calls |
 | `agent_start` | medium | Plan and run the bounded mission agent |
 | `agent_pause` / `agent_resume` / `agent_stop` | low | Control a live run |

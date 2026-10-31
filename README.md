@@ -207,7 +207,7 @@ netcast3r mcp --print-config    # optional: paste into opencode.jsonc
 opencode mcp list
 ```
 
-The server has 170 typed tools with risk tiers, scope enforcement, single-use
+The server has 179 typed tools with risk tiers, scope enforcement, single-use
 approvals, rate limits, and a full tool-call audit, plus disposable inboxes,
 OAST callbacks, named auth profiles, a scoped authenticated `http_request`, a
 path-variant differential, run-to-run surface diffing, local reverse-engineering
@@ -285,6 +285,9 @@ required before a candidate is marked corroborated.
 
 - [Architecture](docs/architecture.md) - stages, scope, tiers, and the fallback path
 - [MCP control plane](docs/MCP.md) - tools, policies, approvals, and OpenCode setup
+- [Director](docs/DIRECTOR.md) - the autonomous supervisor, Prime, and the kill switch
+- [Evidence graph](docs/GRAPH.md) - nodes, provenance, candidate paths, and verification
+- [Memory](docs/MEMORY.md) - the shared knowledge base, campaign stages, and the profile
 - [Design](docs/DESIGN.md) - palette, type, and the validation ladder
 - [Contributing](CONTRIBUTING.md) - the ground rules for a pull request
 - [Security policy](SECURITY.md) - how to report a problem in NetCast3r
