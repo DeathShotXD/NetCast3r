@@ -424,6 +424,21 @@ export interface ExploitPlan {
   note: string;
 }
 
+export interface Candidate {
+  id: string;
+  mission_id: string;
+  run_id: string;
+  module_id: string;
+  path_id: string;
+  title: string;
+  severity: string;
+  status: string;
+  evidence: Record<string, unknown>;
+  finding_id: string;
+  created_at: string;
+  updated_at: string;
+}
+
 export type Screen =
   | 'home'
   | 'missions'

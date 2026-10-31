@@ -1,5 +1,5 @@
 import type {
-  Campaign, ConnectInfo, Approval, Direction, DirectorLogEntry, DirectorStatus, ExploitPlan, Finding, Inventory, KeyEntry, McpInfo, Meta, Mission, MissionAgent, MissionGraph, Paged, Provider, ProviderHealth, RevengKinds, RevengResult, Run, RunEvent, Submission, SubmissionSummary, ToolCall, Totals, TrendPoint } from './types';
+  Campaign, Candidate, ConnectInfo, Approval, Direction, DirectorLogEntry, DirectorStatus, ExploitPlan, Finding, Inventory, KeyEntry, McpInfo, Meta, Mission, MissionAgent, MissionGraph, Paged, Provider, ProviderHealth, RevengKinds, RevengResult, Run, RunEvent, Submission, SubmissionSummary, ToolCall, Totals, TrendPoint } from './types';
 
 const BASE = '/api/v1';
 
@@ -127,6 +127,18 @@ export const api = {
   buildExploitLeads: (id: string, limit = 5) =>
     request<{ created: Array<Record<string, unknown>>; count: number }>(
       'POST', `/missions/${id}/exploits/plan`, { limit }),
+  exploitRun: (id: string, moduleId: string, policy = 'supervised') =>
+    request<Run>('POST', `/missions/${id}/exploits/run`, {
+      module_id: moduleId, policy
+    }),
+  candidates: (id: string, status = '') =>
+    request<{ items: Candidate[] }>(
+      'GET', `/missions/${id}/candidates${status ? `?status=${status}` : ''}`),
+  promoteCandidate: (candidateId: string, body: Record<string, unknown> = {}) =>
+    request<{ candidate: Candidate; finding: Finding }>(
+      'POST', `/candidates/${candidateId}/promote`, body),
+  dismissCandidate: (candidateId: string) =>
+    request<Candidate>('POST', `/candidates/${candidateId}/dismiss`, {}),
   missionAgent: (id: string) =>
     request<MissionAgent>('GET', `/missions/${id}/agent`),
   startMissionAgent: (id: string, body: Record<string, unknown>) =>

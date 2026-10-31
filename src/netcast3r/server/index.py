@@ -498,6 +498,23 @@ CREATE TABLE IF NOT EXISTS mission_directions (
 );
 CREATE INDEX IF NOT EXISTS idx_directions_mission
     ON mission_directions(mission_id, status, created_at);
+
+CREATE TABLE IF NOT EXISTS finding_candidates (
+    id TEXT PRIMARY KEY,
+    mission_id TEXT,
+    run_id TEXT,
+    module_id TEXT DEFAULT '',
+    path_id TEXT DEFAULT '',
+    title TEXT,
+    severity TEXT DEFAULT 'medium',
+    status TEXT DEFAULT 'candidate',
+    evidence_json TEXT DEFAULT '{}',
+    finding_id TEXT DEFAULT '',
+    created_at TEXT,
+    updated_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_candidates_mission
+    ON finding_candidates(mission_id, status, created_at DESC);
 """
 
 SEVERITY_ORDER = {"critical": 0, "high": 1, "medium": 2, "low": 3, "info": 4, "unknown": 5}
@@ -2641,6 +2658,75 @@ class Index:
     def _direction_row(row: sqlite3.Row) -> dict:
         item = dict(row)
         item["mentions"] = _loads(item.pop("mentions_json"), [])
+        return item
+
+    # -- finding candidates ------------------------------------------------
+    # A candidate is a reproducible difference an exploit test observed. It is
+    # NOT a finding: promotion is a separate, explicit write.
+    def create_candidate(self, mission_id: str, title: str, severity: str = "medium",
+                         module_id: str = "", path_id: str = "", run_id: str = "",
+                         evidence: dict | None = None) -> dict:
+        title = str(title or "").strip()
+        if not title:
+            raise ValueError("title required")
+        candidate_id = _new_id("cnd")
+        now = _now()
+        with self._lock:
+            self.conn.execute(
+                "INSERT INTO finding_candidates (id, mission_id, run_id, module_id, "
+                "path_id, title, severity, status, evidence_json, created_at, "
+                "updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, 'candidate', ?, ?, ?)",
+                (candidate_id, mission_id, run_id, module_id, path_id,
+                 title[:300], str(severity or "medium")[:24],
+                 json.dumps(evidence or {}, default=str), now, now))
+            self.conn.commit()
+        return self.get_candidate(candidate_id) or {}
+
+    def get_candidate(self, candidate_id: str) -> dict | None:
+        with self._lock:
+            row = self.conn.execute(
+                "SELECT * FROM finding_candidates WHERE id = ?",
+                (candidate_id,)).fetchone()
+        return self._candidate_row(row) if row else None
+
+    def list_candidates(self, mission_id: str = "", status: str = "",
+                        limit: int = 100) -> list[dict]:
+        where, params = [], []
+        if mission_id:
+            where.append("mission_id = ?")
+            params.append(mission_id)
+        if status:
+            where.append("status = ?")
+            params.append(status)
+        clause = ("WHERE " + " AND ".join(where)) if where else ""
+        with self._lock:
+            rows = self.conn.execute(
+                f"SELECT * FROM finding_candidates {clause} "
+                "ORDER BY created_at DESC LIMIT ?",
+                [*params, max(1, min(int(limit or 100), 1000))]).fetchall()
+        return [self._candidate_row(row) for row in rows]
+
+    def patch_candidate(self, candidate_id: str, **fields) -> dict | None:
+        allowed = {"status", "finding_id", "severity", "title"}
+        sets, values = [], []
+        for key in allowed:
+            if key in fields and fields[key] is not None:
+                sets.append(f"{key} = ?")
+                values.append(str(fields[key]))
+        if sets:
+            sets.append("updated_at = ?")
+            values.extend([_now(), candidate_id])
+            with self._lock:
+                self.conn.execute(
+                    f"UPDATE finding_candidates SET {', '.join(sets)} WHERE id = ?",
+                    values)
+                self.conn.commit()
+        return self.get_candidate(candidate_id)
+
+    @staticmethod
+    def _candidate_row(row: sqlite3.Row) -> dict:
+        item = dict(row)
+        item["evidence"] = _loads(item.pop("evidence_json"), {})
         return item
 
     # -- approvals --------------------------------------------------------

@@ -3,7 +3,7 @@
   import { api } from '../api';
   import { store } from '../state.svelte';
   import { ago, sevColor, statusLabel } from '../format';
-  import type { AgentStatus, Approval, Autonomy, Campaign, Direction, ExploitPlan, GraphNode, GraphPath, Mission, MissionAgent, MissionGraph, MissionStatus, ToolCall } from '../types';
+  import type { AgentStatus, Approval, Autonomy, Campaign, Candidate, Direction, ExploitPlan, GraphNode, GraphPath, Mission, MissionAgent, MissionGraph, MissionStatus, ToolCall } from '../types';
   import Icon from '../ui/Icon.svelte';
   import Sparkline from '../ui/Sparkline.svelte';
 
@@ -45,7 +45,7 @@
   let loading = $state(true);
   let error = $state('');
   let filter = $state<Filter>('all');
-  let detailTab = $state<'overview' | 'runs' | 'approvals' | 'graph' | 'exploits' | 'console' | 'tools' | 'agent'>('overview');
+  let detailTab = $state<'overview' | 'runs' | 'approvals' | 'graph' | 'exploits' | 'candidates' | 'console' | 'tools' | 'agent'>('overview');
   let graph = $state<MissionGraph | null>(null);
   let graphBusy = $state('');
   let campaign = $state<Campaign | null>(null);
@@ -54,6 +54,8 @@
   let directionText = $state('');
   let exploitPlan = $state<ExploitPlan | null>(null);
   let exploitBusy = $state('');
+  let candidates = $state<Candidate[]>([]);
+  let candidateBusy = $state('');
   let composer = $state(false);
   let busy = $state('');
   let form = $state({
@@ -143,6 +145,7 @@
       directions = [];
       toolCalls = [];
       exploitPlan = null;
+      candidates = [];
       detailTab = preserveTab ? tab : 'overview';
       void loadCampaign();
       if (scroll && window.innerWidth < 1180) {
@@ -304,6 +307,7 @@
     loadedKey = key;
     if (detailTab === 'graph') void loadGraph();
     else if (detailTab === 'exploits') void loadExploits();
+    else if (detailTab === 'candidates') void loadCandidates();
     else if (detailTab === 'console') void loadDirections();
     else if (detailTab === 'tools') void loadTools();
     else if (detailTab === 'agent') void loadAgent();
@@ -340,6 +344,57 @@
     return risk === 'critical' ? 'var(--obs-red)'
       : risk === 'high' ? 'var(--obs-orange)'
       : risk === 'medium' ? 'var(--obs-violet-3)' : 'var(--obs-muted)';
+  }
+
+  async function runModule(module: { id: string }) {
+    if (!selected) return;
+    exploitBusy = module.id;
+    try {
+      const run = await api.exploitRun(selected.id, module.id,
+        selected.autonomy === 'autonomous' ? 'full' : 'supervised');
+      store.toast('ok', `running ${module.id}`);
+      store.watch(run.id);
+    } catch (exc) {
+      void store.fail(exc instanceof Error ? exc.message : 'could not run the module');
+    } finally {
+      exploitBusy = '';
+    }
+  }
+
+  async function loadCandidates() {
+    if (!selected) return;
+    try {
+      candidates = (await api.candidates(selected.id)).items ?? [];
+    } catch {
+      candidates = [];
+    }
+  }
+
+  async function promoteCandidate(candidate: Candidate) {
+    if (!selected) return;
+    candidateBusy = candidate.id;
+    try {
+      const result = await api.promoteCandidate(candidate.id, {});
+      store.toast('ok', `promoted to a ${result.finding.severity} finding`);
+      await loadCandidates();
+      void store.refreshTotals();
+    } catch (exc) {
+      void store.fail(exc instanceof Error ? exc.message : 'could not promote the candidate');
+    } finally {
+      candidateBusy = '';
+    }
+  }
+
+  async function dismissCandidate(candidate: Candidate) {
+    candidateBusy = candidate.id;
+    try {
+      await api.dismissCandidate(candidate.id);
+      await loadCandidates();
+    } catch (exc) {
+      void store.fail(exc instanceof Error ? exc.message : 'could not dismiss the candidate');
+    } finally {
+      candidateBusy = '';
+    }
   }
 
   async function loadCampaign() {
@@ -834,6 +889,7 @@
               ['approvals', `Approvals ${selected.pending_approvals}`],
               ['graph', 'Graph'],
               ['exploits', 'Exploits'],
+              ['candidates', 'Candidates'],
               ['console', 'Console'],
               ['tools', 'Tools'],
               ['agent', `Agent${agent && ['planning', 'running', 'paused', 'stopping'].includes(agent.status) ? ' *' : ''}`]
@@ -1029,6 +1085,9 @@
                           <span class="obs-chip" style="color:{riskColor(module.risk)}">{module.risk}</span>
                           <span class="obs-graph-path-title">{module.name}</span>
                           <span class="obs-chip">{module.category}</span>
+                          <button class="obs-btn obs-btn-ghost" type="button" disabled={!module.ready || exploitBusy !== ''} onclick={() => void runModule(module)}>
+                            {exploitBusy === module.id ? 'Starting...' : 'Run'}
+                          </button>
                         </div>
                         <p class="obs-graph-path-steps">
                           {module.evidence}
@@ -1046,6 +1105,50 @@
                     <div class="obs-empty-title">No plan yet</div>
                     <p class="obs-empty-copy">Load the exploit plan to match the catalog to this mission's technology and leads.</p>
                   </div>
+                {/if}
+              </section>
+            {:else if detailTab === 'candidates'}
+              <section class="obs-detail-section">
+                <div class="obs-graph-head">
+                  <div>
+                    <h3>Finding candidates</h3>
+                    <p class="obs-graph-copy">
+                      Reproducible differences an exploit test observed, with the raw evidence attached. A candidate is not a finding - promote it yourself when you have reproduced it.
+                    </p>
+                  </div>
+                  <button class="obs-btn obs-btn-ghost" type="button" onclick={() => void loadCandidates()}>
+                    Refresh
+                  </button>
+                </div>
+                {#if candidates.length}
+                  <ul class="obs-graph-paths">
+                    {#each candidates as candidate (candidate.id)}
+                      <li>
+                        <div class="obs-graph-path-head">
+                          <span class="obs-chip" style="color:{riskColor(candidate.severity)}">{candidate.severity}</span>
+                          <span class="obs-chip" style="color:{candidate.status === 'candidate' ? 'var(--obs-acid)' : 'var(--obs-muted)'}">{candidate.status}</span>
+                          <span class="obs-graph-path-title">{candidate.title}</span>
+                          {#if candidate.status === 'candidate'}
+                            <button class="obs-btn obs-btn-primary" type="button" disabled={candidateBusy !== ''} onclick={() => void promoteCandidate(candidate)}>
+                              {candidateBusy === candidate.id ? 'Promoting...' : 'Promote'}
+                            </button>
+                            <button class="obs-btn obs-btn-ghost" type="button" disabled={candidateBusy !== ''} onclick={() => void dismissCandidate(candidate)}>
+                              Dismiss
+                            </button>
+                          {:else if candidate.finding_id}
+                            <span class="obs-chip">{candidate.finding_id}</span>
+                          {/if}
+                        </div>
+                        <p class="obs-graph-path-steps">
+                          {candidate.module_id || 'path'} - evidence: {JSON.stringify(candidate.evidence).slice(0, 220)}
+                        </p>
+                      </li>
+                    {/each}
+                  </ul>
+                {:else}
+                  <p class="obs-detail-note">
+                    No candidates yet. Run an exploit module; a supported step stages one here for review.
+                  </p>
                 {/if}
               </section>
             {:else if detailTab === 'console'}

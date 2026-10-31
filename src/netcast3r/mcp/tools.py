@@ -655,6 +655,37 @@ def exploit_plan(ctx: ToolContext, args: dict) -> dict:
                  query={"mission_id": mission_id, "limit": args.get("limit", 8)})
 
 
+def exploit_run(ctx: ToolContext, args: dict) -> dict:
+    body = {"module_id": args["module_id"],
+            "policy": args.get("policy", "supervised")}
+    return _call(ctx, "POST",
+                 f"/api/v1/missions/{args['mission_id']}/exploits/run", body=body)
+
+
+def candidates_list(ctx: ToolContext, args: dict) -> dict:
+    query = {key: args[key] for key in ("status", "limit") if key in args}
+    return _call(ctx, "GET",
+                 f"/api/v1/missions/{args['mission_id']}/candidates",
+                 query=query or None)
+
+
+def candidate_promote(ctx: ToolContext, args: dict) -> dict:
+    body = {key: args[key] for key in ("severity", "impact", "notes")
+            if key in args}
+    return _call(ctx, "POST", f"/api/v1/candidates/{args['candidate_id']}/promote",
+                 body=body)
+
+
+def candidate_dismiss(ctx: ToolContext, args: dict) -> dict:
+    return _call(ctx, "POST", f"/api/v1/candidates/{args['candidate_id']}/dismiss",
+                 body={})
+
+
+def params_extract(ctx: ToolContext, args: dict) -> dict:
+    return _call(ctx, "POST", f"/api/v1/missions/{args['mission_id']}/params",
+                 body={"limit": args.get("limit", 200)})
+
+
 def agent_start(ctx: ToolContext, args: dict) -> dict:
     mission = _mission(ctx, args["mission_id"])
     target = str(mission.get("target") or "").strip()
@@ -2818,6 +2849,11 @@ _HANDLERS.update({
     "exploit_catalog": exploit_catalog,
     "exploit_search": exploit_search,
     "exploit_plan": exploit_plan,
+    "exploit_run": exploit_run,
+    "candidates_list": candidates_list,
+    "candidate_promote": candidate_promote,
+    "candidate_dismiss": candidate_dismiss,
+    "params_extract": params_extract,
     "agent_notes_write": agent_notes_write,
     "agent_notes_list": agent_notes_list,
     "agent_notes_clear": agent_notes_clear,
@@ -3293,6 +3329,51 @@ TOOLS: tuple[Tool, ...] = (
                   "limit": _integer("modules", 1, 40, 5),
                   "build": _boolean("create hypotheses for ready modules", True)},
                  ["mission_id"]), "exploit_plan"),
+    Tool("exploit_run", "Run an exploit module against a mission",
+         "Execute one module's typed steps in order through the same scoped, "
+         "risk-gated tools every caller uses, judged by an independent model. "
+         "When a step supports, it stages a **candidate** with the raw evidence "
+         "attached - never a finding. It appears in Live Runs. Promote a "
+         "candidate to a finding yourself when you have reproduced it.",
+         "medium", "missions",
+         _schema({"mission_id": _string("mission id"),
+                  "module_id": _string("module id from exploit_search"),
+                  "policy": {"type": "string", "description": "tool policy",
+                             "enum": ["readonly", "supervised", "full"]}},
+                 ["mission_id", "module_id"]), "exploit_run", open_world=True),
+    Tool("candidates_list", "List staged finding candidates",
+         "Reproducible differences exploit tests observed, with the raw evidence. "
+         "A candidate is not a finding; promotion is a separate operator action.",
+         "low", "missions",
+         _schema({"mission_id": _string("mission id"),
+                  "status": {"type": "string",
+                             "enum": ["candidate", "promoted", "dismissed"]},
+                  "limit": _integer("entries", 1, 1000, 100)},
+                 ["mission_id"]), "candidates_list"),
+    Tool("candidate_promote", "Promote a candidate to a finding",
+         "Turn a staged candidate into a finding, carrying its recorded evidence "
+         "and module. This is an explicit operator action: an agent never "
+         "promotes on its own.",
+         "medium", "missions",
+         _schema({"candidate_id": _string("candidate id"),
+                  "severity": _string("override severity"),
+                  "impact": _string("impact statement"),
+                  "notes": _string("operator notes")},
+                 ["candidate_id"]), "candidate_promote"),
+    Tool("candidate_dismiss", "Dismiss a candidate",
+         "Mark a staged candidate as dismissed when it does not reproduce.",
+         "low", "missions",
+         _schema({"candidate_id": _string("candidate id")}, ["candidate_id"]),
+         "candidate_dismiss"),
+    Tool("params_extract", "Extract observed parameters",
+         "Read parameter names out of what the mission already observed - "
+         "endpoint URLs, agent notes, and tool-call arguments - and record them "
+         "as graph nodes and shared knowledge. It never fires a scan; a parameter "
+         "is a real observed name, and injectability is a separate test.",
+         "low", "recon",
+         _schema({"mission_id": _string("mission id"),
+                  "limit": _integer("parameters", 1, 500, 200)},
+                 ["mission_id"]), "params_extract"),
     Tool("mission_hunt", "Start a standalone hunt",
          "Run a deterministic read-only hunt for a mission: scope, fingerprint, "
          "safe surface paths, technique and chain ranking, and explicit "

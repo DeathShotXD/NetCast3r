@@ -185,11 +185,13 @@ class Server:
         self._solver_lock = threading.Lock()
         self._director_lock = threading.Lock()
         self._path_lock = threading.Lock()
+        self._exploit_lock = threading.Lock()
         self.agent_runtime = None
         self.lab_runner = None
         self.hunt_runner = None
         self.solver_runner = None
         self.path_runner = None
+        self.exploit_runner = None
         self.director = None
         self._routes = self._build_routes()
         try:
@@ -263,6 +265,17 @@ class Server:
                     from .path_runner import PathRunner
                     runtime = PathRunner(self)
                     self.path_runner = runtime
+        return runtime
+
+    def _exploits(self):
+        runtime = self.exploit_runner
+        if runtime is None:
+            with self._exploit_lock:
+                runtime = self.exploit_runner
+                if runtime is None:
+                    from .exploit_runner import ExploitRunner
+                    runtime = ExploitRunner(self)
+                    self.exploit_runner = runtime
         return runtime
 
     # -- run helpers ------------------------------------------------------
@@ -1002,6 +1015,77 @@ class Server:
             limit = int(body.get("limit", 5) or 5)
             return _json(exploits_module.build_hypotheses(
                 self.index, ctx.params["id"], limit))
+
+        @add("POST", r"/api/v1/missions/(?P<id>[A-Za-z0-9_]+)/exploits/run")
+        def exploits_run(ctx):
+            body = ctx.json()
+            body = body if isinstance(body, dict) else {}
+            options = {"policy": body.get("policy", "supervised")}
+            try:
+                run = self._exploits().start(ctx.params["id"],
+                                             str(body.get("module_id") or ""),
+                                             options)
+            except ValueError as exc:
+                return _problem(400, str(exc))
+            return _json(run, 201)
+
+        @add("POST", r"/api/v1/exploits/runs/(?P<id>[A-Za-z0-9_]+)/stop")
+        def exploits_stop(ctx):
+            return _json({"stopped": self._exploits().cancel(ctx.params["id"])})
+
+        @add("POST", r"/api/v1/missions/(?P<id>[A-Za-z0-9_]+)/params")
+        def params_extract(ctx):
+            from .. import discovery as discovery_module
+
+            if not self.index.get_mission(ctx.params["id"]):
+                return _problem(404, "mission not found")
+            body = ctx.json()
+            body = body if isinstance(body, dict) else {}
+            return _json(discovery_module.extract_parameters(
+                self.index, ctx.params["id"],
+                limit=int(body.get("limit", 200) or 200)))
+
+        @add("GET", r"/api/v1/missions/(?P<id>[A-Za-z0-9_]+)/candidates")
+        def candidates_list(ctx):
+            if not self.index.get_mission(ctx.params["id"]):
+                return _problem(404, "mission not found")
+            return _json({"items": self.index.list_candidates(
+                ctx.params["id"], status=str(ctx.query.get("status", "") or ""),
+                limit=int(ctx.query.get("limit", 100) or 100))})
+
+        @add("POST", r"/api/v1/candidates/(?P<id>[A-Za-z0-9_]+)/promote")
+        def candidate_promote(ctx):
+            candidate = self.index.get_candidate(ctx.params["id"])
+            if not candidate:
+                return _problem(404, "candidate not found")
+            if candidate.get("status") == "promoted":
+                return _problem(409, "candidate is already promoted")
+            body = ctx.json()
+            body = body if isinstance(body, dict) else {}
+            severity = str(body.get("severity") or candidate.get("severity")
+                           or "medium")
+            evidence = candidate.get("evidence") or {}
+            finding = self.index.create_finding(
+                title=str(candidate.get("title") or "candidate"),
+                severity=severity, run_id=str(candidate.get("run_id") or ""),
+                impact=str(body.get("impact") or ""),
+                evidence=json.dumps(evidence, default=str)[:8000],
+                source="candidate",
+                tags=[str(candidate.get("module_id") or "candidate")],
+                notes=str(body.get("notes") or
+                          "Promoted from a candidate by an operator."))
+            updated = self.index.patch_candidate(
+                candidate["id"], status="promoted", finding_id=finding["id"],
+                severity=severity)
+            return _json({"candidate": updated, "finding": finding})
+
+        @add("POST", r"/api/v1/candidates/(?P<id>[A-Za-z0-9_]+)/dismiss")
+        def candidate_dismiss(ctx):
+            candidate = self.index.get_candidate(ctx.params["id"])
+            if not candidate:
+                return _problem(404, "candidate not found")
+            return _json(self.index.patch_candidate(candidate["id"],
+                                                    status="dismissed"))
 
         # -- knowledge base, profile, campaign, directions ------------------
         @add("GET", r"/api/v1/kb")
@@ -2579,6 +2663,8 @@ def serve(host: str = "127.0.0.1", port: int = 7857, *, open_browser: bool = Tru
             server.solver_runner.shutdown(wait=True)
         if getattr(server, "path_runner", None) is not None:
             server.path_runner.shutdown(wait=True)
+        if getattr(server, "exploit_runner", None) is not None:
+            server.exploit_runner.shutdown(wait=True)
         server.jobs.shutdown(wait=True)
         server.index.close()
         httpd.server_close()

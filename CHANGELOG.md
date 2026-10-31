@@ -6,6 +6,18 @@ Notable changes to NetCast3r, newest first.
 
 ### Added
 
+- Module execution and finding candidates. `exploit_run` executes a module's
+  typed steps in order through the same scoped, risk-gated tools as every other
+  caller, judged by an independent model, and **stages a candidate** with the raw
+  evidence attached when a step supports - never a finding. `candidates_list`,
+  `candidate_promote`, and `candidate_dismiss` let an operator review and promote
+  a candidate into a real finding when they have reproduced it; an agent never
+  promotes on its own. The shared step executor (`src/netcast3r/steps.py`) now
+  backs both path verification and module execution. `params_extract` reads
+  parameter names from stored evidence (endpoints, notes, tool-call args) into
+  the graph and shared memory without firing a scan. The mission detail gains a
+  **Candidates** tab, and each ready module in the **Exploits** tab has a
+  **Run** action. 187 tools.
 - Authorized autonomous execution and continuous hunting. An **active mission
   set to `autonomous` is the authorization**: its in-scope chain runs without a
   per-call approval step-up. The tool registry auto-authorizes high-risk calls
@@ -80,7 +92,7 @@ Notable changes to NetCast3r, newest first.
   Agent Zero, a generic MCP client, and the HTTP API. The session token is
   never returned; a harness reads it from the 0600 control-plane file. A
   **Connect** screen shows the same information with a copyable config per
-  harness, a searchable list of all 182 typed tools, and their risk tiers.
+  harness, a searchable list of all 187 typed tools, and their risk tiers.
   Any harness drives the full surface and shares one database and audit trail.
 - Native operator: `autopilot` and
   `POST /api/v1/missions/{id}/autopilot` make NetCast3r its own harness. It

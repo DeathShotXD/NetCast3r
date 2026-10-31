@@ -207,7 +207,7 @@ netcast3r mcp --print-config    # optional: paste into opencode.jsonc
 opencode mcp list
 ```
 
-The server has 182 typed tools with risk tiers, scope enforcement, single-use
+The server has 187 typed tools with risk tiers, scope enforcement, single-use
 approvals, rate limits, and a full tool-call audit, plus disposable inboxes,
 OAST callbacks, named auth profiles, a scoped authenticated `http_request`, a
 path-variant differential, run-to-run surface diffing, local reverse-engineering
