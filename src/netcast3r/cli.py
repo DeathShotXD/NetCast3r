@@ -18,7 +18,7 @@ from .recon import Recon
 from .report import save_sarif
 from .scope import ScopeManager
 from .store import Store
-from .tui import Console, Dashboard
+from .tui import Dashboard
 
 
 def _load_seeds(value: str, use_stdin: bool = False) -> list[str]:

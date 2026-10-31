@@ -25,14 +25,21 @@ class Source:
 
 
 def _har(path: Path) -> Source:
-    data = json.loads(path.read_text(errors="ignore"))
+    try:
+        data = json.loads(path.read_text(errors="ignore"))
+    except (OSError, ValueError) as exc:
+        raise ValueError(f"HAR file is not valid JSON: {exc}") from exc
+    if not isinstance(data, dict):
+        raise ValueError("HAR file is not a JSON object")
     source = Source()
-    for entry in data.get("log", {}).get("entries", []):
-        url = entry.get("request", {}).get("url", "")
+    for entry in (data.get("log") or {}).get("entries") or []:
+        if not isinstance(entry, dict):
+            continue
+        url = ((entry.get("request") or {}).get("url") or "")
         if not url:
             continue
         source.urls.append(url)
-        body = entry.get("response", {}).get("content", {}).get("text", "")
+        body = ((entry.get("response") or {}).get("content") or {}).get("text") or ""
         if body:
             source.bodies[url] = body
     return source
@@ -99,14 +106,21 @@ def _plain(path: Path) -> Source:
 
 def load(path: str | Path) -> Source:
     target = Path(path)
-    text = target.read_text(errors="ignore")[:2000] if target.exists() else ""
+    if not target.exists():
+        raise ValueError(f"saved traffic file not found: {target}")
+    text = target.read_text(errors="ignore")[:2000]
     name = target.name.lower()
-    if name.endswith(".har") or text.lstrip().startswith("{") and "\"log\"" in text:
-        return _har(target)
-    if text.lstrip().startswith("<?xml") or name.endswith(".xml"):
-        return _burp(target)
-    if re.search(r"={3,}\s*\d+\s*={3,}", text):
-        return _zap(target)
-    if text.lstrip().startswith("id,host,method") or name.endswith(".csv"):
-        return _caido(target)
+    # A malformed file is a clean error, not a traceback: any parser failure
+    # falls back to reading whatever URLs the text carries.
+    try:
+        if name.endswith(".har") or text.lstrip().startswith("{") and "\"log\"" in text:
+            return _har(target)
+        if text.lstrip().startswith("<?xml") or name.endswith(".xml"):
+            return _burp(target)
+        if re.search(r"={3,}\s*\d+\s*={3,}", text):
+            return _zap(target)
+        if text.lstrip().startswith("id,host,method") or name.endswith(".csv"):
+            return _caido(target)
+    except (ValueError, OSError, ET.ParseError, csv.Error):
+        return _plain(target)
     return _plain(target)

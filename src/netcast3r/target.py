@@ -183,7 +183,6 @@ def build_profile(index, mission_id: str, registry=None) -> dict:
         tech=tech, network=network)
 
     # Reflect technology onto the graph so the profile feeds chaining.
-    from . import graph as graph_module
     host_kind = "ip" if _looks_ip(host) else "host"
     host_node = index.upsert_graph_node(mission_id, host_kind, host, label=host)
     for name in tech:
