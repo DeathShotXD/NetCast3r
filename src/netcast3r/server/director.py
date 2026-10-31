@@ -266,12 +266,17 @@ class Director:
         if len(runs) >= int(state.get("max_concurrent") or 1):
             self._touch(active, state)
             return {"action": "wait", "reason": f"{len(runs)} run(s) in flight"}
-        if not self._eligible(state):
+        eligible = {mission["id"] for mission in self._eligible(state)}
+        if not eligible:
             self._touch(active, state)
             return {"action": "idle", "reason": "no eligible mission"}
-        decision = self.prime.decide(limit=prime_module.MAX_OBJECTIVES)
+        decision = self.prime.decide(limit=50)
         chosen = None
         for row in decision["ranked"]:
+            # The scope filter is authoritative: Prime ranks the whole
+            # portfolio, but only an eligible mission may be started.
+            if row["mission_id"] not in eligible:
+                continue
             if self._busy(row["mission_id"], active):
                 continue
             if self._cooldown_left(row["mission_id"], row, active) > 0:

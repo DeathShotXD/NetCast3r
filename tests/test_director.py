@@ -164,6 +164,19 @@ class DirectorTests(unittest.TestCase):
         self.assertFalse(Director._still_parked(entry))
         self.assertFalse(Director._still_parked({"parked": False}))
 
+    def test_the_scope_filter_is_enforced_at_selection(self):
+        auto = self.mission("auto", autonomy="autonomous")
+        sup = self.mission("sup", autonomy="supervised")
+        # Make the supervised mission rank highest in Prime: give it findings.
+        run = self.server.index.create_run("http://127.0.0.1:9/", {"mode": "hunt"})
+        self.server.index.add_mission_run(sup["id"], run["id"])
+        self.server.index.add_findings(run["id"], [
+            {"title": "loud", "severity": "critical", "source": "run"}])
+        decision = self.director._tick(force=True)
+        self.assertEqual(decision["action"], "start")
+        self.assertEqual(decision["mission_id"], auto["id"])
+        self.assertEqual(len(self.hunts.started), 1)
+
     def test_tune_updates_the_running_loop(self):
         self.director.tune(tick_seconds=20, max_concurrent=3)
         self.assertEqual(self.director.tick_seconds, 20)
