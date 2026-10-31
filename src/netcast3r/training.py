@@ -451,9 +451,13 @@ def record(index, slug: str, status: str, lesson: str = "", evidence: str = "",
 
 
 def verify_signal(body: str) -> bool:
-    """PortSwigger prints a congratulations banner on a solved lab."""
+    """PortSwigger prints a solved banner, in older and current markup."""
     text = (body or "").lower()
-    return ("congratulations" in text and "solved" in text) or "lab solved" in text
+    return (("congratulations" in text and "solved" in text)
+            or "lab solved" in text
+            or "notification-labsolved" in text
+            or "widgetcontainer-lab-status is-solved" in text
+            or "lab-status is-solved" in text)
 
 
 def verify_text(body: str, expect: list | None = None) -> bool:

