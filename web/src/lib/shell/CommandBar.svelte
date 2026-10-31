@@ -119,6 +119,29 @@
   {/if}
 
   <button
+    class="obs-net-toggle"
+    class:on={store.netCursor}
+    type="button"
+    aria-pressed={store.netCursor}
+    title={store.netCursor ? 'net cursor on: it casts a web when it hunts' : 'net cursor off'}
+    aria-label="toggle the net cursor"
+    onclick={() => store.setNetCursor(!store.netCursor)}
+  >
+    <svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true">
+      <path
+        d="M8 1v14M1 8h14M3 3l10 10M13 3L3 13"
+        fill="none"
+        stroke="currentColor"
+        stroke-width=".8"
+        stroke-opacity=".8"
+      />
+      <circle cx="8" cy="8" r="3.1" fill="none" stroke="currentColor" stroke-width=".9" />
+      <circle cx="8" cy="8" r="1.1" fill="currentColor" />
+    </svg>
+    <span class="hidden sm:inline">Net</span>
+  </button>
+
+  <button
     class="obs-palette-btn obs-kbd"
     type="button"
     onclick={() => (store.palette = true)}

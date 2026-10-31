@@ -2,6 +2,7 @@
   import { onMount } from 'svelte';
   import { store } from './lib/state.svelte';
   import CommandBar from './lib/shell/CommandBar.svelte';
+  import NetCursor from './lib/shell/NetCursor.svelte';
   import Connect from './lib/screens/Connect.svelte';
   import Rail from './lib/shell/Rail.svelte';
   import AgentStudio from './lib/screens/AgentStudio.svelte';
@@ -75,6 +76,7 @@
 {:else}
   <Backdrop />
   <Symbols />
+  <NetCursor />
   <div class="obs-app">
     <Rail open={railOpen} onNavigate={() => (railOpen = false)} />
 

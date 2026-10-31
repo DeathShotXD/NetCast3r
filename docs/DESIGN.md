@@ -225,10 +225,30 @@ The rule: **motion reports state, it does not decorate.**
 | Hover | hairline goes violet to acid, no scale | 140 ms |
 | Idle | net mesh nodes pulse between 0.35 and 1.0 opacity on a 2.4 s cycle | infinite |
 | Boot | `>_` types, then the six stages resolve in order | 1.6 s total, skippable |
+| Net cursor near a control | strands reach, then tighten and knot | 700 ms reach, 140 ms grab |
 
 `prefers-reduced-motion: reduce` removes the pulse, the shard burst, the
-count-up, and the typewriter. The scanline and grain stay, because they are
-texture, not motion.
+count-up, the typewriter, and the net cursor. The scanline and grain stay,
+because they are texture, not motion.
+
+### The net cursor
+
+The banner's hooded figure throws a web over what it hunts. The shell carries
+that gesture: a small acid reticle follows the pointer, and when it comes
+within 240 px of any interactive element it spins a net out to that element's
+corners with a node cross at each anchor, tightens at 88 px, and pulses a hot
+bead along every strand. A press throws a short radial burst. Nothing moves
+that the user did not move.
+
+It is a progressive enhancement and always overridable:
+
+- on only for `(pointer: fine)` with motion allowed, never for touch or reduced
+  motion;
+- a **Net** toggle in the top bar, remembered in `localStorage`;
+- text fields keep a normal caret cursor;
+- a drawing fault stops the overlay and hands the native cursor straight back;
+- the canvas is `pointer-events: none` with `mix-blend-mode: screen` so the
+  acid threads glow over panels without intercepting a single click.
 
 No parallax. No scroll hijacking. No loader longer than 1.6 seconds.
 

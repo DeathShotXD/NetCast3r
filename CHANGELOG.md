@@ -34,6 +34,20 @@ Notable changes to NetCast3r, newest first.
   casts/queue/findings cells. Failed status fills use a deep mulberry
   (`#7f2a56`) with dusty-rose ink (`#d970a8`) instead of the retired neon
   magenta, so the Cast history bar sits inside the brand palette.
+- Lab recipes can now run a packet-aligned race: a `race` step calls
+  `single_packet_race` (HTTP/2) and falls back to `last_byte_race` (HTTP/1.1)
+  when the host does not speak h2, then checks the response mix. A recipe for
+  the PortSwigger limit-overrun coupon lab uses it. The Academy launcher also
+  drives the JS-hydrated launch control through the managed browser when the
+  page no longer prints a plain launch href, and `verify_signal` recognises the
+  current `is-solved` widget markup as well as the older congratulations
+  banner.
+- Net cursor: the banner's throw-web becomes a live gesture. A canvas overlay
+  trails an acid reticle, and as it nears any control it spins a net to that
+  control's edges, tightens, knots, and pulses; a press throws a short burst.
+  It runs only for a fine pointer with motion allowed, is toggleable from the
+  top bar (remembered in `localStorage`), hands the caret cursor back over text
+  fields, and stops itself on a drawing fault. The Help screen explains it.
 - Bounded model action loop: `model_solve` and
   `POST /api/v1/missions/{id}/solve` let a configured (including free) model
   choose up to six typed tool calls through an allow-list of low and medium

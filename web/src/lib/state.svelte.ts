@@ -2,6 +2,21 @@ import { api } from './api';
 import { stageForAgent } from './format';
 import type { Finding, Meta, Run, RunEvent, Screen, Toast, Totals } from './types';
 
+const NET_CURSOR_KEY = 'netcast3r.netcursor';
+
+function readNetCursor(): boolean {
+  try {
+    const stored = window.localStorage.getItem(NET_CURSOR_KEY);
+    if (stored === 'on') return true;
+    if (stored === 'off') return false;
+  } catch {
+    /* storage is unavailable; fall through to the default */
+  }
+  const fine = window.matchMedia('(pointer: fine)').matches;
+  const calm = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  return fine && !calm;
+}
+
 class Store {
   meta = $state<Meta | null>(null);
   totals = $state<Totals | null>(null);
@@ -15,6 +30,7 @@ class Store {
   ready = $state(false);
   busy = $state('');
   palette = $state(false);
+  netCursor = $state(false);
   query = $state('');
   toasts = $state<Toast[]>([]);
   toastSeq = 0;
@@ -29,10 +45,22 @@ class Store {
 
   constructor() {
     if (typeof window !== 'undefined') {
+      this.netCursor = readNetCursor();
       window.addEventListener('nc:locked', () => {
         this.locked = true;
       });
       window.addEventListener('hashchange', () => this.applyHash());
+    }
+  }
+
+  /** The net cursor is a progressive enhancement: on by default only for a
+   *  fine pointer with motion allowed, and always overridable by the user. */
+  setNetCursor(value: boolean): void {
+    this.netCursor = value;
+    try {
+      window.localStorage.setItem(NET_CURSOR_KEY, value ? 'on' : 'off');
+    } catch {
+      /* private mode: the choice just does not persist */
     }
   }
 

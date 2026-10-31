@@ -105,6 +105,18 @@
   </section>
 
   <section class="panel p-5">
+    <p class="eyebrow">shell behaviour</p>
+    <h2 class="mt-1 text-lg text-bone">The net cursor</h2>
+    <p class="mt-3 max-w-[70ch] text-sm leading-relaxed text-bone-dust">
+      A light reticle follows the pointer. As it comes near a control it spins a web out to that
+      control's edges, tightens, and knots itself on. Press anywhere to throw a short burst. It is
+      the banner's gesture, live. Toggle it with <strong>Net</strong> in the top bar; the choice is
+      remembered. It never runs for touch input or under a reduced-motion preference, and text
+      fields always keep a normal caret cursor.
+    </p>
+  </section>
+
+  <section class="panel p-5">
     <p class="eyebrow">from the terminal</p>
     <pre
       class="mono mt-3 overflow-x-auto rounded-lg border border-indigo-deep bg-void px-4 py-3 text-xs leading-relaxed text-bone-dust">netcast3r ui                 # this dashboard, then open the printed link

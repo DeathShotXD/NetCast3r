@@ -810,6 +810,80 @@ body {
   }
 }
 
+/* ---------------- net cursor ---------------- */
+
+/* The overlay draws the net; the real pointer stays for the browser. */
+.nc-canvas {
+  position: fixed;
+  inset: 0;
+  z-index: 58;
+  pointer-events: none;
+  mix-blend-mode: screen;
+}
+
+.obs-net-toggle {
+  display: inline-flex;
+  height: 28px;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 5px;
+  padding: 0 8px;
+  cursor: pointer;
+  border: 1px solid var(--obs-line);
+  border-radius: 6px;
+  background: var(--obs-panel);
+  color: var(--obs-faint);
+  font-family: var(--mono);
+  font-size: 8px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  transition: color 140ms var(--ease), border-color 140ms var(--ease),
+    background 140ms var(--ease), box-shadow 140ms var(--ease);
+}
+
+.obs-net-toggle:hover {
+  border-color: var(--obs-line-strong);
+  color: var(--obs-text-2);
+}
+
+.obs-net-toggle.on {
+  border-color: var(--obs-line-acid);
+  background: var(--obs-acid-soft);
+  color: var(--obs-acid);
+  box-shadow: 0 0 14px -6px rgba(200, 248, 26, 0.7);
+}
+
+.obs-net-toggle svg {
+  display: block;
+}
+
+@media (pointer: coarse) {
+  .obs-net-toggle {
+    display: none;
+  }
+}
+
+/* A caught element gets a subtle acid outline while the net is on it. The
+   canvas draws the strands and knots; this only steadies the silhouette. */
+.nc-caught {
+  outline: 1px solid rgba(200, 248, 26, 0.55) !important;
+  outline-offset: 2px;
+  box-shadow: 0 0 0 1px rgba(200, 248, 26, 0.1),
+    0 0 20px -4px rgba(200, 248, 26, 0.4) !important;
+}
+
+@media (pointer: fine) and (prefers-reduced-motion: no-preference) {
+  html.nc-live,
+  html.nc-live * {
+    cursor: none !important;
+  }
+
+  /* Text fields keep a real caret cursor so typing still feels normal. */
+  html.nc-live :is(input, textarea, select, [contenteditable='true'], [contenteditable='']) {
+    cursor: auto !important;
+  }
+}
+
 /* ---------------- shared controls ---------------- */
 
 .obs-btn {
