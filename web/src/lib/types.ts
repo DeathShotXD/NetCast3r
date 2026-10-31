@@ -253,6 +253,57 @@ export interface Paged<T> {
   size: number;
 }
 
+export interface DirectorInFlight {
+  run_id: string;
+  mission_id: string;
+  mode: string;
+  runner: string;
+  started_at: string;
+  age: number;
+}
+
+export interface DirectorMissionState {
+  mission_id: string;
+  last_mode: string;
+  no_progress: number;
+  fails: number;
+  parked: boolean;
+  last_run: string;
+}
+
+export interface DirectorStatus {
+  engaged: boolean;
+  paused: boolean;
+  scope_filter: string;
+  tick_seconds: number;
+  max_concurrent: number;
+  cycles: number;
+  runs_started: number;
+  stop_reason: string;
+  note: string;
+  last_tick: string;
+  in_flight: DirectorInFlight[];
+  missions: DirectorMissionState[];
+  eligible: number;
+  running: boolean;
+  portfolio?: {
+    ranked: Array<Record<string, unknown>>;
+    source: string;
+    thought: string;
+    generated_at: string;
+  };
+}
+
+export interface DirectorLogEntry {
+  id: number;
+  ts: string;
+  kind: string;
+  mission_id: string;
+  run_id: string;
+  message: string;
+  data: Record<string, unknown>;
+}
+
 export type Screen =
   | 'home'
   | 'missions'

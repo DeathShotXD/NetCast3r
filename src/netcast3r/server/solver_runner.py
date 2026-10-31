@@ -47,6 +47,8 @@ class SolverRunner:
         run = self.server.index.create_run(target, {
             "mode": mode, "mission_id": mission_id,
             "max_steps": options.get("max_steps", defaults),
+            "goal": str(options.get("goal") or mission.get("objective") or "")[:400],
+            "policy": str(options.get("policy") or "supervised"),
         })
         self.server.index.add_mission_run(mission_id, run["id"])
         cancel = threading.Event()
@@ -130,15 +132,22 @@ class SolverRunner:
         self.server.index.update_run(run_id, status="running", started_at=_now())
         emit(Event(type="run.state", stage="reason", payload={"status": "running"}))
         try:
-            from ..mcp.tools import ToolContext, ToolRegistry
+            from ..mcp.tools import POLICIES, ToolContext, ToolRegistry
 
+            policy = str(options.get("policy") or "supervised").strip().lower()
+            if policy not in POLICIES:
+                policy = "supervised"
             ctx = ToolContext(
-                plane=LocalPlane(self.server), policy="supervised",
+                plane=LocalPlane(self.server), policy=policy,
                 base=self.server.base,
                 actor={"autopilot": "agent:autopilot", "swarm": "agent:swarm"}.get(
                     mode, "agent:solver"),
                 mission_id=mission_id)
             registry = ToolRegistry(ctx)
+            # The director hands the brain a Prime objective; the brain reads
+            # its goal from the mission, so overlay it without mutating.
+            goal = str(options.get("goal") or "").strip()
+            brain_mission = {**mission, "objective": goal} if goal else mission
 
             def on_step(stage: str, payload: dict) -> None:
                 emit(Event(type="log", stage=stage,
@@ -147,7 +156,7 @@ class SolverRunner:
 
             if mode == "autopilot":
                 operator = autopilot.Autopilot(
-                    registry, self._completion, mission,
+                    registry, self._completion, brain_mission,
                     max_steps=options.get("max_steps", autopilot.DEFAULT_STEPS),
                     max_seconds=options.get("max_seconds", default_seconds),
                     max_model_calls=options.get("max_model_calls",
@@ -156,7 +165,7 @@ class SolverRunner:
                 result = operator.run()
             elif mode == "swarm":
                 mesh = swarm.Swarm(
-                    registry, self._completion_for, mission,
+                    registry, self._completion_for, brain_mission,
                     max_steps=options.get("max_steps", swarm.DEFAULT_STEPS),
                     max_seconds=options.get("max_seconds", default_seconds),
                     max_model_calls=options.get("max_model_calls",
@@ -167,7 +176,7 @@ class SolverRunner:
                 solver = model_solver.Solver(
                     registry, self._completion, mission_id,
                     str(mission.get("target") or ""),
-                    goal=str(mission.get("objective") or ""),
+                    goal=str(options.get("goal") or mission.get("objective") or ""),
                     max_steps=options.get("max_steps", model_solver.DEFAULT_STEPS),
                     max_seconds=options.get("max_seconds", model_solver.DEFAULT_SECONDS),
                     on_step=on_step, should_stop=cancel.is_set)

@@ -171,10 +171,12 @@ class Server:
         self._lab_lock = threading.Lock()
         self._hunt_lock = threading.Lock()
         self._solver_lock = threading.Lock()
+        self._director_lock = threading.Lock()
         self.agent_runtime = None
         self.lab_runner = None
         self.hunt_runner = None
         self.solver_runner = None
+        self.director = None
         self._routes = self._build_routes()
         try:
             learning.seed_builtin_skills(self.index)
@@ -224,6 +226,18 @@ class Server:
                     from .solver_runner import SolverRunner
                     runtime = SolverRunner(self)
                     self.solver_runner = runtime
+        return runtime
+
+    def _director(self):
+        """The supervisor. Constructed lazily; its thread starts in serve()."""
+        runtime = self.director
+        if runtime is None:
+            with self._director_lock:
+                runtime = self.director
+                if runtime is None:
+                    from .director import Director
+                    runtime = Director(self)
+                    self.director = runtime
         return runtime
 
     # -- run helpers ------------------------------------------------------
@@ -787,6 +801,60 @@ class Server:
             except ValueError as exc:
                 return _problem(400, str(exc))
             return _json(run, 201)
+
+        # -- director ------------------------------------------------------
+        @add("GET", r"/api/v1/director")
+        def director_status(ctx):
+            with_portfolio = str(ctx.query.get("portfolio", "") or "") in {
+                "1", "true", "yes"}
+            return _json(self._director().status(with_portfolio=with_portfolio))
+
+        @add("GET", r"/api/v1/director/eligibility")
+        def director_eligibility(ctx):
+            return _json({"items": self._director().eligibility()})
+
+        @add("GET", r"/api/v1/director/log")
+        def director_log(ctx):
+            limit = int(ctx.query.get("limit", 100) or 100)
+            return _json({"items": self.index.list_director_log(limit)})
+
+        @add("POST", r"/api/v1/director/control")
+        def director_control(ctx):
+            body = ctx.json()
+            body = body if isinstance(body, dict) else {}
+            action = str(body.get("action") or "").strip().lower()
+            director = self._director()
+            if action == "engage":
+                return _json(director.engage())
+            if action == "disengage":
+                return _json(director.disengage(str(body.get("reason") or "operator")))
+            if action == "pause":
+                return _json(director.pause())
+            if action == "resume":
+                return _json(director.resume())
+            if action == "tune":
+                return _json(director.tune(
+                    tick_seconds=body.get("tick_seconds"),
+                    max_concurrent=body.get("max_concurrent"),
+                    scope_filter=body.get("scope_filter")))
+            if action == "tick":
+                decision = director._tick(force=bool(body.get("force")))
+                return _json({"decision": decision, **director.status()})
+            if action == "advise":
+                return _json(director.advise())
+            if action == "kill":
+                return _json(director.kill(all_runs=bool(body.get("all", True)),
+                                           reason=str(body.get("reason") or
+                                                      "kill switch")))
+            return _problem(400, f"unknown director action: {action or 'none'}")
+
+        @add("POST", r"/api/v1/director/kill")
+        def director_kill(ctx):
+            body = ctx.json()
+            body = body if isinstance(body, dict) else {}
+            return _json(self._director().kill(
+                all_runs=bool(body.get("all", True)),
+                reason=str(body.get("reason") or "kill switch")))
 
         @add("POST", r"/api/v1/solves/(?P<id>[A-Za-z0-9_]+)/stop")
         def solve_stop(ctx):
@@ -2238,6 +2306,12 @@ def serve(host: str = "127.0.0.1", port: int = 7857, *, open_browser: bool = Tru
         "version": _version(),
     })
     server.started.set()
+    # The director is the harness itself: it starts with the control plane and
+    # schedules only what the scope filter and each mission's autonomy allow.
+    try:
+        server._director().start()
+    except Exception:  # noqa: BLE001 - the API must still come up
+        pass
     if open_browser:
         try:
             webbrowser.open(url)
@@ -2248,6 +2322,8 @@ def serve(host: str = "127.0.0.1", port: int = 7857, *, open_browser: bool = Tru
     except KeyboardInterrupt:
         pass
     finally:
+        if getattr(server, "director", None) is not None:
+            server.director.shutdown()
         if server.agent_runtime is not None:
             server.agent_runtime.shutdown()
         if getattr(server, "lab_runner", None) is not None:

@@ -198,15 +198,16 @@ to stay on the host you named.
 
 ### Agent control (MCP)
 
-NetCast3r exposes its real workspace to OpenCode and any other MCP client:
+NetCast3r exposes its real workspace over MCP to OpenCode and any other MCP
+client, and it drives itself without one:
 
 ```bash
-netcast3r ui --no-open
-netcast3r mcp --print-config   # paste into opencode.jsonc under mcp.servers
+netcast3r ui --no-open          # the director starts with the control plane
+netcast3r mcp --print-config    # optional: paste into opencode.jsonc
 opencode mcp list
 ```
 
-The server has 105 typed tools with risk tiers, scope enforcement, single-use
+The server has 164 typed tools with risk tiers, scope enforcement, single-use
 approvals, rate limits, and a full tool-call audit, plus disposable inboxes,
 OAST callbacks, named auth profiles, a scoped authenticated `http_request`, a
 path-variant differential, run-to-run surface diffing, local reverse-engineering
@@ -218,10 +219,16 @@ report-quality scoring and payout ROI, a persistent lesson/skill memory with a
 per-technology expertise profile that the agent recalls before planning,
 self-audit and diagnostics, and a bounded mission agent (`agent_start`) that
 plans, probes, inventories, and verifies inside the mission's scope. See
-[docs/MCP.md](docs/MCP.md). It is a real control surface, not an autonomous
-scanner: the runtime never fabricates findings; `findings_create` records only
-what an operator or agent validated, and every bounty result still comes from
-verified runs.
+[docs/MCP.md](docs/MCP.md).
+
+It is its own harness. A **Prime** planner ranks every scoped mission from real
+signals, and a durable **director** wakes on a tick, runs one scoped pass at a
+time through the hunt, the operator, or the five-role mesh, watches it to
+completion, and records whether the mission moved. The command center has a
+Director strip with Engage, Pause, and Kill. It never fabricates findings:
+`findings_create` records only what an operator or agent validated, every
+bounty result still comes from verified runs, and the director never submits a
+report. See [docs/DIRECTOR.md](docs/DIRECTOR.md).
 
 ### Exit codes
 

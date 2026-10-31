@@ -372,6 +372,34 @@ CREATE TABLE IF NOT EXISTS agent_notes (
 );
 CREATE INDEX IF NOT EXISTS idx_agent_notes_mission
     ON agent_notes(mission_id, created_at ASC);
+
+CREATE TABLE IF NOT EXISTS director_state (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    engaged INTEGER DEFAULT 1,
+    paused INTEGER DEFAULT 0,
+    scope_filter TEXT DEFAULT 'autonomous',
+    tick_seconds INTEGER DEFAULT 15,
+    max_concurrent INTEGER DEFAULT 1,
+    cycles INTEGER DEFAULT 0,
+    runs_started INTEGER DEFAULT 0,
+    stop_reason TEXT DEFAULT '',
+    note TEXT DEFAULT '',
+    active_json TEXT DEFAULT '{}',
+    engaged_at TEXT,
+    last_tick TEXT,
+    updated_at TEXT
+);
+
+CREATE TABLE IF NOT EXISTS director_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    ts TEXT,
+    kind TEXT,
+    mission_id TEXT,
+    run_id TEXT,
+    message TEXT,
+    data_json TEXT DEFAULT '{}'
+);
+CREATE INDEX IF NOT EXISTS idx_director_log_id ON director_log(id DESC);
 """
 
 SEVERITY_ORDER = {"critical": 0, "high": 1, "medium": 2, "low": 3, "info": 4, "unknown": 5}
@@ -381,6 +409,9 @@ TRIAGE_STATUSES = {"new", "in_progress", "confirmed", "escalated", "rejected", "
 SORTS = {"created_at", "severity", "confidence", "title"}
 MISSION_STATUSES = {"draft", "active", "paused", "done", "archived"}
 AUTONOMY_LEVELS = {"manual", "supervised", "autonomous"}
+# Which missions the director may pick up on its own. "autonomous" is the
+# default: a mission has to be opted in before the harness drives it.
+DIRECTOR_SCOPE_FILTERS = {"autonomous", "supervised", "all"}
 AGENT_STATUSES = {"idle", "planning", "running", "paused", "stopping",
                   "stopped", "done", "error"}
 AGENT_TASK_STATUSES = {"pending", "running", "verified", "unverified",
@@ -1956,6 +1987,106 @@ class Index:
         item["args"] = _loads(item.pop("args_json"), {})
         item["result"] = _loads(item.pop("result_json"), {})
         item["evidence"] = _loads(item.pop("evidence_json"), {})
+        return item
+
+    # -- director ---------------------------------------------------------
+    # One durable row drives the whole harness. The active_json blob tracks
+    # which runs the director started and each mission's cooldown, progress,
+    # and failure counters, so a restart can resume instead of re-planning
+    # from scratch.
+    def ensure_director_state(self) -> dict:
+        with self._lock:
+            self.conn.execute(
+                "INSERT OR IGNORE INTO director_state (id, engaged, paused, "
+                "scope_filter, tick_seconds, max_concurrent, cycles, runs_started, "
+                "stop_reason, note, active_json, updated_at) "
+                "VALUES (1, 1, 0, 'autonomous', 15, 1, 0, 0, '', '', '{}', ?)",
+                (_now(),),
+            )
+            self.conn.commit()
+        return self.get_director_state() or {}
+
+    def get_director_state(self) -> dict | None:
+        with self._lock:
+            row = self.conn.execute(
+                "SELECT * FROM director_state WHERE id = 1").fetchone()
+        return self._director_state_row(row) if row else None
+
+    def patch_director_state(self, **fields) -> dict:
+        self.ensure_director_state()
+        allowed = {"engaged", "paused", "scope_filter", "tick_seconds",
+                   "max_concurrent", "cycles", "runs_started", "stop_reason",
+                   "note", "engaged_at", "last_tick"}
+        sets, values = [], []
+        for key in allowed:
+            if key in fields and fields[key] is not None:
+                value = fields[key]
+                if key in {"engaged", "paused", "tick_seconds", "max_concurrent",
+                           "cycles", "runs_started"}:
+                    value = int(value)
+                if key == "scope_filter" and str(value) not in DIRECTOR_SCOPE_FILTERS:
+                    raise ValueError(f"unknown director scope filter: {value}")
+                sets.append(f"{key} = ?")
+                values.append(value)
+        if "active" in fields and fields["active"] is not None:
+            sets.append("active_json = ?")
+            values.append(json.dumps(fields["active"], default=str))
+        if sets:
+            sets.append("updated_at = ?")
+            values.extend([_now()])
+            with self._lock:
+                self.conn.execute(
+                    f"UPDATE director_state SET {', '.join(sets)} WHERE id = 1",
+                    values,
+                )
+                self.conn.commit()
+        return self.get_director_state() or {}
+
+    def add_director_log(self, kind: str, message: str, mission_id: str = "",
+                         run_id: str = "", data: dict | None = None) -> dict:
+        now = _now()
+        with self._lock:
+            cursor = self.conn.execute(
+                "INSERT INTO director_log (ts, kind, mission_id, run_id, message, "
+                "data_json) VALUES (?, ?, ?, ?, ?, ?)",
+                (now, str(kind or "note")[:40], mission_id, run_id,
+                 str(message or "")[:2000], json.dumps(data or {}, default=str)),
+            )
+            row_id = cursor.lastrowid
+            # Keep the feed bounded the way the event bus is bounded.
+            self.conn.execute(
+                "DELETE FROM director_log WHERE id < ?", (row_id - 2000,))
+            self.conn.commit()
+            row = self.conn.execute(
+                "SELECT * FROM director_log WHERE id = ?", (row_id,)).fetchone()
+        return self._director_log_row(row) if row else {}
+
+    def list_director_log(self, limit: int = 200) -> list[dict]:
+        limit = max(1, min(int(limit or 200), 2000))
+        with self._lock:
+            rows = self.conn.execute(
+                "SELECT * FROM director_log ORDER BY id DESC LIMIT ?",
+                (limit,),
+            ).fetchall()
+        return [self._director_log_row(row) for row in rows]
+
+    def clear_director_log(self) -> None:
+        with self._lock:
+            self.conn.execute("DELETE FROM director_log")
+            self.conn.commit()
+
+    @staticmethod
+    def _director_state_row(row: sqlite3.Row) -> dict:
+        item = dict(row)
+        item["active"] = _loads(item.pop("active_json"), {})
+        item["engaged"] = bool(item.get("engaged"))
+        item["paused"] = bool(item.get("paused"))
+        return item
+
+    @staticmethod
+    def _director_log_row(row: sqlite3.Row) -> dict:
+        item = dict(row)
+        item["data"] = _loads(item.pop("data_json"), {})
         return item
 
     # -- approvals --------------------------------------------------------

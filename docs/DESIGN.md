@@ -292,6 +292,15 @@ Mirrors the banner, which already laid the product out correctly.
 Sidebar is 208 px, collapses under 900 px. Header is 56 px. Log is capped at
 240 px and scrolls itself.
 
+The command center carries one extra strip under the counters: the **director
+strip**. It is a normal card, not a new motif. Its state chips reuse the chip
+treatment (outline for idle, acid outline for engaged, violet outline for
+paused), its controls are ordinary `obs-btn` buttons with a fault-coloured
+Kill, and its log is a bounded scroll of uppercase verb, muted message, and a
+tabular timestamp. The strip never animates on its own; it updates in place
+when the five-second poll returns. This is the one place the interface admits
+that the harness is driving itself, so it stays quiet and factual.
+
 ---
 
 ## 8. Terminal

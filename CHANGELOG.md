@@ -6,13 +6,28 @@ Notable changes to NetCast3r, newest first.
 
 ### Added
 
+- Autonomous director: `prime_portfolio`, `director_status`,
+  `director_control`, and `director_log`, plus `GET/POST /api/v1/director*`.
+  NetCast3r now drives itself with no external harness. A **Prime** planner
+  ranks every scoped mission from real signals (status, autonomy, open leads,
+  pending approvals, idle time), names the next answerable objective, and
+  picks the brain for it: hunt for a fresh target, the operator as it matures,
+  the mesh when an open lead exists. A durable **Director** daemon wakes on a
+  tick, starts one scoped run at a time through the same runners the API uses,
+  watches it to completion, and records whether the mission actually moved.
+  State lives in the index, so a restart resumes. It only picks `active`
+  missions allowed by its scope filter (default `autonomous`), parks a mission
+  after two no-progress runs or three failures, and stops at its concurrency
+  cap. The command center shows a Director strip with Engage, Pause, and Kill.
+  It never creates a finding, never decides an approval, and never submits a
+  report.
 - Harness connection surface: `connect_info` and `GET /api/v1/connect`
   publish the control-plane endpoint, policy, tool count, and ready-made
   config blocks for OpenCode, Hermes, a DeepSeek/OpenAI-compatible harness,
   Agent Zero, a generic MCP client, and the HTTP API. The session token is
   never returned; a harness reads it from the 0600 control-plane file. A
   **Connect** screen shows the same information with a copyable config per
-  harness, a searchable list of all 160 typed tools, and their risk tiers.
+  harness, a searchable list of all 164 typed tools, and their risk tiers.
   Any harness drives the full surface and shares one database and audit trail.
 - Native operator: `autopilot` and
   `POST /api/v1/missions/{id}/autopilot` make NetCast3r its own harness. It

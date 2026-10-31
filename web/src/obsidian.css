@@ -6525,3 +6525,119 @@ html.nc-native .nc-tag {
     animation: none;
   }
 }
+
+/* The autonomous director: the harness supervising itself. */
+.obs-director {
+  margin-bottom: 14px;
+  padding: 12px 14px;
+  display: grid;
+  gap: 10px;
+}
+
+.obs-director-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 14px;
+}
+
+.obs-director-title {
+  flex: 1 1 320px;
+  min-width: 240px;
+}
+
+.obs-director-sub {
+  margin-top: 2px;
+  color: var(--obs-muted);
+  font-size: 12px;
+}
+
+.obs-director-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.obs-director-chip {
+  border: 1px solid var(--obs-line);
+  border-radius: 999px;
+  padding: 2px 9px;
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--obs-faint);
+}
+
+.obs-director-chip.on {
+  border-color: var(--obs-line-acid);
+  color: var(--obs-acid);
+}
+
+.obs-director-chip.warn {
+  border-color: var(--obs-line-violet);
+  color: var(--obs-violet-3);
+}
+
+.obs-director-actions {
+  display: flex;
+  gap: 6px;
+  margin-left: auto;
+}
+
+.obs-director-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  border-top: 1px solid var(--obs-line);
+  padding-top: 8px;
+  color: var(--obs-muted);
+  font-size: 11px;
+}
+
+.obs-director-live {
+  color: var(--obs-acid);
+}
+
+.obs-director-log {
+  display: grid;
+  gap: 2px;
+  max-height: 132px;
+  overflow-y: auto;
+  border-top: 1px solid var(--obs-line);
+  padding-top: 8px;
+}
+
+.obs-director-log li {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  color: var(--obs-muted);
+  font-size: 11px;
+}
+
+.obs-director-kind {
+  flex: 0 0 auto;
+  font-size: 9px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--obs-faint);
+}
+
+.obs-director-msg {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.obs-btn-danger {
+  border-color: var(--obs-fault-2);
+  background: var(--obs-fault-soft);
+  color: var(--obs-red);
+}
+
+.obs-btn-danger:hover:not(:disabled) {
+  border-color: var(--obs-red);
+  background: var(--obs-fault-2);
+  color: #f2c9dc;
+}

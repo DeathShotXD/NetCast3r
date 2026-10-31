@@ -515,6 +515,36 @@ def swarm_start(ctx: ToolContext, args: dict) -> dict:
                  body=body)
 
 
+def prime_portfolio(ctx: ToolContext, args: dict) -> dict:
+    """Rank the portfolio with Prime, optionally with model advice."""
+    query = {"portfolio": "1"}
+    if args.get("advise"):
+        return _call(ctx, "POST", "/api/v1/director/control",
+                     body={"action": "advise"})
+    return _call(ctx, "GET", "/api/v1/director", query=query)
+
+
+def director_status(ctx: ToolContext, args: dict) -> dict:
+    query = {"portfolio": "1"} if args.get("portfolio") else None
+    return _call(ctx, "GET", "/api/v1/director", query=query)
+
+
+def director_control(ctx: ToolContext, args: dict) -> dict:
+    body = {"action": args["action"]}
+    for key in ("reason", "tick_seconds", "max_concurrent", "scope_filter",
+                "force", "all"):
+        if key in args:
+            body[key] = args[key]
+    if body["action"] == "kill" and "all" not in body:
+        body["all"] = True
+    return _call(ctx, "POST", "/api/v1/director/control", body=body)
+
+
+def director_log(ctx: ToolContext, args: dict) -> dict:
+    return _call(ctx, "GET", "/api/v1/director/log",
+                 query={"limit": args.get("limit", 100)})
+
+
 def agent_start(ctx: ToolContext, args: dict) -> dict:
     mission = _mission(ctx, args["mission_id"])
     target = str(mission.get("target") or "").strip()
@@ -2656,6 +2686,10 @@ _HANDLERS.update({
     "model_solve": model_solve,
     "autopilot_start": autopilot_start,
     "swarm_start": swarm_start,
+    "prime_portfolio": prime_portfolio,
+    "director_status": director_status,
+    "director_control": director_control,
+    "director_log": director_log,
     "agent_notes_write": agent_notes_write,
     "agent_notes_list": agent_notes_list,
     "agent_notes_clear": agent_notes_clear,
@@ -2916,6 +2950,51 @@ TOOLS: tuple[Tool, ...] = (
                   "max_model_calls": _integer("model calls", 1, 36, 12),
                   "goal": _string("optional focus for the mesh")},
                  ["mission_id"]), "swarm_start", open_world=True),
+    Tool("prime_portfolio", "Rank the mission portfolio with Prime",
+         "Prime is the harness's portfolio brain. It scores every scoped mission "
+         "from real signals (status, autonomy, open leads, pending approvals, "
+         "idle time), picks the next answerable objective for each, and names the "
+         "brain that should run it. Set advise=true to also ask the configured "
+         "model for a second opinion; the model can reorder, never change "
+         "eligibility or scope. Reads only, creates nothing.",
+         "low", "missions",
+         _schema({"advise": _boolean("ask the model to re-rank", False)}),
+         "prime_portfolio"),
+    Tool("director_status", "Read the autonomous director",
+         "The director is NetCast3r's own supervisor: it wakes on a tick, ranks "
+         "the portfolio with Prime, starts one scoped run at a time through the "
+         "hunt, operator, or mesh, watches it to completion, and records whether "
+         "the mission moved. This returns its state, what is in flight, per-mission "
+         "cooldowns and parks, and the eligible-mission count. Set portfolio=true "
+         "to include the current ranking.",
+         "low", "missions",
+         _schema({"portfolio": _boolean("include the Prime ranking", False)}),
+         "director_status"),
+    Tool("director_control", "Control the autonomous director",
+         "Engage, disengage, pause, resume, tune, tick, advise, or kill the "
+         "director. Engage lets it schedule eligible missions; disengage stops "
+         "scheduling new work; tune sets tick seconds, concurrency, and the scope "
+         "filter (autonomous, supervised, or all); kill is the kill switch and "
+         "cancels what the director started, plus every run when all=true. The "
+         "director never creates a finding or decides an approval.",
+         "medium", "missions",
+         _schema({"action": {"type": "string", "description": "what to do",
+                             "enum": ["engage", "disengage", "pause", "resume",
+                                      "tune", "tick", "advise", "kill"]},
+                  "reason": _string("why (for disengage or kill)"),
+                  "tick_seconds": _integer("seconds between ticks", 5, 300),
+                  "max_concurrent": _integer("runs in flight at once", 1, 4),
+                  "scope_filter": {"type": "string", "description": "which missions",
+                                   "enum": ["autonomous", "supervised", "all"]},
+                  "force": _boolean("run a tick even when paused or disengaged"),
+                  "all": _boolean("kill every run, not only director runs", True)},
+                 ["action"]), "director_control"),
+    Tool("director_log", "Read the director audit feed",
+         "Newest-first log of what the director did: boots, control changes, "
+         "which mission and mode it started, and how each run finished, including "
+         "the no-progress and park decisions. This is the record, not a summary.",
+         "low", "missions",
+         _schema({"limit": _integer("entries", 1, 2000, 100)}), "director_log"),
     Tool("mission_hunt", "Start a standalone hunt",
          "Run a deterministic read-only hunt for a mission: scope, fingerprint, "
          "safe surface paths, technique and chain ranking, and explicit "

@@ -158,7 +158,7 @@ Denied calls are audited with status `denied`.
 
 ## 3. Tools
 
-160 tools, grouped by job. Every tool publishes a JSON schema with
+164 tools, grouped by job. Every tool publishes a JSON schema with
 `additionalProperties: false`; unknown arguments are rejected rather than
 silently ignored.
 
@@ -185,6 +185,10 @@ silently ignored.
 | `model_solve` | medium | Bounded model action loop over allow-listed tools |
 | `autopilot` | medium | Native operator: brief, plan, act, reflect, and write durable notes |
 | `swarm` | medium | Five-role intelligence mesh: strategist, scout, attacker, validator, scribe |
+| `prime_portfolio` | low | Cross-mission ranking, next objective, and chosen brain |
+| `director_status` | low | Read the autonomous director's state and what is in flight |
+| `director_control` | medium | Engage, pause, tune, tick, advise, or kill the director |
+| `director_log` | low | The director's audit feed |
 | `agent_status` | low | Read the runtime plan, tasks, budget, and model calls |
 | `agent_start` | medium | Plan and run the bounded mission agent |
 | `agent_pause` / `agent_resume` / `agent_stop` | low | Control a live run |
@@ -214,6 +218,12 @@ Every loop cannot spend an approval, call a high-risk tool, or create a
 finding; a status the model returns is a lead, not evidence. Both the operator
 and the mesh appear in Live Runs as Reason, Act, Observe, Decide. All of them
 refuse a training mission; labs use a recipe.
+
+`prime_portfolio` and the `director_*` tools are the layer above the brains.
+Prime ranks the portfolio and names the next objective and the brain for each
+mission. The director is the durable supervisor: it ticks, asks Prime, starts
+one scoped run at a time, and records whether the mission moved. It is what
+lets NetCast3r drive itself with no external harness. See `docs/DIRECTOR.md`.
 
 ### Runs and scans
 

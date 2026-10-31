@@ -16,7 +16,7 @@
   import { countup, pauseOffscreen } from '../actions';
   import Icon from '../ui/Icon.svelte';
   import Sparkline from '../ui/Sparkline.svelte';
-  import type { Approval, Finding, ProviderHealth, Run, RunEvent } from '../types';
+  import type { Approval, DirectorLogEntry, DirectorStatus, Finding, ProviderHealth, Run, RunEvent } from '../types';
   type Thought = { seq: number; ts: number; agent: string; stage: string; text: string };
   type Call = {
     seq: number;
@@ -84,9 +84,13 @@
   let autoFollow = $state(true);
   let pausedCount = $state(0);
   let pausedEvents: RunEvent[] = [];
+  let director = $state<DirectorStatus | null>(null);
+  let directorLog = $state<DirectorLogEntry[]>([]);
+  let directorBusy = $state('');
 
   let source: EventSource | null = null;
   let refreshTimer: number | undefined;
+  let directorTimer: number | undefined;
   const seen = new Set<number>();
 
   const totals = $derived(store.totals);
@@ -759,17 +763,53 @@
     return () => window.clearInterval(timer);
   });
 
+  async function loadDirector() {
+    try {
+      director = await api.director();
+    } catch {
+      /* the strip simply hides when the director is unavailable */
+    }
+  }
+
+  async function loadDirectorLog() {
+    try {
+      directorLog = (await api.directorLog(6)).items ?? [];
+    } catch {
+      directorLog = [];
+    }
+  }
+
+  async function directorAction(action: string, extra: Record<string, unknown> = {}) {
+    directorBusy = action;
+    try {
+      director = await api.directorControl({ action, ...extra });
+      await loadDirectorLog();
+      store.toast('ok', `director: ${action}`);
+    } catch (exc) {
+      void store.fail(exc instanceof Error ? exc.message : `director ${action} failed`);
+    } finally {
+      directorBusy = '';
+    }
+  }
+
   onMount(() => {
     void store.refreshTotals();
     void store.refreshRuns();
     void loadHealth();
     void loadRecent();
     void loadApprovals();
+    void loadDirector();
+    void loadDirectorLog();
+    directorTimer = window.setInterval(() => {
+      void loadDirector();
+      void loadDirectorLog();
+    }, 5000);
   });
 
   onDestroy(() => {
     disconnect();
     if (refreshTimer) window.clearTimeout(refreshTimer);
+    if (directorTimer) window.clearInterval(directorTimer);
   });
 </script>
 
@@ -815,6 +855,70 @@
       </article>
     {/each}
   </section>
+
+  {#if director}
+    <section class="obs-card obs-director" aria-label="autonomous director">
+      <div class="obs-director-head">
+        <div class="obs-director-title">
+          <p class="eyebrow">autonomous director</p>
+          <p class="obs-director-sub">
+            The harness supervises itself: it ranks the portfolio, runs one scoped pass at a time through the hunt, operator, or mesh, and records what actually moved.
+          </p>
+        </div>
+        <div class="obs-director-chips">
+          <span class="obs-director-chip" class:on={director.engaged}>{director.engaged ? 'engaged' : 'disengaged'}</span>
+          <span class="obs-director-chip" class:warn={director.paused}>{director.paused ? 'paused' : 'running'}</span>
+          <span class="obs-director-chip">{director.scope_filter}</span>
+          <span class="obs-director-chip">{director.eligible} eligible</span>
+        </div>
+        <div class="obs-director-actions">
+          {#if director.engaged}
+            <button
+              class="obs-btn obs-btn-ghost"
+              type="button"
+              disabled={directorBusy !== ''}
+              onclick={() => void directorAction(director!.paused ? 'resume' : 'pause')}
+            >
+              {director.paused ? 'Resume' : 'Pause'}
+            </button>
+            <button class="obs-btn obs-btn-ghost" type="button" disabled={directorBusy !== ''} onclick={() => void directorAction('disengage')}>
+              Disengage
+            </button>
+          {:else}
+            <button class="obs-btn obs-btn-primary" type="button" disabled={directorBusy !== ''} onclick={() => void directorAction('engage')}>
+              Engage
+            </button>
+          {/if}
+          <button class="obs-btn obs-btn-danger" type="button" disabled={directorBusy !== ''} onclick={() => void directorAction('kill', { all: true })}>
+            Kill
+          </button>
+        </div>
+      </div>
+      <div class="obs-director-meta">
+        <span>{director.runs_started} runs started</span>
+        <span>{director.cycles} ticks</span>
+        <span>{director.max_concurrent} concurrent</span>
+        <span>{director.tick_seconds}s tick</span>
+        {#if director.in_flight.length}
+          <span class="obs-director-live">{director.in_flight.length} in flight: {director.in_flight.map((item) => item.mode).join(', ')}</span>
+        {/if}
+        {#if director.stop_reason}
+          <span>stopped: {director.stop_reason}</span>
+        {/if}
+      </div>
+      {#if directorLog.length}
+        <ul class="obs-director-log" data-director-log="1">
+          {#each directorLog as entry (entry.id)}
+            <li>
+              <span class="mono text-[10px] text-ash">{clock(entry.ts)}</span>
+              <span class="obs-director-kind">{entry.kind}</span>
+              <span class="obs-director-msg">{entry.message}</span>
+            </li>
+          {/each}
+        </ul>
+      {/if}
+    </section>
+  {/if}
 
   <div class="obs-command-grid">
     <div class="obs-command-main">
