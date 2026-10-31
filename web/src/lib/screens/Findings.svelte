@@ -148,7 +148,7 @@
         body={q || severity || triage
           ? 'No finding satisfies every filter at once. Clear one of the boxes above, or run another scan.'
           : 'Findings land here the moment a run validates a credential against the provider that issued it.'}
-        action="start a scan"
+        action="start an operation"
         onAction={() => store.go('new')}
         hint={q || severity || triage ? '> tip: leave a filter blank to include everything' : ''}
       />

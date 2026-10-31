@@ -631,6 +631,25 @@ def directions_list(ctx: ToolContext, args: dict) -> dict:
                  query=query or None)
 
 
+def exploit_catalog(ctx: ToolContext, args: dict) -> dict:
+    query = {key: args[key] for key in ("q", "limit") if key in args}
+    return _call(ctx, "GET", "/api/v1/exploits", query=query or None)
+
+
+def exploit_search(ctx: ToolContext, args: dict) -> dict:
+    query = {key: args[key] for key in ("q", "limit") if key in args}
+    return _call(ctx, "GET", "/api/v1/exploits", query=query or None)
+
+
+def exploit_plan(ctx: ToolContext, args: dict) -> dict:
+    mission_id = args["mission_id"]
+    if args.get("build", True):
+        return _call(ctx, "POST", f"/api/v1/missions/{mission_id}/exploits/plan",
+                     body={"limit": args.get("limit", 5)})
+    return _call(ctx, "GET", "/api/v1/exploits/plan",
+                 query={"mission_id": mission_id, "limit": args.get("limit", 8)})
+
+
 def agent_start(ctx: ToolContext, args: dict) -> dict:
     mission = _mission(ctx, args["mission_id"])
     target = str(mission.get("target") or "").strip()
@@ -2791,6 +2810,9 @@ _HANDLERS.update({
     "campaign_status": campaign_status,
     "direction_add": direction_add,
     "directions_list": directions_list,
+    "exploit_catalog": exploit_catalog,
+    "exploit_search": exploit_search,
+    "exploit_plan": exploit_plan,
     "agent_notes_write": agent_notes_write,
     "agent_notes_list": agent_notes_list,
     "agent_notes_clear": agent_notes_clear,
@@ -3238,6 +3260,34 @@ TOOLS: tuple[Tool, ...] = (
                              "enum": ["queued", "consumed", "done"]},
                   "limit": _integer("entries", 1, 500, 50)},
                  ["mission_id"]), "directions_list"),
+    Tool("exploit_catalog", "Read the exploit module catalog",
+         "The typed exploit module tree: web, API, auth, server, cloud, and "
+         "identity classes. Each module names the technology it targets, its "
+         "preconditions, the evidence it must gather first, the tool steps that "
+         "test it, and the observation that turns a test into a lead. Every "
+         "module plans and tests; none asserts a finding.",
+         "low", "missions",
+         _schema({"q": _string("optional free-text filter"),
+                  "limit": _integer("modules", 1, 200, 50)}, []),
+         "exploit_catalog"),
+    Tool("exploit_search", "Rank exploit modules for a signal",
+         "Rank the catalog against a technology, a signal, or a category. Use it "
+         "to pick the right test for the surface you actually observed, rather "
+         "than a scanner's fixed list.",
+         "low", "missions",
+         _schema({"q": _string("query, e.g. idor jwt ssrf"),
+                  "limit": _integer("modules", 1, 200, 20)}, ["q"]),
+         "exploit_search"),
+    Tool("exploit_plan", "Plan exploit modules for a mission",
+         "Match the catalog to a mission's observed technology and leads, then "
+         "(build=true) turn the ready modules into falsifiable hypotheses the "
+         "mesh can test. 'ready' means the mission already carries the evidence "
+         "the module needs. It creates leads, never findings.",
+         "medium", "missions",
+         _schema({"mission_id": _string("mission id"),
+                  "limit": _integer("modules", 1, 40, 5),
+                  "build": _boolean("create hypotheses for ready modules", True)},
+                 ["mission_id"]), "exploit_plan"),
     Tool("mission_hunt", "Start a standalone hunt",
          "Run a deterministic read-only hunt for a mission: scope, fingerprint, "
          "safe surface paths, technique and chain ranking, and explicit "

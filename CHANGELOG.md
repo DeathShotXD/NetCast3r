@@ -6,6 +6,18 @@ Notable changes to NetCast3r, newest first.
 
 ### Added
 
+- Exploit module catalog: `exploit_catalog`, `exploit_search`, and
+  `exploit_plan`, plus `GET /api/v1/exploits`, `GET /api/v1/exploits/plan`, and
+  `POST /api/v1/missions/{id}/exploits/plan`. 37 typed exploit modules across
+  access-control, injection, client-side, auth, server, API, cloud, identity,
+  and mobile classes, each naming its technology, risk, preconditions, the
+  evidence it must gather, the tool steps that test it, and the exact
+  observation that turns a test into a lead. `plan` matches the catalog to a
+  mission's observed technology and leads; `build_hypotheses` turns the ready
+  modules into falsifiable leads and creates no finding. The director plans
+  exploit leads automatically in the `hypotheses` stage, and the campaign stage
+  names were tightened to exploitation language (`verify` is now `exploit`).
+  See `docs/EXPLOITS.md`.
 - Operator console, tool results, and risk posture. The mission detail gains a
   **Console** tab that queues an operator direction the director hands to the
   next run (with `@lead:` and `@finding:` mentions), and a **Tools** tab that
@@ -58,7 +70,7 @@ Notable changes to NetCast3r, newest first.
   Agent Zero, a generic MCP client, and the HTTP API. The session token is
   never returned; a harness reads it from the 0600 control-plane file. A
   **Connect** screen shows the same information with a copyable config per
-  harness, a searchable list of all 179 typed tools, and their risk tiers.
+  harness, a searchable list of all 182 typed tools, and their risk tiers.
   Any harness drives the full surface and shares one database and audit trail.
 - Native operator: `autopilot` and
   `POST /api/v1/missions/{id}/autopilot` make NetCast3r its own harness. It

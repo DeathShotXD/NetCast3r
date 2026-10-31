@@ -968,6 +968,41 @@ class Server:
         def path_stop(ctx):
             return _json({"stopped": self._paths().cancel(ctx.params["id"])})
 
+        # -- exploit catalog -------------------------------------------------
+        @add("GET", r"/api/v1/exploits")
+        def exploits_list(ctx):
+            from .. import exploits as exploits_module
+
+            query = str(ctx.query.get("q", "") or "")
+            if query:
+                return _json({"items": exploits_module.search(
+                    query=query, limit=int(ctx.query.get("limit", 50) or 50)),
+                    "stats": exploits_module.stats()})
+            return _json({"items": exploits_module.catalog(),
+                          "stats": exploits_module.stats()})
+
+        @add("GET", r"/api/v1/exploits/plan")
+        def exploits_plan(ctx):
+            from .. import exploits as exploits_module
+
+            mission_id = str(ctx.query.get("mission_id", "") or "")
+            if not self.index.get_mission(mission_id):
+                return _problem(404, "mission not found")
+            limit = int(ctx.query.get("limit", 8) or 8)
+            return _json(exploits_module.plan(self.index, mission_id, limit))
+
+        @add("POST", r"/api/v1/missions/(?P<id>[A-Za-z0-9_]+)/exploits/plan")
+        def exploits_build(ctx):
+            from .. import exploits as exploits_module
+
+            if not self.index.get_mission(ctx.params["id"]):
+                return _problem(404, "mission not found")
+            body = ctx.json()
+            body = body if isinstance(body, dict) else {}
+            limit = int(body.get("limit", 5) or 5)
+            return _json(exploits_module.build_hypotheses(
+                self.index, ctx.params["id"], limit))
+
         # -- knowledge base, profile, campaign, directions ------------------
         @add("GET", r"/api/v1/kb")
         def kb_list(ctx):

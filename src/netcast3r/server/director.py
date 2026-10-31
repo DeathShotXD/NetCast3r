@@ -425,6 +425,14 @@ class Director:
                                                           mission_id)
             stage = campaign_module.advance(self.server.index, mission_id)
             out["stage"] = stage["stage"]
+            # In the hypotheses stage there are no open leads: turn the exploit
+            # catalog's ready modules into falsifiable leads automatically.
+            if stage["stage"] == "hypotheses":
+                from .. import exploits as exploits_module
+
+                built = exploits_module.build_hypotheses(self.server.index,
+                                                         mission_id, limit=3)
+                out["leads_created"] = built["count"]
             self.server.index.add_director_log(
                 "mature", f"stage {stage['stage']}: {stage['reason']}",
                 mission_id=mission_id,

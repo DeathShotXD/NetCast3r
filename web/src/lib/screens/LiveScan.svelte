@@ -525,7 +525,7 @@
     if (!run) return;
     try {
       await api.stopRun(run.id);
-      store.toast('warn', `stopping the scan of ${run.target}`);
+      store.toast('warn', `stopping the operation on ${run.target}`);
       await poll();
     } catch (exc) {
       store.fail(exc instanceof Error ? exc.message : 'could not stop the run');
@@ -551,7 +551,7 @@
       const fresh = await api.resumeRun(run.id);
       store.runs = [fresh, ...store.runs.filter((item) => item.id !== fresh.id)];
       store.watch(fresh.id);
-      store.toast('ok', `continuing the scan of ${fresh.target} where it stopped`);
+      store.toast('ok', `continuing the operation on ${fresh.target} where it stopped`);
     } catch (exc) {
       store.fail(exc instanceof Error ? exc.message : 'could not continue the run');
     } finally {
@@ -646,8 +646,8 @@
       <EmptyState
         eyebrow="live runs"
         title="No run selected"
-        body="Start a scan and it appears here live: the stage rail, a verbose transmission of every agent line, and inspectable evidence for each run - assets, endpoints, scripts, secrets, findings and the report."
-        action="start a scan"
+        body="Start an operation and it appears here live: the stage rail, a verbose transmission of every agent line, and inspectable evidence for each run - assets, endpoints, scripts, secrets, findings and the report."
+        action="start an operation"
         onAction={() => store.go('new')}
       >
         {#if store.runs.length > 0}
@@ -1354,8 +1354,8 @@
 
 {#if stopOpen && run}
   <Confirm
-    title="Stop the scan of {run.target}?"
-    body="The run stops at the next safe point and keeps everything it found so far. Partial results are written to disk, and you can continue the scan later from where it stopped. This cannot be undone."
+    title="Stop the operation on {run.target}?"
+    body="The run stops at the next safe point and keeps everything it found so far. Partial results are written to disk, and you can continue the operation later from where it stopped. This cannot be undone."
     confirmLabel="stop this scan"
     danger
     onConfirm={confirmStop}

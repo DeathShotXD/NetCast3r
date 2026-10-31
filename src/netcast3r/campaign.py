@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import time
 
-STAGES = ("recon", "fingerprint", "surface", "hypotheses", "verify", "chain",
+STAGES = ("recon", "fingerprint", "surface", "hypotheses", "exploit", "chain",
           "report")
 
 # Which brain runs a stage. The director starts that mode; enrichment and
@@ -25,7 +25,7 @@ STAGE_MODE = {
     "fingerprint": "hunt",
     "surface": "autopilot",
     "hypotheses": "swarm",
-    "verify": "swarm",
+    "exploit": "swarm",
     "chain": "swarm",
     "report": "autopilot",
 }
@@ -56,7 +56,7 @@ def stage_of(index, mission_id: str) -> dict:
         stage, reason = "chain", (
             f"{len(verified)} verified path(s); chain toward the next impact")
     elif open_leads:
-        stage, reason = "verify", f"{open_leads} open lead(s) to test"
+        stage, reason = "exploit", f"{open_leads} open lead(s) to exploit"
     elif all_leads:
         stage, reason = "hypotheses", (
             "every lead is resolved; derive new leads from the surface")

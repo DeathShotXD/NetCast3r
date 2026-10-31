@@ -34,7 +34,7 @@
   const categoryCopy: Record<string, string> = {
     workspace: 'Workspace',
     missions: 'Missions',
-    runs: 'Runs and scans',
+    runs: 'Runs and operations',
     findings: 'Findings',
     governance: 'Governance',
     providers: 'Providers',

@@ -158,7 +158,7 @@ Denied calls are audited with status `denied`.
 
 ## 3. Tools
 
-179 tools, grouped by job. Every tool publishes a JSON schema with
+182 tools, grouped by job. Every tool publishes a JSON schema with
 `additionalProperties: false`; unknown arguments are rejected rather than
 silently ignored.
 
@@ -189,6 +189,9 @@ silently ignored.
 | `director_status` | low | Read the autonomous director's state and what is in flight |
 | `director_control` | medium | Engage, pause, tune, tick, advise, or kill the director |
 | `director_log` | low | The director's audit feed |
+| `exploit_catalog` | low | Read the typed exploit module catalog |
+| `exploit_search` | low | Rank modules for a technology or signal |
+| `exploit_plan` | medium | Plan exploit modules and turn ready ones into leads |
 | `graph_build` | medium | Derive the evidence graph and candidate paths for a mission |
 | `mission_graph` | low | Read a mission's nodes, edges, and paths |
 | `paths_list` | low | List a mission's candidate attack paths |

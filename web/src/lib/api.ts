@@ -1,5 +1,5 @@
 import type {
-  Campaign, ConnectInfo, Approval, Direction, DirectorLogEntry, DirectorStatus, Finding, Inventory, KeyEntry, McpInfo, Meta, Mission, MissionAgent, MissionGraph, Paged, Provider, ProviderHealth, RevengKinds, RevengResult, Run, RunEvent, Submission, SubmissionSummary, ToolCall, Totals, TrendPoint } from './types';
+  Campaign, ConnectInfo, Approval, Direction, DirectorLogEntry, DirectorStatus, ExploitPlan, Finding, Inventory, KeyEntry, McpInfo, Meta, Mission, MissionAgent, MissionGraph, Paged, Provider, ProviderHealth, RevengKinds, RevengResult, Run, RunEvent, Submission, SubmissionSummary, ToolCall, Totals, TrendPoint } from './types';
 
 const BASE = '/api/v1';
 
@@ -122,6 +122,11 @@ export const api = {
   campaign: (id: string) => request<Campaign>('GET', `/missions/${id}/campaign`),
   findingTrend: (days = 14) =>
     request<{ items: TrendPoint[] }>('GET', `/metrics/trend?days=${days}`),
+  exploitPlan: (id: string, limit = 8) =>
+    request<ExploitPlan>('GET', `/exploits/plan?mission_id=${id}&limit=${limit}`),
+  buildExploitLeads: (id: string, limit = 5) =>
+    request<{ created: Array<Record<string, unknown>>; count: number }>(
+      'POST', `/missions/${id}/exploits/plan`, { limit }),
   missionAgent: (id: string) =>
     request<MissionAgent>('GET', `/missions/${id}/agent`),
   startMissionAgent: (id: string, body: Record<string, unknown>) =>

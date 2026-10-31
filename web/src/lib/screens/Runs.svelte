@@ -121,7 +121,7 @@
       runs = [fresh, ...runs.filter((item) => item.id !== fresh.id)];
       store.runs = [fresh, ...store.runs.filter((item) => item.id !== fresh.id)];
       store.watch(fresh.id);
-      store.toast('ok', `continuing the scan of ${fresh.target} where it stopped`);
+      store.toast('ok', `continuing the operation on ${fresh.target} where it stopped`);
     } catch (exc) {
       store.fail(exc instanceof Error ? exc.message : 'could not continue the run');
     }
@@ -324,7 +324,7 @@
     <section class="panel">
       <EmptyState
         eyebrow="empty"
-        title="No scans yet"
+        title="No operations yet"
         body="Your cast history collects here: every target, when it ran, what it caught, and a rerun button for the next pass."
         action="start your first scan"
         onAction={() => store.go('new')}

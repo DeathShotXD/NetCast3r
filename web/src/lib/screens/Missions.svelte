@@ -3,7 +3,7 @@
   import { api } from '../api';
   import { store } from '../state.svelte';
   import { ago, sevColor, statusLabel } from '../format';
-  import type { AgentStatus, Approval, Autonomy, Campaign, Direction, GraphNode, GraphPath, Mission, MissionAgent, MissionGraph, MissionStatus, ToolCall } from '../types';
+  import type { AgentStatus, Approval, Autonomy, Campaign, Direction, ExploitPlan, GraphNode, GraphPath, Mission, MissionAgent, MissionGraph, MissionStatus, ToolCall } from '../types';
   import Icon from '../ui/Icon.svelte';
   import Sparkline from '../ui/Sparkline.svelte';
 
@@ -45,13 +45,15 @@
   let loading = $state(true);
   let error = $state('');
   let filter = $state<Filter>('all');
-  let detailTab = $state<'overview' | 'runs' | 'approvals' | 'graph' | 'console' | 'tools' | 'agent'>('overview');
+  let detailTab = $state<'overview' | 'runs' | 'approvals' | 'graph' | 'exploits' | 'console' | 'tools' | 'agent'>('overview');
   let graph = $state<MissionGraph | null>(null);
   let graphBusy = $state('');
   let campaign = $state<Campaign | null>(null);
   let directions = $state<Direction[]>([]);
   let toolCalls = $state<ToolCall[]>([]);
   let directionText = $state('');
+  let exploitPlan = $state<ExploitPlan | null>(null);
+  let exploitBusy = $state('');
   let composer = $state(false);
   let busy = $state('');
   let form = $state({
@@ -140,11 +142,13 @@
       graph = null;
       directions = [];
       toolCalls = [];
+      exploitPlan = null;
       detailTab = preserveTab ? tab : 'overview';
       if (preserveTab && tab === 'agent') void loadAgent();
       if (preserveTab && tab === 'graph') void loadGraph();
       if (preserveTab && tab === 'console') void loadDirections();
       if (preserveTab && tab === 'tools') void loadTools();
+      if (preserveTab && tab === 'exploits') void loadExploits();
       void loadCampaign();
       if (scroll && window.innerWidth < 1180) {
         requestAnimationFrame(() => document.querySelector('.obs-mission-detail')?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
@@ -296,6 +300,40 @@
     if (tab === 'graph') void loadGraph();
     if (tab === 'console') void loadDirections();
     if (tab === 'tools') void loadTools();
+    if (tab === 'exploits') void loadExploits();
+  }
+
+  async function loadExploits() {
+    if (!selected) return;
+    exploitBusy = 'load';
+    try {
+      exploitPlan = await api.exploitPlan(selected.id, 12);
+    } catch {
+      exploitPlan = null;
+    } finally {
+      exploitBusy = '';
+    }
+  }
+
+  async function planExploitLeads() {
+    if (!selected) return;
+    exploitBusy = 'build';
+    try {
+      const result = await api.buildExploitLeads(selected.id, 5);
+      store.toast('ok', `planned ${result.count} exploit lead(s)`);
+      await loadExploits();
+      await loadCampaign();
+    } catch (exc) {
+      void store.fail(exc instanceof Error ? exc.message : 'could not plan exploit leads');
+    } finally {
+      exploitBusy = '';
+    }
+  }
+
+  function riskColor(risk: string): string {
+    return risk === 'critical' ? 'var(--obs-red)'
+      : risk === 'high' ? 'var(--obs-orange)'
+      : risk === 'medium' ? 'var(--obs-violet-3)' : 'var(--obs-muted)';
   }
 
   async function loadCampaign() {
@@ -789,6 +827,7 @@
               ['runs', `Runs ${selected.run_count}`],
               ['approvals', `Approvals ${selected.pending_approvals}`],
               ['graph', 'Graph'],
+              ['exploits', 'Exploits'],
               ['console', 'Console'],
               ['tools', 'Tools'],
               ['agent', `Agent${agent && ['planning', 'running', 'paused', 'stopping'].includes(agent.status) ? ' *' : ''}`]
@@ -950,6 +989,57 @@
                   <p class="obs-detail-note">
                     No candidate path yet. Record a falsifiable lead with hypothesis_create, then rebuild the graph.
                   </p>
+                {/if}
+              </section>
+            {:else if detailTab === 'exploits'}
+              <section class="obs-detail-section">
+                <div class="obs-graph-head">
+                  <div>
+                    <h3>Exploit modules</h3>
+                    <p class="obs-graph-copy">
+                      The catalog matched to what this mission actually observed. A module is a test to run, not a finding; a ready module became a falsifiable lead.
+                    </p>
+                  </div>
+                  <button class="obs-btn obs-btn-primary" type="button" disabled={exploitBusy !== ''} onclick={() => void planExploitLeads()}>
+                    <Icon name="crosshair" size={12} />
+                    {exploitBusy === 'build' ? 'Planning...' : 'Plan leads'}
+                  </button>
+                </div>
+                {#if exploitPlan}
+                  <div class="obs-graph-chips">
+                    <span class="obs-chip">{exploitPlan.proposals.filter((p) => p.ready).length} ready</span>
+                    <span class="obs-chip">{exploitPlan.proposals.length} matched</span>
+                    <span class="obs-chip">{exploitPlan.endpoints} endpoints</span>
+                    <span class="obs-chip">{exploitPlan.open_leads} open lead(s)</span>
+                    {#if exploitPlan.tech.length}
+                      <span class="obs-chip">tech: {exploitPlan.tech.slice(0, 4).join(', ')}</span>
+                    {/if}
+                  </div>
+                  <ul class="obs-graph-paths">
+                    {#each exploitPlan.proposals as module (module.id)}
+                      <li>
+                        <div class="obs-graph-path-head">
+                          <span class="obs-chip" style="color:{module.ready ? 'var(--obs-acid)' : 'var(--obs-muted)'}">{module.ready ? 'ready' : 'blocked'}</span>
+                          <span class="obs-chip" style="color:{riskColor(module.risk)}">{module.risk}</span>
+                          <span class="obs-graph-path-title">{module.name}</span>
+                          <span class="obs-chip">{module.category}</span>
+                        </div>
+                        <p class="obs-graph-path-steps">
+                          {module.evidence}
+                          {#if module.blocked_reason} - {module.blocked_reason}{/if}
+                        </p>
+                        {#if module.steps.length}
+                          <p class="obs-graph-path-steps">steps: {module.steps.map((s) => s.tool).join(' -> ')}</p>
+                        {/if}
+                      </li>
+                    {/each}
+                  </ul>
+                {:else}
+                  <div class="obs-empty" style="min-height:120px">
+                    <span class="obs-empty-icon"><Icon name="crosshair" size={16} /></span>
+                    <div class="obs-empty-title">No plan yet</div>
+                    <p class="obs-empty-copy">Load the exploit plan to match the catalog to this mission's technology and leads.</p>
+                  </div>
                 {/if}
               </section>
             {:else if detailTab === 'console'}

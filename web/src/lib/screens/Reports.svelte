@@ -386,7 +386,7 @@
       </div>
       <p class="obs-empty-copy">
         {summary.total === 0
-          ? 'The ledger is empty. It stays empty until you file a report and record it. A finding is not a bounty, and a scan result is not a submission.'
+          ? 'The ledger is empty. It stays empty until you file a report and record it. A finding is not a bounty, and an operation result is not a submission.'
           : 'Choose another filter, or record a report that is not in this group yet.'}
       </p>
       {#if summary.total === 0}

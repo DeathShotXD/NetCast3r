@@ -394,6 +394,36 @@ export interface TrendPoint {
   info: number;
 }
 
+export interface ExploitModule {
+  id: string;
+  name: string;
+  category: string;
+  platform: string[];
+  tech: string[];
+  risk: string;
+  impact: string;
+  preconditions: string[];
+  requires: string[];
+  steps: Array<{ tool: string; note: string }>;
+  evidence: string;
+  source: string;
+  signals: string[];
+  ready?: boolean;
+  blocked_reason?: string;
+  missing?: string[];
+  tech_match?: string[];
+  score?: number;
+}
+
+export interface ExploitPlan {
+  mission_id: string;
+  tech: string[];
+  endpoints: number;
+  open_leads: number;
+  proposals: ExploitModule[];
+  note: string;
+}
+
 export type Screen =
   | 'home'
   | 'missions'

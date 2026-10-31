@@ -14,7 +14,7 @@
   const labels: Record<string, string> = {
     home: 'Command Center',
     missions: 'Missions',
-    new: 'New scan',
+    new: 'New operation',
     live: 'Live run',
     findings: 'Findings',
     runs: 'Cast history',
@@ -151,8 +151,8 @@
     Ctrl K
   </button>
 
-  <button class="obs-btn obs-btn-primary" type="button" onclick={() => store.go('new')} title="start a scan">
+  <button class="obs-btn obs-btn-primary" type="button" onclick={() => store.go('new')} title="start an operation">
     <Icon name="plus" size={13} />
-    <span class="hidden sm:inline">New scan</span>
+    <span class="hidden sm:inline">New operation</span>
   </button>
 </header>

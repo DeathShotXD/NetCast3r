@@ -127,7 +127,7 @@ class CampaignTests(MemoryHarness):
                                      mission_id=self.mission["id"])
         graph.rebuild(self.index, self.mission["id"])
         stage = campaign.stage_of(self.index, self.mission["id"])
-        self.assertEqual(stage["stage"], "verify")
+        self.assertEqual(stage["stage"], "exploit")
         self.assertEqual(stage["mode"], "swarm")
         self.assertEqual(stage["open_leads"], 1)
 

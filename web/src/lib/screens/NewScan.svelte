@@ -84,7 +84,7 @@
       store.watch(run.id);
       await store.refreshTotals();
     } catch (exc) {
-      error = exc instanceof Error ? exc.message : 'the scan could not be started';
+      error = exc instanceof Error ? exc.message : 'the operation could not be started';
     } finally {
       busy = false;
     }

@@ -18,7 +18,7 @@
       items: [
         { id: 'home', label: 'Command Center', icon: 'grid', hint: 'what happened, what needs you' },
         { id: 'missions', label: 'Missions', icon: 'crosshair', hint: 'scoped objectives and their runs' },
-        { id: 'new', label: 'New Scan', icon: 'target', hint: 'point the net at a target' },
+        { id: 'new', label: 'New Operation', icon: 'target', hint: 'point the net at a target' },
         { id: 'live', label: 'Live Runs', icon: 'activity', hint: 'watch a cast, inspect everything it found' },
         { id: 'findings', label: 'Findings', icon: 'bug', hint: 'triage what came back' }
       ]
@@ -242,7 +242,7 @@
   <div class="obs-sidebar-foot">
     <button class="obs-btn obs-btn-primary" type="button" onclick={() => go('new')} style="width:100%">
       <Icon name="crosshair" size={13} />
-      New scan
+      New operation
     </button>
 
     <div class="obs-sidebar-sys">

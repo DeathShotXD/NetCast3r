@@ -534,7 +534,7 @@
         id: 'scan',
         title: 'Cast a deeper net',
         body: 'Change the target, widen the depth or revisit a stopped run with the current provider fleet.',
-        cta: 'configure a scan',
+        cta: 'configure an operation',
         color: 'var(--nc-acid)',
         go: () => store.go('new')
       });
@@ -858,7 +858,7 @@
       {/if}
       <button class="obs-btn obs-btn-primary" type="button" onclick={() => store.go('new')}>
         <Icon name="plus" size={13} />
-        New scan
+        New operation
       </button>
     </div>
   </header>
@@ -1070,7 +1070,7 @@
               {/if}
               <button class="obs-btn obs-btn-ghost" type="button" onclick={() => store.go('new')}>
                 <Icon name="plus" size={13} />
-                New scan
+                New operation
               </button>
               <span class="obs-hero-elapsed">
                 <span class="obs-status-dot" class:idle={!live} aria-hidden="true"></span>
@@ -1661,7 +1661,7 @@
       <div class="obs-empty" style="min-height:150px">
         <span class="obs-empty-icon"><Icon name="layers" size={18} /></span>
         <div class="obs-empty-title">No casts in the ledger</div>
-        <p class="obs-empty-copy">Start a scan and every run will appear here with its surface, signals and findings.</p>
+        <p class="obs-empty-copy">Start an operation and every run will appear here with its surface, signals and findings.</p>
         <button class="obs-btn" type="button" onclick={() => store.go('new')}>Start a cast</button>
       </div>
     {:else}
