@@ -31,6 +31,7 @@ ACTIONS = {
     "oracle_extract": "extract a value through a boolean, status, or time oracle",
     "race_run": "run a small concurrent burst against one endpoint",
     "single_packet_race": "send a last-byte-synchronised HTTP/2 race",
+    "last_byte_race": "release every request's final byte together over HTTP/1.1",
     "host_probe": "resolve a host and inspect its TLS and HTTP surface",
     "technique_search": "search the research library by keyword",
     "technique_plan": "rank techniques for a target and its signals",

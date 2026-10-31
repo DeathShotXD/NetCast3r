@@ -32,10 +32,10 @@ from urllib.parse import quote, urlencode, urljoin, urlsplit
 
 import httpx
 
-from .. import (authstore, browser, chains, codeaudit, integrations, oast, offsec,
-                pathdiff, pivot, quality, research, reveng, selfmodel,
-                single_packet, sqa, stix, surface, tempmail, threatintel,
-                training)
+from .. import (authstore, browser, chains, codeaudit, integrations, lastbyte,
+                oast, offsec, pathdiff, pivot, quality, research, reveng,
+                selfmodel, single_packet, sqa, stix, surface, tempmail,
+                threatintel, training)
 from ..scope import ScopeManager
 
 POLICIES = ("readonly", "supervised", "full")
@@ -2047,16 +2047,19 @@ def host_probe(ctx: ToolContext, args: dict) -> dict:
     }
 
 
-def single_packet_race(ctx: ToolContext, args: dict) -> dict:
-    """One HTTP/2 connection, all final body bytes in one write."""
+def _race_request(ctx: ToolContext, args: dict, methods: set[str],
+                  schemes: tuple[str, ...]) -> tuple[str, str, dict, bytes | None]:
+    """Build one scoped request shape shared by the race primitives."""
     target = str(args.get("target") or "").strip()
-    url = target if "://" in target else "https://" + target
+    url = target if "://" in target else f"{schemes[0]}://{target}"
     parts = urlsplit(url)
-    if parts.scheme != "https" or not parts.hostname:
-        raise ToolError("invalid_arguments", "target must be an https URL")
+    if parts.scheme not in schemes or not parts.hostname:
+        raise ToolError("invalid_arguments",
+                        f"target must be one of {', '.join(schemes)} URLs")
     method = str(args.get("method") or "POST").upper()
-    if method not in {"POST", "PUT", "PATCH", "DELETE"}:
-        raise ToolError("invalid_arguments", "method must be POST, PUT, PATCH, or DELETE")
+    if method not in methods:
+        raise ToolError("invalid_arguments",
+                        f"method must be one of {', '.join(sorted(methods))}")
     mission_id = str(args.get("mission_id") or "")
     _require_scope(ctx, target, mission_id, args.get("scope"), probe=True)
 
@@ -2097,7 +2100,13 @@ def single_packet_race(ctx: ToolContext, args: dict) -> dict:
         body = str(raw_body).encode("utf-8")
     if body is not None and len(body) > 1_048_576:
         raise ToolError("invalid_arguments", "request body is larger than 1 MiB")
+    return url, method, headers, body
 
+
+def single_packet_race(ctx: ToolContext, args: dict) -> dict:
+    """One HTTP/2 connection, all final body bytes in one write."""
+    url, method, headers, body = _race_request(
+        ctx, args, {"POST", "PUT", "PATCH", "DELETE"}, ("https",))
     ctx.limiter.check("race")
     try:
         return single_packet.send_burst(
@@ -2106,6 +2115,21 @@ def single_packet_race(ctx: ToolContext, args: dict) -> dict:
             timeout=float(args.get("timeout") or 20),
             verify_tls=bool(args.get("verify_tls", True)))
     except single_packet.SinglePacketError as exc:
+        raise ToolError("request_failed", str(exc))
+
+
+def last_byte_race(ctx: ToolContext, args: dict) -> dict:
+    """HTTP/1.1 burst where every request's final byte is released together."""
+    url, method, headers, body = _race_request(
+        ctx, args, {"GET", "POST", "PUT", "PATCH", "DELETE"}, ("http", "https"))
+    ctx.limiter.check("race")
+    try:
+        return lastbyte.send_burst(
+            url, method, headers, body,
+            count=int(args.get("count") or 10),
+            timeout=float(args.get("timeout") or 20),
+            verify_tls=bool(args.get("verify_tls", True)))
+    except lastbyte.LastByteError as exc:
         raise ToolError("request_failed", str(exc))
 
 
@@ -2739,6 +2763,7 @@ _HANDLERS.update({
     "oracle_extract": oracle_extract,
     "race_run": race_run,
     "single_packet_race": single_packet_race,
+    "last_byte_race": last_byte_race,
     "host_probe": host_probe,
     "http_path_diff": http_path_diff,
     "reveng_analyze": reveng_analyze,
@@ -3945,6 +3970,27 @@ TOOLS: tuple[Tool, ...] = (
                   "verify_tls": _boolean("verify the target certificate", True),
                   "timeout": _integer("timeout in seconds", 1, 60, 20)},
                  ["target"]), "single_packet_race", open_world=True),
+    Tool("last_byte_race", "HTTP/1.1 last-byte race",
+         "Open one connection per request, write every request except its final "
+         "byte, then release all final bytes in one burst. This is the HTTP/1.1 "
+         "counterpart to the HTTP/2 single-packet attack; use it when the target "
+         "does not speak h2. The target must be in scope; a duplicate side effect "
+         "is the proof.",
+         "medium", "web",
+         _schema({"target": _string("in-scope http or https URL"),
+                  "mission_id": _string("mission whose scope authorizes the burst"),
+                  "scope": _array("explicit scope entries when no mission is used"),
+                  "method": _string("HTTP method", enum=[
+                      "GET", "POST", "PUT", "PATCH", "DELETE"]),
+                  "headers": _object("extra request headers"),
+                  "auth_profile": _string("stored auth profile name"),
+                  "body": _string("raw request body"),
+                  "json": _object("JSON request body"),
+                  "form": _object("form request body"),
+                  "count": _integer("number of requests", 2, 50, 10),
+                  "verify_tls": _boolean("verify the target certificate", True),
+                  "timeout": _integer("timeout in seconds", 1, 60, 20)},
+                 ["target"]), "last_byte_race", open_world=True),
     Tool("http_path_diff", "Path-variant differential",
          "Send the same request to literal, percent-encoded, case-varied, and slash-varied "
          "paths, then report where the status or body diverges. Useful for finding "

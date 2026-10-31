@@ -2,6 +2,7 @@ import json
 import os
 import tempfile
 import threading
+import time
 import unittest
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -9,7 +10,7 @@ from pathlib import Path
 os.environ.setdefault("NETCAST3R_NO_KEYRING", "1")
 
 from netcast3r.mcp.tools import (ToolContext, host_probe, http_upload,
-                                 oracle_extract, race_run)
+                                 last_byte_race, oracle_extract, race_run)
 
 
 class TransferHandler(BaseHTTPRequestHandler):
@@ -42,6 +43,87 @@ class TransferHandler(BaseHTTPRequestHandler):
 
     def log_message(self, *args):
         pass
+
+
+class RaceHandler(BaseHTTPRequestHandler):
+    lock = threading.Lock()
+    active = 0
+    max_active = 0
+    bodies = []
+
+    @classmethod
+    def reset(cls):
+        with cls.lock:
+            cls.active = 0
+            cls.max_active = 0
+            cls.bodies = []
+
+    def do_POST(self):
+        length = int(self.headers.get("content-length") or 0)
+        body = self.rfile.read(length)
+        with RaceHandler.lock:
+            RaceHandler.active += 1
+            RaceHandler.max_active = max(RaceHandler.max_active, RaceHandler.active)
+            RaceHandler.bodies.append(body)
+        try:
+            time.sleep(0.25)
+            payload = b'{"ok":true,"seen":' + str(length).encode() + b"}"
+
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(payload)))
+            self.end_headers()
+            self.wfile.write(payload)
+        finally:
+            with RaceHandler.lock:
+                RaceHandler.active -= 1
+
+    def log_message(self, *args):
+        pass
+
+
+class LastByteRaceTests(unittest.TestCase):
+    def setUp(self):
+        RaceHandler.reset()
+        self.httpd = ThreadingHTTPServer(("127.0.0.1", 0), RaceHandler)
+        self.thread = threading.Thread(target=self.httpd.serve_forever, daemon=True)
+        self.thread.start()
+        self.base = f"http://127.0.0.1:{self.httpd.server_address[1]}"
+        self.tmp = tempfile.TemporaryDirectory()
+        self.ctx = ToolContext(plane=None, base=Path(self.tmp.name))
+
+    def tearDown(self):
+        self.httpd.shutdown()
+        self.httpd.server_close()
+        self.tmp.cleanup()
+
+    def test_burst_releases_every_final_byte_and_keeps_every_response(self):
+        payload = {"coupon": "SAVE10", "cart": "one-item"}
+        result = last_byte_race(self.ctx, {
+            "target": self.base + "/cart/coupon", "method": "POST",
+            "json": payload, "count": 4, "scope": ["127.0.0.1"],
+            "timeout": 10,
+        })
+        self.assertEqual(result["count"], 4)
+        self.assertEqual(result["statuses"], {"200": 4})
+        self.assertEqual(result["ended"], 4)
+        self.assertLess(result["sync_ms"], 250)
+        self.assertTrue(all(item["status"] == 200 for item in result["responses"]))
+        self.assertTrue(all('"seen":' in item["body"] for item in result["responses"]))
+        self.assertEqual(len(RaceHandler.bodies), 4)
+        expected = json.dumps(payload).encode()
+        self.assertTrue(all(body == expected for body in RaceHandler.bodies))
+        # Sequential requests would never overlap; a synchronised burst does.
+        self.assertGreaterEqual(RaceHandler.max_active, 2)
+
+    def test_a_bad_scheme_is_refused(self):
+        from netcast3r.mcp.tools import ToolError
+
+        with self.assertRaises(ToolError):
+            last_byte_race(self.ctx, {
+                "target": "ftp://127.0.0.1/file", "count": 4,
+                "scope": ["127.0.0.1"],
+            })
 
 
 class WebTransferTests(unittest.TestCase):

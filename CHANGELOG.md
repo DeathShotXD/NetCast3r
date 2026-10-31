@@ -12,7 +12,7 @@ Notable changes to NetCast3r, newest first.
   Agent Zero, a generic MCP client, and the HTTP API. The session token is
   never returned; a harness reads it from the 0600 control-plane file. A
   **Connect** screen shows the same information with a copyable config per
-  harness, a searchable list of all 158 typed tools, and their risk tiers.
+  harness, a searchable list of all 159 typed tools, and their risk tiers.
   Any harness drives the full surface and shares one database and audit trail.
 - Native operator: `autopilot` and
   `POST /api/v1/missions/{id}/autopilot` make NetCast3r its own harness. It
@@ -160,6 +160,10 @@ Notable changes to NetCast3r, newest first.
 - `single_packet_race` opens one TLS/HTTP/2 connection and writes every final
   DATA frame together. It is the packet-alignment primitive that `race_run`
   was missing.
+- `last_byte_race` adds the HTTP/1.1 counterpart: one connection per request,
+  every request written up to its final byte, then every final byte released
+  in one burst. It works against endpoints that do not speak h2 and keeps
+  every response so the invariant, not one status code, is the evidence.
 - Chain library: 17 multi-step chains (IDOR to ATO, SSRF to IAM, XSS to CSRF
   to ATO, OAuth redirect theft, CSPT plus cache deception, SCIM takeover,
   MCP resource confusion, boot2root service-to-root, Kerberoast-to-DA,

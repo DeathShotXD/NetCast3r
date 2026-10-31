@@ -302,8 +302,12 @@ the extracted value still has to be used to prove impact.
 
 `race_run` sends the same scoped request up to 50 times with a bounded worker
 pool and returns every response. It is a concurrent burst, not a single-packet
-attack; a duplicate side effect is the proof. Campaigns that need packet-level
-alignment still require a dedicated HTTP/2 sender.
+attack; a duplicate side effect is the proof. For packet-level alignment,
+`single_packet_race` writes every final DATA frame of an HTTP/2 burst together,
+and `last_byte_race` does the same over HTTP/1.1: one connection per request,
+each request written up to its last byte, then every last byte released in one
+tight loop. Both keep every response so the invariant, not one status code, is
+the evidence.
 
 ### Path differentials
 
@@ -486,6 +490,7 @@ stored, so experience cannot be invented:
 | `boot2root_plan` | low | Turn an OS and service list into a phased host route |
 | `host_probe` | medium | Explicit-port banner and TLS certificate grab |
 | `single_packet_race` | medium | HTTP/2 last-byte-aligned burst for check-then-act bugs |
+| `last_byte_race` | medium | HTTP/1.1 burst that releases every request's final byte together |
 | `research_sources` | low | Coverage of the technique library by class and rarity |
 | `research_ingest` | medium | Store a sourced write-up digest as an active skill |
 | `knowledge_sources` | low | Curated advisory and research feeds |
