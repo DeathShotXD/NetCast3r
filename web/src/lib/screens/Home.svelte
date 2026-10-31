@@ -821,7 +821,7 @@
       <!-- mission hero -->
       <section class="obs-card obs-hero" class:is-live={live} use:pauseOffscreen aria-label="current operation">
         <svg class="obs-hero-net" viewBox="0 0 460 250" fill="none" aria-hidden="true">
-          <g stroke="#A855F7" stroke-opacity=".24">
+          <g stroke="#9F23DD" stroke-opacity=".24">
             <path d="M58 152 146 96 240 123 318 62 390 106" />
             <path d="M58 152 156 190 240 123 306 176 390 106" />
             <path d="M146 96 156 190M318 62 306 176M240 123 252 218" />
@@ -830,7 +830,7 @@
             <circle cx="146" cy="96" r="2.4" /><circle cx="240" cy="123" r="2.4" />
             <circle cx="390" cy="106" r="2.8" /><circle cx="306" cy="176" r="2" />
           </g>
-          <g fill="#A855F7" fill-opacity=".7">
+          <g fill="#9F23DD" fill-opacity=".7">
             <circle cx="58" cy="152" r="1.8" /><circle cx="318" cy="62" r="1.8" />
             <circle cx="156" cy="190" r="1.8" /><circle cx="252" cy="218" r="1.8" />
           </g>

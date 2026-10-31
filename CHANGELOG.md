@@ -360,6 +360,22 @@ Notable changes to NetCast3r, newest first.
 
 ### Changed
 
+- The dashboard shell palette is now derived from the banner and logo artwork
+  instead of a framework palette. `web/src/obsidian.css` `--obs-*` tokens
+  moved to bone text (`#f5e9dc`), brand violet (`#9f23dd`, lifted
+  `#c56cf0`), indigo panel depth, and warm hairlines. All off-brand saturated
+  hues were removed, including Tailwind violet `#a855f7`, lavender `#c99aff`,
+  hot-pink `#ff5c7a`, orange `#ffa94d`, and teal `#5eead4`. Status hues are
+  re-derived from the same family: running acid, done `#b1e61b`, queued/paused
+  amber `#f0c26b`, failed/interrupted magenta `#f050e6`. The home hero net
+  also moved to `#9f23dd`. `docs/DESIGN.md` documents both the shell token
+  table and the status hues.
+- The Live Model Spotlight keeps its surface and gains a transcript layout: a
+  fixed time column in tabular numerals, an uppercase verb column, the message
+  in bone, a right-aligned status code, and a violet gutter on hover. Under
+  640 px the grid collapses so the message keeps its width and the status code
+  drops to a second line. The header carries a violet gradient and a row-count
+  pill; the footer states the live or closed state.
 - The sidebar dropped the Recent casts list. The workspace strip is now a
   control-plane instrument panel: a ringed orb that turns acid and spins while
   a cast runs, a ready/casting line, and a casts/queue/findings readout. The

@@ -41,7 +41,7 @@ class Store {
     const raw = window.location.hash.replace(/^#\/?/, '');
     if (!raw) return false;
     const [screen, id] = raw.split('/');
-    const known: Screen[] = ['home', 'missions', 'new', 'live', 'findings', 'runs', 'agent', 'reports', 'keys', 'reveng', 'help'];
+    const known: Screen[] = ['home', 'missions', 'new', 'live', 'findings', 'runs', 'agent', 'connect', 'reports', 'keys', 'reveng', 'help'];
     const legacy = screen === 'engine' ? 'live' : (screen as Screen);
     if (!known.includes(legacy)) return false;
     this.screen = legacy;

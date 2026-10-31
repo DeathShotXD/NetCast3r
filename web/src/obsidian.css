@@ -6,32 +6,33 @@
 
 :root {
   color-scheme: dark;
-  --obs-bg: #050608;
-  --obs-bg-2: #07090d;
-  --obs-panel: #0a0d12;
-  --obs-panel-2: #0e1219;
-  --obs-panel-3: #131925;
-  --obs-panel-4: #18202e;
-  --obs-line: rgba(255, 255, 255, 0.072);
-  --obs-line-strong: rgba(255, 255, 255, 0.13);
+  --obs-bg: #040406;
+  --obs-bg-2: #060609;
+  --obs-panel: #0a0912;
+  --obs-panel-2: #0e0c18;
+  --obs-panel-3: #14111f;
+  --obs-panel-4: #1a1628;
+  --obs-line: rgba(245, 233, 220, 0.07);
+  --obs-line-strong: rgba(245, 233, 220, 0.13);
   --obs-line-acid: rgba(200, 248, 26, 0.28);
-  --obs-line-violet: rgba(168, 85, 247, 0.25);
-  --obs-text: #f2f4f7;
-  --obs-text-2: #c4cad4;
-  --obs-muted: #7f8899;
-  --obs-faint: #596274;
+  --obs-line-violet: rgba(159, 35, 221, 0.3);
+  --obs-text: #f5e9dc;
+  --obs-text-2: #d8cbbb;
+  --obs-muted: #a89591;
+  --obs-faint: #746c74;
   --obs-acid: #c8f81a;
   --obs-acid-2: #e2ff77;
   --obs-acid-soft: rgba(200, 248, 26, 0.085);
-  --obs-violet: #a855f7;
-  --obs-violet-2: #7c3aed;
-  --obs-violet-soft: rgba(168, 85, 247, 0.1);
-  --obs-red: #ff5c7a;
-  --obs-red-soft: rgba(255, 92, 122, 0.11);
-  --obs-orange: #ffa94d;
-  --obs-orange-soft: rgba(255, 169, 77, 0.11);
-  --obs-green: #5eead4;
-  --obs-green-soft: rgba(94, 234, 212, 0.1);
+  --obs-violet: #9f23dd;
+  --obs-violet-2: #6d1cb8;
+  --obs-violet-soft: rgba(159, 35, 221, 0.12);
+  --obs-violet-3: #c56cf0;
+  --obs-red: #f050e6;
+  --obs-red-soft: rgba(240, 80, 230, 0.12);
+  --obs-orange: #f0c26b;
+  --obs-orange-soft: rgba(240, 194, 107, 0.12);
+  --obs-green: #b1e61b;
+  --obs-green-soft: rgba(177, 230, 27, 0.1);
   --obs-gold: #efe4b1;
   --obs-shadow: 0 18px 50px rgba(0, 0, 0, 0.34);
   --obs-radius: 14px;
@@ -505,7 +506,7 @@ body {
 
 .obs-status-dot.orange {
   background: var(--obs-orange);
-  box-shadow: 0 0 8px rgba(255, 169, 77, 0.55);
+  box-shadow: 0 0 8px rgba(240, 194, 107, 0.55);
 }
 
 .obs-sidebar-legal {
@@ -551,7 +552,7 @@ body {
   gap: 12px;
   padding: 0 28px;
   border-bottom: 1px solid var(--obs-line);
-  background: rgba(5, 6, 8, 0.84);
+  background: rgba(4, 4, 6, 0.84);
   backdrop-filter: blur(16px) saturate(1.2);
 }
 
@@ -836,12 +837,12 @@ body {
 }
 
 .obs-btn-danger {
-  border-color: rgba(255, 92, 122, 0.25);
+  border-color: rgba(240, 80, 230, 0.25);
   color: var(--obs-red);
 }
 
 .obs-btn-danger:hover:not(:disabled) {
-  border-color: rgba(255, 92, 122, 0.45);
+  border-color: rgba(240, 80, 230, 0.45);
   background: var(--obs-red-soft);
 }
 
@@ -961,23 +962,23 @@ body {
 .obs-chip.violet {
   border-color: var(--obs-line-violet);
   background: var(--obs-violet-soft);
-  color: #c99aff;
+  color: var(--obs-violet-3);
 }
 
 .obs-chip.orange {
-  border-color: rgba(255, 169, 77, 0.22);
+  border-color: rgba(240, 194, 107, 0.22);
   background: var(--obs-orange-soft);
   color: var(--obs-orange);
 }
 
 .obs-chip.red {
-  border-color: rgba(255, 92, 122, 0.22);
+  border-color: rgba(240, 80, 230, 0.22);
   background: var(--obs-red-soft);
   color: var(--obs-red);
 }
 
 .obs-chip.green {
-  border-color: rgba(94, 234, 212, 0.22);
+  border-color: rgba(177, 230, 27, 0.22);
   background: var(--obs-green-soft);
   color: var(--obs-green);
 }
@@ -1224,7 +1225,7 @@ body {
 }
 
 .obs-kpi.violet .obs-kpi-value {
-  color: #c99aff;
+  color: var(--obs-violet-3);
 }
 
 .obs-kpi.gold .obs-kpi-value {
@@ -1465,7 +1466,7 @@ body {
 }
 
 .obs-hero-stat strong.violet {
-  color: #c99aff;
+  color: var(--obs-violet-3);
 }
 
 .obs-hero-stat strong.gold {
@@ -1765,7 +1766,7 @@ body {
 }
 
 .obs-agent-foot .violet {
-  color: #c99aff;
+  color: var(--obs-violet-3);
 }
 
 @media (max-width: 1320px) {
@@ -1991,7 +1992,7 @@ body {
   font-size: 8px;
   letter-spacing: 0.06em;
   text-transform: uppercase;
-  color: #c99aff;
+  color: var(--obs-violet-3);
 }
 
 .obs-signal-value {
@@ -2362,7 +2363,7 @@ body {
 }
 
 .obs-approval-agent {
-  color: #c99aff;
+  color: var(--obs-violet-3);
   font-family: var(--mono);
   font-size: 7px;
   letter-spacing: 0.07em;
@@ -2932,7 +2933,7 @@ body {
 }
 
 .obs-mission-stats strong.violet {
-  color: #c99aff;
+  color: var(--obs-violet-3);
 }
 
 .obs-mission-stats small {
@@ -3135,7 +3136,7 @@ body {
 }
 
 .obs-mission-state.is-paused {
-  border-color: rgba(255, 169, 77, 0.25);
+  border-color: rgba(240, 194, 107, 0.25);
   background: var(--obs-orange-soft);
   color: var(--obs-orange);
 }
@@ -3146,7 +3147,7 @@ body {
 }
 
 .obs-mission-state.is-done {
-  border-color: rgba(94, 234, 212, 0.24);
+  border-color: rgba(177, 230, 27, 0.24);
   background: var(--obs-green-soft);
   color: var(--obs-green);
 }
@@ -3737,7 +3738,7 @@ body {
 }
 
 .obs-agent-stats strong.violet {
-  color: #c99aff;
+  color: var(--obs-violet-3);
 }
 
 .obs-agent-stats small {
@@ -4024,7 +4025,7 @@ body {
 }
 
 .obs-agent-risk.is-high {
-  border-color: rgba(255, 92, 122, 0.26);
+  border-color: rgba(240, 80, 230, 0.26);
   background: var(--obs-red-soft);
   color: var(--obs-red);
 }
@@ -4084,18 +4085,18 @@ body {
 }
 
 .obs-agent-tool-flags .is-danger {
-  border-color: rgba(255, 92, 122, 0.24);
+  border-color: rgba(240, 80, 230, 0.24);
   color: var(--obs-red);
 }
 
 .obs-agent-tool-flags .is-open {
-  border-color: rgba(255, 169, 77, 0.24);
+  border-color: rgba(240, 194, 107, 0.24);
   color: var(--obs-orange);
 }
 
 .obs-agent-tool-flags .is-ops {
   border-color: var(--obs-line-violet);
-  color: #c99aff;
+  color: var(--obs-violet-3);
 }
 
 .obs-agent-detail-head {
@@ -4157,18 +4158,18 @@ body {
 }
 
 .obs-agent-flags span.red {
-  border-color: rgba(255, 92, 122, 0.26);
+  border-color: rgba(240, 80, 230, 0.26);
   color: var(--obs-red);
 }
 
 .obs-agent-flags span.orange {
-  border-color: rgba(255, 169, 77, 0.26);
+  border-color: rgba(240, 194, 107, 0.26);
   color: var(--obs-orange);
 }
 
 .obs-agent-flags span.violet {
   border-color: var(--obs-line-violet);
-  color: #c99aff;
+  color: var(--obs-violet-3);
 }
 
 .obs-agent-schema {
@@ -4443,13 +4444,13 @@ body {
 }
 
 .obs-call-status.is-error {
-  border-color: rgba(255, 92, 122, 0.26);
+  border-color: rgba(240, 80, 230, 0.26);
   background: var(--obs-red-soft);
   color: var(--obs-red);
 }
 
 .obs-call-status.is-denied {
-  border-color: rgba(255, 169, 77, 0.26);
+  border-color: rgba(240, 194, 107, 0.26);
   background: var(--obs-orange-soft);
   color: var(--obs-orange);
 }
@@ -4457,7 +4458,7 @@ body {
 .obs-call-status.is-held {
   border-color: var(--obs-line-violet);
   background: var(--obs-violet-soft);
-  color: #c99aff;
+  color: var(--obs-violet-3);
 }
 
 .obs-agent-call-actor,
@@ -4542,7 +4543,7 @@ body {
 }
 
 .obs-agent-call-detail .is-error pre {
-  border-color: rgba(255, 92, 122, 0.22);
+  border-color: rgba(240, 80, 230, 0.22);
   color: var(--obs-red);
 }
 
@@ -4722,7 +4723,7 @@ body {
 }
 
 .obs-sub-stats strong.violet {
-  color: #c99aff;
+  color: var(--obs-violet-3);
 }
 
 .obs-sub-stats small {
@@ -4878,7 +4879,7 @@ body {
 .obs-sub-status.is-triaged {
   border-color: var(--obs-line-violet);
   background: var(--obs-violet-soft);
-  color: #c99aff;
+  color: var(--obs-violet-3);
 }
 
 .obs-sub-status.is-accepted,
@@ -4896,7 +4897,7 @@ body {
 .obs-sub-status.is-duplicate,
 .obs-sub-status.is-rejected,
 .obs-sub-status.is-withdrawn {
-  border-color: rgba(255, 92, 122, 0.2);
+  border-color: rgba(240, 80, 230, 0.2);
   color: var(--obs-faint);
 }
 
@@ -5033,7 +5034,7 @@ body {
 }
 
 .obs-sub-delete {
-  border-color: rgba(255, 92, 122, 0.26);
+  border-color: rgba(240, 80, 230, 0.26);
   color: var(--obs-red);
 }
 
@@ -5175,7 +5176,7 @@ body {
 .obs-mission-agent-state.is-paused,
 .obs-mission-agent-state.is-stopping,
 .obs-mission-agent-state.is-interrupted {
-  border-color: rgba(167, 139, 250, 0.35);
+  border-color: rgba(197, 108, 240, 0.35);
   color: var(--obs-violet);
 }
 
@@ -5185,7 +5186,7 @@ body {
 }
 
 .obs-mission-agent-state.is-error {
-  border-color: rgba(255, 92, 122, 0.35);
+  border-color: rgba(240, 80, 230, 0.35);
   color: var(--obs-red);
 }
 
@@ -5332,12 +5333,12 @@ body {
 }
 
 .obs-mission-agent-task.is-failed .obs-mission-agent-seq {
-  border-color: rgba(255, 92, 122, 0.4);
+  border-color: rgba(240, 80, 230, 0.4);
   color: var(--obs-red);
 }
 
 .obs-mission-agent-task.is-running .obs-mission-agent-seq {
-  border-color: rgba(167, 139, 250, 0.45);
+  border-color: rgba(197, 108, 240, 0.45);
   color: var(--obs-violet);
 }
 
@@ -5373,8 +5374,8 @@ body {
 .obs-mission-agent-task-copy blockquote {
   margin: 6px 0 0;
   padding: 6px 8px;
-  border-left: 1px solid rgba(167, 139, 250, 0.45);
-  background: rgba(167, 139, 250, 0.05);
+  border-left: 1px solid rgba(197, 108, 240, 0.45);
+  background: rgba(197, 108, 240, 0.05);
   color: var(--obs-text-2);
   font-size: 8.5px;
   line-height: 1.55;
@@ -5886,7 +5887,7 @@ body {
 }
 
 .obs-hist-act.danger:hover {
-  border-color: rgba(255, 92, 122, 0.4);
+  border-color: rgba(240, 80, 230, 0.4);
   background: var(--obs-red-soft);
   color: var(--obs-red);
 }
@@ -6112,12 +6113,12 @@ body {
 }
 
 .risk-high {
-  border-color: rgba(255, 92, 122, 0.35);
+  border-color: rgba(240, 80, 230, 0.35);
   color: var(--obs-red);
 }
 
 .risk-medium {
-  border-color: rgba(255, 169, 77, 0.3);
+  border-color: rgba(240, 194, 107, 0.3);
   color: var(--obs-orange);
 }
 
@@ -6148,4 +6149,188 @@ body {
 .obs-connect-dl dd {
   margin: 0;
   color: var(--obs-text-2);
+}
+
+/* ---------------- live model spotlight ---------------- */
+/* One agent's mind as a transcript. The surface stays the shell's dark panel;
+   the polish lives in the rhythm: a fixed time column, a fixed verb column,
+   and a hairline gutter so a two-hundred-line dump still scans line by line. */
+
+.obs-spot-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 13px 18px 12px;
+  border-bottom: 1px solid var(--obs-line-violet);
+  background: linear-gradient(180deg, var(--obs-violet-soft), rgba(159, 35, 221, 0) 100%);
+}
+
+.obs-spot-title {
+  min-width: 0;
+}
+
+.obs-spot-agent {
+  margin: 4px 0 0;
+  font-family: var(--mono);
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.1;
+  letter-spacing: 0.01em;
+}
+
+.obs-spot-tools {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-left: auto;
+}
+
+.obs-spot-count {
+  display: inline-flex;
+  align-items: center;
+  height: 20px;
+  padding: 0 8px;
+  border: 1px solid var(--obs-line);
+  border-radius: 99px;
+  background: var(--obs-panel-3);
+  color: var(--obs-muted);
+  font-family: var(--mono);
+  font-size: 8.5px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.obs-spot-stream {
+  flex: 1;
+  overflow-y: auto;
+  padding: 6px 0;
+  scrollbar-width: thin;
+  scrollbar-color: var(--obs-panel-4) transparent;
+}
+
+.obs-spot-empty {
+  margin: 18px;
+  color: var(--obs-faint);
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+}
+
+.obs-spot-line {
+  display: grid;
+  grid-template-columns: 86px 62px minmax(0, 1fr) auto;
+  align-items: baseline;
+  column-gap: 10px;
+  margin: 0;
+  padding: 3.5px 18px;
+  border-left: 2px solid transparent;
+  font-size: 11.5px;
+  line-height: 1.55;
+  transition: background 120ms var(--ease), border-color 120ms var(--ease);
+}
+
+.obs-spot-line:hover {
+  border-left-color: var(--obs-line-violet);
+  background: rgba(245, 233, 220, 0.035);
+}
+
+.obs-spot-t {
+  color: var(--obs-faint);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.obs-spot-b {
+  overflow: hidden;
+  font-size: 9.5px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.obs-spot-m {
+  color: var(--obs-text-2);
+  overflow-wrap: anywhere;
+}
+
+.obs-spot-s {
+  color: var(--obs-muted);
+  font-size: 10.5px;
+  white-space: nowrap;
+}
+
+.obs-spot-s::before {
+  content: '/ ';
+  color: var(--obs-faint);
+}
+
+.obs-spot-foot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 18px;
+  border-top: 1px solid var(--obs-line-violet);
+}
+
+.obs-spot-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--obs-acid);
+  box-shadow: 0 0 8px rgba(200, 248, 26, 0.6);
+}
+
+.obs-spot-note {
+  color: var(--obs-muted);
+  font-family: var(--mono);
+  font-size: 9.5px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+/* narrow: the status code drops under the message so the URL keeps its width */
+@media (max-width: 640px) {
+  .obs-spot-line {
+    grid-template-columns: auto auto minmax(0, 1fr);
+    grid-template-areas:
+      't b m'
+      '. . s';
+    row-gap: 1px;
+    padding: 4px 12px;
+  }
+
+  .obs-spot-t {
+    grid-area: t;
+    font-size: 10px;
+  }
+
+  .obs-spot-b {
+    grid-area: b;
+  }
+
+  .obs-spot-m {
+    grid-area: m;
+  }
+
+  .obs-spot-s {
+    grid-area: s;
+    justify-self: start;
+    font-size: 10px;
+  }
+
+  .obs-spot-head {
+    padding: 11px 12px 10px;
+  }
+
+  .obs-spot-foot {
+    padding: 8px 12px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .obs-spot-line {
+    animation: none;
+  }
 }

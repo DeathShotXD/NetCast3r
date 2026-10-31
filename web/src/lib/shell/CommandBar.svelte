@@ -18,6 +18,9 @@
     live: 'Live run',
     findings: 'Findings',
     runs: 'Cast history',
+    reveng: 'Reverse Lab',
+    reports: 'Reports',
+    agent: 'Agent Studio',
     connect: 'Connect',
     keys: 'Providers',
     help: 'Field guide'

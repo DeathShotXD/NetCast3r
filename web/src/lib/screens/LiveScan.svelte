@@ -1198,7 +1198,7 @@
     }}
   >
     <div
-      class="palette-panel panel-raised panel-hud mx-auto mt-[7vh] flex w-[min(880px,94vw)] flex-col overflow-hidden"
+      class="palette-panel panel-raised panel-hud obs-spotlight mx-auto mt-[7vh] flex w-[min(880px,94vw)] flex-col overflow-hidden"
       style="max-height:80vh"
       role="dialog"
       aria-modal="true"
@@ -1208,27 +1208,27 @@
       onclick={(event) => event.stopPropagation()}
       onkeydown={(event) => event.stopPropagation()}
     >
-      <header class="flex items-center gap-3 border-b border-indigo-deep px-5 py-3">
+      <header class="obs-spot-head">
         <span class="lane-led" style="--agent:{color}" aria-hidden="true"></span>
-        <div class="min-w-0">
-          <p class="eyebrow">live model spotlight</p>
-          <h2 class="font-mono text-lg" style="color:{color}">{spotlightAgent}</h2>
+        <div class="obs-spot-title">
+          <p class="obs-eyebrow"><span class="tick"></span>live model spotlight</p>
+          <h2 class="obs-spot-agent" style="color:{color}">{spotlightAgent}</h2>
         </div>
-        <div class="ml-auto flex items-center gap-3">
-          <span class="num text-xs text-ash">{spotlightRows.length} rows</span>
+        <div class="obs-spot-tools">
+          <span class="obs-spot-count">{spotlightRows.length} rows</span>
           <button class="btn btn-quiet px-2! py-1! text-xs" type="button" onclick={() => (spotlightAgent = '')}>
             close
           </button>
         </div>
       </header>
       <div
-        class="think-stream flex-1 overflow-y-auto px-5 py-3"
+        class="think-stream obs-spot-stream"
         data-spotlight="1"
         bind:this={spotlightEl}
         onscroll={onSpotlightScroll}
       >
         {#if spotlightRows.length === 0}
-          <p class="mono text-xs text-slate">
+          <p class="obs-spot-empty">
             {running
               ? `waiting for ${spotlightAgent} to speak...`
               : `no activity recorded for ${spotlightAgent} on this run`}
@@ -1236,25 +1236,25 @@
         {/if}
         {#each spotlightRows as row, i (row.seq)}
           {@const badge = badgeOf(row)}
-          <p class="think-line mono text-[11px]">
-            <span class="text-slate">{clock(row.ts)} </span>
-            <span style="color:{badge.color}">{badge.text} </span>
-            <span style="color:{rowColor(row)};overflow-wrap:anywhere">{formatText(row.text, 900)}</span>
-            {#if row.sub}<span class="text-ash"> / {row.sub}</span>{/if}
-            {#if running && i === spotlightRows.length - 1}
-              <span class="caret" aria-hidden="true"></span>
-            {/if}
+          <p class="think-line obs-spot-line" style="--i:{Math.min(i, 14)}">
+            <span class="obs-spot-t">{clock(row.ts)}</span>
+            <span class="obs-spot-b" style="color:{badge.color}">{badge.text}</span>
+            <span class="obs-spot-m" style="color:{rowColor(row)}"
+              >{formatText(row.text, 900)}{#if running && i === spotlightRows.length - 1}<span
+                  class="caret"
+                  aria-hidden="true"
+                ></span>{/if}</span
+            >
+            {#if row.sub}<span class="obs-spot-s">{row.sub}</span>{/if}
           </p>
         {/each}
       </div>
-      <footer class="flex items-center gap-2 border-t border-indigo-deep px-5 py-2">
+      <footer class="obs-spot-foot">
         {#if running}
-          <span class="pulse-live h-1.5 w-1.5 rounded-full bg-acid" aria-hidden="true"></span>
-          <span class="mono text-[10px] tracking-[0.14em] text-ash">streaming // press esc to close</span>
+          <span class="pulse-live obs-spot-dot" aria-hidden="true"></span>
+          <span class="obs-spot-note">streaming // press esc to close</span>
         {:else}
-          <span class="mono text-[10px] tracking-[0.14em] text-ash">
-            {run ? statusLabel(run.status) : 'closed'} // press esc to close
-          </span>
+          <span class="obs-spot-note">{run ? statusLabel(run.status) : 'closed'} // press esc to close</span>
         {/if}
       </footer>
     </div>

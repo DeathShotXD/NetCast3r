@@ -73,6 +73,42 @@ colour. They are not new hues.
 | `low` | `#A89591` | bone-dust |
 | `error` | `#9F23DD` | violet, inverted meaning from normal use |
 
+### Production shell tokens
+
+The dashboard shell (`web/src/obsidian.css`) names every colour as a
+`--obs-*` custom property. Those values are re-derived from the banner and
+logo artwork, not from a framework palette, so the shell and the Python theme
+describe the same identity. Nothing in the shell may introduce a second bright
+hue: a loud colour that is not acid is a defect.
+
+| Token | Hex | Source | Role |
+|-------|-----|--------|------|
+| `--obs-text` | `#f5e9dc` | bone | body and heading text |
+| `--obs-text-2` | bone at 0.82 | bone | secondary body |
+| `--obs-muted` | `#a89591` | bone-dust | captions, meta |
+| `--obs-faint` | bone-dust at 0.55 | bone-dust | timestamps, axis labels |
+| `--obs-violet` | `#9f23dd` | violet | structure, active nav, links |
+| `--obs-violet-3` | `#c56cf0` | violet lifted | hover on violet |
+| `--obs-acid` | `#c8f81a` | acid | signal, live, primary action |
+| `--obs-line` | warm hairline | bone at 0.06 | panel borders |
+| `--obs-line-violet` | violet at 0.28 | violet | focused border, headers |
+| `--obs-panel-1..4` | indigo tints | indigo / indigo-deep | surface depth ladder |
+
+Status hues on the shell are drawn from the artwork family so a running,
+queued, done, or failed state never fights the brand:
+
+| Shell state | Hex | Source |
+|-------------|-----|--------|
+| running / live | `#c8f81a` | acid |
+| done | `#b1e61b` | acid-dim |
+| queued / paused | `#f0c26b` | gold family, warm amber |
+| failed / interrupted | `#f050e6` | magenta shard |
+
+Panels stay on the dark brand surface. Lifting a single panel to a light grey
+would break the scarcity rule and the artwork's near-black dominance, so the
+light-grey reading is delivered as *warm graphite depth* inside the existing
+ladder, not as a second theme.
+
 ---
 
 ## 3. The scarcity rule
@@ -151,6 +187,13 @@ These are the shapes the artwork is built from. Each one maps to a job.
 | **Chevron rail** | `>` between pipeline stages | stage transitions, breadcrumb, table sort |
 | **Prompt block** | `>_` in a box | identity lockup, command echo, footer |
 | **Masked value** | `sk_live_••••••••` | every credential representation, including charts |
+| **Transcript grid** | a fixed time column and verb column led by a hairline gutter | the Live Model Spotlight: one agent's reasoning reads as a scan-friendly log, not a paragraph dump |
+
+The spotlight keeps the shell's dark panel surface. Its polish is rhythm, not
+new colour: time on the left in tabular numerals, an uppercase verb, the
+message in `bone`, the status code right-aligned, and a violet gutter on
+hover. The four-column grid collapses under 640 px so a long URL keeps its
+width and the status code drops to a second line.
 
 Geometry:
 
