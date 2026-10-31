@@ -102,7 +102,11 @@ export const AGENT_COLORS = {
     "chainer": "#9F23DD",
     "scribe": "#F5E9DC",
     "sentinel": "#C8F81A",
-    "run": "#A89591"
+    "run": "#A89591",
+    "strategist": "#EFE4B1",
+    "scout": "#B1E61B",
+    "attacker": "#F5F87D",
+    "validator": "#9F23DD"
   } as const;
 export const MARKS = {
     "PROMPT": ">_",

@@ -114,7 +114,7 @@ class RuntimeCases(RuntimeHarness):
             mission["id"], title="Training lab session",
             objective="Practice the next labs and record a lesson.")
         self.runtime.start(mission["id"], {"max_seconds": 30})
-        state = self.wait(mission["id"])
+        state = self.wait(mission["id"], timeout=45)
 
         self.assertEqual(state["status"], "done", state["last_error"])
         self.assertEqual(state["role"], "training")

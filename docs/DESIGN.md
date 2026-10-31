@@ -302,7 +302,11 @@ identity rests on colour, glyphs, and rhythm.
 - Header: `NETCAST3R` in acid with a violet underline rule, target in bone.
 - Stage rail: `CRAWL > READ JS > HUNT > VALIDATE > ESCALATE > REPORT`, active
   stage acid, done stages bone-dust, pending `violet-deep`.
-- Agent lines: `[recon]` padded to 11 and coloured by agent family.
+- Agent lines: `[recon]` padded to 11 and coloured by agent family. The
+  intelligence mesh extends the same family with fixed role inks: strategist
+  gold, scout acid-dim, attacker acid-hot, validator violet, scribe bone. A
+  role lane and that role's reasoning use the same ink, so a round reads as
+  five specialists rather than one blur.
 - Findings: state word first, in its state colour, value masked to the same
   `sk_live_...` shape the banner uses.
 - Summary: two columns, label `bone-dust`, value acid when non-zero and

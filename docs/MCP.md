@@ -158,7 +158,7 @@ Denied calls are audited with status `denied`.
 
 ## 3. Tools
 
-67 tools, grouped by job. Every tool publishes a JSON schema with
+160 tools, grouped by job. Every tool publishes a JSON schema with
 `additionalProperties: false`; unknown arguments are rejected rather than
 silently ignored.
 
@@ -183,22 +183,37 @@ silently ignored.
 | `mission_start_run` | medium | Start a scoped scan and link it |
 | `mission_hunt` | medium | Standalone hunt: scope, fingerprint, surface, research, hypotheses |
 | `model_solve` | medium | Bounded model action loop over allow-listed tools |
+| `autopilot` | medium | Native operator: brief, plan, act, reflect, and write durable notes |
+| `swarm` | medium | Five-role intelligence mesh: strategist, scout, attacker, validator, scribe |
 | `agent_status` | low | Read the runtime plan, tasks, budget, and model calls |
 | `agent_start` | medium | Plan and run the bounded mission agent |
 | `agent_pause` / `agent_resume` / `agent_stop` | low | Control a live run |
 | `missions_delete` | high | Delete mission, links, approvals |
 
-A mission has three ways to move. `mission_start_run` starts the crawler.
+A mission has several ways to move. `mission_start_run` starts the crawler.
 `mission_hunt` runs a deterministic read-only pass: scope, fingerprint, safe
 surface paths, path-encoding comparison, technique and chain ranking, then
 explicit hypotheses. `model_solve` runs the bounded model action loop: one
 JSON action per step from a small allow-list (`http_probe`, `http_request`,
 `http_path_diff`, `http_upload`, `oracle_extract`, the research planners, and
 `hypothesis_create`), a step and wall-clock budget, and the real result of
-every call fed back. The loop cannot spend an approval, call a high-risk tool,
-or create a finding; a status the model returns is a lead, not evidence. It
-appears in Live Runs as Reason, Act, Observe, Decide. All three refuse a
-training mission; labs use a recipe.
+every call fed back. `autopilot` adds the native operator: it builds a brief
+from scope, research, skill packs, lessons, and its own prior notes, plans a
+sequence of moves, executes them, reflects, and replans. `swarm` convenes five
+role identities instead of one voice. A strategist sets at most three
+answerable objectives per round; scout and attacker specialists propose and
+run the scoped moves in parallel; an independent validator judges every real
+observation; and a scribe compresses the round into durable notes. Each role
+is a separate provider identity, so a strategist can run on one model and the
+validator on another, and a `supports` verdict can be cross-checked against a
+second provider and recorded as corroborated or contested. The mesh never
+creates a finding and never marks a lab solved. When no model is reachable it
+runs a deterministic baseline and says so.
+
+Every loop cannot spend an approval, call a high-risk tool, or create a
+finding; a status the model returns is a lead, not evidence. Both the operator
+and the mesh appear in Live Runs as Reason, Act, Observe, Decide. All of them
+refuse a training mission; labs use a recipe.
 
 ### Runs and scans
 

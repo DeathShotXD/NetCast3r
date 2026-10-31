@@ -1005,6 +1005,18 @@ html.nc-native .nc-tag {
   color: #e2b8f6;
 }
 
+.obs-btn-swarm {
+  border-color: var(--obs-line-acid);
+  background: var(--obs-acid-soft);
+  color: var(--obs-acid);
+}
+
+.obs-btn-swarm:hover:not(:disabled) {
+  border-color: var(--obs-acid);
+  background: rgba(200, 248, 26, 0.18);
+  color: var(--obs-acid-2);
+}
+
 .obs-btn-ghost {
   background: transparent;
 }

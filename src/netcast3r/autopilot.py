@@ -24,8 +24,8 @@ from .mcp.tools import _TOOL_MAP
 # no finding write, and no memory deletion.
 ACTIONS = {
     "scope_check": "confirm a target is inside the mission scope",
-    "http_probe": "fetch one in-scope URL and keep status, headers, and title",
-    "http_request": "send one scoped request with a method, path, headers, or body",
+    "http_probe": "fetch one in-scope URL; status, headers, and title only, no body",
+    "http_request": "send one scoped request and keep the capped response body",
     "http_path_diff": "compare encoded, cased, and slashed path variants",
     "http_upload": "send one multipart upload to an in-scope endpoint",
     "oracle_extract": "extract a value through a boolean, status, or time oracle",
@@ -170,6 +170,7 @@ class Autopilot:
         self.run_id = run_id
         self.on_step = on_step
         self.should_stop = should_stop
+        self.actor = "agent:autopilot"
         self.model_calls = 0
         self.hypotheses_recorded = 0
 
@@ -207,7 +208,7 @@ class Autopilot:
         if name not in _TOOL_MAP:
             return {"error": {"message": f"unknown tool: {name}"}}, True, clean
         try:
-            payload, is_error = self.registry.call(name, clean, actor="agent:autopilot")
+            payload, is_error = self.registry.call(name, clean, actor=self.actor)
             return payload if isinstance(payload, dict) else {"result": payload}, \
                 bool(is_error), clean
         except Exception as exc:  # noqa: BLE001 - a refusal is an observation

@@ -28,9 +28,10 @@ ATOM = "{http://www.w3.org/2005/Atom}"
 MAX_BYTES = 2_000_000
 MAX_ITEMS = 40
 # Public feeds are fetched together, not one after another: a single hung feed
-# must not stall a training plan for the sum of every feed's timeout.
+# must not stall a training plan for the sum of every feed's timeout. The
+# curated list is seven feeds, so eight workers means one wave, not two.
 FEED_TIMEOUT = 8.0
-FETCH_WORKERS = 6
+FETCH_WORKERS = 8
 
 
 @lru_cache(maxsize=1)

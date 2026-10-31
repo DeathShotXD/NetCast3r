@@ -12,7 +12,7 @@ Notable changes to NetCast3r, newest first.
   Agent Zero, a generic MCP client, and the HTTP API. The session token is
   never returned; a harness reads it from the 0600 control-plane file. A
   **Connect** screen shows the same information with a copyable config per
-  harness, a searchable list of all 159 typed tools, and their risk tiers.
+  harness, a searchable list of all 160 typed tools, and their risk tiers.
   Any harness drives the full surface and shares one database and audit trail.
 - Native operator: `autopilot` and
   `POST /api/v1/missions/{id}/autopilot` make NetCast3r its own harness. It
@@ -22,6 +22,21 @@ Notable changes to NetCast3r, newest first.
   observes the real results; reflects; and replans until its step, time, or
   model budget is spent. A deterministic baseline runs when no model is
   reachable. It records hypotheses and durable notes, never findings.
+- Intelligence mesh: `swarm` and
+  `POST /api/v1/missions/{id}/swarm` replace the single operator voice with
+  five role identities. A strategist turns the mission into at most three
+  answerable objectives per round; scout and attacker specialists propose and
+  run scoped moves in parallel; an independent validator judges each real
+  observation; and a scribe writes durable round memory. Each role is a
+  separate provider identity, so roles can be routed to different models, and
+  a `supports` verdict is cross-checked against a second provider and recorded
+  as corroborated or contested. The mesh has hard step, time, model-call, and
+  round budgets; skips a repeated move; stops after two consecutive rounds
+  that executed nothing or three consecutive tool errors; runs a deterministic
+  baseline when no model is reachable; and never creates a finding or marks a
+  lab solved. Live Runs switches to
+  Strategise/Act/Validate/Remember, shows per-role lanes and validator
+  verdicts, and keeps the mesh memory panel.
 - Operator memory: an `agent_notes` table plus `agent_notes_write`,
   `agent_notes_list`, `agent_notes_clear`, and
   `GET/POST/DELETE /api/v1/missions/{id}/notes`. Briefs, plans, reflections,

@@ -774,6 +774,20 @@ class Server:
                 return _problem(400, str(exc))
             return _json(run, 201)
 
+        @add("POST", r"/api/v1/missions/(?P<id>[A-Za-z0-9_]+)/swarm")
+        def mission_swarm(ctx):
+            body = ctx.json()
+            body = body if isinstance(body, dict) else {}
+            options = {key: body[key] for key in
+                       ("max_steps", "max_seconds", "goal", "max_model_calls")
+                       if key in body}
+            options["mode"] = "swarm"
+            try:
+                run = self._solvers().start(ctx.params["id"], options)
+            except ValueError as exc:
+                return _problem(400, str(exc))
+            return _json(run, 201)
+
         @add("POST", r"/api/v1/solves/(?P<id>[A-Za-z0-9_]+)/stop")
         def solve_stop(ctx):
             return _json({"stopped": self._solvers().cancel(ctx.params["id"])})

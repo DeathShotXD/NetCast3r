@@ -41,6 +41,19 @@
     { key: 'observe', label: 'Observe', detail: 'Keep the real result as evidence' },
     { key: 'decide', label: 'Decide', detail: 'Reflect, replan, or finish' }
   ];
+  const MESH_STAGES = [
+    { key: 'reason', label: 'Strategise', detail: 'The strategist sets answerable objectives' },
+    { key: 'act', label: 'Act', detail: 'A specialist runs one scoped call' },
+    { key: 'observe', label: 'Validate', detail: 'An independent validator judges the observation' },
+    { key: 'decide', label: 'Remember', detail: 'The scribe writes durable memory' }
+  ];
+  const MESH_ROLES = [
+    { key: 'strategist', label: 'strategist', detail: 'plans', counter: 'strategist_calls', unit: 'calls' },
+    { key: 'scout', label: 'scout', detail: 'maps', counter: 'scout_actions', unit: 'moves' },
+    { key: 'attacker', label: 'attacker', detail: 'tests', counter: 'attacker_actions', unit: 'moves' },
+    { key: 'validator', label: 'validator', detail: 'judges', counter: 'validator_calls', unit: 'calls' },
+    { key: 'scribe', label: 'scribe', detail: 'remembers', counter: 'scribe_calls', unit: 'calls' }
+  ];
   const TERMINAL = ['done', 'failed', 'stopped', 'interrupted'];
   const RESUMABLE = ['stopped', 'interrupted', 'failed'];
   const BUCKET_MS = 250;
@@ -82,8 +95,9 @@
   const isHunt = $derived(runMode === 'hunt');
   const isSolve = $derived(runMode === 'solve');
   const isOperator = $derived(runMode === 'autopilot');
-  const displayStages = $derived(isLab ? LAB_STAGES : isHunt ? HUNT_STAGES : isOperator ? OPERATOR_STAGES : isSolve ? SOLVE_STAGES : stages);
-  const displayTabs = $derived((isLab || isHunt || isSolve || isOperator) ? TABS.filter((item) => item.id === 'feed' || item.id === 'report') : TABS);
+  const isMesh = $derived(runMode === 'swarm');
+  const displayStages = $derived(isLab ? LAB_STAGES : isHunt ? HUNT_STAGES : isMesh ? MESH_STAGES : isOperator ? OPERATOR_STAGES : isSolve ? SOLVE_STAGES : stages);
+  const displayTabs = $derived((isLab || isHunt || isSolve || isOperator || isMesh) ? TABS.filter((item) => item.id === 'feed' || item.id === 'report') : TABS);
   const operatorMission = $derived(String((run?.options as Record<string, unknown> | undefined)?.mission_id ?? ''));
   let events = $state<RunEvent[]>([]);
   let counts = $state<Record<string, number>>({});
@@ -148,7 +162,7 @@
   const stageCount = $derived.by(() => {
     const next: Record<string, number> = {};
     for (const stage of displayStages) next[stage.key] = stageCounts[stage.key] ?? 0;
-    if (!isLab && !isHunt && !isSolve && !isOperator) next.crawl = Math.max(next.crawl ?? 0, crawled);
+    if (!isLab && !isHunt && !isSolve && !isOperator && !isMesh) next.crawl = Math.max(next.crawl ?? 0, crawled);
     return next;
   });
 
@@ -448,11 +462,13 @@
       }
       counts = { ...counts, ...(run.counts ?? {}) };
       const options = (run.options ?? {}) as Record<string, unknown>;
-      if (String(options.mode ?? '') === 'autopilot' && options.mission_id) {
-        try {
-          memory = (await api.missionNotes(String(options.mission_id))).items ?? [];
-        } catch {
-          /* the transcript still renders without the memory panel */
+      if (String(options.mode ?? '') === 'autopilot' || String(options.mode ?? '') === 'swarm') {
+        if (options.mission_id) {
+          try {
+            memory = (await api.missionNotes(String(options.mission_id))).items ?? [];
+          } catch {
+            /* the transcript still renders without the memory panel */
+          }
         }
       }
       if (finished) currentStage = '';
@@ -748,6 +764,13 @@
             <p class="num mt-1 text-xl text-bone" use:countup={counts[key] ?? 0}>0</p>
           </div>
         {/each}
+      {:else if isMesh}
+        {#each [['moves', 'actions'], ['model calls', 'model_calls'], ['agents', 'agents'], ['findings', 'findings']] as [label, key] (key)}
+          <div class="panel kpi px-4 py-3">
+            <p class="eyebrow">{label}</p>
+            <p class="num mt-1 text-xl text-bone" use:countup={counts[key] ?? 0}>0</p>
+          </div>
+        {/each}
       {:else if isOperator}
         {#each [['moves', 'actions'], ['model calls', 'model_calls'], ['hypotheses', 'hypotheses'], ['findings', 'findings']] as [label, key] (key)}
           <div class="panel kpi px-4 py-3">
@@ -873,12 +896,31 @@
           </div>
 
           <div class="flex flex-col">
-            {#if isOperator}
+            {#if isOperator || isMesh}
               <div class="border-b border-indigo-deep">
                 <div class="flex items-center justify-between px-4 py-2.5">
-                  <p class="eyebrow">operator memory</p>
+                  <p class="eyebrow">{isMesh ? 'mesh memory' : 'operator memory'}</p>
                   <span class="num text-xs text-ash">{memory.length}</span>
                 </div>
+                {#if isMesh}
+                  <ul data-mesh="1">
+                    {#each MESH_ROLES as role (role.key)}
+                      {@const color = (AGENT_COLORS as Record<string, string>)[role.key] ?? 'var(--nc-bone-dust)'}
+                      <li class="flex items-center gap-3 border-b border-indigo-deep/60 px-4 py-1.5 last:border-0">
+                        <span class="lane-led" style="--agent:{color}" aria-hidden="true"></span>
+                        <span class="mono w-[74px] shrink-0 text-[11px]" style="color:{color}">{role.label}</span>
+                        <span class="text-[11px] text-bone-dust">{role.detail}</span>
+                        <span class="num ml-auto text-[11px] text-ash">{counts[role.counter] ?? 0} <span class="text-[9px] uppercase tracking-[0.08em] text-bone-dust">{role.unit}</span></span>
+                      </li>
+                    {/each}
+                  </ul>
+                  <div class="flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-indigo-deep/60 px-4 py-2">
+                    <span class="mono text-[9px] uppercase tracking-[0.12em]" style="color:var(--nc-acid)">supports {counts.supports ?? 0}</span>
+                    <span class="mono text-[9px] uppercase tracking-[0.12em]" style="color:var(--nc-violet)">refutes {counts.refuted ?? 0}</span>
+                    <span class="mono text-[9px] uppercase tracking-[0.12em] text-ash">inconclusive {counts.inconclusive ?? 0}</span>
+                    <span class="mono ml-auto text-[9px] text-bone-dust">{counts.rounds ?? 0} round(s) - {counts.corroborated ?? 0} corroborated / {counts.contested ?? 0} contested</span>
+                  </div>
+                {/if}
                 {#if memory.length === 0}
                   <p class="px-4 pb-4 text-sm text-bone-dust">No notes written yet.</p>
                 {:else}

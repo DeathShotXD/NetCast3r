@@ -103,6 +103,8 @@ export const api = {
     request<Run>('POST', `/missions/${id}/solve`, body),
   startMissionAutopilot: (id: string, body: Record<string, unknown> = {}) =>
     request<Run>('POST', `/missions/${id}/autopilot`, body),
+  startMissionSwarm: (id: string, body: Record<string, unknown> = {}) =>
+    request<Run>('POST', `/missions/${id}/swarm`, body),
   missionAgent: (id: string) =>
     request<MissionAgent>('GET', `/missions/${id}/agent`),
   startMissionAgent: (id: string, body: Record<string, unknown>) =>

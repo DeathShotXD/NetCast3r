@@ -508,6 +508,13 @@ def autopilot_start(ctx: ToolContext, args: dict) -> dict:
                  body=body)
 
 
+def swarm_start(ctx: ToolContext, args: dict) -> dict:
+    body = {key: args[key] for key in
+            ("max_steps", "max_seconds", "goal", "max_model_calls") if key in args}
+    return _call(ctx, "POST", f"/api/v1/missions/{args['mission_id']}/swarm",
+                 body=body)
+
+
 def agent_start(ctx: ToolContext, args: dict) -> dict:
     mission = _mission(ctx, args["mission_id"])
     target = str(mission.get("target") or "").strip()
@@ -2648,6 +2655,7 @@ _HANDLERS.update({
     "mission_hunt": mission_hunt,
     "model_solve": model_solve,
     "autopilot_start": autopilot_start,
+    "swarm_start": swarm_start,
     "agent_notes_write": agent_notes_write,
     "agent_notes_list": agent_notes_list,
     "agent_notes_clear": agent_notes_clear,
@@ -2894,6 +2902,20 @@ TOOLS: tuple[Tool, ...] = (
                   "max_model_calls": _integer("model calls", 1, 12, 4),
                   "goal": _string("optional focus for the operator")},
                  ["mission_id"]), "autopilot_start", open_world=True),
+    Tool("swarm", "Run the multi-agent intelligence mesh",
+         "Convene five role identities against one mission: a strategist sets "
+         "answerable objectives, scout and attacker specialists propose and run "
+         "scoped moves, an independent validator judges each observation, and a "
+         "scribe writes durable memory. Each role can be routed to a different "
+         "provider or model, and a supported verdict can be cross-checked with a "
+         "second provider. It creates hypotheses and notes, never findings.",
+         "medium", "missions",
+         _schema({"mission_id": _string("mission id"),
+                  "max_steps": _integer("moves", 1, 36, 10),
+                  "max_seconds": _integer("wall-clock cap", 30, 1800, 600),
+                  "max_model_calls": _integer("model calls", 1, 36, 12),
+                  "goal": _string("optional focus for the mesh")},
+                 ["mission_id"]), "swarm_start", open_world=True),
     Tool("mission_hunt", "Start a standalone hunt",
          "Run a deterministic read-only hunt for a mission: scope, fingerprint, "
          "safe surface paths, technique and chain ranking, and explicit "

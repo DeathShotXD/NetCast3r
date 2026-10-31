@@ -187,6 +187,24 @@
     }
   }
 
+  async function runSwarm() {
+    if (!selected) return;
+    busy = 'swarm';
+    try {
+      const run = await api.startMissionSwarm(selected.id, {
+        max_steps: 10,
+        max_seconds: 600,
+        max_model_calls: 12
+      });
+      store.toast('ok', 'intelligence mesh started: five roles will plan, act, validate, and remember');
+      store.watch(run.id);
+    } catch (exc) {
+      store.fail(exc instanceof Error ? exc.message : 'could not convene the intelligence mesh');
+    } finally {
+      busy = '';
+    }
+  }
+
   async function runHunt() {
     if (!selected) return;
     busy = 'hunt';
@@ -562,6 +580,10 @@
                   <button class="obs-btn obs-btn-autopilot" type="button" disabled={busy === 'autopilot'} onclick={() => void runAutopilot()}>
                     <Icon name="bot" size={13} />
                     {busy === 'autopilot' ? 'Thinking...' : 'Autopilot'}
+                  </button>
+                  <button class="obs-btn obs-btn-swarm" type="button" disabled={busy === 'swarm'} onclick={() => void runSwarm()}>
+                    <Icon name="activity" size={13} />
+                    {busy === 'swarm' ? 'Convening...' : 'Swarm'}
                   </button>
                   <button class="obs-btn" type="button" disabled={busy === 'solve'} onclick={() => void runSolve()}>
                     <Icon name="bot" size={13} />

@@ -13,7 +13,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 from .agent_runtime import LocalPlane
 from .events import Event
-from .. import autopilot, model_solver
+from .. import autopilot, model_solver, swarm
 
 
 class SolverRunner:
@@ -36,12 +36,14 @@ class SolverRunner:
             raise ValueError("mission has no target")
         options = dict(options or {})
         mode = str(options.get("mode") or "solve").strip().lower()
-        if mode not in {"solve", "autopilot"}:
+        if mode not in {"solve", "autopilot", "swarm"}:
             raise ValueError(f"unknown solver mode: {mode}")
-        defaults = (model_solver.DEFAULT_STEPS if mode == "solve"
-                    else autopilot.DEFAULT_STEPS)
-        seconds = (model_solver.DEFAULT_SECONDS if mode == "solve"
-                   else autopilot.DEFAULT_SECONDS)
+        defaults = {"solve": model_solver.DEFAULT_STEPS,
+                    "autopilot": autopilot.DEFAULT_STEPS,
+                    "swarm": swarm.DEFAULT_STEPS}[mode]
+        seconds = {"solve": model_solver.DEFAULT_SECONDS,
+                   "autopilot": autopilot.DEFAULT_SECONDS,
+                   "swarm": swarm.DEFAULT_SECONDS}[mode]
         run = self.server.index.create_run(target, {
             "mode": mode, "mission_id": mission_id,
             "max_steps": options.get("max_steps", defaults),
@@ -96,6 +98,31 @@ class SolverRunner:
                 "model": completion.model, "error": completion.error or "",
                 "usage": completion.usage or {}}
 
+    def _completion_for(self, agent: str, messages: list[dict],
+                        exclude: set[str] | None = None) -> dict:
+        """One model call routed by agent identity.
+
+        The mesh gives each role a different identity, so a deployment can bind
+        the strategist to one model and the validator to another. An injected
+        completion is shared by every role, which keeps tests deterministic.
+        """
+        if self._complete is not None:
+            return self._complete(messages)
+        from ..config import load_config
+        from ..providers import ProviderBus
+        from .runner import DashboardBridge
+
+        config = load_config()
+        try:
+            DashboardBridge(self.server.index, self.server.keys).apply(config)
+        except Exception:  # noqa: BLE001 - a broken provider row must not stop the loop
+            pass
+        completion = ProviderBus(config, timeout=45.0).complete(
+            agent, messages, timeout=45.0, exclude_providers=exclude)
+        return {"text": completion.text or "", "provider": completion.provider,
+                "model": completion.model, "error": completion.error or "",
+                "usage": completion.usage or {}}
+
     def _run(self, run_id: str, mission_id: str, mission: dict,
              options: dict, cancel: threading.Event, mode: str = "solve",
              default_seconds: float = model_solver.DEFAULT_SECONDS) -> None:
@@ -107,12 +134,16 @@ class SolverRunner:
 
             ctx = ToolContext(
                 plane=LocalPlane(self.server), policy="supervised",
-                base=self.server.base, actor="agent:autopilot" if mode == "autopilot"
-                else "agent:solver", mission_id=mission_id)
+                base=self.server.base,
+                actor={"autopilot": "agent:autopilot", "swarm": "agent:swarm"}.get(
+                    mode, "agent:solver"),
+                mission_id=mission_id)
             registry = ToolRegistry(ctx)
 
             def on_step(stage: str, payload: dict) -> None:
-                emit(Event(type="log", stage=stage, payload=payload))
+                emit(Event(type="log", stage=stage,
+                           agent=str(payload.get("agent") or ""),
+                           payload=payload))
 
             if mode == "autopilot":
                 operator = autopilot.Autopilot(
@@ -123,6 +154,15 @@ class SolverRunner:
                                                 autopilot.DEFAULT_MODEL_CALLS),
                     run_id=run_id, on_step=on_step, should_stop=cancel.is_set)
                 result = operator.run()
+            elif mode == "swarm":
+                mesh = swarm.Swarm(
+                    registry, self._completion_for, mission,
+                    max_steps=options.get("max_steps", swarm.DEFAULT_STEPS),
+                    max_seconds=options.get("max_seconds", default_seconds),
+                    max_model_calls=options.get("max_model_calls",
+                                                swarm.DEFAULT_MODEL_CALLS),
+                    run_id=run_id, on_step=on_step, should_stop=cancel.is_set)
+                result = mesh.run()
             else:
                 solver = model_solver.Solver(
                     registry, self._completion, mission_id,
@@ -141,6 +181,26 @@ class SolverRunner:
                 "hypotheses": result.get("hypotheses", 0),
                 "findings": 0,
             }
+            if mode == "swarm":
+                roles = result.get("roles") or {}
+                calls = result.get("role_calls") or {}
+                verdicts = result.get("verdicts") or {}
+                summary.update({
+                    "rounds": result.get("rounds", 0),
+                    "agents": len([count for count in calls.values() if count]),
+                    "corroborated": result.get("corroborated", 0),
+                    "contested": result.get("contested", 0),
+                    # Flat numeric counters keep the run record easy to read
+                    # and the live view easy to render.
+                    "scout_actions": roles.get("scout", 0),
+                    "attacker_actions": roles.get("attacker", 0),
+                    "strategist_calls": calls.get("strategist", 0),
+                    "validator_calls": calls.get("validator", 0),
+                    "scribe_calls": calls.get("scribe", 0),
+                    "supports": verdicts.get("supports", 0),
+                    "refuted": verdicts.get("refutes", 0),
+                    "inconclusive": verdicts.get("inconclusive", 0),
+                })
             self.server.index.update_run(run_id, status=status, finished_at=_now(),
                                          counts_json=summary)
             emit(Event(type="run.state", stage="decide",

@@ -101,6 +101,12 @@ AGENT_COLORS: dict[str, str] = {
     "scribe": BONE,
     "sentinel": ACID,
     "run": BONE_DUST,
+    # The intelligence mesh gives every role its own identity, so the run view
+    # can colour a role lane and a role's reasoning without extra lookup.
+    "strategist": GOLD,
+    "scout": ACID_DIM,
+    "attacker": ACID_HOT,
+    "validator": VIOLET,
 }
 
 # -- Glyphs ------------------------------------------------------------------
