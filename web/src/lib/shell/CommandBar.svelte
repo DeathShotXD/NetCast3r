@@ -17,7 +17,7 @@
     new: 'New scan',
     live: 'Live run',
     findings: 'Findings',
-    runs: 'Run ledger',
+    runs: 'Cast history',
     keys: 'Providers',
     help: 'Field guide'
   };

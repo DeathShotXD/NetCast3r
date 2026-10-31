@@ -352,14 +352,17 @@ Notable changes to NetCast3r, newest first.
 
 ### Changed
 
-- The sidebar's workspace strip is now a control-plane card: a violet signal
-  orb that turns acid and pulses while a cast runs, a ready/casting state, and
-  loopback/SQLite tags. Recent casts became status-toned rows: a colored accent
-  bar and dot (acid running, orange queued, green done, red failed, grey
-  interrupted), the target and status/time on their own lines, a count chip,
-  and an empty state. The bounded model loop got bespoke Reason, Act, Observe,
-  and Decide stage glyphs, and its stage header defaults to reason instead of
-  crawl.
+- The sidebar dropped the Recent casts list. The workspace strip is now a
+  control-plane instrument panel: a ringed orb that turns acid and spins while
+  a cast runs, a ready/casting line, and a casts/queue/findings readout. The
+  separate stats grid and system card are gone; a single sync/version line
+  remains.
+- The Run Ledger became **Cast history**: four KPI tiles (one with a 14-day
+  sparkline), a 14-day activity chart, a status-distribution bar with legend,
+  a search box, status filters, a sort control, and date-grouped cast cards
+  with mode, findings/endpoints/pages/js, duration, an inline live progress
+  bar, and open/continue/rerun/report/delete actions. The nav and breadcrumb
+  now say Cast history.
 - The default openrouter model list names models that exist again
   (`openrouter/free`, nemotron 3.5 lightning, nemotron super 120b); the old
   qwen and gemma entries had been withdrawn. The Keys preset hints mirror the

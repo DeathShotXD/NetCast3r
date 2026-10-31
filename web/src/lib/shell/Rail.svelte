@@ -1,6 +1,6 @@
 <script lang="ts">
   import { store } from '../state.svelte';
-  import { ago, isoMs } from '../format';
+  import { isoMs } from '../format';
   import { STAGES } from '../../tokens';
   import type { Screen } from '../types';
   import Icon from '../ui/Icon.svelte';
@@ -26,7 +26,7 @@
     {
       label: 'Intelligence',
       items: [
-        { id: 'runs', label: 'Run Ledger', icon: 'layers', hint: 'history, rerun, delete' },
+        { id: 'runs', label: 'Cast History', icon: 'layers', hint: 'every cast, its results, and a rerun' },
         { id: 'reveng', label: 'Reverse Lab', icon: 'code', hint: 'source, APK, contracts, drivers' },
         { id: 'reports', label: 'Reports', icon: 'file', hint: 'submissions, outcomes, payouts' },
         { id: 'agent', label: 'Agent Studio', icon: 'bot', hint: 'MCP tools, policy, audit' },
@@ -52,7 +52,6 @@
   const findingCount = $derived(store.totals?.findings ?? 0);
   const missionCount = $derived(store.totals?.missions ?? 0);
   const pendingApprovals = $derived(store.totals?.pending_approvals ?? 0);
-  const lastRun = $derived(store.totals?.last_run ?? store.runs[0] ?? null);
   const stageName = $derived(
     (STAGES as unknown as { key: string; label: string }[]).find((stage) => stage.key === store.liveStage)?.label ??
       (store.liveStage ? store.liveStage.toUpperCase() : 'WARMING UP')
@@ -68,15 +67,6 @@
     store.syncState === 'error' ? 'sync lost' : store.syncState === 'syncing' ? 'syncing' : 'synced'
   );
 
-  const tone = (status: string) =>
-    ({
-      running: 'running',
-      queued: 'queued',
-      done: 'done',
-      failed: 'failed',
-      stopped: 'muted',
-      interrupted: 'muted'
-    })[status] ?? 'muted';
 
   function go(id: Screen) {
     store.go(id);
@@ -133,21 +123,37 @@
     </div>
   </div>
 
-  <div class="obs-plane" class:is-live={!!running} aria-label="active workspace">
-    <span class="obs-plane-orb" aria-hidden="true"><span class="obs-plane-orb-core"></span></span>
-    <span class="obs-plane-copy">
-      <span class="obs-plane-name">Local control plane</span>
-      <span class="obs-plane-meta">
-        <span class="obs-plane-state" class:live={!!running}>{running ? 'casting' : 'ready'}</span>
-        <span class="obs-plane-sep" aria-hidden="true">&middot;</span>
-        <span>loopback</span>
-        <span class="obs-plane-sep" aria-hidden="true">&middot;</span>
-        <span>SQLite</span>
+  <div class="obs-plane" class:is-live={!!running} aria-label="local control plane">
+    <div class="obs-plane-head">
+      <span class="obs-plane-orb" aria-hidden="true">
+        <svg class="obs-plane-ring" viewBox="0 0 36 36">
+          <circle class="obs-plane-ring-track" cx="18" cy="18" r="15.5" />
+          <circle class="obs-plane-ring-arc" cx="18" cy="18" r="15.5" />
+        </svg>
+        <span class="obs-plane-orb-core"></span>
       </span>
-    </span>
-    <span class="obs-plane-lock" title="Bound to loopback, single operator">
-      <Icon name="lock" size={11} />
-    </span>
+      <span class="obs-plane-copy">
+        <span class="obs-plane-title">Control plane</span>
+        <span class="obs-plane-meta">
+          <span class="obs-plane-state" class:live={!!running}>
+            {running ? `${stageName.toLowerCase()} ${elapsed}` : 'ready'}
+          </span>
+          <span class="obs-plane-sep" aria-hidden="true">&middot;</span>
+          <span>loopback</span>
+        </span>
+      </span>
+      <span
+        class="obs-plane-led"
+        class:live={!!running}
+        title={running ? 'a cast is running' : 'idle'}
+        aria-hidden="true"
+      ></span>
+    </div>
+    <div class="obs-plane-grid">
+      <div><span>casts</span><strong>{store.totals?.runs ?? 0}</strong></div>
+      <div><span>queue</span><strong class:hot={openCount > 0}>{openCount}</strong></div>
+      <div><span>findings</span><strong>{findingCount}</strong></div>
+    </div>
   </div>
 
   <nav class="obs-nav">
@@ -187,68 +193,21 @@
     {/each}
   </nav>
 
-  <div class="obs-sidebar-recent">
-    <div class="obs-recent-head">
-      <span class="obs-recent-title">Recent casts</span>
-      <span class="obs-recent-count">{store.runs.length}</span>
-    </div>
-    {#if store.runs.length === 0}
-      <p class="obs-recent-empty">No casts recorded yet.</p>
-    {:else}
-      {#each store.runs.slice(0, 5) as run (run.id)}
-        <button
-          class="obs-sidebar-run tone-{tone(run.status)}"
-          class:is-active={run.id === store.activeRunId}
-          type="button"
-          onclick={() => store.watch(run.id)}
-          title={run.target}
-        >
-          <span class="obs-sidebar-run-dot" aria-hidden="true"></span>
-          <span class="obs-sidebar-run-copy">
-            <span class="obs-sidebar-run-target">{run.target}</span>
-            <span class="obs-sidebar-run-meta">
-              <span class="obs-sidebar-run-status">{run.status}</span>
-              <span class="obs-sidebar-run-time">{ago(run.created_at)}</span>
-            </span>
-          </span>
-          <Icon name="arrow-right" size={11} />
-        </button>
-      {/each}
-    {/if}
-  </div>
-
-  <div class="obs-sidebar-stats">
-    <div><span>runs</span><strong>{store.totals?.runs ?? 0}</strong></div>
-    <div><span>findings</span><strong>{store.totals?.findings ?? 0}</strong></div>
-    <div><span>queue</span><strong class:hot={openCount > 0}>{openCount}</strong></div>
-  </div>
-
   <div class="obs-sidebar-foot">
-    <div class="obs-system-card">
-      <div class="obs-system-line">
-        <span class="obs-status-dot" class:idle={!running} class:violet={store.syncState === 'error'} aria-hidden="true"></span>
-        {#if running}
-          {stageName.toLowerCase()} - {elapsed}
-        {:else}
-          Control plane ready
-        {/if}
-      </div>
-      <div class="obs-system-meta">
-        {#if running}
-          {running.target}<br />
-        {:else if lastRun}
-          last cast {ago(lastRun.created_at)}<br />
-        {:else}
-          no casts recorded<br />
-        {/if}
-        {syncLabel} - v{store.meta?.version ?? '0.0.0'}
-      </div>
-    </div>
-
     <button class="obs-btn obs-btn-primary" type="button" onclick={() => go('new')} style="width:100%">
       <Icon name="crosshair" size={13} />
       New scan
     </button>
+
+    <div class="obs-sidebar-sys">
+      <span
+        class="obs-status-dot"
+        class:idle={!running}
+        class:violet={store.syncState === 'error'}
+        aria-hidden="true"
+      ></span>
+      {syncLabel} &middot; v{store.meta?.version ?? '0.0.0'}
+    </div>
 
     <p class="obs-sidebar-legal">
       Authorized testing only. You are responsible for the scope you point this at.
