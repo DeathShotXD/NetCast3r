@@ -137,12 +137,14 @@ class SolverRunner:
             policy = str(options.get("policy") or "supervised").strip().lower()
             if policy not in POLICIES:
                 policy = "supervised"
+            authorized = (str(mission.get("autonomy") or "") == "autonomous"
+                          and str(mission.get("status") or "") == "active")
             ctx = ToolContext(
                 plane=LocalPlane(self.server), policy=policy,
                 base=self.server.base,
                 actor={"autopilot": "agent:autopilot", "swarm": "agent:swarm"}.get(
                     mode, "agent:solver"),
-                mission_id=mission_id)
+                mission_id=mission_id, authorized=authorized)
             registry = ToolRegistry(ctx)
             # The director hands the brain a Prime objective; the brain reads
             # its goal from the mission, so overlay it without mutating.

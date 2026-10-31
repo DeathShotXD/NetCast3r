@@ -79,6 +79,11 @@ class Prime:
             last_note_at = notes[0].get("created_at", "") if notes else ""
         except Exception:  # noqa: BLE001
             last_note_at = ""
+        try:
+            from . import exploits as exploits_module
+            critical_leads = exploits_module.critical_leads(self.index, mission_id)
+        except Exception:  # noqa: BLE001 - a broken catalog must not stop planning
+            critical_leads = 0
         return {
             "mission_id": mission_id,
             "title": str(mission.get("title") or ""),
@@ -90,6 +95,7 @@ class Prime:
             "finding_count": int(mission.get("finding_count") or 0),
             "pending_approvals": int(mission.get("pending_approvals") or 0),
             "open_hypotheses": int(open_hypotheses or 0),
+            "critical_leads": int(critical_leads or 0),
             "last_note_at": last_note_at,
             "idle_minutes": round(
                 _minutes_since(last_note_at or mission.get("updated_at") or ""), 1),
@@ -116,6 +122,9 @@ class Prime:
         else:
             score -= 100  # manual: a human drives it, never the director
         score += min(signals["open_hypotheses"], 4) * 12
+        # A lead that maps to a high or critical impact module is worth more
+        # than a lead that does not: this is the bounty-eligible work.
+        score += min(int(signals.get("critical_leads", 0) or 0), 3) * 8
         score += min(signals["finding_count"], 3) * 6
         if signals["run_count"] == 0:
             score += 8

@@ -249,6 +249,11 @@ class ToolContext:
     actor: str = "agent"
     tool_count: int = 0
     mission_id: str = ""
+    # The domain is the authorization. When an active mission is marked
+    # autonomous, its in-scope chain runs without a per-call human step-up.
+    # Scope is still enforced by every handler, approval decisions stay
+    # human-only, and every authorized call is audited.
+    authorized: bool = False
 
 
 def _call(ctx: ToolContext, method: str, path: str, query: dict | None = None, body=None):
@@ -4700,6 +4705,15 @@ class ToolRegistry:
                             "MCP policy to full for an explicitly trusted operator")
         if risk < RISK_LEVELS["high"]:
             return ""
+        if self.ctx.authorized:
+            # An active autonomous mission is the authorization: the in-scope
+            # chain runs without a human step-up. Approval decisions and any
+            # admin tool stay human-only, and the return value marks the audit
+            # so an authorized call is always distinguishable from a human one.
+            if tool.operator_only:
+                raise ToolError("policy_denied",
+                                "approval decisions and admin tools stay human-only")
+            return "authorized:autonomous"
         if self.ctx.policy == "supervised":
             approval_id = str(args.get("approval_id") or "").strip()
             if not approval_id:

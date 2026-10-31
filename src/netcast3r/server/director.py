@@ -31,9 +31,11 @@ MAX_CONCURRENT = 4
 BASE_COOLDOWN = 45.0
 # Backoff ceiling once a mission keeps producing nothing.
 MAX_COOLDOWN = 900.0
-# Two no-progress runs in a row (or three failures) parks a mission.
-NO_PROGRESS_LIMIT = 2
-MAX_MISSION_FAILS = 3
+# Three no-progress runs (or four failures) rests a mission, but a park is not
+# forever: after this long the director tries it again with a fresh view.
+NO_PROGRESS_LIMIT = 3
+MAX_MISSION_FAILS = 4
+RESUME_AFTER = 6 * 3600.0
 # Per-mode budgets. Deliberately small: the director prefers many short,
 # observable runs over one long run that hides its work.
 MODE_BUDGETS = {
@@ -48,7 +50,7 @@ DIRECTOR_NOTE = (
 
 
 class Director:
-    def __init__(self, server, tick_seconds: float = 15.0,
+    def __init__(self, server, tick_seconds: float = 10.0,
                  max_concurrent: int = 1):
         self.server = server
         self.prime = prime_module.Prime(server.index)
@@ -261,8 +263,8 @@ class Director:
                 continue
             if self._cooldown_left(row["mission_id"], row, active) > 0:
                 continue
-            if (active.get("missions", {}).get(row["mission_id"], {})
-                    .get("parked")):
+            entry = (active.get("missions", {}) or {}).get(row["mission_id"], {})
+            if self._still_parked(entry):
                 continue
             chosen = row
             break
@@ -301,6 +303,16 @@ class Director:
         return ""
 
     # -- bookkeeping -------------------------------------------------------
+    @staticmethod
+    def _still_parked(entry: dict) -> bool:
+        """A park is a long rest, not a permanent stop. It clears on its own."""
+        if not entry.get("parked"):
+            return False
+        parked_at = float(entry.get("parked_at") or 0.0)
+        if parked_at and time.time() - parked_at >= RESUME_AFTER:
+            return False
+        return True
+
     def _busy(self, mission_id: str, active: dict) -> bool:
         for entry in (active.get("runs") or {}).values():
             if entry.get("mission_id") == mission_id:
@@ -364,6 +376,7 @@ class Director:
             if (mstate.get("no_progress", 0) >= NO_PROGRESS_LIMIT
                     or mstate.get("fails", 0) >= MAX_MISSION_FAILS):
                 mstate["parked"] = True
+                mstate["parked_at"] = time.time()
             missions[mission_id] = mstate
             runs.pop(run_id, None)
             status = (run or {}).get("status", "missing")

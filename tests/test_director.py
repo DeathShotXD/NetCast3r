@@ -143,22 +143,26 @@ class DirectorTests(unittest.TestCase):
         self.assertEqual(self.hunts.started, [])
 
     # -- progress and parking ---------------------------------------------
-    def test_two_no_progress_runs_park_the_mission(self):
+    def test_no_progress_runs_park_the_mission_after_the_limit(self):
         mission = self.mission("stuck")
-        first = self.director._tick(force=True)
-        self.complete_run(first["run_id"], counts={"actions": 0})
-        self.director._tick(force=True)  # reap -> no_progress 1
-        self.clear_cooldowns()
-        second = self.director._tick(force=True)
-        self.assertEqual(second["action"], "start")
-        self.complete_run(second["run_id"], counts={"actions": 0})
-        self.director._tick(force=True)  # reap -> no_progress 2 -> parked
+        for _ in range(3):
+            decision = self.director._tick(force=True)
+            if decision["action"] == "start":
+                self.complete_run(decision["run_id"], counts={"actions": 0})
+            self.director._tick(force=True)  # reap
+            self.clear_cooldowns()
         rows = {row["mission_id"]: row for row in self.director.eligibility()}
         self.assertTrue(rows[mission["id"]]["parked"])
-        self.clear_cooldowns()
         third = self.director._tick(force=True)
         self.assertEqual(third["action"], "idle")
         self.assertIn("parked", third["reason"])
+
+    def test_a_park_clears_on_its_own_after_the_rest(self):
+        entry = {"parked": True, "parked_at": time.time()}
+        self.assertTrue(Director._still_parked(entry))
+        entry["parked_at"] = time.time() - (7 * 3600)
+        self.assertFalse(Director._still_parked(entry))
+        self.assertFalse(Director._still_parked({"parked": False}))
 
     def test_a_mission_that_moves_is_not_parked(self):
         mission = self.mission("moving")

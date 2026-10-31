@@ -87,6 +87,37 @@ bookkeeping never looks like progress.
 with `action=kill`) is the kill switch. It cancels every run the director
 started, and every run at all when `all=true`, then disengages and pauses.
 
+## Authorization: the domain is the authorization
+
+Picking a target is the authorization. An **active** mission set to
+`autonomous` is trusted to run its in-scope chain without a per-call human
+step-up:
+
+- the solver, path, and agent runners build their tool context with
+  `authorized=True`, so a high-risk step inside the mission scope runs and is
+  audited as `authorized:autonomous`;
+- scope is still enforced by every handler, so a request outside the mission
+  target or its scope list is refused - authorization is not a scope bypass;
+- approval decisions and admin tools stay **human-only** even under
+  authorization, because an agent deciding its own approvals is not a security
+  control;
+- findings and reports are never created or submitted by an agent: a finding is
+  still a separate, human-gated write and a submission is a deliberate operator
+  action.
+
+A `supervised` mission keeps the old behaviour: read and probe work runs, and a
+high-risk step parks for a single-use approval. Set a mission to `autonomous`
+to hand it the domain and let it run.
+
+## Continuous operation
+
+The director runs a ten-second tick. It parks a mission only after **three**
+no-progress runs or four failures, and a park is a long rest, not a stop: after
+six hours (`RESUME_AFTER`) the director tries it again with a fresh view. Prime
+adds weight for leads whose technique maps to a high or critical impact exploit
+module, so the bounty-eligible work is picked first. Between a restart the state
+lives in the index, so the loop resumes on its own.
+
 ## Surface
 
 HTTP:

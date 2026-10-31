@@ -6,6 +6,16 @@ Notable changes to NetCast3r, newest first.
 
 ### Added
 
+- Authorized autonomous execution and continuous hunting. An **active mission
+  set to `autonomous` is the authorization**: its in-scope chain runs without a
+  per-call approval step-up. The tool registry auto-authorizes high-risk calls
+  for that context and records them as `authorized:autonomous` in the audit;
+  scope is still enforced by every handler, approval decisions and admin tools
+  stay human-only, and nothing is ever submitted on its own. The director ticks
+  every 10 seconds, parks a mission only after three no-progress runs or four
+  failures, and a park now clears itself after six hours instead of stopping
+  forever. Prime weights leads that map to a high or critical impact exploit
+  module, so bounty-eligible work rises to the top.
 - Exploit module catalog: `exploit_catalog`, `exploit_search`, and
   `exploit_plan`, plus `GET /api/v1/exploits`, `GET /api/v1/exploits/plan`, and
   `POST /api/v1/missions/{id}/exploits/plan`. 37 typed exploit modules across

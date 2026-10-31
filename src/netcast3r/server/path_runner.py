@@ -103,9 +103,11 @@ class PathRunner:
             policy = str(options.get("policy") or "supervised").strip().lower()
             if policy not in POLICIES:
                 policy = "supervised"
+            authorized = (str(mission.get("autonomy") or "") == "autonomous"
+                          and str(mission.get("status") or "") == "active")
             ctx = ToolContext(plane=LocalPlane(self.server), policy=policy,
                               base=self.server.base, actor="agent:path",
-                              mission_id=mission["id"])
+                              mission_id=mission["id"], authorized=authorized)
             registry = ToolRegistry(ctx)
 
             def on_step(stage: str, payload: dict) -> None:

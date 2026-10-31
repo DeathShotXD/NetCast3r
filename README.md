@@ -222,13 +222,16 @@ plans, probes, inventories, and verifies inside the mission's scope. See
 [docs/MCP.md](docs/MCP.md).
 
 It is its own harness. A **Prime** planner ranks every scoped mission from real
-signals, and a durable **director** wakes on a tick, runs one scoped pass at a
-time through the hunt, the operator, or the five-role mesh, watches it to
-completion, and records whether the mission moved. The command center has a
-Director strip with Engage, Pause, and Kill. It never fabricates findings:
+signals, and a durable **director** wakes on a ten-second tick, runs one scoped
+pass at a time through the hunt, the operator, or the five-role mesh, watches it
+to completion, and records whether the mission moved. An **active mission set
+to `autonomous` is the authorization**: its in-scope chain runs without a
+per-call approval step-up, audited as `authorized:autonomous`. Scope is still
+enforced, approval decisions stay human-only, and it never fabricates findings:
 `findings_create` records only what an operator or agent validated, every
 bounty result still comes from verified runs, and the director never submits a
-report. See [docs/DIRECTOR.md](docs/DIRECTOR.md).
+report. The command center has a Director strip with Engage, Pause, and Kill.
+See [docs/DIRECTOR.md](docs/DIRECTOR.md).
 
 ### Exit codes
 

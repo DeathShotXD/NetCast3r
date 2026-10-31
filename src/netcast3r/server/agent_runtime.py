@@ -543,9 +543,14 @@ class AgentRuntime:
     def _registry(self, mission_id: str):
         from ..mcp.tools import ToolContext, ToolRegistry
 
+        mission = self.server.index.get_mission(mission_id) or {}
+        autonomous = (str(mission.get("autonomy") or "") == "autonomous"
+                      and str(mission.get("status") or "") == "active")
         return ToolRegistry(ToolContext(
-            plane=LocalPlane(self.server), policy="supervised",
-            base=self.server.base, actor="agent:runtime", mission_id=mission_id))
+            plane=LocalPlane(self.server),
+            policy="full" if autonomous else "supervised",
+            base=self.server.base, actor="agent:runtime", mission_id=mission_id,
+            authorized=autonomous))
 
     def _scope(self, mission_id: str, task: dict) -> tuple:
         registry = self._registry(mission_id)
