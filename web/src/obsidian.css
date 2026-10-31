@@ -816,7 +816,10 @@ body {
 .nc-canvas {
   position: fixed;
   inset: 0;
-  z-index: 58;
+  /* Above every app overlay (palette veil 60, toasts 50, drawer 40) so the
+     pointer is never dimmed by a veil. The top layer still paints above it,
+     which is why the engine hands the native cursor back there. */
+  z-index: 1000;
   pointer-events: none;
   mix-blend-mode: screen;
 }
@@ -872,6 +875,43 @@ body {
     0 0 20px -4px rgba(200, 248, 26, 0.4) !important;
 }
 
+/* Labels are DOM tags, not canvas text: the additive canvas can only add
+   light, so a legible dark plate has to be a real element. */
+.nc-tag {
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 1001;
+  display: none;
+  padding: 3px 6px;
+  pointer-events: none;
+  border: 1px solid rgba(200, 248, 26, 0.34);
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.82);
+  color: var(--obs-acid);
+  font-family: var(--mono);
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  will-change: transform;
+}
+
+.nc-tag.is-on {
+  display: block;
+}
+
+.nc-tag-focus {
+  border-color: rgba(200, 248, 26, 0.2);
+  background: rgba(0, 0, 0, 0.7);
+  color: rgba(200, 248, 26, 0.78);
+}
+
+html.nc-native .nc-tag {
+  display: none !important;
+}
+
 @media (pointer: fine) and (prefers-reduced-motion: no-preference) {
   html.nc-live,
   html.nc-live * {
@@ -880,6 +920,14 @@ body {
 
   /* Text fields keep a real caret cursor so typing still feels normal. */
   html.nc-live :is(input, textarea, select, [contenteditable='true'], [contenteditable='']) {
+    cursor: auto !important;
+  }
+
+  /* A top-layer dialog, popover, or fullscreen element paints above any
+     z-index. Rather than strand the pointer there, give the native one back
+     and keep the net as an accent. */
+  html.nc-live.nc-native,
+  html.nc-live.nc-native * {
     cursor: auto !important;
   }
 }

@@ -59,6 +59,46 @@ class KnowledgeTests(unittest.TestCase):
         self.index.mark_knowledge(first["id"], "read")
         self.assertEqual(self.index.get_knowledge(first["id"])["status"], "read")
 
+    def test_refresh_fetches_concurrently_and_survives_a_dead_feed(self):
+        import threading
+        import time
+
+        original = feedwatch._fetch
+        state = {"current": 0, "peak": 0, "calls": []}
+        lock = threading.Lock()
+
+        def fake_fetch(url, timeout=feedwatch.FEED_TIMEOUT):
+            with lock:
+                state["calls"].append(url)
+                state["current"] += 1
+                state["peak"] = max(state["peak"], state["current"])
+            time.sleep(0.05)
+            with lock:
+                state["current"] -= 1
+            if "github" in url:
+                raise RuntimeError("feed down")
+            if "cisa.gov" in url:
+                return ('{"vulnerabilities":[{"cveID":"CVE-2026-0001",'
+                        '"vulnerabilityName":"Example","dateAdded":"2026-01-01",'
+                        '"shortDescription":"Exploited"}]}')
+            return ("<rss><channel><item><title>Item</title>"
+                    f"<link>{url}/item</link></item></channel></rss>")
+
+        feedwatch._fetch = fake_fetch
+        try:
+            result = feedwatch.refresh(self.index, limit=3)
+        finally:
+            feedwatch._fetch = original
+
+        total = len(feedwatch.sources())
+        self.assertEqual(len(state["calls"]), total)
+        # Sequential fetching could never overlap; a pool must.
+        self.assertGreater(state["peak"], 1)
+        self.assertEqual([err["source"] for err in result["errors"]],
+                         ["github-advisories"])
+        self.assertEqual(len(result["items"]), total - 1)
+        self.assertEqual(len(self.index.list_knowledge()), total - 1)
+
 
 if __name__ == "__main__":
     unittest.main()

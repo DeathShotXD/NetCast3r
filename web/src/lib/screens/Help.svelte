@@ -108,11 +108,13 @@
     <p class="eyebrow">shell behaviour</p>
     <h2 class="mt-1 text-lg text-bone">The net cursor</h2>
     <p class="mt-3 max-w-[70ch] text-sm leading-relaxed text-bone-dust">
-      A light reticle follows the pointer. As it comes near a control it spins a web out to that
-      control's edges, tightens, and knots itself on. Press anywhere to throw a short burst. It is
-      the banner's gesture, live. Toggle it with <strong>Net</strong> in the top bar; the choice is
-      remembered. It never runs for touch input or under a reduced-motion preference, and text
-      fields always keep a normal caret cursor.
+      A light reticle follows the pointer on a short elastic leash. As it comes near a control it
+      spins a web out to that control's edges, tightens, leans in, and knots itself on. Press
+      anywhere to throw a short burst. It is the banner's gesture, live, and it only reaches for
+      what is really there: a control hidden behind a palette or a dialog, faded out, or sitting in
+      another pane is left alone, and keyboard focus gets a cast of its own. Toggle it with
+      <strong>Net</strong> in the top bar; the choice is remembered. It never runs for touch input
+      or under a reduced-motion preference, and text fields always keep a normal caret cursor.
     </p>
   </section>
 

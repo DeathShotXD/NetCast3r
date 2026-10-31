@@ -15,6 +15,7 @@ import ipaddress
 import json
 import re
 import socket
+from concurrent.futures import ThreadPoolExecutor
 from functools import lru_cache
 from pathlib import Path
 from urllib.parse import urlsplit
@@ -26,6 +27,10 @@ SOURCES_PATH = Path(__file__).with_name("data") / "knowledge_sources.json"
 ATOM = "{http://www.w3.org/2005/Atom}"
 MAX_BYTES = 2_000_000
 MAX_ITEMS = 40
+# Public feeds are fetched together, not one after another: a single hung feed
+# must not stall a training plan for the sum of every feed's timeout.
+FEED_TIMEOUT = 8.0
+FETCH_WORKERS = 6
 
 
 @lru_cache(maxsize=1)
@@ -132,7 +137,7 @@ def _public_url(url: str) -> bool:
     return True
 
 
-def _fetch(url: str, timeout: float = 20.0) -> str:
+def _fetch(url: str, timeout: float = FEED_TIMEOUT) -> str:
     if not _public_url(url):
         raise ValueError("source must resolve to a public address")
     with httpx.Client(timeout=timeout, trust_env=False,
@@ -152,30 +157,48 @@ def _fetch(url: str, timeout: float = 20.0) -> str:
             return b"".join(chunks).decode("utf-8", "replace")
 
 
+def _load(source: dict, limit: int) -> tuple[dict, list[dict], str]:
+    """Fetch and parse one feed. Returns (source, records, error)."""
+    try:
+        body = _fetch(source["url"])
+        records = (parse_kev(body) if source["kind"] == "json"
+                   else parse_rss(body))
+        return source, records[:max(1, min(int(limit or 20), MAX_ITEMS))], ""
+    except Exception as exc:  # noqa: BLE001 - one dead feed must not stop the rest
+        return source, [], str(exc)[:200]
+
+
 def refresh(index, source_id: str = "", limit: int = 20) -> dict:
-    """Fetch one or all curated feeds and store new items."""
+    """Fetch one or all curated feeds and store new items.
+
+    Feeds are fetched concurrently and parsed off the calling thread; every
+    database write still happens here, in order, so the index is only touched
+    by one thread.
+    """
     selected = [source for source in sources()
                 if not source_id or source["id"] == source_id]
     if not selected:
         raise ValueError(f"unknown knowledge source: {source_id}")
     known = {item["url"] for item in index.list_knowledge(limit=500)}
+    results: list[tuple[dict, list[dict], str]] = []
+    if selected:
+        workers = max(1, min(FETCH_WORKERS, len(selected)))
+        with ThreadPoolExecutor(max_workers=workers) as pool:
+            results = list(pool.map(lambda source: _load(source, limit), selected))
     new_items, errors = [], []
-    for source in selected:
-        try:
-            body = _fetch(source["url"])
-            records = (parse_kev(body) if source["kind"] == "json"
-                       else parse_rss(body))
-            for record in records[:max(1, min(int(limit or 20), 40))]:
-                if record["url"] in known:
-                    continue
-                item = index.add_knowledge_item(
-                    source=source["id"], title=record["title"],
-                    url=record["url"], published=record["published"],
-                    summary=record["summary"], tags=source["tags"])
-                known.add(record["url"])
-                new_items.append(item)
-        except Exception as exc:  # noqa: BLE001 - one dead feed must not stop the rest
-            errors.append({"source": source["id"], "error": str(exc)[:200]})
+    for source, records, error in results:
+        if error:
+            errors.append({"source": source["id"], "error": error})
+            continue
+        for record in records:
+            if record["url"] in known:
+                continue
+            item = index.add_knowledge_item(
+                source=source["id"], title=record["title"],
+                url=record["url"], published=record["published"],
+                summary=record["summary"], tags=source["tags"])
+            known.add(record["url"])
+            new_items.append(item)
     return {
         "sources": [source["id"] for source in selected],
         "new": len(new_items),

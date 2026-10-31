@@ -234,11 +234,24 @@ because they are texture, not motion.
 ### The net cursor
 
 The banner's hooded figure throws a web over what it hunts. The shell carries
-that gesture: a small acid reticle follows the pointer, and when it comes
-within 240 px of any interactive element it spins a net out to that element's
-corners with a node cross at each anchor, tightens at 88 px, and pulses a hot
-bead along every strand. A press throws a short radial burst. Nothing moves
-that the user did not move.
+that gesture: a small acid reticle trails the pointer on a short elastic leash,
+and when it comes within **190 px** of a control in the region you are working
+in it spins a net out to that element's corners with a node cross at each
+anchor, tightens at **78 px**, leans magnetically toward what it is about to
+take, and pulses a hot bead along every strand. A press throws a short burst,
+a fresh grab throws a ripple, and when the pointer leaves the net melts instead
+of blinking out. Keyboard focus casts a web of its own, retired on the next
+press.
+
+It is occlusion and zone aware, so it never webs what is not really there:
+
+- a control behind an open palette, a modal backdrop, or a closed drawer is
+  skipped, because the engine asks the browser what is topmost under the probe;
+- `visibility: hidden`, zero-opacity and `pointer-events: none` elements are
+  skipped, in one engine call (`checkVisibility`);
+- hunting stays inside the pointer's region (`main`, `aside`, `nav`, `header`,
+  `section`, `dialog`, or a `[data-nc-zone]` a view defines), so the sidebar
+  never lights up while you work in the content pane.
 
 It is a progressive enhancement and always overridable:
 
@@ -248,7 +261,9 @@ It is a progressive enhancement and always overridable:
 - text fields keep a normal caret cursor;
 - a drawing fault stops the overlay and hands the native cursor straight back;
 - the canvas is `pointer-events: none` with `mix-blend-mode: screen` so the
-  acid threads glow over panels without intercepting a single click.
+  acid threads glow over panels without intercepting a single click;
+- the DOM is re-read only when something changed, at most every 400 ms, so an
+  idle shell pays nothing and a streaming one stays cheap.
 
 No parallax. No scroll hijacking. No loader longer than 1.6 seconds.
 

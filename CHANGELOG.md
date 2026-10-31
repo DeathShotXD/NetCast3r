@@ -43,11 +43,18 @@ Notable changes to NetCast3r, newest first.
   current `is-solved` widget markup as well as the older congratulations
   banner.
 - Net cursor: the banner's throw-web becomes a live gesture. A canvas overlay
-  trails an acid reticle, and as it nears any control it spins a net to that
-  control's edges, tightens, knots, and pulses; a press throws a short burst.
-  It runs only for a fine pointer with motion allowed, is toggleable from the
-  top bar (remembered in `localStorage`), hands the caret cursor back over text
-  fields, and stops itself on a drawing fault. The Help screen explains it.
+  trails an acid reticle on an elastic leash, and as it nears a control it spins
+  a net to that control's edges, tightens, leans in magnetically, knots, and
+  pulses; a press throws a short burst, a fresh grab a ripple, and the net
+  melts when the pointer leaves. It is occlusion aware (a control behind the
+  command palette, a modal backdrop, a closed drawer, or a hidden/zero-opacity
+  element is never a target) and zone aware (it only reaches within the region
+  the pointer is in, so the sidebar never webs up while you work in the content
+  pane). Keyboard focus casts its own web. It runs only for a fine pointer with
+  motion allowed, is toggleable from the top bar (remembered in
+  `localStorage`), hands the caret cursor back over text fields, stops itself on
+  a drawing fault, and re-reads the DOM only when something changed. The Help
+  screen explains it.
 - Bounded model action loop: `model_solve` and
   `POST /api/v1/missions/{id}/solve` let a configured (including free) model
   choose up to six typed tool calls through an allow-list of low and medium
@@ -318,6 +325,11 @@ Notable changes to NetCast3r, newest first.
 
 ### Fixed
 
+- The public knowledge watcher fetches its seven curated feeds in parallel with
+  an 8 s per-feed ceiling instead of one after another with a 20 s ceiling. A
+  single dead or rate-limited feed (GitHub Advisories answers 406 to the
+  default client) no longer stalls a training plan for the sum of every feed,
+  and one failed source is still recorded without losing the rest.
 - A provider that answers correctly now clears its strike counter, so one
   later transient error no longer retires a healthy provider for the whole
   cooldown.
