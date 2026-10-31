@@ -657,6 +657,10 @@ def self_audit(ctx: ToolContext, args: dict) -> dict:
     return _call(ctx, "GET", "/api/v1/self-audit")
 
 
+def connect_info(ctx: ToolContext, args: dict) -> dict:
+    return _call(ctx, "GET", "/api/v1/connect")
+
+
 def codeaudit_scan(ctx: ToolContext, args: dict) -> dict:
     """Audit a source tree for real defects. Local, read-only."""
     root = _guard_local_path(ctx, str(args.get("path") or "").strip() or str(ctx.base),
@@ -2620,6 +2624,7 @@ _HANDLERS.update({
     "stix_export": stix_export,
     "surface_diff": surface_diff,
     "self_audit": self_audit,
+    "connect_info": connect_info,
     "codeaudit_scan": codeaudit_scan,
     "codeaudit_rules": codeaudit_rules,
     "diagnostics": diagnostics,
@@ -3009,6 +3014,11 @@ TOOLS: tuple[Tool, ...] = (
          "Check SQLite integrity, table counts, file modes, route count, and tool count. "
          "Read-only and local.",
          "low", "workspace", _schema({}), "diagnostics", read_only=True),
+    Tool("connect_info", "Show how to connect a harness",
+         "Return the control-plane endpoint, policy, tool count, and ready-made "
+         "config blocks for OpenCode, Hermes, DeepSeek, Agent Zero, a generic MCP "
+         "client, and the HTTP API. The session token is never returned.",
+         "low", "workspace", _schema({}), "connect_info", read_only=True),
     Tool("codeaudit_scan", "Audit a source tree",
          "Scan Python, JavaScript, TypeScript, Svelte, and other source files for real "
          "defects: swallowed exceptions, injection-prone shell and SQL, insecure "

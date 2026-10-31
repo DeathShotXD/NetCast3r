@@ -1,4 +1,5 @@
-import type { Approval, Finding, Inventory, KeyEntry, McpInfo, Meta, Mission, MissionAgent, Paged, Provider, ProviderHealth, RevengKinds, RevengResult, Run, RunEvent, Submission, SubmissionSummary, ToolCall, Totals } from './types';
+import type {
+  ConnectInfo, Approval, Finding, Inventory, KeyEntry, McpInfo, Meta, Mission, MissionAgent, Paged, Provider, ProviderHealth, RevengKinds, RevengResult, Run, RunEvent, Submission, SubmissionSummary, ToolCall, Totals } from './types';
 
 const BASE = '/api/v1';
 
@@ -58,6 +59,7 @@ async function requestText(path: string): Promise<string> {
 export const api = {
   meta: () => request<Meta>('GET', '/meta'),
   totals: () => request<Totals>('GET', '/summary'),
+  connect: () => request<ConnectInfo>('GET', '/connect'),
   runs: (q = '') => request<Paged<Run>>('GET', `/runs${q}`),
   run: (id: string) => request<Run>('GET', `/runs/${id}`),
   runReport: (id: string) => requestText(`/runs/${id}/report`),

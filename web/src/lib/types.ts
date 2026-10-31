@@ -261,6 +261,7 @@ export type Screen =
   | 'findings'
   | 'runs'
   | 'agent'
+  | 'connect'
   | 'reports'
   | 'keys'
   | 'reveng'
@@ -477,4 +478,32 @@ export interface Toast {
   kind: 'ok' | 'warn' | 'error';
   text: string;
   leaving?: boolean;
+}
+
+
+export interface Harness {
+  id: string;
+  name: string;
+  transport: string;
+  summary: string;
+  config: Record<string, unknown>;
+  notes: string;
+}
+
+export interface ConnectInfo {
+  workspace: {
+    url: string;
+    base: string;
+    repo: string;
+    python: string;
+    policy: string;
+    tools: number;
+    version: string;
+    token_header: string;
+    token_file: string;
+    auth_note: string;
+  };
+  harnesses: Harness[];
+  tools: { name: string; title: string; risk: string; category: string; read_only: boolean }[];
+  note: string;
 }

@@ -62,6 +62,16 @@ opencode mcp list
 MCP tool names are namespaced by OpenCode (for example
 `netcast3r_status`). The server itself exposes the unqualified names.
 
+### Discover the connection from the app
+
+The dashboard has a **Connect** screen, and any harness can call
+`connect_info` (or `GET /api/v1/connect`) to get the endpoint, the active
+policy, the tool count, and a ready-to-paste config block for OpenCode,
+Hermes, a DeepSeek/OpenAI-compatible harness, Agent Zero, a generic MCP
+client, and the HTTP API. The session token is deliberately never included;
+it stays in the `0600` control-plane file. The same call lists every typed
+tool with its risk tier so an agent can plan before it acts.
+
 ### Backends
 
 | Backend | When it is used | What it means |

@@ -6,6 +6,14 @@ Notable changes to NetCast3r, newest first.
 
 ### Added
 
+- Harness connection surface: `connect_info` and `GET /api/v1/connect`
+  publish the control-plane endpoint, policy, tool count, and ready-made
+  config blocks for OpenCode, Hermes, a DeepSeek/OpenAI-compatible harness,
+  Agent Zero, a generic MCP client, and the HTTP API. The session token is
+  never returned; a harness reads it from the 0600 control-plane file. A
+  **Connect** screen shows the same information with a copyable config per
+  harness, a searchable list of all 154 typed tools, and their risk tiers.
+  Any harness drives the full surface and shares one database and audit trail.
 - Bounded model action loop: `model_solve` and
   `POST /api/v1/missions/{id}/solve` let a configured (including free) model
   choose up to six typed tool calls through an allow-list of low and medium

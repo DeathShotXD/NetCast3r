@@ -2,6 +2,7 @@
   import { onMount } from 'svelte';
   import { store } from './lib/state.svelte';
   import CommandBar from './lib/shell/CommandBar.svelte';
+  import Connect from './lib/screens/Connect.svelte';
   import Rail from './lib/shell/Rail.svelte';
   import AgentStudio from './lib/screens/AgentStudio.svelte';
   import Findings from './lib/screens/Findings.svelte';
@@ -95,6 +96,8 @@
             <Runs />
           {:else if store.screen === 'agent'}
             <AgentStudio />
+          {:else if store.screen === 'connect'}
+            <Connect />
           {:else if store.screen === 'reports'}
             <Reports />
           {:else if store.screen === 'reveng'}

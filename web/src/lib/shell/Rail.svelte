@@ -30,6 +30,7 @@
         { id: 'reveng', label: 'Reverse Lab', icon: 'code', hint: 'source, APK, contracts, drivers' },
         { id: 'reports', label: 'Reports', icon: 'file', hint: 'submissions, outcomes, payouts' },
         { id: 'agent', label: 'Agent Studio', icon: 'bot', hint: 'MCP tools, policy, audit' },
+        { id: 'connect', label: 'Connect', icon: 'network', hint: 'OpenCode, Hermes, DeepSeek, Agent Zero' },
         { id: 'keys', label: 'Providers', icon: 'plug', hint: 'keys, models, health' }
       ]
     },

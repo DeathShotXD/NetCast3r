@@ -1030,6 +1030,10 @@ class Server:
             from .. import codeaudit as codeaudit_module
             return _json({"items": codeaudit_module.rules()})
 
+        @add("GET", r"/api/v1/connect")
+        def connect(ctx):
+            return _json(_connect_info(self, ctx))
+
         @add("GET", r"/api/v1/expertise")
         def expertise_profile(ctx):
             items = self.index.list_expertise(limit=ctx.limit)
@@ -1915,6 +1919,131 @@ def _version() -> str:
         return __version__
     except Exception:
         return "0.0.0"
+
+
+def _repo_root() -> Path:
+    candidate = Path(__file__).resolve()
+    for parent in candidate.parents:
+        if (parent / "pyproject.toml").exists():
+            return parent
+    return candidate.parent
+
+
+def _connect_info(server: "Server", ctx) -> dict:
+    """Everything a harness needs to reach the full tool surface.
+
+    The session token is deliberately not returned: it is in a 0600 state file.
+    An MCP client discovers it, and an HTTP client reads it from that file.
+    """
+    import sys
+
+    from ..mcp.tools import DEFAULT_POLICY, TOOLS
+
+    repo = _repo_root()
+    base = (Path(server.base) if getattr(server, "base", None)
+            else Path(server.index.path).parent)
+    host = str(ctx.headers.get("host") or "127.0.0.1:7857")
+    url = f"http://{host}"
+    python = sys.executable
+    command = [python, "-m", "netcast3r.cli", "mcp",
+               "--policy", DEFAULT_POLICY, "--backend", "auto"]
+    environment = {"NETCAST3R_MCP_POLICY": DEFAULT_POLICY}
+    generic = {
+        "mcpServers": {
+            "netcast3r": {
+                "command": python,
+                "args": ["-m", "netcast3r.cli", "mcp",
+                         "--policy", DEFAULT_POLICY, "--backend", "auto"],
+                "cwd": str(repo),
+                "env": environment,
+            }
+        }
+    }
+    harnesses = [
+        {
+            "id": "opencode",
+            "name": "OpenCode",
+            "transport": "stdio",
+            "summary": "Native local MCP server. Tools appear as netcast3r_<tool>.",
+            "config": {"mcp": {"servers": {"netcast3r": {
+                "type": "local", "command": command, "cwd": str(repo),
+                "environment": {"NETCAST3R_RESULTS": str(repo / "results"),
+                                **environment}}}}},
+            "notes": "Run `opencode mcp list` after adding the block to opencode.json.",
+        },
+        {
+            "id": "hermes",
+            "name": "Hermes",
+            "transport": "stdio",
+            "summary": "Standard mcpServers entry; every NetCast3r tool is live.",
+            "config": generic,
+            "notes": "Point the MCP client at this JSON and keep the control plane running.",
+        },
+        {
+            "id": "deepseek",
+            "name": "DeepSeek harness",
+            "transport": "stdio or HTTP",
+            "summary": "Use the MCP block for tools, or the HTTP API for a direct runtime.",
+            "config": generic,
+            "notes": ("A DeepSeek/OpenAI-compatible harness can also register "
+                      "NetCast3r as a provider and drive the HTTP API with the "
+                      "token from the control-plane file."),
+        },
+        {
+            "id": "agent-zero",
+            "name": "Agent Zero",
+            "transport": "stdio",
+            "summary": "Register the command as an MCP server; tools are namespaced by Agent Zero.",
+            "config": generic,
+            "notes": "Use the absolute python path and cwd so the child process finds the package.",
+        },
+        {
+            "id": "generic",
+            "name": "Generic MCP client",
+            "transport": "stdio",
+            "summary": "Any MCP 2025-06-18 client can drive the full surface.",
+            "config": generic,
+            "notes": "The server speaks JSON-RPC over stdio and shares the dashboard database.",
+        },
+        {
+            "id": "http",
+            "name": "HTTP API",
+            "transport": "http",
+            "summary": "Direct REST for a custom agent; same scope, approvals, and audit.",
+            "config": {
+                "base_url": url,
+                "header": "X-NetCast3r-Token",
+                "token_file": str(base / "control-plane.json"),
+                "example": ("curl -H \"X-NetCast3r-Token: <token>\" "
+                            + url + "/api/v1/status"),
+            },
+            "notes": ("Read the token from the 0600 control-plane file. Prefer "
+                      "loopback; a remote bind needs TLS and a reverse proxy."),
+        },
+    ]
+    return {
+        "workspace": {
+            "url": url,
+            "base": str(base),
+            "repo": str(repo),
+            "python": python,
+            "policy": DEFAULT_POLICY,
+            "tools": len(TOOLS),
+            "version": _version(),
+            "token_header": "X-NetCast3r-Token",
+            "token_file": str(base / "control-plane.json"),
+            "auth_note": ("The token is not returned here. It lives in the 0600 "
+                          "control-plane file; MCP clients discover it."),
+        },
+        "harnesses": harnesses,
+        "tools": [{"name": tool.name, "title": tool.title,
+                   "risk": tool.risk, "category": tool.category,
+                   "read_only": tool.read_only}
+                  for tool in TOOLS],
+        "note": ("One control plane, one database, one audit trail. A scan "
+                 "started by any harness appears in the dashboard in real time, "
+                 "and a human decision in the dashboard is visible to the harness."),
+    }
 
 
 def _restore_session_token(server: Server) -> bool:

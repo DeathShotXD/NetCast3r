@@ -18,6 +18,7 @@
     live: 'Live run',
     findings: 'Findings',
     runs: 'Cast history',
+    connect: 'Connect',
     keys: 'Providers',
     help: 'Field guide'
   };
