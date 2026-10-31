@@ -372,6 +372,11 @@ class Server:
                           "runs": self.index.list_runs(limit=0)[1],
                           "findings": self.index.list_findings(limit=0)[1]})
 
+        @add("GET", r"/api/v1/metrics/trend")
+        def metrics_trend(ctx):
+            days = int(ctx.query.get("days", 14) or 14)
+            return _json({"items": self.index.finding_trend(days)})
+
         @add("GET", r"/api/v1/runs")
         def list_runs(ctx):
             status = ctx.query.get("status", "")

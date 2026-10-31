@@ -222,6 +222,19 @@ class MemorySurfaceTests(MemoryHarness):
             self.assertIn(name, _TOOL_MAP)
             self.assertIn(name, names)
 
+    def test_finding_trend_and_route(self):
+        self.index.add_findings(self.run["id"], [
+            {"title": "A", "severity": "high", "source": "run"},
+            {"title": "B", "severity": "critical", "source": "run"}])
+        trend = self.index.finding_trend(7)
+        self.assertEqual(len(trend), 7)
+        self.assertEqual(trend[-1]["total"], 2)
+        self.assertEqual(trend[-1]["critical"], 1)
+        self.assertEqual(trend[-1]["high"], 1)
+        response = self.call("GET", "/api/v1/metrics/trend", None, {"days": "7"})
+        self.assertEqual(response.status, 200)
+        self.assertEqual(len(self.data(response)["items"]), 7)
+
 
 if __name__ == "__main__":
     unittest.main()

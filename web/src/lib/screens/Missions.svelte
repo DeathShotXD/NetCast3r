@@ -3,7 +3,7 @@
   import { api } from '../api';
   import { store } from '../state.svelte';
   import { ago, sevColor, statusLabel } from '../format';
-  import type { AgentStatus, Approval, Autonomy, GraphNode, GraphPath, Mission, MissionAgent, MissionGraph, MissionStatus } from '../types';
+  import type { AgentStatus, Approval, Autonomy, Campaign, Direction, GraphNode, GraphPath, Mission, MissionAgent, MissionGraph, MissionStatus, ToolCall } from '../types';
   import Icon from '../ui/Icon.svelte';
   import Sparkline from '../ui/Sparkline.svelte';
 
@@ -45,9 +45,13 @@
   let loading = $state(true);
   let error = $state('');
   let filter = $state<Filter>('all');
-  let detailTab = $state<'overview' | 'runs' | 'approvals' | 'graph' | 'agent'>('overview');
+  let detailTab = $state<'overview' | 'runs' | 'approvals' | 'graph' | 'console' | 'tools' | 'agent'>('overview');
   let graph = $state<MissionGraph | null>(null);
   let graphBusy = $state('');
+  let campaign = $state<Campaign | null>(null);
+  let directions = $state<Direction[]>([]);
+  let toolCalls = $state<ToolCall[]>([]);
+  let directionText = $state('');
   let composer = $state(false);
   let busy = $state('');
   let form = $state({
@@ -134,9 +138,14 @@
       selected = await api.mission(mission.id);
       agent = null;
       graph = null;
+      directions = [];
+      toolCalls = [];
       detailTab = preserveTab ? tab : 'overview';
       if (preserveTab && tab === 'agent') void loadAgent();
       if (preserveTab && tab === 'graph') void loadGraph();
+      if (preserveTab && tab === 'console') void loadDirections();
+      if (preserveTab && tab === 'tools') void loadTools();
+      void loadCampaign();
       if (scroll && window.innerWidth < 1180) {
         requestAnimationFrame(() => document.querySelector('.obs-mission-detail')?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
       }
@@ -285,6 +294,50 @@
     detailTab = tab;
     if (tab === 'agent') void loadAgent();
     if (tab === 'graph') void loadGraph();
+    if (tab === 'console') void loadDirections();
+    if (tab === 'tools') void loadTools();
+  }
+
+  async function loadCampaign() {
+    if (!selected) return;
+    try {
+      campaign = await api.campaign(selected.id);
+    } catch {
+      campaign = null;
+    }
+  }
+
+  async function loadDirections() {
+    if (!selected) return;
+    try {
+      directions = (await api.directions(selected.id)).items ?? [];
+    } catch {
+      directions = [];
+    }
+  }
+
+  async function queueDirection() {
+    if (!selected || !directionText.trim()) return;
+    busy = 'direction';
+    try {
+      await api.queueDirection(selected.id, { body: directionText.trim() });
+      directionText = '';
+      await loadDirections();
+      store.toast('ok', 'direction queued');
+    } catch (exc) {
+      void store.fail(exc instanceof Error ? exc.message : 'could not queue the direction');
+    } finally {
+      busy = '';
+    }
+  }
+
+  async function loadTools() {
+    if (!selected) return;
+    try {
+      toolCalls = (await api.toolCalls(`?mission_id=${selected.id}&limit=60`)).items ?? [];
+    } catch {
+      toolCalls = [];
+    }
   }
 
   async function loadGraph() {
@@ -736,6 +789,8 @@
               ['runs', `Runs ${selected.run_count}`],
               ['approvals', `Approvals ${selected.pending_approvals}`],
               ['graph', 'Graph'],
+              ['console', 'Console'],
+              ['tools', 'Tools'],
               ['agent', `Agent${agent && ['planning', 'running', 'paused', 'stopping'].includes(agent.status) ? ' *' : ''}`]
             ] as [id, label] (id)}
               <button
@@ -895,6 +950,73 @@
                   <p class="obs-detail-note">
                     No candidate path yet. Record a falsifiable lead with hypothesis_create, then rebuild the graph.
                   </p>
+                {/if}
+              </section>
+            {:else if detailTab === 'console'}
+              <section class="obs-detail-section">
+                <h3>Operator console</h3>
+                {#if campaign}
+                  <div class="obs-graph-chips">
+                    <span class="obs-chip" style="color:var(--obs-acid)">{campaign.stage}</span>
+                    <span class="obs-chip">{campaign.mode}</span>
+                    <span class="obs-chip">{campaign.endpoints} endpoints</span>
+                    <span class="obs-chip">{campaign.open_leads} open lead(s)</span>
+                  </div>
+                  <p class="obs-detail-note">{campaign.reason}</p>
+                {/if}
+                <p class="obs-detail-note">
+                  Queue a direction. The director hands the next run the first queued direction, and every brain reads it in its brief. Mention a specific lead or finding with @lead:&lt;id&gt; or @finding:&lt;id&gt;.
+                </p>
+                <textarea
+                  class="obs-input obs-console-input"
+                  rows="2"
+                  bind:value={directionText}
+                  placeholder="e.g. focus the order API and test IDOR on /api/orders/7"
+                ></textarea>
+                <div class="obs-console-actions">
+                  <button class="obs-btn obs-btn-primary" type="button" disabled={!directionText.trim() || busy === 'direction'} onclick={() => void queueDirection()}>
+                    <Icon name="arrow-right" size={12} />
+                    {busy === 'direction' ? 'Queueing...' : 'Queue direction'}
+                  </button>
+                  <button class="obs-btn obs-btn-ghost" type="button" disabled={busy === 'direction'} onclick={() => void loadDirections()}>
+                    Refresh
+                  </button>
+                </div>
+                {#if directions.length}
+                  <ul class="obs-console-list">
+                    {#each directions as direction (direction.id)}
+                      <li>
+                        <span class="obs-chip" style="color:{direction.status === 'queued' ? 'var(--obs-acid)' : 'var(--obs-muted)'}">{direction.status}</span>
+                        <span class="obs-console-body">{direction.body}</span>
+                        {#if direction.mentions.length}
+                          <span class="obs-console-mentions">{direction.mentions.map((m) => `@${m.kind}:${m.id}`).join(' ')}</span>
+                        {/if}
+                      </li>
+                    {/each}
+                  </ul>
+                {:else}
+                  <p class="obs-detail-note">Nothing queued for this mission.</p>
+                {/if}
+              </section>
+            {:else if detailTab === 'tools'}
+              <section class="obs-detail-section">
+                <h3>Tool results</h3>
+                <p class="obs-detail-note">
+                  Every scoped call the harness made for this mission, newest first, with its status and duration. The full audit, not a summary.
+                </p>
+                {#if toolCalls.length}
+                  <ul class="obs-tool-list">
+                    {#each toolCalls as call (call.id)}
+                      <li>
+                        <span class="obs-chip" style="color:{call.status === 'ok' ? 'var(--obs-acid)' : call.status === 'denied' ? 'var(--obs-red)' : 'var(--obs-muted)'}">{call.tool}</span>
+                        <span class="obs-tool-status">{call.status}{call.risk !== 'low' ? ` / ${call.risk}` : ''}</span>
+                        <span class="obs-tool-target">{String(call.args?.target ?? call.args?.mission_id ?? '')}</span>
+                        <span class="obs-tool-ms">{call.duration_ms} ms</span>
+                      </li>
+                    {/each}
+                  </ul>
+                {:else}
+                  <p class="obs-detail-note">No tool calls recorded yet.</p>
                 {/if}
               </section>
             {:else if detailTab === 'agent'}

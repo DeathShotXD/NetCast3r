@@ -6717,3 +6717,125 @@ html.nc-native .nc-tag {
   color: var(--obs-muted);
   font-size: 11.5px;
 }
+
+/* Operator console and the tool-results audit view. */
+.obs-console-input {
+  width: 100%;
+  margin-top: 8px;
+  padding: 9px 11px;
+  border: 1px solid var(--obs-line);
+  border-radius: var(--obs-radius-sm);
+  background: var(--obs-panel-2);
+  color: var(--obs-text);
+  font: inherit;
+  font-size: 12.5px;
+  resize: vertical;
+}
+
+.obs-console-input:focus {
+  outline: none;
+  border-color: var(--obs-line-acid);
+}
+
+.obs-console-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.obs-console-list {
+  display: grid;
+  gap: 6px;
+  margin-top: 12px;
+}
+
+.obs-console-list li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px;
+  border: 1px solid var(--obs-line);
+  border-radius: var(--obs-radius-sm);
+  padding: 7px 10px;
+  background: var(--obs-panel-2);
+}
+
+.obs-console-body {
+  flex: 1;
+  min-width: 160px;
+  color: var(--obs-text-2);
+  font-size: 12px;
+}
+
+.obs-console-mentions {
+  color: var(--obs-violet-3);
+  font-size: 11px;
+}
+
+.obs-tool-list {
+  display: grid;
+  gap: 4px;
+  margin-top: 10px;
+  max-height: 520px;
+  overflow-y: auto;
+}
+
+.obs-tool-list li {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  border-bottom: 1px solid var(--obs-line);
+  padding: 6px 2px;
+  font-size: 11.5px;
+}
+
+.obs-tool-status {
+  flex: 0 0 auto;
+  color: var(--obs-muted);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.obs-tool-target {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--obs-text-2);
+}
+
+.obs-tool-ms {
+  flex: 0 0 auto;
+  color: var(--obs-faint);
+  font-variant-numeric: tabular-nums;
+}
+
+.obs-risk-posture {
+  display: grid;
+  gap: 6px;
+}
+
+.obs-risk-bars {
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 46px;
+}
+
+.obs-risk-bar {
+  flex: 1;
+  min-width: 3px;
+  border-radius: 2px 2px 0 0;
+  background: var(--obs-violet);
+  opacity: 0.85;
+}
+
+.obs-risk-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  color: var(--obs-muted);
+  font-size: 11px;
+}

@@ -1,5 +1,5 @@
 import type {
-  ConnectInfo, Approval, DirectorLogEntry, DirectorStatus, Finding, Inventory, KeyEntry, McpInfo, Meta, Mission, MissionAgent, MissionGraph, Paged, Provider, ProviderHealth, RevengKinds, RevengResult, Run, RunEvent, Submission, SubmissionSummary, ToolCall, Totals } from './types';
+  Campaign, ConnectInfo, Approval, Direction, DirectorLogEntry, DirectorStatus, Finding, Inventory, KeyEntry, McpInfo, Meta, Mission, MissionAgent, MissionGraph, Paged, Provider, ProviderHealth, RevengKinds, RevengResult, Run, RunEvent, Submission, SubmissionSummary, ToolCall, Totals, TrendPoint } from './types';
 
 const BASE = '/api/v1';
 
@@ -115,6 +115,13 @@ export const api = {
     request<{ nodes: number; edges: number; paths: number }>('POST', `/missions/${id}/graph/build`, {}),
   verifyPath: (pathId: string, body: Record<string, unknown> = {}) =>
     request<Run>('POST', `/paths/${pathId}/verify`, body),
+  directions: (id: string, q = '') =>
+    request<{ items: Direction[] }>('GET', `/missions/${id}/directions${q}`),
+  queueDirection: (id: string, body: Record<string, unknown>) =>
+    request<Direction>('POST', `/missions/${id}/directions`, body),
+  campaign: (id: string) => request<Campaign>('GET', `/missions/${id}/campaign`),
+  findingTrend: (days = 14) =>
+    request<{ items: TrendPoint[] }>('GET', `/metrics/trend?days=${days}`),
   missionAgent: (id: string) =>
     request<MissionAgent>('GET', `/missions/${id}/agent`),
   startMissionAgent: (id: string, body: Record<string, unknown>) =>

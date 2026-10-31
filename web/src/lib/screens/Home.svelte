@@ -16,7 +16,7 @@
   import { countup, pauseOffscreen } from '../actions';
   import Icon from '../ui/Icon.svelte';
   import Sparkline from '../ui/Sparkline.svelte';
-  import type { Approval, DirectorLogEntry, DirectorStatus, Finding, ProviderHealth, Run, RunEvent } from '../types';
+  import type { Approval, DirectorLogEntry, DirectorStatus, Finding, ProviderHealth, Run, RunEvent, TrendPoint } from '../types';
   type Thought = { seq: number; ts: number; agent: string; stage: string; text: string };
   type Call = {
     seq: number;
@@ -87,6 +87,7 @@
   let director = $state<DirectorStatus | null>(null);
   let directorLog = $state<DirectorLogEntry[]>([]);
   let directorBusy = $state('');
+  let trend = $state<TrendPoint[]>([]);
 
   let source: EventSource | null = null;
   let refreshTimer: number | undefined;
@@ -779,6 +780,27 @@
     }
   }
 
+  async function loadTrend() {
+    try {
+      trend = (await api.findingTrend(14)).items ?? [];
+    } catch {
+      trend = [];
+    }
+  }
+
+  const trendMax = $derived(Math.max(1, ...trend.map((point) => point.total)));
+  const trendTotals = $derived.by(() => {
+    const out = { critical: 0, high: 0, medium: 0, low: 0, info: 0 };
+    for (const point of trend) {
+      out.critical += point.critical;
+      out.high += point.high;
+      out.medium += point.medium;
+      out.low += point.low;
+      out.info += point.info;
+    }
+    return out;
+  });
+
   async function directorAction(action: string, extra: Record<string, unknown> = {}) {
     directorBusy = action;
     try {
@@ -800,6 +822,7 @@
     void loadApprovals();
     void loadDirector();
     void loadDirectorLog();
+    void loadTrend();
     directorTimer = window.setInterval(() => {
       void loadDirector();
       void loadDirectorLog();
@@ -917,6 +940,32 @@
           {/each}
         </ul>
       {/if}
+    </section>
+  {/if}
+
+  {#if trend.length}
+    <section class="obs-card obs-director" aria-label="risk posture">
+      <div class="obs-director-head">
+        <div class="obs-director-title">
+          <p class="eyebrow">risk posture</p>
+          <p class="obs-director-sub">Findings per day over the last 14 days, across every mission. Bars are red where a critical landed, orange for high.</p>
+        </div>
+        <div class="obs-director-chips">
+          <span class="obs-director-chip" style="color:var(--obs-red)">critical {trendTotals.critical}</span>
+          <span class="obs-director-chip" style="color:var(--obs-orange)">high {trendTotals.high}</span>
+          <span class="obs-director-chip">medium {trendTotals.medium}</span>
+          <span class="obs-director-chip">low {trendTotals.low}</span>
+        </div>
+      </div>
+      <div class="obs-risk-bars">
+        {#each trend as point (point.date)}
+          <span
+            class="obs-risk-bar"
+            style="height:{Math.max(4, Math.round((point.total / trendMax) * 46))}px;background:{point.critical ? 'var(--obs-red)' : point.high ? 'var(--obs-orange)' : 'var(--obs-violet)'}"
+            title="{point.date}: {point.total} finding(s)"
+          ></span>
+        {/each}
+      </div>
     </section>
   {/if}
 

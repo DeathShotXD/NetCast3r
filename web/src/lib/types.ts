@@ -357,6 +357,43 @@ export interface MissionGraph {
   paths: GraphPath[];
 }
 
+export interface Direction {
+  id: string;
+  mission_id: string;
+  body: string;
+  mentions: Array<{ kind: string; id: string }>;
+  status: string;
+  created_by: string;
+  run_id: string;
+  created_at: string;
+  consumed_at: string | null;
+}
+
+export interface Campaign {
+  mission_id: string;
+  stage: string;
+  mode: string;
+  reason: string;
+  runs: number;
+  endpoints: number;
+  open_leads: number;
+  total_leads: number;
+  verified_paths: number;
+  findings: number;
+  profile: boolean;
+  history?: Array<{ stage: string; at: string; reason: string }>;
+}
+
+export interface TrendPoint {
+  date: string;
+  total: number;
+  critical: number;
+  high: number;
+  medium: number;
+  low: number;
+  info: number;
+}
+
 export type Screen =
   | 'home'
   | 'missions'

@@ -6,6 +6,12 @@ Notable changes to NetCast3r, newest first.
 
 ### Added
 
+- Operator console, tool results, and risk posture. The mission detail gains a
+  **Console** tab that queues an operator direction the director hands to the
+  next run (with `@lead:` and `@finding:` mentions), and a **Tools** tab that
+  lists every scoped call for the mission with its status and duration. The
+  command center shows a **risk posture** strip of findings per day over the
+  last 14 days via `GET /api/v1/metrics/trend`.
 - Shared memory, campaign stages, and the target profile. NetCast3r now keeps
   its own durable, provider-agnostic memory: `kb_search`, `kb_write`,
   `kb_digest`, `kb_stats`, and `kb_learn` over a `kb_entries` table. Every

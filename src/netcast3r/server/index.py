@@ -2378,6 +2378,32 @@ class Index:
         return item
 
     # -- knowledge base ---------------------------------------------------
+    def finding_trend(self, days: int = 14) -> list[dict]:
+        """Findings per day by severity, oldest first, for the last N days."""
+        days = max(1, min(int(days or 14), 90))
+        with self._lock:
+            rows = self.conn.execute(
+                "SELECT substr(created_at, 1, 10) AS day, "
+                "COALESCE(severity_override, severity) AS sev, COUNT(*) AS n "
+                "FROM findings GROUP BY day, sev").fetchall()
+        buckets: dict[str, dict] = {}
+        for row in rows:
+            buckets.setdefault(row["day"], {})[str(row["sev"] or "unknown")] = row["n"]
+        now = time.time()
+        out = []
+        for offset in range(days - 1, -1, -1):
+            day = time.strftime("%Y-%m-%d", time.gmtime(now - offset * 86400))
+            counts = buckets.get(day, {})
+            out.append({
+                "date": day,
+                "total": sum(counts.values()),
+                "critical": counts.get("critical", 0),
+                "high": counts.get("high", 0),
+                "medium": counts.get("medium", 0),
+                "low": counts.get("low", 0),
+                "info": counts.get("info", 0),
+            })
+        return out
     # The durable, provider-agnostic memory. Every brain reads it into its
     # brief and every finished engagement writes back what it observed, so the
     # reasoning does not live in one model's context window.
