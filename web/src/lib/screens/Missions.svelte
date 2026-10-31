@@ -144,11 +144,6 @@
       toolCalls = [];
       exploitPlan = null;
       detailTab = preserveTab ? tab : 'overview';
-      if (preserveTab && tab === 'agent') void loadAgent();
-      if (preserveTab && tab === 'graph') void loadGraph();
-      if (preserveTab && tab === 'console') void loadDirections();
-      if (preserveTab && tab === 'tools') void loadTools();
-      if (preserveTab && tab === 'exploits') void loadExploits();
       void loadCampaign();
       if (scroll && window.innerWidth < 1180) {
         requestAnimationFrame(() => document.querySelector('.obs-mission-detail')?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
@@ -296,12 +291,23 @@
 
   function selectTab(tab: typeof detailTab) {
     detailTab = tab;
-    if (tab === 'agent') void loadAgent();
-    if (tab === 'graph') void loadGraph();
-    if (tab === 'console') void loadDirections();
-    if (tab === 'tools') void loadTools();
-    if (tab === 'exploits') void loadExploits();
   }
+
+  // Load a tab's data once per (mission, tab), so switching tabs or missions
+  // never shows stale data or races the mission fetch.
+  let loadedKey = '';
+  $effect(() => {
+    const id = selected?.id ?? '';
+    if (!id) return;
+    const key = `${id}:${detailTab}`;
+    if (key === loadedKey) return;
+    loadedKey = key;
+    if (detailTab === 'graph') void loadGraph();
+    else if (detailTab === 'exploits') void loadExploits();
+    else if (detailTab === 'console') void loadDirections();
+    else if (detailTab === 'tools') void loadTools();
+    else if (detailTab === 'agent') void loadAgent();
+  });
 
   async function loadExploits() {
     if (!selected) return;
