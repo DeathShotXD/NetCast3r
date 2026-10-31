@@ -33,7 +33,7 @@
     { key: 'running', label: 'running', color: 'var(--obs-acid)' },
     { key: 'queued', label: 'queued', color: 'var(--obs-orange)' },
     { key: 'done', label: 'complete', color: 'var(--obs-green)' },
-    { key: 'failed', label: 'failed', color: 'var(--obs-red)' },
+    { key: 'failed', label: 'failed', color: 'var(--obs-fault)' },
     { key: 'interrupted', label: 'interrupted', color: 'var(--obs-faint)' },
     { key: 'stopped', label: 'stopped', color: 'var(--obs-muted)' }
   ];

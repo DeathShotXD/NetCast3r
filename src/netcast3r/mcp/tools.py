@@ -494,9 +494,17 @@ def mission_hunt(ctx: ToolContext, args: dict) -> dict:
 
 
 def model_solve(ctx: ToolContext, args: dict) -> dict:
-    body = {key: args[key] for key in ("max_steps", "max_seconds", "goal")
+    body = {key: args[key] for key in
+            ("max_steps", "max_seconds", "goal", "mode", "max_model_calls")
             if key in args}
     return _call(ctx, "POST", f"/api/v1/missions/{args['mission_id']}/solve",
+                 body=body)
+
+
+def autopilot_start(ctx: ToolContext, args: dict) -> dict:
+    body = {key: args[key] for key in
+            ("max_steps", "max_seconds", "goal", "max_model_calls") if key in args}
+    return _call(ctx, "POST", f"/api/v1/missions/{args['mission_id']}/autopilot",
                  body=body)
 
 
@@ -1330,6 +1338,22 @@ def lesson_reflect(ctx: ToolContext, args: dict) -> dict:
     if not body:
         raise ToolError("invalid_arguments", "tool_call_id or run_id is required")
     return _call(ctx, "POST", "/api/v1/lessons/reflect", body=body)
+
+
+def agent_notes_write(ctx: ToolContext, args: dict) -> dict:
+    body = {key: args[key] for key in ("kind", "title", "body", "run_id", "step")
+            if key in args}
+    return _call(ctx, "POST", f"/api/v1/missions/{args['mission_id']}/notes",
+                 body=body)
+
+
+def agent_notes_list(ctx: ToolContext, args: dict) -> dict:
+    return _call(ctx, "GET", f"/api/v1/missions/{args['mission_id']}/notes",
+                 {"limit": args.get("limit", 100)})
+
+
+def agent_notes_clear(ctx: ToolContext, args: dict) -> dict:
+    return _call(ctx, "DELETE", f"/api/v1/missions/{args['mission_id']}/notes")
 
 
 def skills_list(ctx: ToolContext, args: dict) -> dict:
@@ -2599,6 +2623,10 @@ _HANDLERS.update({
     "agent_status": agent_status,
     "mission_hunt": mission_hunt,
     "model_solve": model_solve,
+    "autopilot_start": autopilot_start,
+    "agent_notes_write": agent_notes_write,
+    "agent_notes_list": agent_notes_list,
+    "agent_notes_clear": agent_notes_clear,
     "agent_start": agent_start,
     "agent_pause": agent_pause,
     "agent_resume": agent_resume,
@@ -2828,6 +2856,19 @@ TOOLS: tuple[Tool, ...] = (
                   "max_seconds": _integer("wall-clock cap", 10, 600, 240),
                   "goal": _string("optional focus for the loop")},
                  ["mission_id"]), "model_solve", open_world=True),
+    Tool("autopilot", "Run the native operator",
+         "Build a mission brief, let the configured model plan a sequence of scoped "
+         "moves, execute them through the typed tools, reflect on the real results, "
+         "and write durable notes. This is NetCast3r operating as its own harness: "
+         "no OpenCode, Hermes, or Agent Zero needed. It creates hypotheses and "
+         "notes, never findings.",
+         "medium", "missions",
+         _schema({"mission_id": _string("mission id"),
+                  "max_steps": _integer("moves", 1, 30, 8),
+                  "max_seconds": _integer("wall-clock cap", 30, 1800, 600),
+                  "max_model_calls": _integer("model calls", 1, 12, 4),
+                  "goal": _string("optional focus for the operator")},
+                 ["mission_id"]), "autopilot_start", open_world=True),
     Tool("mission_hunt", "Start a standalone hunt",
          "Run a deterministic read-only hunt for a mission: scope, fingerprint, "
          "safe surface paths, technique and chain ranking, and explicit "
@@ -3519,6 +3560,31 @@ TOOLS: tuple[Tool, ...] = (
          _schema({"cve_id": _string("CVE id"),
                   "target": _string("optional in-scope target to mention in the plan")},
                  ["cve_id"]), "threatintel_repro", open_world=True),
+    Tool("agent_notes_write", "Write operator memory",
+         "Persist one durable note for a mission: a plan, an observation, a blocked "
+         "path, or a reflection. Notes survive across runs and are recalled by the "
+         "native operator before it plans again.",
+         "low", "missions",
+         _schema({"mission_id": _string("mission id"),
+                  "kind": _string("plan, observation, reflection, blocked, or summary"),
+                  "title": _string("short label"),
+                  "body": _string("the note itself"),
+                  "run_id": _string("optional run id"),
+                  "step": _integer("step number", 0, 10000, 0)},
+                 ["mission_id", "title"]), "agent_notes_write"),
+    Tool("agent_notes_list", "Read operator memory",
+         "List the notes the native operator and harnesses have written for a mission, "
+         "oldest first. Read this before planning so a repeated dead end is not retried.",
+         "low", "missions",
+         _schema({"mission_id": _string("mission id"),
+                  "limit": _integer("notes", 1, 500, 100)},
+                 ["mission_id"]), "agent_notes_list", read_only=True),
+    Tool("agent_notes_clear", "Clear operator memory",
+         "Delete every operator note for a mission. Use only when the memory is stale "
+         "or wrong, never to hide a failed step.",
+         "medium", "missions",
+         _schema({"mission_id": _string("mission id")},
+                 ["mission_id"]), "agent_notes_clear"),
     Tool("lessons_record", "Record a lesson",
          "Persist a technique, failure, or correction you actually observed. Lessons are "
          "stored with the mission/run/task, tags, and confidence, and are recalled before "

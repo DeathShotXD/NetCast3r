@@ -13,7 +13,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 from .agent_runtime import LocalPlane
 from .events import Event
-from .. import model_solver
+from .. import autopilot, model_solver
 
 
 class SolverRunner:
@@ -35,15 +35,23 @@ class SolverRunner:
         if not target:
             raise ValueError("mission has no target")
         options = dict(options or {})
+        mode = str(options.get("mode") or "solve").strip().lower()
+        if mode not in {"solve", "autopilot"}:
+            raise ValueError(f"unknown solver mode: {mode}")
+        defaults = (model_solver.DEFAULT_STEPS if mode == "solve"
+                    else autopilot.DEFAULT_STEPS)
+        seconds = (model_solver.DEFAULT_SECONDS if mode == "solve"
+                   else autopilot.DEFAULT_SECONDS)
         run = self.server.index.create_run(target, {
-            "mode": "solve", "mission_id": mission_id,
-            "max_steps": options.get("max_steps", model_solver.DEFAULT_STEPS),
+            "mode": mode, "mission_id": mission_id,
+            "max_steps": options.get("max_steps", defaults),
         })
         self.server.index.add_mission_run(mission_id, run["id"])
         cancel = threading.Event()
         with self._lock:
             self._handles[run["id"]] = cancel
-        self.pool.submit(self._run, run["id"], mission_id, mission, options, cancel)
+        self.pool.submit(self._run, run["id"], mission_id, mission, options, cancel,
+                         mode, seconds)
         return run
 
     def cancel(self, run_id: str) -> bool:
@@ -89,7 +97,8 @@ class SolverRunner:
                 "usage": completion.usage or {}}
 
     def _run(self, run_id: str, mission_id: str, mission: dict,
-             options: dict, cancel: threading.Event) -> None:
+             options: dict, cancel: threading.Event, mode: str = "solve",
+             default_seconds: float = model_solver.DEFAULT_SECONDS) -> None:
         emit = self._emit(run_id)
         self.server.index.update_run(run_id, status="running", started_at=_now())
         emit(Event(type="run.state", stage="reason", payload={"status": "running"}))
@@ -98,26 +107,38 @@ class SolverRunner:
 
             ctx = ToolContext(
                 plane=LocalPlane(self.server), policy="supervised",
-                base=self.server.base, actor="agent:solver", mission_id=mission_id)
+                base=self.server.base, actor="agent:autopilot" if mode == "autopilot"
+                else "agent:solver", mission_id=mission_id)
             registry = ToolRegistry(ctx)
 
             def on_step(stage: str, payload: dict) -> None:
                 emit(Event(type="log", stage=stage, payload=payload))
 
-            solver = model_solver.Solver(
-                registry, self._completion, mission_id,
-                str(mission.get("target") or ""),
-                goal=str(mission.get("objective") or ""),
-                max_steps=options.get("max_steps", model_solver.DEFAULT_STEPS),
-                max_seconds=options.get("max_seconds", model_solver.DEFAULT_SECONDS),
-                on_step=on_step, should_stop=cancel.is_set)
-            result = solver.run()
+            if mode == "autopilot":
+                operator = autopilot.Autopilot(
+                    registry, self._completion, mission,
+                    max_steps=options.get("max_steps", autopilot.DEFAULT_STEPS),
+                    max_seconds=options.get("max_seconds", default_seconds),
+                    max_model_calls=options.get("max_model_calls",
+                                                autopilot.DEFAULT_MODEL_CALLS),
+                    run_id=run_id, on_step=on_step, should_stop=cancel.is_set)
+                result = operator.run()
+            else:
+                solver = model_solver.Solver(
+                    registry, self._completion, mission_id,
+                    str(mission.get("target") or ""),
+                    goal=str(mission.get("objective") or ""),
+                    max_steps=options.get("max_steps", model_solver.DEFAULT_STEPS),
+                    max_seconds=options.get("max_seconds", model_solver.DEFAULT_SECONDS),
+                    on_step=on_step, should_stop=cancel.is_set)
+                result = solver.run()
             status = "stopped" if result["stop"] == "cancelled" else "done"
             summary = {
-                "mode": "solve", "target": result["target"],
-                "steps": len(result["steps"]), "actions": result["actions"],
+                "mode": result.get("mode", mode), "target": result["target"],
+                "steps": result["actions"], "actions": result["actions"],
                 "model_calls": result["model_calls"],
                 "stop": result["stop"], "seconds": result["seconds"],
+                "hypotheses": result.get("hypotheses", 0),
                 "findings": 0,
             }
             self.server.index.update_run(run_id, status=status, finished_at=_now(),
@@ -126,7 +147,7 @@ class SolverRunner:
                        payload={"status": status, "counts": summary}))
             if status == "done":
                 emit(Event(type="log", stage="decide", payload={
-                    "text": (f"solve finished: {result['stop']}; "
+                    "text": (f"{mode} finished: {result['stop']}; "
                              f"{result['actions']} action(s), 0 findings")}))
                 emit(Event(type="run.finished", payload={"counts": summary}))
         except Exception as exc:  # noqa: BLE001 - record the failure

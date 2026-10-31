@@ -751,8 +751,23 @@ class Server:
         def mission_solve(ctx):
             body = ctx.json()
             body = body if isinstance(body, dict) else {}
-            options = {key: body[key] for key in ("max_steps", "max_seconds", "goal")
+            options = {key: body[key] for key in
+                       ("max_steps", "max_seconds", "goal", "mode", "max_model_calls")
                        if key in body}
+            try:
+                run = self._solvers().start(ctx.params["id"], options)
+            except ValueError as exc:
+                return _problem(400, str(exc))
+            return _json(run, 201)
+
+        @add("POST", r"/api/v1/missions/(?P<id>[A-Za-z0-9_]+)/autopilot")
+        def mission_autopilot(ctx):
+            body = ctx.json()
+            body = body if isinstance(body, dict) else {}
+            options = {key: body[key] for key in
+                       ("max_steps", "max_seconds", "goal", "max_model_calls")
+                       if key in body}
+            options["mode"] = "autopilot"
             try:
                 run = self._solvers().start(ctx.params["id"], options)
             except ValueError as exc:
@@ -1219,6 +1234,34 @@ class Server:
                 return _json(learning.suggest_next(self.index, ctx.params["id"]))
             except ValueError as exc:
                 return _problem(404, str(exc))
+
+        @add("GET", r"/api/v1/missions/(?P<id>[A-Za-z0-9_]+)/notes")
+        def mission_notes(ctx):
+            if not self.index.get_mission(ctx.params["id"]):
+                return _problem(404, "mission not found")
+            return _json({"items": self.index.list_agent_notes(
+                ctx.params["id"], ctx.limit)})
+
+        @add("POST", r"/api/v1/missions/(?P<id>[A-Za-z0-9_]+)/notes")
+        def add_mission_note(ctx):
+            body = ctx.json()
+            body = body if isinstance(body, dict) else {}
+            if not self.index.get_mission(ctx.params["id"]):
+                return _problem(404, "mission not found")
+            try:
+                note = self.index.add_agent_note(
+                    ctx.params["id"], str(body.get("kind") or "note"),
+                    str(body.get("title") or ""), str(body.get("body") or ""),
+                    str(body.get("run_id") or ""), int(body.get("step") or 0))
+            except (TypeError, ValueError) as exc:
+                return _problem(400, str(exc))
+            return _json(note, 201)
+
+        @add("DELETE", r"/api/v1/missions/(?P<id>[A-Za-z0-9_]+)/notes")
+        def clear_mission_notes(ctx):
+            if not self.index.get_mission(ctx.params["id"]):
+                return _problem(404, "mission not found")
+            return _json({"cleared": self.index.clear_agent_notes(ctx.params["id"])})
 
         @add("GET", r"/api/v1/missions")
         def list_missions(ctx):

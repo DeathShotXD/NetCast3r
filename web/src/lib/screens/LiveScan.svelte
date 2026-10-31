@@ -35,6 +35,12 @@
     { key: 'observe', label: 'Observe', detail: 'Feed the real result back' },
     { key: 'decide', label: 'Decide', detail: 'Stop, or take another step' }
   ];
+  const OPERATOR_STAGES = [
+    { key: 'reason', label: 'Reason', detail: 'Read memory and plan the next move' },
+    { key: 'act', label: 'Act', detail: 'Execute one scoped tool call' },
+    { key: 'observe', label: 'Observe', detail: 'Keep the real result as evidence' },
+    { key: 'decide', label: 'Decide', detail: 'Reflect, replan, or finish' }
+  ];
   const TERMINAL = ['done', 'failed', 'stopped', 'interrupted'];
   const RESUMABLE = ['stopped', 'interrupted', 'failed'];
   const BUCKET_MS = 250;
@@ -75,8 +81,10 @@
   const isLab = $derived(runMode === 'lab');
   const isHunt = $derived(runMode === 'hunt');
   const isSolve = $derived(runMode === 'solve');
-  const displayStages = $derived(isLab ? LAB_STAGES : isHunt ? HUNT_STAGES : isSolve ? SOLVE_STAGES : stages);
-  const displayTabs = $derived((isLab || isHunt || isSolve) ? TABS.filter((item) => item.id === 'feed' || item.id === 'report') : TABS);
+  const isOperator = $derived(runMode === 'autopilot');
+  const displayStages = $derived(isLab ? LAB_STAGES : isHunt ? HUNT_STAGES : isOperator ? OPERATOR_STAGES : isSolve ? SOLVE_STAGES : stages);
+  const displayTabs = $derived((isLab || isHunt || isSolve || isOperator) ? TABS.filter((item) => item.id === 'feed' || item.id === 'report') : TABS);
+  const operatorMission = $derived(String((run?.options as Record<string, unknown> | undefined)?.mission_id ?? ''));
   let events = $state<RunEvent[]>([]);
   let counts = $state<Record<string, number>>({});
   let landed = $state<{ id: number; status: string; secret_type: string; value: string; detail: string }[]>([]);
@@ -104,6 +112,7 @@
   let loadedInv = $state<Record<string, boolean>>({});
   let invBusy = $state('');
   const inflight = new Set<string>();
+  let memory = $state<{ id: string; kind: string; title: string; body: string; created_at: string }[]>([]);
 
   // report preview
   let report = $state('');
@@ -139,7 +148,7 @@
   const stageCount = $derived.by(() => {
     const next: Record<string, number> = {};
     for (const stage of displayStages) next[stage.key] = stageCounts[stage.key] ?? 0;
-    if (!isLab && !isHunt && !isSolve) next.crawl = Math.max(next.crawl ?? 0, crawled);
+    if (!isLab && !isHunt && !isSolve && !isOperator) next.crawl = Math.max(next.crawl ?? 0, crawled);
     return next;
   });
 
@@ -422,6 +431,7 @@
     nowTick = Date.now();
     inv = {};
     loadedInv = {};
+    memory = [];
     report = '';
     reportErr = '';
     filter = 'all';
@@ -437,6 +447,14 @@
         /* show the run we have; events will resume over the stream */
       }
       counts = { ...counts, ...(run.counts ?? {}) };
+      const options = (run.options ?? {}) as Record<string, unknown>;
+      if (String(options.mode ?? '') === 'autopilot' && options.mission_id) {
+        try {
+          memory = (await api.missionNotes(String(options.mission_id))).items ?? [];
+        } catch {
+          /* the transcript still renders without the memory panel */
+        }
+      }
       if (finished) currentStage = '';
     }
     await tick();
@@ -730,6 +748,13 @@
             <p class="num mt-1 text-xl text-bone" use:countup={counts[key] ?? 0}>0</p>
           </div>
         {/each}
+      {:else if isOperator}
+        {#each [['moves', 'actions'], ['model calls', 'model_calls'], ['hypotheses', 'hypotheses'], ['findings', 'findings']] as [label, key] (key)}
+          <div class="panel kpi px-4 py-3">
+            <p class="eyebrow">{label}</p>
+            <p class="num mt-1 text-xl text-bone" use:countup={counts[key] ?? 0}>0</p>
+          </div>
+        {/each}
       {:else if isHunt}
         {#each [['pages', 'pages'], ['endpoints', 'endpoints'], ['techniques', 'techniques'], ['hypotheses', 'leads']] as [label, key] (key)}
           <div class="panel kpi px-4 py-3">
@@ -848,6 +873,29 @@
           </div>
 
           <div class="flex flex-col">
+            {#if isOperator}
+              <div class="border-b border-indigo-deep">
+                <div class="flex items-center justify-between px-4 py-2.5">
+                  <p class="eyebrow">operator memory</p>
+                  <span class="num text-xs text-ash">{memory.length}</span>
+                </div>
+                {#if memory.length === 0}
+                  <p class="px-4 pb-4 text-sm text-bone-dust">No notes written yet.</p>
+                {:else}
+                  <ul class="max-h-[520px] overflow-y-auto" data-memory="1">
+                    {#each memory.slice(-12).reverse() as note (note.id)}
+                      <li class="border-b border-indigo-deep/60 px-4 py-2 last:border-0">
+                        <div class="flex items-center gap-2">
+                          <span class="mono text-[9px] uppercase tracking-[0.14em] text-acid">{note.kind}</span>
+                          <span class="mono text-[10px] text-slate">{clock(note.created_at)}</span>
+                        </div>
+                        <p class="mt-0.5 text-xs text-bone">{note.title}</p>
+                      </li>
+                    {/each}
+                  </ul>
+                {/if}
+              </div>
+            {:else}
             {#if !isLab && !isHunt && !isSolve}
             <div class="border-b border-indigo-deep">
               <div class="flex items-center justify-between px-4 py-2.5">
@@ -916,6 +964,7 @@
                 </ul>
               {/if}
             </div>
+            {/if}
           </div>
         </div>
       {:else if tab === 'assets'}

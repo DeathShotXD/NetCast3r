@@ -53,6 +53,43 @@
   const findingCount = $derived(store.totals?.findings ?? 0);
   const missionCount = $derived(store.totals?.missions ?? 0);
   const pendingApprovals = $derived(store.totals?.pending_approvals ?? 0);
+  const queuedCount = $derived(store.runs.filter((run) => run.status === 'queued').length);
+
+  /* rolling 24-hour cast heartbeat: a real readout of the plane's recent signal. */
+  const pulse = $derived.by(() => {
+    const bins = new Array(24).fill(0) as number[];
+    const now = Date.now();
+    for (const run of store.runs) {
+      const stamp = isoMs(run.created_at);
+      if (!Number.isFinite(stamp)) continue;
+      const age = Math.floor((now - stamp) / 3600000);
+      if (age >= 0 && age < bins.length) bins[bins.length - 1 - age] += 1;
+    }
+    return bins;
+  });
+
+  const scope = $derived.by(() => {
+    const w = 168;
+    const h = 26;
+    const pad = 2;
+    const max = Math.max(1, ...pulse);
+    const step = (w - pad * 2) / Math.max(1, pulse.length - 1);
+    const pts = pulse.map((value, index) => {
+      const x = pad + index * step;
+      const y = h - pad - (value / max) * (h - pad * 2);
+      return [x, y] as const;
+    });
+    let d = `M ${pts[0][0]} ${pts[0][1]}`;
+    for (let i = 1; i < pts.length; i += 1) {
+      const [x0, y0] = pts[i - 1];
+      const [x1, y1] = pts[i];
+      const mid = (x0 + x1) / 2;
+      d += ` C ${mid} ${y0}, ${mid} ${y1}, ${x1} ${y1}`;
+    }
+    const area = `${d} L ${w - pad} ${h} L ${pad} ${h} Z`;
+    return { d, area, last: pts[pts.length - 1] };
+  });
+
   const stageName = $derived(
     (STAGES as unknown as { key: string; label: string }[]).find((stage) => stage.key === store.liveStage)?.label ??
       (store.liveStage ? store.liveStage.toUpperCase() : 'WARMING UP')
@@ -125,34 +162,42 @@
   </div>
 
   <div class="obs-plane" class:is-live={!!running} aria-label="local control plane">
-    <div class="obs-plane-head">
-      <span class="obs-plane-orb" aria-hidden="true">
-        <svg class="obs-plane-ring" viewBox="0 0 36 36">
-          <circle class="obs-plane-ring-track" cx="18" cy="18" r="15.5" />
-          <circle class="obs-plane-ring-arc" cx="18" cy="18" r="15.5" />
-        </svg>
-        <span class="obs-plane-orb-core"></span>
+    <div class="obs-plane-top">
+      <span class="obs-plane-kicker">
+        <span class="obs-plane-tick" aria-hidden="true"></span>
+        control plane
       </span>
-      <span class="obs-plane-copy">
-        <span class="obs-plane-title">Control plane</span>
-        <span class="obs-plane-meta">
-          <span class="obs-plane-state" class:live={!!running}>
-            {running ? `${stageName.toLowerCase()} ${elapsed}` : 'ready'}
-          </span>
-          <span class="obs-plane-sep" aria-hidden="true">&middot;</span>
-          <span>loopback</span>
-        </span>
+      <span class="obs-plane-pill" class:live={!!running}>
+        <span class="obs-plane-led" class:live={!!running} aria-hidden="true"></span>
+        {running ? `${stageName.toLowerCase()} ${elapsed}` : 'ready'}
       </span>
-      <span
-        class="obs-plane-led"
-        class:live={!!running}
-        title={running ? 'a cast is running' : 'idle'}
-        aria-hidden="true"
-      ></span>
     </div>
+
+    <div class="obs-plane-meta">
+      <span>loopback</span>
+      <span class="obs-plane-sep" aria-hidden="true"></span>
+      <span>supervised</span>
+      <span class="obs-plane-sep" aria-hidden="true"></span>
+      <span>24h</span>
+    </div>
+
+    <div class="obs-plane-scope" aria-hidden="true">
+      <svg viewBox="0 0 168 26" preserveAspectRatio="none">
+        <defs>
+          <linearGradient id="obs-plane-fill" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stop-color="#c8f81a" stop-opacity="0.22" />
+            <stop offset="100%" stop-color="#c8f81a" stop-opacity="0" />
+          </linearGradient>
+        </defs>
+        <path class="obs-plane-area" d={scope.area} />
+        <path class="obs-plane-line" d={scope.d} />
+        <circle class="obs-plane-node" cx={scope.last[0]} cy={scope.last[1]} r="1.9" />
+      </svg>
+    </div>
+
     <div class="obs-plane-grid">
       <div><span>casts</span><strong>{store.totals?.runs ?? 0}</strong></div>
-      <div><span>queue</span><strong class:hot={openCount > 0}>{openCount}</strong></div>
+      <div><span>queue</span><strong class:hot={queuedCount > 0}>{queuedCount}</strong></div>
       <div><span>findings</span><strong>{findingCount}</strong></div>
     </div>
   </div>

@@ -12,8 +12,28 @@ Notable changes to NetCast3r, newest first.
   Agent Zero, a generic MCP client, and the HTTP API. The session token is
   never returned; a harness reads it from the 0600 control-plane file. A
   **Connect** screen shows the same information with a copyable config per
-  harness, a searchable list of all 154 typed tools, and their risk tiers.
+  harness, a searchable list of all 158 typed tools, and their risk tiers.
   Any harness drives the full surface and shares one database and audit trail.
+- Native operator: `autopilot` and
+  `POST /api/v1/missions/{id}/autopilot` make NetCast3r its own harness. It
+  builds a mission brief from scope, techniques, chains, skill packs, lessons,
+  and its own prior notes; plans up to four scoped moves with the configured
+  model; executes them through the same typed tools an external agent uses;
+  observes the real results; reflects; and replans until its step, time, or
+  model budget is spent. A deterministic baseline runs when no model is
+  reachable. It records hypotheses and durable notes, never findings.
+- Operator memory: an `agent_notes` table plus `agent_notes_write`,
+  `agent_notes_list`, `agent_notes_clear`, and
+  `GET/POST/DELETE /api/v1/missions/{id}/notes`. Briefs, plans, reflections,
+  and summaries persist across runs, so a later run does not rediscover a dead
+  end. The Live Runs feed shows an **Operator memory** panel for autopilot
+  runs, and the viewer switches to Reason/Act/Observe/Decide stages and
+  moves/model-calls/hypotheses counters instead of crawler metrics.
+- The sidebar control-plane card is now an instrument: mono kicker, live-ready
+  pill, loopback/supervised/24h meta, a real rolling 24h cast waveform, and
+  casts/queue/findings cells. Failed status fills use a deep mulberry
+  (`#7f2a56`) with dusty-rose ink (`#d970a8`) instead of the retired neon
+  magenta, so the Cast history bar sits inside the brand palette.
 - Bounded model action loop: `model_solve` and
   `POST /api/v1/missions/{id}/solve` let a configured (including free) model
   choose up to six typed tool calls through an allow-list of low and medium

@@ -102,7 +102,12 @@ queued, done, or failed state never fights the brand:
 | running / live | `#c8f81a` | acid |
 | done | `#b1e61b` | acid-dim |
 | queued / paused | `#f0c26b` | gold family, warm amber |
-| failed / interrupted | `#f050e6` | magenta shard |
+| failed / interrupted (ink) | `#d970a8` | dusty rose |
+| failed fill | `#7f2a56` | deep mulberry |
+
+Failed states are two-tier on purpose: a deep mulberry fill marks the segment
+without shouting, and a dusty-rose ink carries the alert in text and chips.
+The retired neon magenta is not used anywhere in the shell.
 
 Panels stay on the dark brand surface. Lifting a single panel to a light grey
 would break the scarcity rule and the artwork's near-black dominance, so the

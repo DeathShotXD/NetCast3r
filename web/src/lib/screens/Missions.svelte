@@ -169,6 +169,24 @@
     }
   }
 
+  async function runAutopilot() {
+    if (!selected) return;
+    busy = 'autopilot';
+    try {
+      const run = await api.startMissionAutopilot(selected.id, {
+        max_steps: 8,
+        max_seconds: 600,
+        max_model_calls: 4
+      });
+      store.toast('ok', 'native operator started: it will plan, act, and reflect on its own');
+      store.watch(run.id);
+    } catch (exc) {
+      store.fail(exc instanceof Error ? exc.message : 'could not start the native operator');
+    } finally {
+      busy = '';
+    }
+  }
+
   async function runHunt() {
     if (!selected) return;
     busy = 'hunt';
@@ -540,6 +558,10 @@
                   <button class="obs-btn obs-btn-primary" type="button" disabled={busy === 'hunt'} onclick={() => void runHunt()}>
                     <Icon name="crosshair" size={13} />
                     {busy === 'hunt' ? 'Hunting...' : 'Hunt now'}
+                  </button>
+                  <button class="obs-btn obs-btn-autopilot" type="button" disabled={busy === 'autopilot'} onclick={() => void runAutopilot()}>
+                    <Icon name="bot" size={13} />
+                    {busy === 'autopilot' ? 'Thinking...' : 'Autopilot'}
                   </button>
                   <button class="obs-btn" type="button" disabled={busy === 'solve'} onclick={() => void runSolve()}>
                     <Icon name="bot" size={13} />

@@ -84,6 +84,11 @@ export const api = {
     request<Finding>('PATCH', `/findings/${id}`, patch),
   missions: (q = '') => request<Paged<Mission>>('GET', `/missions${q}`),
   mission: (id: string) => request<Mission>('GET', `/missions/${id}`),
+  missionNotes: (id: string) =>
+    request<{ items: { id: string; kind: string; title: string; body: string; created_at: string }[] }>(
+      'GET',
+      `/missions/${id}/notes`
+    ),
   createMission: (body: Record<string, unknown>) =>
     request<Mission>('POST', '/missions', body),
   patchMission: (id: string, body: Record<string, unknown>) =>
@@ -96,6 +101,8 @@ export const api = {
     request<Run>('POST', `/missions/${id}/hunt`, {}),
   startMissionSolve: (id: string, body: Record<string, unknown> = {}) =>
     request<Run>('POST', `/missions/${id}/solve`, body),
+  startMissionAutopilot: (id: string, body: Record<string, unknown> = {}) =>
+    request<Run>('POST', `/missions/${id}/autopilot`, body),
   missionAgent: (id: string) =>
     request<MissionAgent>('GET', `/missions/${id}/agent`),
   startMissionAgent: (id: string, body: Record<string, unknown>) =>

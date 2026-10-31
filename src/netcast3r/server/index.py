@@ -359,6 +359,19 @@ CREATE TABLE IF NOT EXISTS agent_model_calls (
 );
 CREATE INDEX IF NOT EXISTS idx_agent_model_calls_mission
     ON agent_model_calls(mission_id, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS agent_notes (
+    id TEXT PRIMARY KEY,
+    mission_id TEXT,
+    run_id TEXT,
+    step INTEGER DEFAULT 0,
+    kind TEXT DEFAULT 'note',
+    title TEXT,
+    body TEXT,
+    created_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_agent_notes_mission
+    ON agent_notes(mission_id, created_at ASC);
 """
 
 SEVERITY_ORDER = {"critical": 0, "high": 1, "medium": 2, "low": 3, "info": 4, "unknown": 5}
@@ -1106,6 +1119,46 @@ class Index:
                 params)
             self.conn.commit()
         return self.get_upgrade_proposal(proposal_id)
+
+    # -- agent memory ------------------------------------------------------
+    def add_agent_note(self, mission_id: str, kind: str, title: str,
+                       body: str = "", run_id: str = "", step: int = 0) -> dict:
+        """Persist one operator note so a later step or a later run can recall it."""
+        if not self.get_mission(mission_id):
+            raise ValueError("unknown mission")
+        kind = str(kind or "note").strip().lower()[:32] or "note"
+        title = str(title or "").strip()[:200]
+        if not title:
+            raise ValueError("title required")
+        note_id = _new_id("note")
+        now = _now()
+        step = max(0, int(step or 0))
+        body = str(body or "")[:8000]
+        with self._lock:
+            self.conn.execute(
+                "INSERT INTO agent_notes (id, mission_id, run_id, step, kind, title, "
+                "body, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                (note_id, mission_id, str(run_id or ""), step, kind, title, body, now))
+            self.conn.commit()
+        return {"id": note_id, "mission_id": mission_id, "run_id": str(run_id or ""),
+                "step": step, "kind": kind, "title": title, "body": body,
+                "created_at": now}
+
+    def list_agent_notes(self, mission_id: str, limit: int = 100) -> list[dict]:
+        limit = max(1, min(int(limit or 100), 500))
+        with self._lock:
+            rows = self.conn.execute(
+                "SELECT id, mission_id, run_id, step, kind, title, body, created_at "
+                "FROM agent_notes WHERE mission_id = ? ORDER BY created_at ASC, step ASC "
+                "LIMIT ?", (mission_id, limit)).fetchall()
+        return [dict(row) for row in rows]
+
+    def clear_agent_notes(self, mission_id: str) -> int:
+        with self._lock:
+            cur = self.conn.execute(
+                "DELETE FROM agent_notes WHERE mission_id = ?", (mission_id,))
+            self.conn.commit()
+        return int(cur.rowcount or 0)
 
     # -- lessons and skills ------------------------------------------------
     def add_lesson(self, title: str, lesson: str, technique: str = "",
