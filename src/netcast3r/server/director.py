@@ -71,7 +71,14 @@ class Director:
         return max(MIN_TICK, min(number, MAX_TICK))
 
     def start(self) -> dict:
-        self.server.index.ensure_director_state()
+        state = self.server.index.ensure_director_state()
+        # The persisted state is the source of truth, so a tuned tick or
+        # concurrency survives a restart and matches what status reports.
+        self.tick_seconds = self._clamp_tick(state.get("tick_seconds")
+                                             or self.tick_seconds)
+        self.max_concurrent = max(1, min(
+            int(state.get("max_concurrent") or self.max_concurrent),
+            MAX_CONCURRENT))
         with self._lock:
             if self._thread is not None and self._thread.is_alive():
                 return self.status()
@@ -144,6 +151,12 @@ class Director:
             fields["scope_filter"] = str(scope_filter)
         if fields:
             self.server.index.patch_director_state(**fields)
+            # Keep the running loop in step with the change.
+            if "tick_seconds" in fields:
+                self.tick_seconds = self._clamp_tick(fields["tick_seconds"])
+            if "max_concurrent" in fields:
+                self.max_concurrent = max(1, min(int(fields["max_concurrent"]),
+                                                 MAX_CONCURRENT))
             self.server.index.add_director_log(
                 "control", "tuned", data=fields)
         return self.status()

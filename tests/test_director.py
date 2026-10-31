@@ -164,6 +164,22 @@ class DirectorTests(unittest.TestCase):
         self.assertFalse(Director._still_parked(entry))
         self.assertFalse(Director._still_parked({"parked": False}))
 
+    def test_tune_updates_the_running_loop(self):
+        self.director.tune(tick_seconds=20, max_concurrent=3)
+        self.assertEqual(self.director.tick_seconds, 20)
+        self.assertEqual(self.director.max_concurrent, 3)
+
+    def test_start_reads_persisted_tuning(self):
+        self.director.tune(tick_seconds=25, max_concurrent=2)
+        reborn = Director(self.server)
+        self.assertEqual(reborn.tick_seconds, 10)  # constructor default
+        reborn.start()
+        try:
+            self.assertEqual(reborn.tick_seconds, 25)
+            self.assertEqual(reborn.max_concurrent, 2)
+        finally:
+            reborn.shutdown()
+
     def test_a_mission_that_moves_is_not_parked(self):
         mission = self.mission("moving")
         first = self.director._tick(force=True)
