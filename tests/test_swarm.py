@@ -502,5 +502,26 @@ class SwarmSurfaceTests(unittest.TestCase):
         self.assertIn("swarm", [tool["name"] for tool in catalog()])
 
 
+class EvidenceCompactionTests(unittest.TestCase):
+    def test_compact_keeps_a_body_sample_and_not_cookies(self):
+        from netcast3r.autopilot import _compact
+
+        out = _compact({
+            "status": 200,
+            "body": '{"authentication":{"token":"eyJhbGciOiJSUzI1NiJ9.payload.sig"}}',
+            "headers": {"content-type": "application/json",
+                        "set-cookie": "session=super-secret"},
+        })
+        self.assertIn("token", out["body_sample"])
+        self.assertEqual(out["headers"]["content-type"], "application/json")
+        self.assertNotIn("set-cookie", out["headers"])
+
+    def test_role_menu_shows_the_request_arguments(self):
+        menu = swarm._role_menu("attacker")
+        self.assertIn("http_request", menu)
+        self.assertIn("method", menu)
+        self.assertIn("json", menu)
+
+
 if __name__ == "__main__":
     unittest.main()

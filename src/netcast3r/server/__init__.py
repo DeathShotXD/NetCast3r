@@ -1052,7 +1052,8 @@ class Server:
         def exploits_run(ctx):
             body = ctx.json()
             body = body if isinstance(body, dict) else {}
-            options = {"policy": body.get("policy", "supervised")}
+            options = {"policy": body.get("policy", "supervised"),
+                       "target": str(body.get("target") or "")}
             try:
                 run = self._exploits().start(ctx.params["id"],
                                              str(body.get("module_id") or ""),

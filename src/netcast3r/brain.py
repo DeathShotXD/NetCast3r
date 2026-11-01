@@ -200,12 +200,12 @@ def chat(server, index, director, message: str, history: list | None = None,
     applied = []
     if act:
         for action in (data.get("actions") or [])[:5]:
-            applied.append(_apply(index, director, action))
+            applied.append(_apply(index, director, action, mission_id))
     return {"reply": reply, "focus": focus, "actions": [a for a in applied if a],
             "provider": provider, "model": model, "findings": 0}
 
 
-def _apply(index, director, action) -> dict:
+def _apply(index, director, action, default_mission: str = "") -> dict:
     """Apply one reversible steering action, or report why it was refused."""
     if not isinstance(action, dict):
         return {}
@@ -214,8 +214,9 @@ def _apply(index, director, action) -> dict:
         return {"kind": kind, "applied": False, "reason": "unknown action"}
     try:
         if kind == "directive":
-            mission_id = str(action.get("mission_id") or "").strip()
-            body = str(action.get("body") or "").strip()
+            mission_id = str(action.get("mission_id") or default_mission or "").strip()
+            body = str(action.get("body") or action.get("directive")
+                       or action.get("text") or action.get("instruction") or "").strip()
             if not mission_id or not body:
                 return {"kind": kind, "applied": False,
                         "reason": "directive needs mission_id and body"}

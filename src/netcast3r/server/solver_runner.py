@@ -17,7 +17,7 @@ from .. import autopilot, model_solver, swarm
 
 
 class SolverRunner:
-    def __init__(self, server, complete=None, workers: int = 1):
+    def __init__(self, server, complete=None, workers: int = 2):
         self.server = server
         self._complete = complete
         self.pool = ThreadPoolExecutor(max_workers=max(1, workers),

@@ -134,6 +134,20 @@ def _compact(payload, limit: int = MAX_RESULT_CHARS) -> dict:
         if isinstance(value, list):
             keep[f"{key}_count"] = len(value)
             keep[f"{key}_sample"] = [_small(item) for item in value[:4]]
+    # A verdict needs the response body, not just the status. Keep a short
+    # sample so the strategist and validator can see a reflected token, an
+    # error string, or the difference between two responses.
+    body = payload.get("body")
+    if isinstance(body, str) and body.strip():
+        keep["body_sample"] = body[:900]
+    headers = payload.get("headers")
+    if isinstance(headers, dict):
+        interesting = {name: headers[name] for name in
+                       ("content-type", "location", "www-authenticate",
+                        "server", "x-powered-by", "content-length")
+                       if name in headers}
+        if interesting:
+            keep["headers"] = interesting
     text = json.dumps(keep, default=str)
     if len(text) > limit:
         return {"truncated": text[:limit]}

@@ -101,13 +101,14 @@ class HypothesisToolTests(unittest.TestCase):
             calls.append((method, path, body))
             if method == "GET":
                 return {"id": "hyp_1", "title": "Precise test",
-                        "target": "https://example.com", "mission_id": "msn_1"}
+                        "target": "https://example.com/rest/user/login",
+                        "mission_id": "msn_1"}
             return {"id": "hyp_1", "status": body["status"],
                     "result": body["result"]}
 
         ctx = SimpleNamespace(base="/tmp", policy="supervised")
         args = {"hypothesis_id": "hyp_1", "steps": [
-            {"path": "/api", "expect_status": 200}]}
+            {"path": "/rest/user/login", "expect_status": 200}]}
         with mock.patch.object(tools, "_call", side_effect=fake_call), \
                 mock.patch.object(tools, "http_request",
                                   return_value={"status": 200, "body": "ok",
@@ -116,6 +117,9 @@ class HypothesisToolTests(unittest.TestCase):
         self.assertEqual(result["status"], "supported")
         self.assertEqual(calls[-1][0], "PATCH")
         self.assertEqual(calls[-1][2]["status"], "supported")
+        # The endpoint path in the hypothesis must not be concatenated twice.
+        self.assertEqual(result["test_result"]["results"][0]["target"],
+                         "https://example.com/rest/user/login")
 
 
 if __name__ == "__main__":

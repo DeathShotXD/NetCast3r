@@ -658,6 +658,8 @@ def exploit_plan(ctx: ToolContext, args: dict) -> dict:
 def exploit_run(ctx: ToolContext, args: dict) -> dict:
     body = {"module_id": args["module_id"],
             "policy": args.get("policy", "supervised")}
+    if args.get("target"):
+        body["target"] = args["target"]
     return _call(ctx, "POST",
                  f"/api/v1/missions/{args['mission_id']}/exploits/run", body=body)
 
@@ -1179,10 +1181,19 @@ def hypothesis_test(ctx: ToolContext, args: dict) -> dict:
     if not isinstance(steps, list) or not steps:
         raise ToolError("invalid_arguments", "steps must be a non-empty array")
     mission_id = str(args.get("mission_id") or hypothesis.get("mission_id") or "")
+    target = str(hypothesis.get("target") or "")
+    base_url = str(args.get("base_url") or "").strip()
+    if not base_url and target:
+        # A hypothesis usually names the exact endpoint. The test steps carry
+        # their own paths, so only the origin belongs in base_url; using the
+        # full target duplicates the path.
+        parts = urlsplit(target if "://" in target else "https://" + target)
+        base_url = (f"{parts.scheme}://{parts.netloc}"
+                    if parts.scheme and parts.netloc else target)
     call_args = {"name": hypothesis.get("title") or "hypothesis test",
                  "steps": steps, "mission_id": mission_id,
                  "scope": args.get("scope"),
-                 "base_url": args.get("base_url") or hypothesis.get("target"),
+                 "base_url": base_url,
                  "fail_fast": args.get("fail_fast", True)}
     result = test_case_run(ctx, call_args)
     if result.get("ok"):
@@ -3473,6 +3484,7 @@ TOOLS: tuple[Tool, ...] = (
          "medium", "missions",
          _schema({"mission_id": _string("mission id"),
                   "module_id": _string("module id from exploit_search"),
+                  "target": _string("a specific in-scope endpoint to test"),
                   "policy": {"type": "string", "description": "tool policy",
                              "enum": ["readonly", "supervised", "full"]}},
                  ["mission_id", "module_id"]), "exploit_run", open_world=True),

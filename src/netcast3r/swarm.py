@@ -158,8 +158,18 @@ class SwarmError(RuntimeError):
 
 
 def _role_menu(role: str) -> str:
-    return "\n".join(f"- {name}: {OPERATOR_ACTIONS[name]}"
-                     for name in ROLE_ACTIONS.get(role, ()))
+    from .mcp.tools import _TOOL_MAP
+
+    lines = []
+    for name in ROLE_ACTIONS.get(role, ()):
+        description = OPERATOR_ACTIONS.get(name, "")
+        spec = _TOOL_MAP.get(name)
+        props = (getattr(spec, "input_schema", {}) or {}).get("properties", {})
+        hint = ", ".join(key for key in props
+                         if key not in {"mission_id", "scope", "confirm",
+                                        "approval_id"})[:220]
+        lines.append(f"- {name}: {description}. args: {hint or 'none'}")
+    return "\n".join(lines)
 
 
 def _prompt(template: str, role: str) -> str:
@@ -395,7 +405,9 @@ class Swarm(Autopilot):
         payload = {
             "phase": "validate", "objective": item["objective"],
             "move": {"action": move["action"], "why": move.get("why"),
-                     "expects": move.get("expects")},
+                     "expects": move.get("expects"),
+                     "args": record.get("args")},
+            "request": {"action": move["action"], "args": record.get("args")},
             "observation": record.get("result"),
             "ok": record.get("ok"),
             # The validator can only judge a "difference" if it can see what
