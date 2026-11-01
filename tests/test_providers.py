@@ -81,6 +81,25 @@ class ProviderBusTests(unittest.TestCase):
         calls = [row["provider"] for row in seen if row["kind"] == "call"]
         self.assertEqual(calls, ["openrouter"])
 
+    def test_route_model_only_applies_to_the_routed_provider(self):
+        base = f"http://127.0.0.1:{self.port}"
+        config = Config(
+            providers=[
+                ProviderConfig(name="openrouter", base_url=f"{base}/rate",
+                               api_key="dummy", priority=10,
+                               models=["or-model"]),
+                ProviderConfig(name="ollama", base_url=base, priority=20,
+                               models=["mock-model"]),
+            ],
+            routes=[RouteConfig(agent="scribe", model="special",
+                                provider="ollama")],
+        )
+        rows = [(provider.name, model)
+                for provider, model, _ in ProviderBus(config)._candidates("scribe")]
+        self.assertIn(("ollama", "special"), rows)
+        self.assertIn(("openrouter", "or-model"), rows)
+        self.assertNotIn(("openrouter", "special"), rows)
+
     def test_observer_sees_every_attempt(self):
         seen = []
         bus = ProviderBus(self._config(), observer=seen.append)

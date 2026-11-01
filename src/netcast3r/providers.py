@@ -150,7 +150,7 @@ class ProviderBus:
             if not key and provider.name != "ollama" and not _local_endpoint(provider.base_url):
                 continue
             models = list(provider.models)
-            if route.model:
+            if route.model and (not route.provider or provider.name == route.provider):
                 if route.model in models:
                     models.remove(route.model)
                 models.insert(0, route.model)

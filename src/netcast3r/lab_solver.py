@@ -41,7 +41,7 @@ def _default_complete(server):
 
     def call(messages):
         completion = bus.complete("prime", messages, timeout=45.0,
-                                  max_candidates=4)
+                                  max_candidates=6)
         return {"text": completion.text or "",
                 "provider": completion.provider or "",
                 "model": completion.model or "",
@@ -103,12 +103,21 @@ def _pick(index, slug: str = "") -> dict | None:
     return training.find_lab(items[0]["slug"]) if items else None
 
 
+def _log(index, slug: str, message: str, data: dict | None = None) -> None:
+    try:
+        index.add_director_log("lab-solve", f"{slug or 'auto'}: {message}",
+                               data=data or {})
+    except Exception:  # noqa: BLE001 - logging must never stop a solve
+        pass
+
+
 def solve_next(server, index, slug: str = "", complete=None, provision=None,
                verify=None, max_steps: int = MAX_STEPS,
                timeout: float = 300.0) -> dict:
     """Solve one lab end to end and record it only after verification."""
     lab = _pick(index, slug)
     if not lab:
+        _log(index, slug, "no unsolved lab in the catalogue")
         return {"started": False, "reason": "no unsolved lab in the catalogue"}
     from .server.lab_runner import RECIPES
 
@@ -126,6 +135,7 @@ def solve_next(server, index, slug: str = "", complete=None, provision=None,
         instance = str(lab.get("url") or "")
         verifier = verify or (lambda server, item: "")
     if not instance:
+        _log(index, lab["slug"], "could not provision the lab instance")
         return {"started": False, "lab": lab["slug"],
                 "reason": "could not provision the lab instance"}
     mission = _mission(index, lab, instance)
@@ -160,7 +170,7 @@ def solve_next(server, index, slug: str = "", complete=None, provision=None,
             technique=str(lab.get("category") or ""))
     except Exception as exc:  # noqa: BLE001 - a record failure must not lose the run
         record = {"error": f"{type(exc).__name__}: {exc}"}
-    return {
+    outcome = {
         "started": True, "mode": "solver", "lab": lab["slug"],
         "title": lab.get("title", ""), "instance": instance,
         "mission_id": mission["id"], "solved": solved,
@@ -169,3 +179,14 @@ def solve_next(server, index, slug: str = "", complete=None, provision=None,
         "record": record.get("progress") if isinstance(record, dict) else {},
         "note": "A lab is recorded only when the Academy banner is observed.",
     }
+    _log_result(index, outcome)
+    return outcome
+
+
+def _log_result(index, result: dict) -> None:
+    if not result.get("started"):
+        return
+    state = "solved" if result.get("solved") else "not solved"
+    _log(index, str(result.get("lab") or ""),
+         f"{state} via {result.get('mode')} after "
+         f"{result.get('steps') or 0} step(s)", result)
