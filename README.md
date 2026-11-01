@@ -302,7 +302,7 @@ required before a candidate is marked corroborated.
 - [Capabilities](docs/CAPABILITIES.md) - the external tool broker, API-spec ingestion, and PoCs
 - [Host](docs/HOST.md) - the shell and filesystem, and the rules that gate them
 - [Main brain](docs/BRAIN.md) - the top-level reasoner and how to steer it
-- [Coverage](docs/COVERAGE.md) - the 98-item modern checklist the hunt closes
+- [Coverage](docs/COVERAGE.md) - the 103-item modern checklist the hunt closes
 - [Self-evolution](docs/EVOLVE.md) - the outcome ledger, proposals, and post-ex planning
 - [Design](docs/DESIGN.md) - palette, type, and the validation ladder
 - [Contributing](CONTRIBUTING.md) - the ground rules for a pull request

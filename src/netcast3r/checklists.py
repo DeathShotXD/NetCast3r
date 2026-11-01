@@ -611,6 +611,42 @@ ITEMS = (
           modules=("api-rate-limit",), severity="medium",
           evidence="a prompt that multiplies cost without a bound",
           source="OWASP LLM10:2025"),
+    # -- OWASP Top 10 2025 ----------------------------------------------
+    _item("owasp-2025-a03", "OWASP Top 10", "supply-chain",
+          "A03:2025 Software supply chain failures",
+          "Third-party scripts, packages, CI tokens, and update channels are "
+          "enumerated; an unpinned or untrusted dependency is a lead.",
+          tools=("trufflehog", "gitleaks", "nuclei"), severity="high",
+          evidence="an unpinned, unverified, or leaked dependency path",
+          source="OWASP Top 10:2025 A03"),
+    _item("owasp-2025-a06", "OWASP Top 10", "design",
+          "A06:2025 Insecure design",
+          "The business flow is tested for abuse the implementation cannot stop: "
+          "automation, replay, trust-boundary confusion, and missing anti-abuse.",
+          modules=("server-race", "api-rate-limit"), severity="high",
+          evidence="a flow completed in a way the design did not intend",
+          source="OWASP Top 10:2025 A06"),
+    _item("owasp-2025-a08", "OWASP Top 10", "integrity",
+          "A08:2025 Software or data integrity failures",
+          "Deserialization, unsigned updates, and client-trusted state are tested "
+          "for content the server accepts without verification.",
+          modules=("web-deserialization",), severity="critical",
+          evidence="server-accepted content that was never verified",
+          source="OWASP Top 10:2025 A08"),
+    _item("owasp-2025-a09", "OWASP Top 10", "logging",
+          "A09:2025 Security logging and alerting failures",
+          "Sensitive actions are checked for an audit trail; log injection and "
+          "missing alerts on money and auth changes are leads.",
+          tools=("http_request",), severity="medium",
+          evidence="a sensitive action with no record or a forged log line",
+          source="OWASP Top 10:2025 A09"),
+    _item("owasp-2025-a10", "OWASP Top 10", "error-handling",
+          "A10:2025 Mishandling of exceptional conditions",
+          "Malformed and boundary input is tested for an error path that skips "
+          "authorization, a limit, or a state check.",
+          modules=("web-parser-differential",), severity="high",
+          evidence="an error path that reached a protected action",
+          source="OWASP Top 10:2025 A10"),
     # -- cloud and infrastructure ---------------------------------------
     _item("cloud-01", "Cloud", "cloud",
           "Test object storage permissions",

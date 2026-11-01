@@ -6,7 +6,7 @@ Notable changes to NetCast3r, newest first.
 
 ### Added
 
-- **The coverage engine**: a 98-item modern testing checklist the hunt actually
+- **The coverage engine**: a 103-item modern testing checklist the hunt actually
   closes. Grounded in OWASP WSTG v4.2, the API Security Top 10 2023, the LLM
   Top 10 2025, the PortSwigger Top 10 Web Hacking Techniques of 2025, cloud,
   mobile, and supply chain. Every item names its objective, modules, tools,

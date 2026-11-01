@@ -49,6 +49,19 @@ Guarantees, enforced in code rather than promised in prose:
 (think now, non-blocking). The pause flag is persisted, so a restart resumes the
 operator's choice.
 
+## Coverage and training
+
+The snapshot also carries the focus mission's **coverage** (the 98-item checklist
+from WSTG v4.2, the API and LLM Top 10, the 2025 research classes, cloud, mobile,
+and supply chain) and the next highest-impact questions. The brain can mark an
+item with `mark_coverage` using the evidence it actually has, and may run the
+matching module with `run_module`.
+
+Training is part of the loop. The snapshot lists the next unsolved labs. The
+brain can start a scripted lab with `run_lab` and write the lesson with
+`record_lesson`; a solved lab is recorded only after its verification banner is
+observed, and a lesson requires real evidence or a real outcome.
+
 ## Talking to it
 
 `brain_chat` takes a message and returns a reply, a one-line `focus`, and the

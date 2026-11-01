@@ -7,13 +7,14 @@ mission.
 
 ## What is in the catalog
 
-98 falsifiable items, grounded in current public guidance:
+103 falsifiable items, grounded in current public guidance:
 
 | Framework | Source | Items |
 | --- | --- | --- |
 | WSTG | OWASP Web Security Testing Guide v4.2 | information gathering, configuration, identity, authentication, authorization, session, input validation, error handling, cryptography, business logic, client-side |
 | API Top 10 | OWASP API Security Top 10 2023 | API1-API10 plus GraphQL and SOAP |
 | LLM Top 10 | OWASP Top 10 for LLM Applications 2025 | LLM01-LLM10 |
+| OWASP Top 10 | OWASP Top 10:2025 | access control, misconfiguration, supply chain, crypto, injection, insecure design, authentication, integrity, logging, exceptional conditions |
 | 2025 Research | PortSwigger Top 10 Web Hacking Techniques of 2025 | error-based SSTI, ORM leaks, SSRF redirect loops, Unicode, SOAPwn, ETag leaks, Next.js cache, HTTP/2 CONNECT, parser differentials, open-redirect chains |
 | Cloud | object storage, IMDS, Kubernetes, CI/CD, subdomain takeover | 5 items |
 | MASVS | mobile application security | 3 items |
