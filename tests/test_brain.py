@@ -35,6 +35,7 @@ class BrainContextTests(unittest.TestCase):
                     "candidates", "director", "host", "mcp", "focus_mission"):
             self.assertIn(key, snapshot)
         self.assertEqual(snapshot["focus_mission"]["id"], self.mission["id"])
+        self.assertIn("recent_events", snapshot["focus_mission"])
         self.assertIn("tools", snapshot["host"])
 
 
@@ -235,6 +236,16 @@ class CognitionTests(unittest.TestCase):
         for key in ("traffic", "logs", "mcp", "mcp_servers"):
             self.assertIn(key, snapshot)
 
+    def test_a_hard_failed_provider_is_rested(self):
+        brain._PROVIDER_FAILS.clear()
+        try:
+            brain._ask(self.server, self.index, [],
+                       complete=lambda m: {"text": "", "provider": "tokenharbor",
+                                           "error": "tokenharbor returned 402"})
+            self.assertIn("tokenharbor", brain._excluded_providers())
+        finally:
+            brain._PROVIDER_FAILS.clear()
+
     def test_focus_prefers_an_autonomous_mission(self):
         self.index.create_mission("Supervised", "https://a.example.com/",
                                   status="active", autonomy="supervised",
@@ -308,6 +319,27 @@ class BrainLoopTests(unittest.TestCase):
         self.assertIn("admin API", loop.status()["last_focus"])
         log = self.index.list_brain_log(limit=5, mission_id=self.mission["id"])
         self.assertEqual(log[0]["role"], "auto")
+
+    def test_a_turn_with_no_model_answer_is_retried_not_journaled(self):
+        loop = brain.BrainLoop(
+            self.server, interval=45,
+            complete=lambda m: {"text": "", "error": "rate_limit_exceeded"})
+        result = loop.tick()
+        self.assertEqual(result.get("reply"), "")
+        status = loop.status()
+        self.assertEqual(status["turns"], 0)
+        self.assertEqual(status["errors"], 1)
+        self.assertIn("rate_limit", status["last_error"])
+        self.assertEqual(self.index.list_brain_log(limit=5), [])
+
+    def test_start_prunes_empty_auto_turns(self):
+        self.index.add_brain_turn("auto", "", mission_id=self.mission["id"])
+        self.index.add_brain_turn("auto", "real turn",
+                                  mission_id=self.mission["id"])
+        self.assertEqual(self.index.prune_brain_log(), 1)
+        rows = self.index.list_brain_log(limit=10)
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["text"], "real turn")
 
     def test_pause_and_engage_persist(self):
         loop = brain.BrainLoop(self.server, interval=45, complete=lambda m: reply(

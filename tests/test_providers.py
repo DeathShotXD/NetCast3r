@@ -77,6 +77,7 @@ class ProviderBusTests(unittest.TestCase):
         result = bus.complete("scribe", [{"role": "user", "content": "hi"}],
                               max_candidates=1)
         self.assertEqual(result.text, "")
+        self.assertEqual(result.failed, ["openrouter"])
         calls = [row["provider"] for row in seen if row["kind"] == "call"]
         self.assertEqual(calls, ["openrouter"])
 

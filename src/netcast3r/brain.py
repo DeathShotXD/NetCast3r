@@ -219,12 +219,30 @@ def context(index, director=None, mission_id: str = "", limit: int = 8) -> dict:
     if mission_id:
         mission = index.get_mission(mission_id)
         if mission:
+            recent_runs = mission.get("runs") or []
+            latest_run = str((recent_runs[0] or {}).get("id") or "") if recent_runs else ""
+            recent_events = []
+            if latest_run:
+                try:
+                    for event in index.list_events(latest_run, limit=12):
+                        payload = event.get("payload") or {}
+                        recent_events.append({
+                            "seq": event.get("seq"), "type": event.get("type"),
+                            "stage": event.get("stage"),
+                            "agent": event.get("agent"),
+                            "text": str(payload.get("text") or
+                                        payload.get("message") or
+                                        payload.get("title") or "")[:240]})
+                except Exception:  # noqa: BLE001
+                    recent_events = []
             snapshot["focus_mission"] = {
                 "id": mission["id"], "title": mission.get("title", ""),
                 "target": mission.get("target", ""),
                 "objective": mission.get("objective", ""),
                 "scope": mission.get("scope", []),
                 "autonomy": mission.get("autonomy", ""),
+                "latest_run_id": latest_run,
+                "recent_events": recent_events,
                 "notes": [{"kind": n.get("kind"), "title": n.get("title")}
                           for n in index.list_agent_notes(mission_id, limit=10)],
                 "graph": {"nodes": len(index.list_graph_nodes(mission_id)),
@@ -264,11 +282,35 @@ def _first_json(text: str):
     return _first_json(text)
 
 
+_PROVIDER_FAILS: dict[str, float] = {}
+_PROVIDER_FAIL_TTL = 900.0
+_PROVIDER_SOFT_TTL = 180.0
+
+
+def _excluded_providers() -> set[str]:
+    now = time.monotonic()
+    for name, until in list(_PROVIDER_FAILS.items()):
+        if until <= now:
+            _PROVIDER_FAILS.pop(name, None)
+    return set(_PROVIDER_FAILS)
+
+
+def _remember_provider(provider: str, error: str) -> None:
+    """Keep a hard-failed provider out of the brain's next few turns. A payment
+    or auth error gets a long rest; a timeout gets a short one."""
+    name = str(provider or "").strip()
+    if not name:
+        return
+    hard = any(code in str(error) for code in ("401", "402", "403", "429"))
+    _PROVIDER_FAILS[name] = time.monotonic() + (
+        _PROVIDER_FAIL_TTL if hard else _PROVIDER_SOFT_TTL)
+
+
 def _ask(server, index, messages: list, complete=None,
          timeout: float = 60.0, max_candidates: int | None = None
-         ) -> tuple[str, str, str]:
+         ) -> tuple[str, str, str, str]:
     """One model call for the brain, with the tokenharbor prime route and the
-    provider bus as the fallback. Returns (text, provider, model)."""
+    provider bus as the fallback. Returns (text, provider, model, error)."""
     if complete is not None:
         completion = complete(messages)
     else:
@@ -282,13 +324,29 @@ def _ask(server, index, messages: list, complete=None,
         except Exception:  # noqa: BLE001 - a broken provider row must not stop the brain
             pass
         completion = ProviderBus(config, timeout=timeout).complete(
-            "prime", messages, timeout=timeout, max_candidates=max_candidates)
+            "prime", messages, timeout=timeout,
+            exclude_providers=_excluded_providers() or None,
+            max_candidates=max_candidates)
     if hasattr(completion, "text"):
-        return (completion.text or "", getattr(completion, "provider", "") or "",
-                getattr(completion, "model", "") or "")
-    completion = completion or {}
-    return (str(completion.get("text") or ""), completion.get("provider", "") or "",
-            completion.get("model", "") or "")
+        text = completion.text or ""
+        provider = getattr(completion, "provider", "") or ""
+        model = getattr(completion, "model", "") or ""
+        error = getattr(completion, "error", "") or ""
+        hard_failed = list(getattr(completion, "failed", []) or [])
+    else:
+        completion = completion or {}
+        text = str(completion.get("text") or "")
+        provider = completion.get("provider", "") or ""
+        model = completion.get("model", "") or ""
+        error = completion.get("error", "") or ""
+        hard_failed = list(completion.get("failed") or [])
+    for name in hard_failed:
+        _remember_provider(name, "402")
+    if text.strip():
+        _PROVIDER_FAILS.pop(provider, None)
+    else:
+        _remember_provider(provider, error)
+    return text, provider, model, error
 
 
 def _is_local_target(target) -> bool:
@@ -337,10 +395,14 @@ def chat(server, index, director, message: str, history: list | None = None,
     messages.append({"role": "user", "content": json.dumps(
         {"operator_message": message, "snapshot": snapshot}, default=str)[:60000]})
 
-    text, provider, model = _ask(server, index, messages, complete, timeout,
-                                 max_candidates=4)
+    text, provider, model, error = _ask(server, index, messages, complete, timeout,
+                                        max_candidates=6)
     data = _first_json(text) or {}
-    reply = str(data.get("reply") or text or "the brain returned nothing")[:4000]
+    reply = str(data.get("reply") or text or "").strip()
+    if not reply:
+        reply = (f"the brain's models did not answer ({error or 'empty response'}); "
+                 "the loop will retry")
+    reply = reply[:4000]
     focus = str(data.get("focus") or "")[:400]
     applied = []
     if act:
@@ -356,11 +418,11 @@ def chat(server, index, director, message: str, history: list | None = None,
         pass
     return {"reply": reply, "focus": focus, "actions": applied,
             "provider": provider, "model": model, "mission_id": mission_id,
-            "findings": 0}
+            "error": error, "findings": 0}
 
 
 def cognition(server, index, director, mission_id: str = "", complete=None,
-              timeout: float = 40.0, journal: bool = True,
+              timeout: float = 55.0, journal: bool = True,
               previous: dict | None = None) -> dict:
     """One autonomous cognition tick: observe the whole plane, decide the next
     move, and steer. The brain never creates a finding or submits a report."""
@@ -382,8 +444,8 @@ def cognition(server, index, director, mission_id: str = "", complete=None,
         {"role": "system", "content": BRAIN_AUTONOMY_SYSTEM},
         {"role": "user", "content": json.dumps(turn, default=str)[:60000]},
     ]
-    text, provider, model = _ask(server, index, messages, complete, timeout,
-                                 max_candidates=3)
+    text, provider, model, error = _ask(server, index, messages, complete, timeout,
+                                        max_candidates=6)
     data = _first_json(text) or {}
     reply = str(data.get("reply") or text or "")[:4000]
     focus = str(data.get("focus") or "")[:400]
@@ -404,8 +466,8 @@ def cognition(server, index, director, mission_id: str = "", complete=None,
     applied = [a for a in applied if a]
     result = {"reply": reply, "reasoning": reasoning, "focus": focus,
               "actions": applied, "provider": provider, "model": model,
-              "mission_id": mission_id}
-    if journal:
+              "mission_id": mission_id, "error": error}
+    if journal and (reply or applied):
         try:
             index.add_brain_turn("auto", reply, mission_id=mission_id,
                                  focus=focus, provider=provider, model=model,
@@ -569,8 +631,10 @@ class BrainLoop:
         self.interval = self._clamp(state.get("interval") or self.interval)
         if self._turns == 0:
             try:
+                self.index.prune_brain_log()
                 rows = self.index.list_brain_log(limit=1000)
-                self._turns = sum(1 for row in rows if row.get("role") == "auto")
+                self._turns = sum(1 for row in rows if row.get("role") == "auto"
+                                  and str(row.get("text") or "").strip())
             except Exception:  # noqa: BLE001
                 pass
         with self._lock:
@@ -632,6 +696,9 @@ class BrainLoop:
                         pass
             elapsed = time.monotonic() - started
             wait = max(5.0, self.interval - elapsed)
+            if self._last_error and not self._last_result.get("reply"):
+                # A rate-limited or slow provider should not cost a full cycle.
+                wait = min(wait, 30.0)
             self._wake.wait(wait)
             self._wake.clear()
 
@@ -646,19 +713,31 @@ class BrainLoop:
             result = cognition(self.server, self.index, self.server._director(),
                                mission_id=mission_id, complete=self._complete,
                                previous=self._last_result or None)
-            self._turns += 1
-            self._last_turn_at = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
             self._last_result = result
-            self._save(last_turn=self._last_turn_at,
-                       last_focus=result.get("focus", ""),
-                       last_model=result.get("model", ""))
+            if result.get("reply") or result.get("actions"):
+                self._turns += 1
+                self._last_turn_at = time.strftime("%Y-%m-%dT%H:%M:%SZ",
+                                                   time.gmtime())
+                self._last_error = ""
+                self._save(last_turn=self._last_turn_at,
+                           last_focus=result.get("focus", ""),
+                           last_model=result.get("model", ""))
+                try:
+                    self.index.add_director_log(
+                        "brain", (result.get("reply") or "")[:400],
+                        mission_id=mission_id,
+                        data={"focus": result.get("focus", ""),
+                              "actions": result.get("actions", []),
+                              "model": result.get("model", "")})
+                except Exception:  # noqa: BLE001
+                    pass
+                return result
+            self._errors += 1
+            self._last_error = str(result.get("error") or "no model answered")[:300]
             try:
                 self.index.add_director_log(
-                    "brain", (result.get("reply") or "")[:400],
-                    mission_id=mission_id,
-                    data={"focus": result.get("focus", ""),
-                          "actions": result.get("actions", []),
-                          "model": result.get("model", "")})
+                    "brain-wait", f"no model answered this turn: {self._last_error}",
+                    mission_id=mission_id)
             except Exception:  # noqa: BLE001
                 pass
             return result

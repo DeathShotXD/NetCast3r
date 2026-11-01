@@ -90,10 +90,17 @@
   let directorBusy = $state('');
   let trend = $state<TrendPoint[]>([]);
   let brainFeed = $state<BrainTurn[]>([]);
+  let brainFeedEl = $state<HTMLUListElement>();
   let brainLoop = $state<BrainLoopStatus | null>(null);
   let brainInput = $state('');
   let brainBusy = $state(false);
   let brainBusyAction = $state('');
+
+  $effect(() => {
+    if (brainFeedEl && brainFeed.length) {
+      brainFeedEl.scrollTop = brainFeedEl.scrollHeight;
+    }
+  });
   let hostCwd = $state('');
   let hostCmd = $state('');
   let hostOut = $state<HostShellResult | null>(null);
@@ -1055,7 +1062,7 @@
           {/if}
         </div>
       </div>
-      <ul class="obs-brain-log" data-brain-log="1">
+      <ul class="obs-brain-log" data-brain-log="1" bind:this={brainFeedEl}>
         {#each brainFeed as turn (turn.id)}
           <li class:user={turn.role === 'operator'} class:auto={turn.role === 'auto'}>
             <span class="obs-brain-role">

@@ -2250,6 +2250,15 @@ class Index:
             self.conn.execute("DELETE FROM brain_log")
             self.conn.commit()
 
+    def prune_brain_log(self) -> int:
+        """Drop empty autonomous turns left by a model that never answered."""
+        with self._lock:
+            cursor = self.conn.execute(
+                "DELETE FROM brain_log WHERE role = 'auto' "
+                "AND TRIM(COALESCE(text, '')) = ''")
+            self.conn.commit()
+            return int(cursor.rowcount or 0)
+
     @staticmethod
     def _brain_log_row(row: sqlite3.Row) -> dict:
         item = dict(row)

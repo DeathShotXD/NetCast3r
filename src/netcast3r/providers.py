@@ -45,6 +45,7 @@ class Completion:
     model: str = ""
     usage: dict = field(default_factory=dict)
     error: str = ""
+    failed: list = field(default_factory=list)
     duration_ms: int = 0
 
 
@@ -303,12 +304,18 @@ class ProviderBus:
                               float(getattr(self.config.run, "max_call_seconds", 90))))
         started = time.monotonic()
         last_error = "no provider available"
+        last_provider = ""
+        last_model = ""
+        failed: list[str] = []
         attempts = 0
         for provider, model, key in self._candidates(
                 agent, exclude_providers=exclude_providers):
             if max_candidates is not None and attempts >= max_candidates:
                 break
+            if self._cooling(provider.name):
+                continue
             attempts += 1
+            last_provider, last_model = provider.name, model
             attempt = time.monotonic()
             proxy = self.egress.get() if self.egress else None
             headers = {"Content-Type": "application/json"}
@@ -334,6 +341,7 @@ class ProviderBus:
                             self.egress.mark_failed(proxy)
                         self._penalize(provider.name)
                         self._strike(provider.name, model)
+                        failed.append(provider.name)
                         last_error = f"{provider.name} returned {response.status_code}"
                         self._observe({"kind": "done", "agent": agent,
                                        "provider": provider.name, "model": model,
@@ -343,6 +351,8 @@ class ProviderBus:
                     if response.status_code >= 400:
                         self._strike(provider.name, model,
                                      fatal=response.status_code in (400, 404))
+                        if response.status_code in (401, 402):
+                            failed.append(provider.name)
                         last_error = f"{provider.name} returned {response.status_code}"
                         self._observe({"kind": "done", "agent": agent,
                                        "provider": provider.name, "model": model,
@@ -393,4 +403,6 @@ class ProviderBus:
                 if self.egress and proxy:
                     self.egress.mark_failed(proxy)
                 continue
-        return Completion(error=last_error, duration_ms=_ms(started))
+        return Completion(error=last_error, provider=last_provider,
+                          model=last_model, failed=failed,
+                          duration_ms=_ms(started))

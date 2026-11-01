@@ -6,6 +6,27 @@ Notable changes to NetCast3r, newest first.
 
 ### Added
 
+- The main brain now runs a never-ending autonomy loop. `BrainLoop` starts with
+  the control plane beside the director and, every 150 seconds, reads the whole
+  snapshot (missions and stage, live traffic, the log feed, open leads,
+  candidates, the graph, the host, the MCP connections, and its own last turn),
+  decides the single highest-value move, and applies at most three reversible
+  steering actions. Guards are code: it cannot pause the hunt, cannot run a
+  module on a supervised mission, does not repeat a direction, and never creates
+  a finding or submits a report.
+  - **Journal** (`brain_log`): every operator message, autonomous turn, and
+    applied action survives a restart; empty turns are pruned.
+  - **Surface**: `GET /api/v1/brain/journal`, `GET|POST /api/v1/brain/loop`; MCP
+    `brain_journal` and `brain_loop` (211 tools). The loop is persisted, so a
+    paused brain stays paused.
+  - **Provider resilience**: hard-failed providers (401/402/403/429) rest for 15
+    minutes, the fallback chain is capped, and a turn with no model answer is
+    retried in 30 seconds instead of being journaled.
+  - **Doctrine**: the operator's escalation ladder and pivot rules ship as the
+    `hunter-chain-doctrine` skill pack, so the mesh inherits them too.
+  - **UI**: a main-brain dock on every screen (status, journal, chat, pause,
+    think now) plus the Command Center panel, and a new `PipelineDial` for the
+    completion readout.
 - Self-evolution and post-exploitation. The harness now learns from what it
   actually tried and plans past the first foothold.
   - **Outcome ledger** (`src/netcast3r/evolve.py`): per-technique supported,

@@ -14,8 +14,15 @@
   let busy = $state(false);
   let acting = $state('');
   let timer: number | undefined;
+  let feedEl = $state<HTMLUListElement>();
 
   const latest = $derived(feed.length ? feed[feed.length - 1] : null);
+
+  $effect(() => {
+    if (open && feedEl && feed.length) {
+      feedEl.scrollTop = feedEl.scrollHeight;
+    }
+  });
 
   async function load() {
     try {
@@ -95,7 +102,7 @@
         </button>
       </header>
 
-      <ul class="nc-brain-feed">
+      <ul class="nc-brain-feed" bind:this={feedEl}>
         {#each feed.slice(-14) as turn (turn.id)}
           <li class:operator={turn.role === 'operator'} class:auto={turn.role === 'auto'}>
             <span class="nc-brain-role">
