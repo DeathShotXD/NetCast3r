@@ -806,6 +806,27 @@ class Server:
             except ValueError as exc:
                 return _problem(400, str(exc))
 
+        @add("POST", r"/api/v1/training/solve")
+        def training_solve(ctx):
+            body = ctx.json()
+            body = body if isinstance(body, dict) else {}
+            slug = str(body.get("slug") or "").strip()
+            if slug and not training.find_lab(slug):
+                return _problem(400, f"unknown lab: {slug}")
+            import threading
+
+            from .. import lab_solver as lab_solver_module
+
+            threading.Thread(
+                target=lab_solver_module.solve_next, args=(self, self.index),
+                kwargs={"slug": slug}, name="netcast3r-lab-solve",
+                daemon=True).start()
+            return _json({
+                "started": True, "slug": slug or "auto",
+                "note": ("A lab is fetched, solved through the scoped tools, and "
+                         "recorded only after the Academy banner is observed."),
+            }, 202)
+
         @add("POST", r"/api/v1/training/record")
         def training_record(ctx):
             body = ctx.json()

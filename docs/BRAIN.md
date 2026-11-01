@@ -58,9 +58,11 @@ item with `mark_coverage` using the evidence it actually has, and may run the
 matching module with `run_module`.
 
 Training is part of the loop. The snapshot lists the next unsolved labs. The
-brain can start a scripted lab with `run_lab` and write the lesson with
-`record_lesson`; a solved lab is recorded only after its verification banner is
-observed, and a lesson requires real evidence or a real outcome.
+brain can start a scripted lab with `run_lab`, or solve any catalogued lab with
+`solve_lab` (browser provisioning, bounded solver, banner verification), and
+write the lesson with `record_lesson`; a solved lab is recorded only after its
+verification banner is observed, and a lesson requires real evidence or a real
+outcome.
 
 ## Talking to it
 

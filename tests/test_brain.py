@@ -277,6 +277,14 @@ class CognitionTests(unittest.TestCase):
         self.assertFalse(result["applied"])
         self.assertIn("unknown module", result["reason"])
 
+    def test_an_unknown_lab_solve_is_refused(self):
+        result = brain._apply(
+            self.index, self.server._director(),
+            {"kind": "solve_lab", "slug": "no-such-lab"},
+            self.mission["id"])
+        self.assertFalse(result["applied"])
+        self.assertIn("unknown lab", result["reason"])
+
     def test_a_hard_failed_provider_is_rested(self):
         brain._PROVIDER_FAILS.clear()
         try:

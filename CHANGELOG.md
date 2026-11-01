@@ -25,7 +25,10 @@ Notable changes to NetCast3r, newest first.
   and prompt injection. The catalog is now 51 typed modules.
 - **Lab solving and skill writing**: the brain can start a scripted lab
   (`run_lab`) and write a real lesson (`record_lesson`); the training plan and
-  solved count are in its snapshot.
+  solved count are in its snapshot. `solve_lab` covers any catalogued lab: the
+  managed browser provisions the instance, the bounded solver drives the scoped
+  tools, the Academy banner is verified, and only then is the solve recorded
+  with its lesson. `POST /api/v1/training/solve` and MCP `lab_solve` (215 tools).
 - The main brain now runs a never-ending autonomy loop. `BrainLoop` starts with
   the control plane beside the director and, every 150 seconds, reads the whole
   snapshot (missions and stage, live traffic, the log feed, open leads,

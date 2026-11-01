@@ -1294,6 +1294,11 @@ def training_record(ctx: ToolContext, args: dict) -> dict:
     return _call(ctx, "POST", "/api/v1/training/record", body=body)
 
 
+def lab_solve(ctx: ToolContext, args: dict) -> dict:
+    body = {key: args[key] for key in ("slug",) if key in args}
+    return _call(ctx, "POST", "/api/v1/training/solve", body=body)
+
+
 def training_verify(ctx: ToolContext, args: dict) -> dict:
     target = str(args.get("instance_url") or "").strip()
     host = (urlsplit(target).hostname or "").lower()
@@ -3029,6 +3034,7 @@ _HANDLERS.update({
     "checklist_catalog": checklist_catalog,
     "coverage_get": coverage_get,
     "coverage_mark": coverage_mark,
+    "lab_solve": lab_solve,
     "campaign_start": campaign_start,
     "evolve_status": evolve_status,
     "evolve_ledger": evolve_ledger,
@@ -4155,6 +4161,13 @@ TOOLS: tuple[Tool, ...] = (
                   "technique": _string("technique label"),
                   "mission_id": _string("optional training mission")},
                  ["lab_slug", "status"]), "training_record"),
+    Tool("lab_solve", "Solve a lab end to end",
+         "Provision an unsolved lab through the managed browser, drive the scoped "
+         "tools with the bounded solver, verify the Academy solved banner, and "
+         "record the lesson. A solve is recorded only after the banner is seen.",
+         "high", "training",
+         _schema({"slug": _string("optional catalogue slug; omit for the next plan")},
+                 []), "lab_solve", open_world=True),
     Tool("training_verify", "Verify a lab result",
          "Fetch one lab instance and check its solved signal. Academy hosts use the "
          "congratulations banner. Other bundled packs need explicit expect markers and "
