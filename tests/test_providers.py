@@ -71,6 +71,15 @@ class ProviderBusTests(unittest.TestCase):
         self.assertTrue(done)
         self.assertEqual(done[0].text, "ollama")
 
+    def test_max_candidates_caps_the_fallback_chain(self):
+        seen = []
+        bus = ProviderBus(self._config(), observer=seen.append)
+        result = bus.complete("scribe", [{"role": "user", "content": "hi"}],
+                              max_candidates=1)
+        self.assertEqual(result.text, "")
+        calls = [row["provider"] for row in seen if row["kind"] == "call"]
+        self.assertEqual(calls, ["openrouter"])
+
     def test_observer_sees_every_attempt(self):
         seen = []
         bus = ProviderBus(self._config(), observer=seen.append)

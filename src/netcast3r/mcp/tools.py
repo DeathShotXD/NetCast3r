@@ -775,6 +775,19 @@ def brain_chat(ctx: ToolContext, args: dict) -> dict:
     return _call(ctx, "POST", "/api/v1/brain/chat", body=body)
 
 
+def brain_journal(ctx: ToolContext, args: dict) -> dict:
+    query = {key: args[key] for key in ("limit", "mission_id") if key in args}
+    return _call(ctx, "GET", "/api/v1/brain/journal", query=query or None)
+
+
+def brain_loop(ctx: ToolContext, args: dict) -> dict:
+    action = str(args.get("action") or "status").strip().lower()
+    if action == "status":
+        return _call(ctx, "GET", "/api/v1/brain/loop")
+    body = {key: args[key] for key in ("action", "interval") if key in args}
+    return _call(ctx, "POST", "/api/v1/brain/loop", body=body)
+
+
 def campaign_start(ctx: ToolContext, args: dict) -> dict:
     body = {key: args[key] for key in ("target", "title", "objective")
             if key in args}
@@ -2995,6 +3008,8 @@ _HANDLERS.update({
     "host_kill": host_kill,
     "brain_context": brain_context,
     "brain_chat": brain_chat,
+    "brain_journal": brain_journal,
+    "brain_loop": brain_loop,
     "campaign_start": campaign_start,
     "evolve_status": evolve_status,
     "evolve_ledger": evolve_ledger,
@@ -3645,6 +3660,25 @@ TOOLS: tuple[Tool, ...] = (
                   "history": _array("prior turns", {"type": "object"}),
                   "act": _boolean("apply the steering actions", True)},
                  ["message"]), "brain_chat"),
+    Tool("brain_journal", "Read the main brain's journal",
+         "The main brain's own memory: every operator message, every autonomous "
+         "cognition turn, and every steering action it applied, newest first, "
+         "with the loop state.",
+         "low", "missions",
+         _schema({"limit": _integer("turns", 1, 1000, 60),
+                  "mission_id": _string("optional focus mission")}, []),
+         "brain_journal"),
+    Tool("brain_loop", "Read or steer the main brain's autonomy loop",
+         "The never-ending cognition loop that runs beside the director: it "
+         "observes the whole plane on a cadence and decides the next move. "
+         "Actions: status (default), pause, engage, tick (think now), interval.",
+         "medium", "missions",
+         _schema({"action": {"type": "string",
+                             "enum": ["status", "pause", "engage", "tick", "interval"],
+                             "description": "what to do with the loop"},
+                  "interval": {"type": "number",
+                               "description": "seconds between turns"}}, []),
+         "brain_loop"),
     Tool("campaign_start", "Start a hunt from just a domain",
          "The only requirement is a domain or URL. It creates an active, "
          "autonomous mission scoped to that host and engages the director, which "

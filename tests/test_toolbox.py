@@ -45,6 +45,21 @@ class ScopeTests(unittest.TestCase):
         self.assertFalse(toolbox._host_allowed("metadata.google.internal",
                                                {"metadata.google.internal"}))
 
+    def test_wildcards_authorize_subdomains_without_opening_the_apex(self):
+        scope = {"instant-gaming.com", "*.instant-gaming.com"}
+        self.assertTrue(toolbox._host_allowed("www.instant-gaming.com", scope))
+        self.assertTrue(toolbox._host_allowed("api.instant-gaming.com", scope))
+        self.assertTrue(toolbox._host_allowed("instant-gaming.com", scope))
+        self.assertFalse(toolbox._host_allowed("evil-instant-gaming.com",
+                                               {"*.instant-gaming.com"}))
+        self.assertFalse(toolbox._host_allowed("instant-gaming.com",
+                                               {"*.instant-gaming.com"}))
+
+    def test_an_exclusion_always_wins(self):
+        scope = ["example.com", "!admin.example.com"]
+        self.assertTrue(toolbox._host_allowed("www.example.com", scope))
+        self.assertFalse(toolbox._host_allowed("admin.example.com", scope))
+
     def test_run_refuses_out_of_scope_before_anything_else(self):
         tmp = Path(tempfile.mkdtemp())
         server = build_server(results_dir=str(tmp / "results"), base=tmp, recover=False)
@@ -88,6 +103,12 @@ class ParserTests(unittest.TestCase):
         urls = toolbox.parse("ffuf", "http://lab.example.com/a\nhttp://lab.example.com/b")
         self.assertEqual(len(urls["endpoints"]), 2)
 
+    def test_subfinder_hosts_are_parsed_without_a_scheme(self):
+        parsed = toolbox.parse("subfinder",
+                               "www.example.com\napi.example.com\nnot a host\n")
+        self.assertEqual(parsed["subdomains"], ["api.example.com", "www.example.com"])
+        self.assertEqual(parsed["count"], 2)
+
 
 class PersistenceTests(unittest.TestCase):
     def setUp(self):
@@ -127,6 +148,18 @@ class PersistenceTests(unittest.TestCase):
         nodes = {n["kind"] for n in self.index.list_graph_nodes(self.mission["id"])}
         self.assertIn("service", nodes)
         self.assertIn("technology", nodes)
+
+    def test_subdomains_become_host_nodes(self):
+        entry = {"id": "subfinder-1", "tool": "subfinder",
+                 "target": "lab.example.com", "mission_id": self.mission["id"],
+                 "run_id": ""}
+        written = toolbox._persist(self.index, entry, {
+            "subdomains": ["api.lab.example.com", "www.lab.example.com"]})
+        self.assertGreaterEqual(written["nodes"], 3)
+        hosts = {n["key"] for n in self.index.list_graph_nodes(
+            self.mission["id"], kind="host")}
+        self.assertIn("api.lab.example.com", hosts)
+        self.assertIn("www.lab.example.com", hosts)
 
 
 class ApiSpecTests(unittest.TestCase):

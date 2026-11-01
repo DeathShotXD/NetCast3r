@@ -515,6 +515,21 @@ CREATE TABLE IF NOT EXISTS finding_candidates (
 );
 CREATE INDEX IF NOT EXISTS idx_candidates_mission
     ON finding_candidates(mission_id, status, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS brain_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    ts TEXT,
+    mission_id TEXT DEFAULT '',
+    role TEXT DEFAULT 'brain',
+    text TEXT DEFAULT '',
+    focus TEXT DEFAULT '',
+    provider TEXT DEFAULT '',
+    model TEXT DEFAULT '',
+    actions_json TEXT DEFAULT '[]'
+);
+CREATE INDEX IF NOT EXISTS idx_brain_log_id ON brain_log(id DESC);
+CREATE INDEX IF NOT EXISTS idx_brain_log_mission
+    ON brain_log(mission_id, id DESC);
 """
 
 SEVERITY_ORDER = {"critical": 0, "high": 1, "medium": 2, "low": 3, "info": 4, "unknown": 5}
@@ -2189,6 +2204,57 @@ class Index:
         with self._lock:
             self.conn.execute("DELETE FROM director_log")
             self.conn.commit()
+
+    # -- brain journal ----------------------------------------------------
+    # The main brain's memory of its own cognition: every operator message,
+    # every autonomous turn, and every steering action it applied. Keeping it
+    # in the database means the brain's reasoning survives a restart and the
+    # operator can read what it decided and why.
+    def add_brain_turn(self, role: str, text: str, mission_id: str = "",
+                       focus: str = "", provider: str = "", model: str = "",
+                       actions: list | None = None) -> dict:
+        now = _now()
+        with self._lock:
+            cursor = self.conn.execute(
+                "INSERT INTO brain_log (ts, mission_id, role, text, focus, "
+                "provider, model, actions_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                (now, str(mission_id or ""), str(role or "brain")[:24],
+                 str(text or "")[:8000], str(focus or "")[:400],
+                 str(provider or "")[:80], str(model or "")[:120],
+                 json.dumps(actions or [], default=str)),
+            )
+            row_id = cursor.lastrowid
+            self.conn.execute(
+                "DELETE FROM brain_log WHERE id < ?", (row_id - 4000,))
+            self.conn.commit()
+            row = self.conn.execute(
+                "SELECT * FROM brain_log WHERE id = ?", (row_id,)).fetchone()
+        return self._brain_log_row(row) if row else {}
+
+    def list_brain_log(self, limit: int = 60, mission_id: str = "") -> list[dict]:
+        limit = max(1, min(int(limit or 60), 1000))
+        if mission_id:
+            with self._lock:
+                rows = self.conn.execute(
+                    "SELECT * FROM brain_log WHERE mission_id = ? "
+                    "ORDER BY id DESC LIMIT ?", (mission_id, limit)).fetchall()
+        else:
+            with self._lock:
+                rows = self.conn.execute(
+                    "SELECT * FROM brain_log ORDER BY id DESC LIMIT ?",
+                    (limit,)).fetchall()
+        return [self._brain_log_row(row) for row in rows]
+
+    def clear_brain_log(self) -> None:
+        with self._lock:
+            self.conn.execute("DELETE FROM brain_log")
+            self.conn.commit()
+
+    @staticmethod
+    def _brain_log_row(row: sqlite3.Row) -> dict:
+        item = dict(row)
+        item["actions"] = _loads(item.pop("actions_json"), [])
+        return item
 
     @staticmethod
     def _director_state_row(row: sqlite3.Row) -> dict:

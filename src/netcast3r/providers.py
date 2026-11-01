@@ -289,21 +289,26 @@ class ProviderBus:
         return "", "", ""
 
     def complete(self, agent: str, messages: list[dict], timeout: float = 45.0,
-                 exclude_providers=None) -> Completion:
+                 exclude_providers=None, max_candidates: int | None = None) -> Completion:
         """One non-streaming call that keeps the provider's usage block.
 
         The mission runtime needs a bounded call that cannot stream forever and
         that tells it how many tokens a provider reported. Every failure is
         returned, never raised, so a dead provider becomes a recorded error
-        instead of a hung agent.
+        instead of a hung agent. ``max_candidates`` caps how far down the
+        fallback chain one call may walk.
         """
         route = self.config.route_for(agent)
         budget = max(1.0, min(float(timeout),
                               float(getattr(self.config.run, "max_call_seconds", 90))))
         started = time.monotonic()
         last_error = "no provider available"
+        attempts = 0
         for provider, model, key in self._candidates(
                 agent, exclude_providers=exclude_providers):
+            if max_candidates is not None and attempts >= max_candidates:
+                break
+            attempts += 1
             attempt = time.monotonic()
             proxy = self.egress.get() if self.egress else None
             headers = {"Content-Type": "application/json"}

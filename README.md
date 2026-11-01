@@ -207,7 +207,7 @@ netcast3r mcp --print-config    # optional: paste into opencode.jsonc
 opencode mcp list
 ```
 
-The server has 209 typed tools with risk tiers, scope enforcement, single-use
+The server has 211 typed tools with risk tiers, scope enforcement, single-use
 approvals, rate limits, and a full tool-call audit, plus disposable inboxes,
 OAST callbacks, named auth profiles, a scoped authenticated `http_request`, a
 path-variant differential, run-to-run surface diffing, local reverse-engineering
@@ -232,6 +232,13 @@ enforced, approval decisions stay human-only, and it never fabricates findings:
 bounty result still comes from verified runs, and the director never submits a
 report. The command center has a Director strip with Engage, Pause, and Kill.
 See [docs/DIRECTOR.md](docs/DIRECTOR.md).
+
+A **main brain** loop runs beside the director: every 150 seconds it reads the
+whole plane - missions, campaign stage, live traffic, the log feed, the graph,
+the host, and the MCP connections - decides the highest-value next move, and
+steers. It cannot pause the hunt, create a finding, or submit a report. Talk to
+it from the brain dock on any screen or the Main brain panel in the command
+center; pause it with one click. See [docs/BRAIN.md](docs/BRAIN.md).
 
 ### Exit codes
 

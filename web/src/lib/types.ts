@@ -456,6 +456,32 @@ export interface BrainReply {
   findings: number;
 }
 
+export interface BrainTurn {
+  id: number;
+  ts: string;
+  mission_id: string;
+  role: string;
+  text: string;
+  focus: string;
+  provider: string;
+  model: string;
+  actions: BrainAction[];
+}
+
+export interface BrainLoopStatus {
+  running: boolean;
+  paused: boolean;
+  interval: number;
+  turns: number;
+  errors: number;
+  last_turn: string;
+  last_focus: string;
+  last_model: string;
+  last_reply: string;
+  last_error: string;
+  mission_id: string;
+}
+
 export interface HostShellResult {
   command: string;
   cwd: string;

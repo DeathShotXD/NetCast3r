@@ -101,21 +101,25 @@ def _parse_mentions(text: str) -> list[dict]:
     return found
 
 
-def _mission_hosts(mission: dict) -> set:
-    """Hosts a mission authorises: its target plus its scope entries."""
-    hosts: set = set()
+def _mission_hosts(mission: dict) -> list[str]:
+    """Scope entries a mission authorises, with wildcards and exclusions intact.
+
+    The target is added as a host rule. Scope entries are passed through
+    untouched so ``*.example.com`` still means subdomains and ``!internal``
+    still excludes; collapsing them to a set of literal hosts silently turned
+    a wildcard into a host that never matches.
+    """
+    entries: list[str] = []
     target = str(mission.get("target") or "").strip()
     if target:
         host = urlparse(target if "://" in target else f"https://{target}").hostname
         if host:
-            hosts.add(host.lower())
+            entries.append(host.lower())
     for entry in mission.get("scope") or []:
         text = str(entry or "").strip()
-        if not text or text.startswith("!"):
-            continue
-        host = urlparse(text if "://" in text else f"https://{text}").hostname or text
-        hosts.add(str(host).lower())
-    return hosts
+        if text:
+            entries.append(text)
+    return entries
 
 
 def _str_list(value) -> list[str]:
@@ -201,6 +205,7 @@ class Server:
         self._hunt_lock = threading.Lock()
         self._solver_lock = threading.Lock()
         self._director_lock = threading.Lock()
+        self._brain_lock = threading.Lock()
         self._path_lock = threading.Lock()
         self._exploit_lock = threading.Lock()
         self.agent_runtime = None
@@ -210,6 +215,7 @@ class Server:
         self.path_runner = None
         self.exploit_runner = None
         self.director = None
+        self.brain_loop = None
         self._routes = self._build_routes()
         try:
             learning.seed_builtin_skills(self.index)
@@ -271,6 +277,19 @@ class Server:
                     from .director import Director
                     runtime = Director(self)
                     self.director = runtime
+        return runtime
+
+    def _brain_loop(self):
+        """The main brain's autonomy loop. Constructed lazily; started in
+        serve() beside the director so the hunt keeps thinking."""
+        runtime = self.brain_loop
+        if runtime is None:
+            with self._brain_lock:
+                runtime = self.brain_loop
+                if runtime is None:
+                    from ..brain import BrainLoop
+                    runtime = BrainLoop(self)
+                    self.brain_loop = runtime
         return runtime
 
     def _paths(self):
@@ -1325,6 +1344,42 @@ class Server:
             except Exception as exc:  # noqa: BLE001 - report, do not crash the API
                 return _problem(502, f"brain error: {type(exc).__name__}: {exc}")
             return _json(result)
+
+        @add("GET", r"/api/v1/brain/journal")
+        def brain_journal(ctx):
+            limit = int(ctx.query.get("limit", "60") or 60)
+            mission_id = str(ctx.query.get("mission_id", "") or "")
+            return _json({
+                "items": self.index.list_brain_log(limit=limit,
+                                                   mission_id=mission_id),
+                "loop": self._brain_loop().status(),
+            })
+
+        @add("GET", r"/api/v1/brain/loop")
+        def brain_loop_status(ctx):
+            return _json(self._brain_loop().status())
+
+        @add("POST", r"/api/v1/brain/loop")
+        def brain_loop_control(ctx):
+            body = ctx.json()
+            body = body if isinstance(body, dict) else {}
+            action = str(body.get("action") or "").strip().lower()
+            loop = self._brain_loop()
+            if action == "pause":
+                return _json(loop.pause())
+            if action in {"engage", "resume", "start"}:
+                loop.engage()
+                if not loop.status().get("running"):
+                    return _json(loop.start())
+                return _json(loop.status())
+            if action == "interval":
+                return _json(loop.set_interval(body.get("interval") or loop.interval))
+            if action == "tick":
+                import threading
+                threading.Thread(target=loop.tick, name="netcast3r-brain-tick",
+                                 daemon=True).start()
+                return _json({**loop.status(), "started": True})
+            return _problem(400, "unknown brain loop action")
 
         @add("POST", r"/api/v1/campaigns")
         def campaign_start(ctx):
@@ -2930,6 +2985,13 @@ def serve(host: str = "127.0.0.1", port: int = 7857, *, open_browser: bool = Tru
         server._director().start()
     except Exception:  # noqa: BLE001 - the API must still come up
         pass
+    # The main brain thinks on its own loop beside the director: it reads the
+    # whole plane, decides the next move, and steers. It respects its own pause
+    # and never creates a finding.
+    try:
+        server._brain_loop().start()
+    except Exception:  # noqa: BLE001 - the API must still come up
+        pass
     if open_browser:
         try:
             webbrowser.open(url)
@@ -2942,6 +3004,8 @@ def serve(host: str = "127.0.0.1", port: int = 7857, *, open_browser: bool = Tru
     finally:
         if getattr(server, "director", None) is not None:
             server.director.shutdown()
+        if getattr(server, "brain_loop", None) is not None:
+            server.brain_loop.shutdown()
         if server.agent_runtime is not None:
             server.agent_runtime.shutdown()
         if getattr(server, "lab_runner", None) is not None:

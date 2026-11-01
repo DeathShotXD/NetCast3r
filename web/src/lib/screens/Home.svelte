@@ -15,8 +15,9 @@
   import { AGENT_COLORS, STAGES } from '../../tokens';
   import { countup, pauseOffscreen } from '../actions';
   import Icon from '../ui/Icon.svelte';
+  import PipelineDial from '../ui/PipelineDial.svelte';
   import Sparkline from '../ui/Sparkline.svelte';
-  import type { Approval, BrainAction, DirectorLogEntry, DirectorStatus, Finding, HostShellResult, ProviderHealth, Run, RunEvent, TrendPoint } from '../types';
+  import type { Approval, BrainAction, BrainLoopStatus, BrainTurn, DirectorLogEntry, DirectorStatus, Finding, HostShellResult, ProviderHealth, Run, RunEvent, TrendPoint } from '../types';
   type Thought = { seq: number; ts: number; agent: string; stage: string; text: string };
   type Call = {
     seq: number;
@@ -88,9 +89,11 @@
   let directorLog = $state<DirectorLogEntry[]>([]);
   let directorBusy = $state('');
   let trend = $state<TrendPoint[]>([]);
-  let brainLog = $state<Array<{ role: string; text: string; focus?: string; actions?: BrainAction[] }>>([]);
+  let brainFeed = $state<BrainTurn[]>([]);
+  let brainLoop = $state<BrainLoopStatus | null>(null);
   let brainInput = $state('');
   let brainBusy = $state(false);
+  let brainBusyAction = $state('');
   let hostCwd = $state('');
   let hostCmd = $state('');
   let hostOut = $state<HostShellResult | null>(null);
@@ -799,24 +802,36 @@
     const message = brainInput.trim();
     if (!message || brainBusy) return;
     brainBusy = true;
-    const history = brainLog.slice(-8).map((turn) => ({
-      role: turn.role, content: turn.text
-    }));
-    brainLog = [...brainLog, { role: 'user', text: message }];
     brainInput = '';
     try {
-      const result = await api.brainChat(message, { history });
-      brainLog = [...brainLog, {
-        role: 'assistant', text: result.reply, focus: result.focus,
-        actions: result.actions
-      }];
+      await api.brainChat(message, { history: [] });
+      await loadBrainJournal();
     } catch (exc) {
-      brainLog = [...brainLog, {
-        role: 'assistant',
-        text: exc instanceof Error ? exc.message : 'the brain did not answer'
-      }];
+      store.toast('error', exc instanceof Error ? exc.message : 'the brain did not answer');
     } finally {
       brainBusy = false;
+    }
+  }
+
+  async function loadBrainJournal() {
+    try {
+      const result = await api.brainJournal(60);
+      brainFeed = [...result.items].reverse();
+      brainLoop = result.loop;
+    } catch {
+      /* the brain feed is optional; the rest of the console still works */
+    }
+  }
+
+  async function brainLoopControl(action: string) {
+    brainBusyAction = action;
+    try {
+      brainLoop = await api.brainLoop(action);
+      if (action === 'tick') await loadBrainJournal();
+    } catch (exc) {
+      void store.fail(exc instanceof Error ? exc.message : `brain ${action} failed`);
+    } finally {
+      brainBusyAction = '';
     }
   }
 
@@ -871,9 +886,11 @@
     void loadDirector();
     void loadDirectorLog();
     void loadTrend();
+    void loadBrainJournal();
     directorTimer = window.setInterval(() => {
       void loadDirector();
       void loadDirectorLog();
+      void loadBrainJournal();
     }, 5000);
   });
 
@@ -1022,13 +1039,28 @@
       <div class="obs-director-head">
         <div class="obs-director-title">
           <p class="eyebrow">main brain</p>
-          <p class="obs-director-sub">Talk to the harness. It reads every mission, the director, the runs, the audit, the memory, and the host, and it can steer the hunt.</p>
+          <p class="obs-director-sub">
+            The harness thinks on a never-ending loop and steers the hunt. It reads every mission, the director, the runs, the traffic, the audit, the memory, the host, and the MCP connections. Talk to it to change the plan, or pause it.
+          </p>
+        </div>
+        <div class="obs-brain-loop" class:paused={brainLoop?.paused} class:off={!brainLoop?.running}>
+          <span class="obs-brain-loop-dot"></span>
+          <span class="obs-brain-loop-state">
+            {brainLoop ? (brainLoop.paused ? 'paused' : brainLoop.running ? 'autonomous' : 'idle') : 'standby'}
+          </span>
+          {#if brainLoop}
+            <span class="obs-brain-loop-meta">
+              {brainLoop.turns} turns{#if brainLoop.last_model} - {brainLoop.last_model}{/if}
+            </span>
+          {/if}
         </div>
       </div>
       <ul class="obs-brain-log" data-brain-log="1">
-        {#each brainLog as turn, index (index)}
-          <li class:user={turn.role === 'user'}>
-            <span class="obs-brain-role">{turn.role === 'user' ? 'you' : 'brain'}</span>
+        {#each brainFeed as turn (turn.id)}
+          <li class:user={turn.role === 'operator'} class:auto={turn.role === 'auto'}>
+            <span class="obs-brain-role">
+              {turn.role === 'operator' ? 'you' : turn.role === 'auto' ? 'brain - autonomous' : 'brain'}
+            </span>
             <span class="obs-brain-text">{turn.text}</span>
             {#if turn.focus}
               <span class="obs-brain-focus">next: {turn.focus}</span>
@@ -1040,8 +1072,8 @@
             {/if}
           </li>
         {/each}
-        {#if brainLog.length === 0}
-          <li class="obs-brain-empty">Ask what to do next, or give it guidance like "focus the order API".</li>
+        {#if brainFeed.length === 0}
+          <li class="obs-brain-empty">The brain starts reasoning as soon as a mission is active. Ask it something, or steer it: "focus the order API".</li>
         {/if}
       </ul>
       <div class="obs-console-actions">
@@ -1053,6 +1085,22 @@
         />
         <button class="obs-btn obs-btn-primary" type="button" disabled={brainBusy || !brainInput.trim()} onclick={() => void sendBrain()}>
           {brainBusy ? 'Thinking...' : 'Send'}
+        </button>
+        <button
+          class="obs-btn obs-btn-ghost"
+          type="button"
+          disabled={brainBusyAction !== ''}
+          onclick={() => void brainLoopControl(brainLoop?.paused ? 'engage' : 'pause')}
+        >
+          {brainLoop?.paused ? 'Resume brain' : 'Pause brain'}
+        </button>
+        <button
+          class="obs-btn obs-btn-ghost"
+          type="button"
+          disabled={brainBusyAction !== ''}
+          onclick={() => void brainLoopControl('tick')}
+        >
+          {brainBusyAction === 'tick' ? 'Thinking...' : 'Think now'}
         </button>
       </div>
     </section>
@@ -1204,12 +1252,11 @@
           </div>
 
           <aside class="obs-hero-side" aria-label="pipeline state">
-            <div class="obs-ring" style="--p:{pipelinePct}">
-              <div class="obs-ring-copy">
-                <strong>{pipelinePct}<small>%</small></strong>
-                <span>pipeline</span>
-              </div>
-            </div>
+            <PipelineDial
+              value={pipelinePct}
+              state={live ? 'live' : focusRun?.status === 'done' ? 'complete' : 'standby'}
+              label="pipeline"
+            />
             <div class="obs-hero-side-meta">
               <strong>{focusRun ? stageLabel : 'STANDBY'}</strong>
               {events.length} events - {fleet.ok}/{fleet.total} replies

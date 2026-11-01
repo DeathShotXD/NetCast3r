@@ -98,6 +98,21 @@ class BrainChatTests(unittest.TestCase):
                             complete=complete, act=False)
         self.assertEqual(result["actions"], [])
 
+    def test_a_repeated_direction_is_not_queued_twice(self):
+        def complete(messages):
+            return reply({"reply": "same", "actions": [
+                {"kind": "directive", "mission_id": self.mission["id"],
+                 "body": "probe the export endpoint"}]})
+
+        first = brain.chat(self.server, self.index, self.director, "go",
+                           complete=complete)
+        second = brain.chat(self.server, self.index, self.director, "go",
+                            complete=complete)
+        self.assertTrue(first["actions"][0]["applied"])
+        self.assertFalse(second["actions"][0]["applied"])
+        self.assertEqual(len(self.index.list_directions(
+            self.mission["id"], status="queued")), 1)
+
 
 class CampaignStartTests(unittest.TestCase):
     def setUp(self):
@@ -143,9 +158,178 @@ class CampaignStartTests(unittest.TestCase):
         from netcast3r.mcp.tools import _TOOL_MAP, catalog
 
         names = [tool["name"] for tool in catalog()]
-        for name in ("brain_chat", "brain_context", "campaign_start"):
+        for name in ("brain_chat", "brain_context", "campaign_start",
+                     "brain_journal", "brain_loop"):
             self.assertIn(name, _TOOL_MAP)
             self.assertIn(name, names)
+
+
+class CognitionTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp())
+        self.server = build_server(results_dir=str(self.tmp / "results"),
+                                   base=self.tmp, recover=False)
+        self.index = self.server.index
+        self.mission = self.index.create_mission(
+            "Hunt", "https://lab.example.com/", status="active",
+            autonomy="autonomous", scope=["lab.example.com"])
+
+    def tearDown(self):
+        if getattr(self.server, "director", None) is not None:
+            self.server.director.shutdown()
+        if getattr(self.server, "brain_loop", None) is not None:
+            self.server.brain_loop.shutdown()
+        self.server.index.close()
+        self.server.jobs.shutdown(wait=False)
+
+    def test_an_autonomous_turn_steers_and_journals(self):
+        def complete(messages):
+            return reply({"reply": "push the order API", "reasoning": "IDOR shape",
+                          "focus": "order API IDOR",
+                          "actions": [{"kind": "directive",
+                                       "mission_id": self.mission["id"],
+                                       "body": "test order ids @lead:hyp_2"}]})
+
+        result = brain.cognition(self.server, self.index, self.server._director(),
+                                 complete=complete)
+        self.assertEqual(result["mission_id"], self.mission["id"])
+        self.assertEqual(result["actions"][0]["applied"], True)
+        queued = self.index.list_directions(self.mission["id"], status="queued")
+        self.assertEqual(len(queued), 1)
+        turns = self.index.list_brain_log(limit=10, mission_id=self.mission["id"])
+        self.assertEqual(turns[0]["role"], "auto")
+        self.assertIn("order API", turns[0]["text"])
+        self.assertEqual(self.index.totals().get("findings", 0), 0)
+
+    def test_a_supervised_mission_blocks_run_module(self):
+        supervised = self.index.create_mission(
+            "Careful", "https://lab.example.com/", status="active",
+            autonomy="supervised", scope=["lab.example.com"])
+
+        def complete(messages):
+            return reply({"reply": "run the login module", "actions": [
+                {"kind": "run_module", "mission_id": supervised["id"],
+                 "module_id": "auth-sqli-login-bypass"}]})
+
+        result = brain.cognition(self.server, self.index, self.server._director(),
+                                 mission_id=supervised["id"], complete=complete)
+        self.assertEqual(result["actions"][0]["applied"], False)
+        self.assertIn("autonomous", result["actions"][0]["reason"])
+
+    def test_the_autonomy_loop_cannot_pause_the_hunt(self):
+        director = self.server._director()
+        director.engage()
+
+        def complete(messages):
+            return reply({"reply": "stop everything", "actions": [
+                {"kind": "pause"}]})
+
+        result = brain.cognition(self.server, self.index, director,
+                                 mission_id=self.mission["id"], complete=complete)
+        self.assertEqual(result["actions"][0]["applied"], False)
+        self.assertFalse(bool(director.status().get("paused")))
+
+    def test_context_carries_traffic_logs_and_mcp(self):
+        snapshot = brain.context(self.index, self.server._director(),
+                                 mission_id=self.mission["id"])
+        for key in ("traffic", "logs", "mcp", "mcp_servers"):
+            self.assertIn(key, snapshot)
+
+    def test_focus_prefers_an_autonomous_mission(self):
+        self.index.create_mission("Supervised", "https://a.example.com/",
+                                  status="active", autonomy="supervised",
+                                  scope=["a.example.com"])
+        self.assertEqual(brain.focus_mission_id(self.index), self.mission["id"])
+
+    def test_focus_keeps_labs_out_of_the_top_slot(self):
+        self.index.create_mission(
+            "Real", "https://app.example.org/", status="active",
+            autonomy="supervised", scope=["app.example.org"])
+        lab = self.index.create_mission(
+            "Lab", "http://127.0.0.1:3000/", status="active",
+            autonomy="autonomous", scope=["127.0.0.1"])
+        chosen = brain.focus_mission_id(self.index)
+        self.assertNotEqual(chosen, lab["id"])
+        mission = self.index.get_mission(chosen) or {}
+        self.assertFalse(brain._is_local_target(mission.get("target")))
+
+    def test_chat_journals_both_turns(self):
+        def complete(messages):
+            return reply({"reply": "on it", "focus": "surface map",
+                          "actions": []})
+
+        brain.chat(self.server, self.index, self.server._director(), "status?",
+                   complete=complete)
+        roles = [t["role"] for t in
+                 self.index.list_brain_log(limit=10, mission_id=self.mission["id"])]
+        self.assertIn("operator", roles)
+        self.assertIn("brain", roles)
+
+    def test_journal_and_loop_routes(self):
+        headers = {"host": "127.0.0.1:7857",
+                   "x-netcast3r-token": self.server.token}
+        journal = self.server.route("GET", "/api/v1/brain/journal", {}, headers, b"")
+        self.assertEqual(journal.status, 200)
+        payload = json.loads(journal.body.decode())
+        self.assertIn("items", payload)
+        self.assertIn("running", payload["loop"])
+        paused = self.server.route(
+            "POST", "/api/v1/brain/loop", {}, headers,
+            json.dumps({"action": "pause"}).encode())
+        self.assertEqual(paused.status, 200)
+        self.assertTrue(json.loads(paused.body.decode())["paused"])
+
+
+class BrainLoopTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp())
+        self.server = build_server(results_dir=str(self.tmp / "results"),
+                                   base=self.tmp, recover=False)
+        self.index = self.server.index
+        self.mission = self.index.create_mission(
+            "Hunt", "https://lab.example.com/", status="active",
+            autonomy="autonomous", scope=["lab.example.com"])
+
+    def tearDown(self):
+        if getattr(self.server, "director", None) is not None:
+            self.server.director.shutdown()
+        self.server.brain_loop = None
+        self.server.index.close()
+        self.server.jobs.shutdown(wait=False)
+
+    def test_tick_thinks_and_journals(self):
+        loop = brain.BrainLoop(self.server, interval=45, complete=lambda m: reply(
+            {"reply": "pivot to the admin API", "focus": "admin API",
+             "actions": [{"kind": "directive", "mission_id": self.mission["id"],
+                          "body": "probe /api/admin as a reader"}]}))
+        result = loop.tick()
+        self.assertEqual(result["mission_id"], self.mission["id"])
+        self.assertEqual(loop.status()["turns"], 1)
+        self.assertIn("admin API", loop.status()["last_focus"])
+        log = self.index.list_brain_log(limit=5, mission_id=self.mission["id"])
+        self.assertEqual(log[0]["role"], "auto")
+
+    def test_pause_and_engage_persist(self):
+        loop = brain.BrainLoop(self.server, interval=45, complete=lambda m: reply(
+            {"reply": "x", "actions": []}))
+        self.assertFalse(loop.status()["paused"])
+        loop.pause()
+        self.assertTrue(loop.status()["paused"])
+        # A fresh loop object reads the persisted state.
+        self.assertTrue(brain.BrainLoop(self.server).status()["paused"])
+        loop.engage()
+        self.assertFalse(loop.status()["paused"])
+
+    def test_tick_without_a_mission_is_skipped(self):
+        empty = Path(tempfile.mkdtemp())
+        server = build_server(results_dir=str(empty / "results"), base=empty,
+                              recover=False)
+        try:
+            loop = brain.BrainLoop(server, complete=lambda m: reply({"reply": "x"}))
+            self.assertIn("skipped", loop.tick())
+        finally:
+            server.index.close()
+            server.jobs.shutdown(wait=False)
 
 
 if __name__ == "__main__":

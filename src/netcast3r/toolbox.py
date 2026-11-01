@@ -209,15 +209,19 @@ _RUNS: dict[str, dict] = {}
 _RUN_LOCK = threading.Lock()
 
 
-def _host_allowed(host: str, allowed: set[str]) -> bool:
+def _host_allowed(host: str, allowed) -> bool:
     host = (host or "").strip().strip("[]").rstrip(".").lower()
     if not host:
         return False
     if host in METADATA_HOSTS or host in METADATA_IPS:
         return False
-    allowed_l = {str(item).strip().strip("[]").rstrip(".").lower()
-                 for item in (allowed or set())}
-    return host in allowed_l
+    entries = [str(item).strip() for item in (allowed or [])
+               if str(item).strip()]
+    if not entries:
+        return False
+    from .scope import ScopeManager
+
+    return ScopeManager(in_scope=entries).is_in_scope(host)
 
 
 def _target_host(spec: dict, target: str) -> str:
@@ -401,7 +405,17 @@ def _urls(text: str) -> list[str]:
 
 def _parse_urls(stdout: str) -> dict:
     urls = _urls(stdout)
-    return {"endpoints": urls, "count": len(urls)}
+    subdomains = []
+    for line in (stdout or "").splitlines():
+        token = line.strip().strip(".,;")
+        if not token or "://" in token or any(char in token for char in " /\\"):
+            continue
+        if re.fullmatch(r"(?=.{4,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+"
+                        r"[a-z]{2,63}\.?", token, re.IGNORECASE):
+            subdomains.append(token.rstrip(".").lower())
+    subdomains = sorted(set(subdomains))
+    return {"endpoints": urls, "subdomains": subdomains,
+            "count": len(urls) + len(subdomains)}
 
 
 def _parse_nmap(stdout: str) -> dict:
@@ -508,6 +522,18 @@ def _persist(index, entry: dict, parsed: dict) -> dict:
 
     for url in (parsed.get("endpoints") or [])[:200]:
         endpoint(url)
+    for name in (parsed.get("subdomains") or [])[:200]:
+        name = str(name or "").strip().rstrip(".")
+        if not name:
+            continue
+        node = index.upsert_graph_node(mission_id, "host", name.lower(),
+                                       label=name.lower())
+        written["nodes"] += 1
+        if host_node and name.lower() != host:
+            index.upsert_graph_edge(mission_id, host_node["id"], node["id"],
+                                    "in_scope",
+                                    evidence={"tool": entry["tool"]})
+            written["edges"] += 1
     for row in (parsed.get("hosts") or [])[:100]:
         endpoint(str(row.get("url") or ""))
         for name in row.get("tech") or []:

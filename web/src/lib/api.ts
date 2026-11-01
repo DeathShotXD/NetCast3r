@@ -1,5 +1,5 @@
 import type {
-  BrainReply, Campaign, Candidate, ConnectInfo, Approval, Direction, DirectorLogEntry, DirectorStatus, ExploitPlan, Finding, HostShellResult, Inventory, KeyEntry, McpInfo, Meta, Mission, MissionAgent, MissionGraph, Paged, Provider, ProviderHealth, RevengKinds, RevengResult, Run, RunEvent, Submission, SubmissionSummary, ToolCall, Totals, TrendPoint } from './types';
+  BrainReply, Campaign, Candidate, ConnectInfo, Approval, Direction, DirectorLogEntry, DirectorStatus, ExploitPlan, Finding, HostShellResult, Inventory, KeyEntry, McpInfo, Meta, Mission, MissionAgent, MissionGraph, Paged, Provider, ProviderHealth, RevengKinds, RevengResult, Run, RunEvent, Submission, SubmissionSummary, ToolCall, Totals, TrendPoint, BrainTurn, BrainLoopStatus } from './types';
 
 const BASE = '/api/v1';
 
@@ -148,6 +148,13 @@ export const api = {
       'GET', `/brain/context${missionId ? `?mission_id=${missionId}` : ''}`),
   brainChat: (message: string, body: Record<string, unknown> = {}) =>
     request<BrainReply>('POST', '/brain/chat', { message, ...body }),
+  brainJournal: (limit = 60, missionId = '') =>
+    request<{ items: BrainTurn[]; loop: BrainLoopStatus }>(
+      'GET',
+      `/brain/journal?limit=${limit}${missionId ? `&mission_id=${missionId}` : ''}`),
+  brainLoop: (action = 'status', interval = 0) =>
+    request<BrainLoopStatus>('POST', '/brain/loop',
+      interval ? { action, interval } : { action }),
   hostCapabilities: () =>
     request<{ host: string; user: string; tools: Record<string, boolean> }>(
       'GET', '/host/capabilities'),

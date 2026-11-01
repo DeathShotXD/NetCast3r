@@ -21,6 +21,7 @@
   import ToastHost from './lib/ui/ToastHost.svelte';
   import Unlock from './lib/ui/Unlock.svelte';
   import Symbols from './lib/ui/Symbols.svelte';
+  import BrainDock from './lib/shell/BrainDock.svelte';
 
   let railOpen = $state(false);
 
@@ -119,4 +120,5 @@
 
   <ToastHost />
   <Palette />
+  <BrainDock />
 {/if}
