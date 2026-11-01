@@ -788,6 +788,22 @@ def brain_loop(ctx: ToolContext, args: dict) -> dict:
     return _call(ctx, "POST", "/api/v1/brain/loop", body=body)
 
 
+def checklist_catalog(ctx: ToolContext, args: dict) -> dict:
+    return _call(ctx, "GET", "/api/v1/checklists")
+
+
+def coverage_get(ctx: ToolContext, args: dict) -> dict:
+    return _call(ctx, "GET",
+                 f"/api/v1/missions/{args['mission_id']}/coverage")
+
+
+def coverage_mark(ctx: ToolContext, args: dict) -> dict:
+    body = {key: args[key] for key in ("item_id", "status", "evidence", "note")
+            if key in args}
+    return _call(ctx, "POST",
+                 f"/api/v1/missions/{args['mission_id']}/coverage", body=body)
+
+
 def campaign_start(ctx: ToolContext, args: dict) -> dict:
     body = {key: args[key] for key in ("target", "title", "objective")
             if key in args}
@@ -3010,6 +3026,9 @@ _HANDLERS.update({
     "brain_chat": brain_chat,
     "brain_journal": brain_journal,
     "brain_loop": brain_loop,
+    "checklist_catalog": checklist_catalog,
+    "coverage_get": coverage_get,
+    "coverage_mark": coverage_mark,
     "campaign_start": campaign_start,
     "evolve_status": evolve_status,
     "evolve_ledger": evolve_ledger,
@@ -3679,6 +3698,32 @@ TOOLS: tuple[Tool, ...] = (
                   "interval": {"type": "number",
                                "description": "seconds between turns"}}, []),
          "brain_loop"),
+    Tool("checklist_catalog", "Read the testing checklist",
+         "The coverage catalog: every falsifiable question across OWASP WSTG v4.2, "
+         "the API Top 10 2023, the LLM Top 10 2025, the 2025 research classes, "
+         "cloud, mobile, and supply chain, with the modules, tools, evidence, "
+         "and expected impact for each.",
+         "low", "missions", _schema({}), "checklist_catalog"),
+    Tool("coverage_get", "Read a mission's coverage",
+         "Per-mission checklist state: counts by status, per-category progress, "
+         "the percentage closed, and the next highest-impact items to test.",
+         "low", "missions",
+         _schema({"mission_id": _string("mission id")}, ["mission_id"]),
+         "coverage_get"),
+    Tool("coverage_mark", "Close or move a checklist item",
+         "Record the state of one checklist item against the evidence you have. "
+         "Statuses: untested, in_progress, covered, vulnerable, blocked. A "
+         "`vulnerable` item is a lead, not a finding.",
+         "medium", "missions",
+         _schema({"mission_id": _string("mission id"),
+                  "item_id": _string("checklist item id"),
+                  "status": {"type": "string",
+                             "enum": ["untested", "in_progress", "covered",
+                                      "vulnerable", "blocked"]},
+                  "evidence": _string("the evidence that closes it"),
+                  "note": _string("optional note")},
+                 ["mission_id", "item_id", "status"]),
+         "coverage_mark"),
     Tool("campaign_start", "Start a hunt from just a domain",
          "The only requirement is a domain or URL. It creates an active, "
          "autonomous mission scoped to that host and engages the director, which "

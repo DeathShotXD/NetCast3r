@@ -483,6 +483,49 @@ export interface BrainLoopStatus {
   mission_id: string;
 }
 
+export interface CoverageCounts {
+  untested: number;
+  in_progress: number;
+  covered: number;
+  vulnerable: number;
+  blocked: number;
+}
+
+export interface CoverageCategory {
+  total: number;
+  covered: number;
+  vulnerable: number;
+  blocked: number;
+  in_progress: number;
+  untested: number;
+}
+
+export interface ChecklistItem {
+  id: string;
+  framework: string;
+  category: string;
+  title: string;
+  objective: string;
+  modules: string[];
+  tools: string[];
+  evidence: string;
+  severity: string;
+  source: string;
+  status?: string;
+}
+
+export interface CoverageSummary {
+  mission_id: string;
+  total: number;
+  counts: CoverageCounts;
+  categories: Record<string, CoverageCategory>;
+  percent: number;
+  open: number;
+  next: ChecklistItem[];
+  rows: Array<{ item_id: string; status: string; evidence: string; updated_at: string }>;
+}
+
+
 export interface HostShellResult {
   command: string;
   cwd: string;

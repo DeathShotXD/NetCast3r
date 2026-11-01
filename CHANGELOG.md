@@ -6,6 +6,26 @@ Notable changes to NetCast3r, newest first.
 
 ### Added
 
+- **The coverage engine**: a 98-item modern testing checklist the hunt actually
+  closes. Grounded in OWASP WSTG v4.2, the API Security Top 10 2023, the LLM
+  Top 10 2025, the PortSwigger Top 10 Web Hacking Techniques of 2025, cloud,
+  mobile, and supply chain. Every item names its objective, modules, tools,
+  evidence, and expected impact; state is per mission and moves automatically
+  from hunt and exploit runs. The Mission detail page has a **Coverage** tab;
+  the brain context carries the coverage and can mark items; Prime falls back to
+  the next checklist item when a mission has no open lead. See
+  [docs/COVERAGE.md](docs/COVERAGE.md).
+- **Modern tooling**: dalfox, gau, waybackurls, naabu, amass, arjun, and
+  feroxbuster are now first-class toolbox tools with allowlisted builders and
+  parsers (ports and parameters become evidence-graph nodes).
+- **2025 technique modules**: cache deception, client-side path traversal,
+  prototype pollution, GraphQL object authorization, SAML signature wrapping,
+  ORM search leakage, SSRF redirect loops, HTTP/2 CONNECT, SOAP/WSDL abuse,
+  cross-site WebSocket hijacking, Unicode normalization, parser differentials,
+  and prompt injection. The catalog is now 51 typed modules.
+- **Lab solving and skill writing**: the brain can start a scripted lab
+  (`run_lab`) and write a real lesson (`record_lesson`); the training plan and
+  solved count are in its snapshot.
 - The main brain now runs a never-ending autonomy loop. `BrainLoop` starts with
   the control plane beside the director and, every 150 seconds, reads the whole
   snapshot (missions and stage, live traffic, the log feed, open leads,

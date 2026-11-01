@@ -1,5 +1,5 @@
 import type {
-  BrainReply, Campaign, Candidate, ConnectInfo, Approval, Direction, DirectorLogEntry, DirectorStatus, ExploitPlan, Finding, HostShellResult, Inventory, KeyEntry, McpInfo, Meta, Mission, MissionAgent, MissionGraph, Paged, Provider, ProviderHealth, RevengKinds, RevengResult, Run, RunEvent, Submission, SubmissionSummary, ToolCall, Totals, TrendPoint, BrainTurn, BrainLoopStatus } from './types';
+  BrainReply, Campaign, Candidate, ConnectInfo, Approval, CoverageSummary, Direction, DirectorLogEntry, DirectorStatus, ExploitPlan, Finding, HostShellResult, Inventory, KeyEntry, McpInfo, Meta, Mission, MissionAgent, MissionGraph, Paged, Provider, ProviderHealth, RevengKinds, RevengResult, Run, RunEvent, Submission, SubmissionSummary, ToolCall, Totals, TrendPoint, BrainTurn, BrainLoopStatus } from './types';
 
 const BASE = '/api/v1';
 
@@ -155,6 +155,10 @@ export const api = {
   brainLoop: (action = 'status', interval = 0) =>
     request<BrainLoopStatus>('POST', '/brain/loop',
       interval ? { action, interval } : { action }),
+  missionCoverage: (id: string) =>
+    request<CoverageSummary>('GET', `/missions/${id}/coverage`),
+  markCoverage: (id: string, body: Record<string, unknown>) =>
+    request<Record<string, unknown>>('POST', `/missions/${id}/coverage`, body),
   hostCapabilities: () =>
     request<{ host: string; user: string; tools: Record<string, boolean> }>(
       'GET', '/host/capabilities'),

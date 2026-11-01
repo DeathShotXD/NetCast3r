@@ -531,6 +531,19 @@ CREATE TABLE IF NOT EXISTS brain_log (
 CREATE INDEX IF NOT EXISTS idx_brain_log_id ON brain_log(id DESC);
 CREATE INDEX IF NOT EXISTS idx_brain_log_mission
     ON brain_log(mission_id, id DESC);
+
+CREATE TABLE IF NOT EXISTS mission_coverage (
+    mission_id TEXT,
+    item_id TEXT,
+    status TEXT DEFAULT 'untested',
+    evidence TEXT DEFAULT '',
+    note TEXT DEFAULT '',
+    actor TEXT DEFAULT '',
+    updated_at TEXT,
+    PRIMARY KEY (mission_id, item_id)
+);
+CREATE INDEX IF NOT EXISTS idx_coverage_mission
+    ON mission_coverage(mission_id, status);
 """
 
 SEVERITY_ORDER = {"critical": 0, "high": 1, "medium": 2, "low": 3, "info": 4, "unknown": 5}
@@ -1898,6 +1911,13 @@ class Index:
             self.conn.commit()
         return self.get_mission(mission_id)
 
+    def mission_for_run(self, run_id: str) -> str:
+        with self._lock:
+            row = self.conn.execute(
+                "SELECT mission_id FROM mission_runs WHERE run_id = ? LIMIT 1",
+                (run_id,)).fetchone()
+        return str(row["mission_id"]) if row else ""
+
     @staticmethod
     def _mission_row(row: sqlite3.Row) -> dict:
         item = dict(row)
@@ -2270,6 +2290,42 @@ class Index:
         item = dict(row)
         item["actions"] = _loads(item.pop("actions_json"), [])
         return item
+
+    # -- coverage ---------------------------------------------------------
+    def upsert_coverage(self, mission_id: str, item_id: str, status: str,
+                        evidence: str = "", note: str = "",
+                        actor: str = "") -> dict:
+        now = _now()
+        with self._lock:
+            self.conn.execute(
+                "INSERT INTO mission_coverage (mission_id, item_id, status, "
+                "evidence, note, actor, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?) "
+                "ON CONFLICT(mission_id, item_id) DO UPDATE SET "
+                "status = excluded.status, evidence = excluded.evidence, "
+                "note = excluded.note, actor = excluded.actor, "
+                "updated_at = excluded.updated_at",
+                (mission_id, item_id, status, str(evidence or "")[:4000],
+                 str(note or "")[:2000], str(actor or "")[:80], now),
+            )
+            self.conn.commit()
+            row = self.conn.execute(
+                "SELECT * FROM mission_coverage WHERE mission_id = ? AND "
+                "item_id = ?", (mission_id, item_id)).fetchone()
+        return dict(row) if row else {}
+
+    def list_coverage(self, mission_id: str) -> list[dict]:
+        with self._lock:
+            rows = self.conn.execute(
+                "SELECT * FROM mission_coverage WHERE mission_id = ? "
+                "ORDER BY updated_at DESC", (mission_id,)).fetchall()
+        return [dict(row) for row in rows]
+
+    def clear_coverage(self, mission_id: str) -> None:
+        with self._lock:
+            self.conn.execute(
+                "DELETE FROM mission_coverage WHERE mission_id = ?",
+                (mission_id,))
+            self.conn.commit()
 
     @staticmethod
     def _director_state_row(row: sqlite3.Row) -> dict:

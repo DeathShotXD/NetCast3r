@@ -3,7 +3,7 @@
   import { api } from '../api';
   import { store } from '../state.svelte';
   import { ago, sevColor, statusLabel } from '../format';
-  import type { AgentStatus, Approval, Autonomy, Campaign, Candidate, Direction, ExploitPlan, GraphNode, GraphPath, Mission, MissionAgent, MissionGraph, MissionStatus, ToolCall } from '../types';
+  import type { AgentStatus, Approval, Autonomy, Campaign, Candidate, CoverageSummary, Direction, ExploitPlan, GraphNode, GraphPath, Mission, MissionAgent, MissionGraph, MissionStatus, ToolCall } from '../types';
   import Icon from '../ui/Icon.svelte';
   import Sparkline from '../ui/Sparkline.svelte';
 
@@ -45,9 +45,11 @@
   let loading = $state(true);
   let error = $state('');
   let filter = $state<Filter>('all');
-  let detailTab = $state<'overview' | 'runs' | 'approvals' | 'graph' | 'exploits' | 'candidates' | 'console' | 'tools' | 'agent'>('overview');
+  let detailTab = $state<'overview' | 'runs' | 'approvals' | 'graph' | 'exploits' | 'candidates' | 'coverage' | 'console' | 'tools' | 'agent'>('overview');
   let graph = $state<MissionGraph | null>(null);
   let graphBusy = $state('');
+  let coverage = $state<CoverageSummary | null>(null);
+  let coverageBusy = $state('');
   let campaign = $state<Campaign | null>(null);
   let directions = $state<Direction[]>([]);
   let toolCalls = $state<ToolCall[]>([]);
@@ -308,6 +310,7 @@
     if (detailTab === 'graph') void loadGraph();
     else if (detailTab === 'exploits') void loadExploits();
     else if (detailTab === 'candidates') void loadCandidates();
+    else if (detailTab === 'coverage') void loadCoverage();
     else if (detailTab === 'console') void loadDirections();
     else if (detailTab === 'tools') void loadTools();
     else if (detailTab === 'agent') void loadAgent();
@@ -448,6 +451,18 @@
       graph = null;
     } finally {
       graphBusy = '';
+    }
+  }
+
+  async function loadCoverage() {
+    if (!selected) return;
+    coverageBusy = 'load';
+    try {
+      coverage = await api.missionCoverage(selected.id);
+    } catch {
+      coverage = null;
+    } finally {
+      coverageBusy = '';
     }
   }
 
@@ -890,6 +905,7 @@
               ['graph', 'Graph'],
               ['exploits', 'Exploits'],
               ['candidates', 'Candidates'],
+              ['coverage', 'Coverage'],
               ['console', 'Console'],
               ['tools', 'Tools'],
               ['agent', `Agent${agent && ['planning', 'running', 'paused', 'stopping'].includes(agent.status) ? ' *' : ''}`]
@@ -1149,6 +1165,75 @@
                   <p class="obs-detail-note">
                     No candidates yet. Run an exploit module; a supported step stages one here for review.
                   </p>
+                {/if}
+              </section>
+            {:else if detailTab === 'coverage'}
+              <section class="obs-detail-section">
+                <div class="obs-graph-head">
+                  <div>
+                    <h3>Coverage</h3>
+                    <p class="obs-graph-copy">
+                      The modern testing checklist for this mission: WSTG v4.2, the API Top 10, the LLM Top 10, the 2025 research classes, cloud, mobile, and supply chain. A module run moves its items; the brain can mark one with evidence. A vulnerable item is a lead, not a finding.
+                    </p>
+                  </div>
+                  <button class="obs-btn obs-btn-ghost" type="button" onclick={() => void loadCoverage()}>
+                    Refresh
+                  </button>
+                </div>
+                {#if coverage}
+                  <div class="obs-coverage-head">
+                    <div class="obs-coverage-meter" style="--p:{coverage.percent}">
+                      <span class="obs-coverage-pct">{coverage.percent}%</span>
+                      <span class="obs-coverage-label">closed</span>
+                    </div>
+                    <div class="obs-coverage-counts">
+                      <span class="obs-chip" style="color:var(--obs-acid)">covered {coverage.counts.covered}</span>
+                      <span class="obs-chip" style="color:var(--obs-violet-3)">vulnerable {coverage.counts.vulnerable}</span>
+                      <span class="obs-chip" style="color:var(--obs-orange)">in progress {coverage.counts.in_progress}</span>
+                      <span class="obs-chip" style="color:var(--obs-red)">blocked {coverage.counts.blocked}</span>
+                      <span class="obs-chip">untested {coverage.counts.untested}</span>
+                      <span class="obs-chip">{coverage.total} items</span>
+                    </div>
+                  </div>
+                  <div class="obs-coverage-grid">
+                    {#each Object.entries(coverage.categories) as [name, bucket] (name)}
+                      <div class="obs-coverage-cat">
+                        <span class="obs-coverage-cat-name">{name}</span>
+                        <span class="obs-coverage-cat-num">{bucket.covered + bucket.vulnerable}/{bucket.total}</span>
+                        <span class="obs-coverage-cat-bar"><i style="width:{Math.round(((bucket.covered + bucket.vulnerable) / bucket.total) * 100)}%"></i></span>
+                      </div>
+                    {/each}
+                  </div>
+                  <h4 class="obs-coverage-next-title">Next highest-impact questions</h4>
+                  {#if coverage.next.length}
+                    <ul class="obs-graph-paths">
+                      {#each coverage.next as item (item.id)}
+                        <li>
+                          <div class="obs-graph-path-head">
+                            <span class="obs-chip" style="color:{riskColor(item.severity)}">{item.severity}</span>
+                            <span class="obs-chip">{item.framework}</span>
+                            <span class="obs-graph-path-title">{item.title}</span>
+                            <span class="obs-chip">{item.id}</span>
+                          </div>
+                          <p class="obs-graph-path-steps">
+                            {item.objective}
+                            {#if item.modules.length}
+                              <br />modules: {item.modules.join(', ')}
+                            {/if}
+                            {#if item.tools.length}
+                              <br />tools: {item.tools.join(', ')}
+                            {/if}
+                          </p>
+                        </li>
+                      {/each}
+                    </ul>
+                  {:else}
+                    <p class="obs-detail-note">Every item is closed. A new surface or a new programme adds fresh questions.</p>
+                  {/if}
+                {:else if coverageBusy}
+                  <p class="obs-detail-note">Loading coverage...</p>
+                {:else}
+                  <p class="obs-detail-note">Coverage could not be loaded.</p>
                 {/if}
               </section>
             {:else if detailTab === 'console'}

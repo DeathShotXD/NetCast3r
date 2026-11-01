@@ -233,8 +233,49 @@ class CognitionTests(unittest.TestCase):
     def test_context_carries_traffic_logs_and_mcp(self):
         snapshot = brain.context(self.index, self.server._director(),
                                  mission_id=self.mission["id"])
-        for key in ("traffic", "logs", "mcp", "mcp_servers"):
+        for key in ("traffic", "logs", "mcp", "mcp_servers", "training"):
             self.assertIn(key, snapshot)
+
+    def test_a_coverage_mark_is_applied(self):
+        result = brain._apply(
+            self.index, self.server._director(),
+            {"kind": "mark_coverage", "mission_id": self.mission["id"],
+             "item_id": "wstg-authz-01", "status": "in_progress",
+             "evidence": "two identities queued"}, self.mission["id"])
+        self.assertTrue(result["applied"])
+        rows = {row["item_id"]: row for row in
+                self.index.list_coverage(self.mission["id"])}
+        self.assertEqual(rows["wstg-authz-01"]["status"], "in_progress")
+
+    def test_a_lesson_is_written(self):
+        result = brain._apply(
+            self.index, self.server._director(),
+            {"kind": "record_lesson",
+             "title": "OAuth state is not bound to the session",
+             "lesson": "The callback accepted a state minted for another session, "
+                       "so the login CSRF path reached an account-swap.",
+             "technique": "oauth", "outcome": "success"},
+            self.mission["id"])
+        self.assertTrue(result["applied"])
+        lesson = self.index.get_lesson(result["lesson_id"])
+        self.assertIn("OAuth", lesson["title"])
+        self.assertEqual(lesson["source"], "agent:brain")
+
+    def test_an_unknown_lab_is_refused(self):
+        result = brain._apply(
+            self.index, self.server._director(),
+            {"kind": "run_lab", "slug": "definitely-not-a-lab"},
+            self.mission["id"])
+        self.assertFalse(result["applied"])
+
+    def test_an_unknown_module_is_refused_before_a_run_starts(self):
+        result = brain._apply(
+            self.index, self.server._director(),
+            {"kind": "run_module", "mission_id": self.mission["id"],
+             "module_id": "not-a-real-module"},
+            self.mission["id"])
+        self.assertFalse(result["applied"])
+        self.assertIn("unknown module", result["reason"])
 
     def test_a_hard_failed_provider_is_rested(self):
         brain._PROVIDER_FAILS.clear()

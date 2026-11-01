@@ -113,6 +113,13 @@ class JobManager:
         self.index.update_run(run_id, status=status, finished_at=_utc(),
                               counts_json=summary if isinstance(summary, dict) else {},
                               error=error)
+        try:
+            from .. import checklists as checklists_module
+            mission_id = self.index.mission_for_run(run_id)
+            if mission_id and isinstance(summary, dict):
+                checklists_module.record_hunt_run(self.index, mission_id, summary)
+        except Exception:  # noqa: BLE001 - coverage must not break a finished run
+            pass
         with self._lock:
             if run_id in self._handles:
                 self._handles[run_id]["state"] = status

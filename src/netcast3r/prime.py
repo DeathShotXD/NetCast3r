@@ -170,6 +170,21 @@ class Prime:
                 "hypothesis_id": lead.get("id", ""),
             }
         try:
+            from . import checklists as checklists_module
+            checks = checklists_module.next_items(self.index, mission_id, limit=1)
+            if checks:
+                item = checks[0]
+                return {
+                    "kind": "checklist",
+                    "goal": f"Close {item['id']}: {item['title']}",
+                    "success": item.get("evidence") or
+                               "evidence that closes the question",
+                    "item_id": item["id"],
+                    "modules": item.get("modules", [])[:3],
+                }
+        except Exception:  # noqa: BLE001 - coverage is advisory here
+            pass
+        try:
             suggestion = learning.suggest_next(self.index, mission_id, limit=3)
         except Exception:  # noqa: BLE001
             suggestion = {}

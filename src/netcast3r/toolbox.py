@@ -140,6 +140,42 @@ def _enum4linux(target: str, options: dict) -> list[str]:
     return ["enum4linux-ng", "-A", target]
 
 
+def _dalfox(target: str, options: dict) -> list[str]:
+    url = target if "://" in target else "https://" + target
+    return ["dalfox", "url", url, "--silence", "--no-spinner",
+            "--timeout", "10", "--skip-bav", "--skip-headless",
+            "--skip-mining-all"]
+
+
+def _gau(target: str, options: dict) -> list[str]:
+    return ["gau", "--threads", "5", "--timeout", "20", target]
+
+
+def _waybackurls(target: str, options: dict) -> list[str]:
+    return ["waybackurls", target]
+
+
+def _naabu(target: str, options: dict) -> list[str]:
+    return ["naabu", "-host", target, "-top-ports", "100", "-silent",
+            "-json", "-timeout", "1000"]
+
+
+def _amass(target: str, options: dict) -> list[str]:
+    return ["amass", "enum", "-passive", "-d", target, "-nocolor",
+            "-timeout", "8"]
+
+
+def _arjun(target: str, options: dict) -> list[str]:
+    url = target if "://" in target else "https://" + target
+    return ["arjun", "-u", url, "-t", "10", "--stable", "-q"]
+
+
+def _feroxbuster(target: str, options: dict) -> list[str]:
+    url = target if "://" in target else "https://" + target
+    return ["feroxbuster", "-u", url, "-w", _wordlist(), "-q",
+            "--no-state", "--timeout", "10", "--depth", "2", "--silent"]
+
+
 TOOLS: dict[str, dict] = {
     "nmap": {"title": "Port and service scan", "category": "recon",
              "binary": "nmap", "risk": "medium", "stage": "active",
@@ -193,6 +229,35 @@ TOOLS: dict[str, dict] = {
                    "binary": "enum4linux-ng", "risk": "medium", "stage": "active",
                    "scope": "host", "parser": "urls", "builder": _enum4linux,
                    "options": [], "timeout": 300},
+    "dalfox": {"title": "XSS parameter analysis", "category": "web",
+               "binary": "dalfox", "risk": "medium", "stage": "active",
+               "scope": "url", "parser": "urls", "builder": _dalfox,
+               "options": [], "timeout": 180},
+    "gau": {"title": "Known URLs from collector archives", "category": "recon",
+            "binary": "gau", "risk": "low", "stage": "passive",
+            "scope": "host", "parser": "urls", "builder": _gau,
+            "options": [], "timeout": 180},
+    "waybackurls": {"title": "Archived URLs from the Wayback Machine",
+                    "category": "recon", "binary": "waybackurls",
+                    "risk": "low", "stage": "passive", "scope": "host",
+                    "parser": "urls", "builder": _waybackurls,
+                    "options": [], "timeout": 180},
+    "naabu": {"title": "Fast port discovery", "category": "recon",
+              "binary": "naabu", "risk": "medium", "stage": "active",
+              "scope": "host", "parser": "ports", "builder": _naabu,
+              "options": [], "timeout": 240},
+    "amass": {"title": "Passive DNS and subdomain enumeration",
+              "category": "recon", "binary": "amass", "risk": "low",
+              "stage": "passive", "scope": "host", "parser": "urls",
+              "builder": _amass, "options": [], "timeout": 300},
+    "arjun": {"title": "HTTP parameter discovery", "category": "web",
+              "binary": "arjun", "risk": "medium", "stage": "active",
+              "scope": "url", "parser": "params", "builder": _arjun,
+              "options": [], "timeout": 240},
+    "feroxbuster": {"title": "Recursive content discovery", "category": "web",
+                    "binary": "feroxbuster", "risk": "medium", "stage": "active",
+                    "scope": "url", "parser": "urls", "builder": _feroxbuster,
+                    "options": [], "timeout": 300},
 }
 
 
@@ -391,7 +456,49 @@ def parse(tool_id: str, stdout: str) -> dict:
         return _parse_httpx(stdout)
     if parser == "whatweb":
         return _parse_whatweb(stdout)
+    if parser == "ports":
+        return _parse_ports(stdout)
+    if parser == "params":
+        return _parse_params(stdout)
     return _parse_urls(stdout)
+
+
+def _parse_ports(stdout: str) -> dict:
+    services = []
+    for line in (stdout or "").splitlines():
+        line = line.strip()
+        if not line.startswith("{"):
+            continue
+        try:
+            item = json.loads(line)
+        except ValueError:
+            continue
+        port = item.get("port")
+        if not port:
+            continue
+        services.append({
+            "port": int(port), "protocol": "tcp", "service": "",
+            "product": str(item.get("service") or ""),
+            "host": str(item.get("host") or item.get("ip") or ""),
+        })
+    return {"services": services, "count": len(services)}
+
+
+def _parse_params(stdout: str) -> dict:
+    names: set[str] = set()
+    for line in (stdout or "").splitlines():
+        match = re.search(r"parameters?\s*found\s*[:\-]\s*(.+)", line, re.IGNORECASE)
+        if not match:
+            match = re.match(r"\s*\[\+\]\s+([A-Za-z0-9_.\-\[\]]+)\s*$", line)
+            if match:
+                names.add(match.group(1))
+            continue
+        for token in re.split(r"[,\s]+", match.group(1)):
+            token = token.strip().strip("'\"")
+            if re.fullmatch(r"[A-Za-z_][A-Za-z0-9_.\-\[\]]{0,64}", token or ""):
+                names.add(token)
+    ordered = sorted(names)[:200]
+    return {"parameters": ordered, "count": len(ordered)}
 
 
 def _urls(text: str) -> list[str]:
@@ -532,6 +639,18 @@ def _persist(index, entry: dict, parsed: dict) -> dict:
         if host_node and name.lower() != host:
             index.upsert_graph_edge(mission_id, host_node["id"], node["id"],
                                     "in_scope",
+                                    evidence={"tool": entry["tool"]})
+            written["edges"] += 1
+    for name in (parsed.get("parameters") or [])[:100]:
+        name = str(name or "").strip()
+        if not name:
+            continue
+        key = f"{host}:{name}" if host else name
+        node = index.upsert_graph_node(mission_id, "parameter", key, label=name)
+        written["nodes"] += 1
+        if host_node:
+            index.upsert_graph_edge(mission_id, host_node["id"], node["id"],
+                                    "exposes",
                                     evidence={"tool": entry["tool"]})
             written["edges"] += 1
     for row in (parsed.get("hosts") or [])[:100]:

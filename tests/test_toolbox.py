@@ -109,6 +109,22 @@ class ParserTests(unittest.TestCase):
         self.assertEqual(parsed["subdomains"], ["api.example.com", "www.example.com"])
         self.assertEqual(parsed["count"], 2)
 
+    def test_modern_tools_are_catalogued(self):
+        names = {tool["id"] for tool in toolbox.catalog()}
+        for tool in ("dalfox", "gau", "waybackurls", "naabu", "amass",
+                     "arjun", "feroxbuster"):
+            self.assertIn(tool, names)
+
+    def test_port_and_parameter_parsers(self):
+        ports = toolbox.parse(
+            "naabu",
+            '{"host":"lab.example.com","ip":"10.0.0.5","port":443}\n'
+            '{"host":"lab.example.com","port":8443}\n')
+        self.assertEqual([row["port"] for row in ports["services"]], [443, 8443])
+        params = toolbox.parse("arjun",
+                               "[+] Parameters found: id, page, redirect_url\n")
+        self.assertEqual(params["parameters"], ["id", "page", "redirect_url"])
+
 
 class PersistenceTests(unittest.TestCase):
     def setUp(self):
@@ -160,6 +176,16 @@ class PersistenceTests(unittest.TestCase):
             self.mission["id"], kind="host")}
         self.assertIn("api.lab.example.com", hosts)
         self.assertIn("www.lab.example.com", hosts)
+
+    def test_parameters_become_nodes(self):
+        entry = {"id": "arjun-1", "tool": "arjun",
+                 "target": "https://lab.example.com/",
+                 "mission_id": self.mission["id"], "run_id": ""}
+        toolbox._persist(self.index, entry, {"parameters": ["id", "page"]})
+        params = {n["key"] for n in self.index.list_graph_nodes(
+            self.mission["id"], kind="parameter")}
+        self.assertIn("lab.example.com:id", params)
+        self.assertIn("lab.example.com:page", params)
 
 
 class ApiSpecTests(unittest.TestCase):

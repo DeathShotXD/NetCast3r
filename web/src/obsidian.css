@@ -6934,3 +6934,110 @@ html.nc-native .nc-tag {
   padding: 8px 10px;
   white-space: pre-wrap;
 }
+
+/* Coverage checklist */
+.obs-coverage-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 14px;
+  margin: 10px 0 4px;
+}
+
+.obs-coverage-meter {
+  --p: 0;
+  position: relative;
+  display: grid;
+  width: 82px;
+  height: 82px;
+  place-items: center;
+  border-radius: 50%;
+  background: conic-gradient(var(--obs-acid) calc(var(--p) * 1%), var(--obs-panel-4) 0);
+}
+
+.obs-coverage-meter::before {
+  content: '';
+  position: absolute;
+  inset: 6px;
+  border-radius: 50%;
+  background: var(--obs-panel);
+}
+
+.obs-coverage-pct {
+  position: relative;
+  z-index: 1;
+  font-family: var(--mono);
+  font-size: 17px;
+  font-weight: 550;
+  letter-spacing: -0.04em;
+  color: var(--obs-text);
+}
+
+.obs-coverage-label {
+  position: absolute;
+  z-index: 1;
+  bottom: 19px;
+  font-family: var(--mono);
+  font-size: 6.5px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--obs-faint);
+}
+
+.obs-coverage-counts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.obs-coverage-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 10px 14px;
+  margin: 14px 0 4px;
+}
+
+.obs-coverage-cat {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 4px 8px;
+  min-width: 0;
+}
+
+.obs-coverage-cat-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+  color: var(--obs-text-2);
+}
+
+.obs-coverage-cat-num {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--obs-faint);
+}
+
+.obs-coverage-cat-bar {
+  grid-column: 1 / -1;
+  height: 3px;
+  overflow: hidden;
+  border-radius: 2px;
+  background: var(--obs-panel-4);
+}
+
+.obs-coverage-cat-bar i {
+  display: block;
+  height: 100%;
+  border-radius: 2px;
+  background: linear-gradient(90deg, var(--obs-violet), var(--obs-acid));
+}
+
+.obs-coverage-next-title {
+  margin: 16px 0 6px;
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--obs-faint);
+}

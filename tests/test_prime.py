@@ -56,6 +56,13 @@ class PrimeTests(unittest.TestCase):
         self.assertGreater(rows[rich["id"]]["score"], rows[base["id"]]["score"])
         self.assertEqual(rows[rich["id"]]["open_hypotheses"], 1)
 
+    def test_without_leads_the_next_objective_is_the_checklist(self):
+        mission = self.mission("fresh")
+        signals = self.prime._signals(self.index.get_mission(mission["id"]))
+        objective = self.prime.next_objective(signals)
+        self.assertEqual(objective["kind"], "checklist")
+        self.assertTrue(objective["item_id"])
+
     def test_pending_approvals_push_a_mission_down(self):
         blocked = self.mission("blocked")
         clean = self.mission("clean")

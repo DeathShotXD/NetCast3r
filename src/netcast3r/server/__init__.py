@@ -1382,6 +1382,44 @@ class Server:
                 return _json({**loop.status(), "started": True})
             return _problem(400, "unknown brain loop action")
 
+        @add("GET", r"/api/v1/checklists")
+        def checklist_catalog(ctx):
+            from .. import checklists as checklists_module
+
+            return _json({"items": checklists_module.catalog()})
+
+        @add("GET", r"/api/v1/missions/(?P<id>[A-Za-z0-9_]+)/coverage")
+        def mission_coverage(ctx):
+            from .. import checklists as checklists_module
+
+            mission = self.index.get_mission(ctx.params["id"])
+            if not mission:
+                return _problem(404, "mission not found")
+            return _json({
+                **checklists_module.summary(self.index, mission["id"]),
+                "next": checklists_module.next_items(self.index, mission["id"],
+                                                     limit=8),
+                "rows": self.index.list_coverage(mission["id"]),
+            })
+
+        @add("POST", r"/api/v1/missions/(?P<id>[A-Za-z0-9_]+)/coverage")
+        def mark_mission_coverage(ctx):
+            from .. import checklists as checklists_module
+
+            body = ctx.json()
+            body = body if isinstance(body, dict) else {}
+            try:
+                row = checklists_module.mark(
+                    self.index, ctx.params["id"],
+                    str(body.get("item_id") or ""),
+                    str(body.get("status") or "in_progress"),
+                    evidence=str(body.get("evidence") or ""),
+                    note=str(body.get("note") or ""),
+                    actor=self._client_source(ctx.headers))
+            except ValueError as exc:
+                return _problem(400, str(exc))
+            return _json(row, 201)
+
         @add("POST", r"/api/v1/campaigns")
         def campaign_start(ctx):
             from .. import brain as brain_module
