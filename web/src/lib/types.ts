@@ -465,6 +465,7 @@ export interface BrainTurn {
   focus: string;
   provider: string;
   model: string;
+  source: string;
   actions: BrainAction[];
 }
 

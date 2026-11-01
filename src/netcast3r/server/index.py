@@ -525,6 +525,7 @@ CREATE TABLE IF NOT EXISTS brain_log (
     focus TEXT DEFAULT '',
     provider TEXT DEFAULT '',
     model TEXT DEFAULT '',
+    source TEXT DEFAULT '',
     actions_json TEXT DEFAULT '[]'
 );
 CREATE INDEX IF NOT EXISTS idx_brain_log_id ON brain_log(id DESC);
@@ -654,6 +655,10 @@ class Index:
         approvals = {row["name"] for row in self.conn.execute("PRAGMA table_info(approvals)")}
         if "used_at" not in approvals:
             self.conn.execute("ALTER TABLE approvals ADD COLUMN used_at TEXT")
+        brain = {row["name"] for row in self.conn.execute("PRAGMA table_info(brain_log)")}
+        if brain and "source" not in brain:
+            self.conn.execute(
+                "ALTER TABLE brain_log ADD COLUMN source TEXT DEFAULT ''")
         skills = {row["name"] for row in self.conn.execute("PRAGMA table_info(skills)")}
         for column, ddl in (
             ("status", "ALTER TABLE skills ADD COLUMN status TEXT DEFAULT 'active'"),
@@ -2212,16 +2217,17 @@ class Index:
     # operator can read what it decided and why.
     def add_brain_turn(self, role: str, text: str, mission_id: str = "",
                        focus: str = "", provider: str = "", model: str = "",
-                       actions: list | None = None) -> dict:
+                       actions: list | None = None, source: str = "") -> dict:
         now = _now()
         with self._lock:
             cursor = self.conn.execute(
                 "INSERT INTO brain_log (ts, mission_id, role, text, focus, "
-                "provider, model, actions_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                "provider, model, source, actions_json) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (now, str(mission_id or ""), str(role or "brain")[:24],
                  str(text or "")[:8000], str(focus or "")[:400],
                  str(provider or "")[:80], str(model or "")[:120],
-                 json.dumps(actions or [], default=str)),
+                 str(source or "")[:24], json.dumps(actions or [], default=str)),
             )
             row_id = cursor.lastrowid
             self.conn.execute(

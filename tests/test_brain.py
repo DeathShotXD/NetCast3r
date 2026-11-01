@@ -276,6 +276,15 @@ class CognitionTests(unittest.TestCase):
         self.assertIn("operator", roles)
         self.assertIn("brain", roles)
 
+    def test_chat_records_who_sent_it(self):
+        def complete(messages):
+            return reply({"reply": "ack", "actions": []})
+
+        brain.chat(self.server, self.index, self.server._director(), "hello",
+                   complete=complete, source="mcp")
+        rows = self.index.list_brain_log(limit=2, mission_id=self.mission["id"])
+        self.assertTrue(all(row["source"] == "mcp" for row in rows))
+
     def test_journal_and_loop_routes(self):
         headers = {"host": "127.0.0.1:7857",
                    "x-netcast3r-token": self.server.token}

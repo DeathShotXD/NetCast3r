@@ -106,7 +106,9 @@
         {#each feed.slice(-14) as turn (turn.id)}
           <li class:operator={turn.role === 'operator'} class:auto={turn.role === 'auto'}>
             <span class="nc-brain-role">
-              {turn.role === 'operator' ? 'you' : turn.role === 'auto' ? 'thinking' : 'brain'}
+              {turn.role === 'operator'
+                ? (turn.source && turn.source !== 'ui' ? `you - ${turn.source}` : 'you')
+                : turn.role === 'auto' ? 'thinking' : 'brain'}
             </span>
             <span class="nc-brain-text">{turn.text}</span>
             {#if turn.focus}

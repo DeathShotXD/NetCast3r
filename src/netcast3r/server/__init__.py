@@ -1340,7 +1340,8 @@ class Server:
                     self, self.index, self._director(), message,
                     history=body.get("history") if isinstance(body.get("history"), list) else [],
                     mission_id=str(body.get("mission_id") or ""),
-                    act=bool(body.get("act", True)))
+                    act=bool(body.get("act", True)),
+                    source=self._client_source(ctx.headers))
             except Exception as exc:  # noqa: BLE001 - report, do not crash the API
                 return _problem(502, f"brain error: {type(exc).__name__}: {exc}")
             return _json(result)
@@ -2685,6 +2686,20 @@ class Server:
                     supplied = value
                     break
         return self._matches(supplied, self.token)
+
+    @staticmethod
+    def _client_source(headers: dict) -> str:
+        """Attribute an operator message: the browser UI, an MCP client, or a
+        bare API call. The journal is the record, so the origin must be on it."""
+        for part in headers.get("cookie", "").split(";"):
+            name, _, value = part.strip().partition("=")
+            if name == TOKEN_COOKIE and value:
+                return "ui"
+        supplied = headers.get("x-netcast3r-token", "")
+        agent = str(headers.get("user-agent", "")).lower()
+        if supplied and any(token in agent for token in ("python", "httpx", "mcp")):
+            return "mcp"
+        return "api"
 
 
 class _Context:

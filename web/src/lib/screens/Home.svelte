@@ -1066,7 +1066,9 @@
         {#each brainFeed as turn (turn.id)}
           <li class:user={turn.role === 'operator'} class:auto={turn.role === 'auto'}>
             <span class="obs-brain-role">
-              {turn.role === 'operator' ? 'you' : turn.role === 'auto' ? 'brain - autonomous' : 'brain'}
+              {turn.role === 'operator'
+                ? (turn.source && turn.source !== 'ui' ? `you - ${turn.source}` : 'you')
+                : turn.role === 'auto' ? 'brain - autonomous' : 'brain'}
             </span>
             <span class="obs-brain-text">{turn.text}</span>
             {#if turn.focus}

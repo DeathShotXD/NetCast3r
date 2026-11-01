@@ -15,7 +15,9 @@ Notable changes to NetCast3r, newest first.
   module on a supervised mission, does not repeat a direction, and never creates
   a finding or submits a report.
   - **Journal** (`brain_log`): every operator message, autonomous turn, and
-    applied action survives a restart; empty turns are pruned.
+    applied action survives a restart; empty turns are pruned. Operator turns
+    record their origin (`ui`, `mcp`, or `api`), so a message in the journal is
+    always attributable.
   - **Surface**: `GET /api/v1/brain/journal`, `GET|POST /api/v1/brain/loop`; MCP
     `brain_journal` and `brain_loop` (211 tools). The loop is persisted, so a
     paused brain stays paused.

@@ -383,7 +383,7 @@ def focus_mission_id(index) -> str:
 
 def chat(server, index, director, message: str, history: list | None = None,
          mission_id: str = "", act: bool = True, timeout: float = 60.0,
-         complete=None) -> dict:
+         complete=None, source: str = "") -> dict:
     """Answer and steer. The model is advisory; actions are applied carefully."""
     mission_id = mission_id or focus_mission_id(index)
     snapshot = context(index, director, mission_id=mission_id)
@@ -411,9 +411,10 @@ def chat(server, index, director, message: str, history: list | None = None,
     applied = [a for a in applied if a]
     try:
         index.add_brain_turn("operator", message, mission_id=mission_id,
-                             provider=provider, model=model)
+                             provider=provider, model=model, source=source)
         index.add_brain_turn("brain", reply, mission_id=mission_id, focus=focus,
-                             provider=provider, model=model, actions=applied)
+                             provider=provider, model=model, actions=applied,
+                             source=source)
     except Exception:  # noqa: BLE001 - journaling must never break a reply
         pass
     return {"reply": reply, "focus": focus, "actions": applied,
