@@ -101,6 +101,23 @@ def _parse_mentions(text: str) -> list[dict]:
     return found
 
 
+def _mission_hosts(mission: dict) -> set:
+    """Hosts a mission authorises: its target plus its scope entries."""
+    hosts: set = set()
+    target = str(mission.get("target") or "").strip()
+    if target:
+        host = urlparse(target if "://" in target else f"https://{target}").hostname
+        if host:
+            hosts.add(host.lower())
+    for entry in mission.get("scope") or []:
+        text = str(entry or "").strip()
+        if not text or text.startswith("!"):
+            continue
+        host = urlparse(text if "://" in text else f"https://{text}").hostname or text
+        hosts.add(str(host).lower())
+    return hosts
+
+
 def _str_list(value) -> list[str]:
     if isinstance(value, str):
         value = [value]
@@ -277,6 +294,21 @@ class Server:
                     runtime = ExploitRunner(self)
                     self.exploit_runner = runtime
         return runtime
+
+    def _audit_host(self, tool: str, body: dict, result: dict) -> None:
+        """Record a host call made straight from the UI, not via the registry."""
+        try:
+            self.index.add_tool_call(
+                tool, risk="high" if tool in {"host_shell", "host_write"} else "medium",
+                status="ok" if not result.get("error") else "error",
+                actor="operator:host",
+                args={key: body.get(key) for key in
+                      ("command", "path", "cwd", "root") if key in body},
+                result={"exit_code": result.get("exit_code"),
+                        "bytes": result.get("bytes")},
+                duration_ms=int(result.get("elapsed_ms") or 0))
+        except Exception:  # noqa: BLE001 - the audit is best effort
+            pass
 
     # -- run helpers ------------------------------------------------------
     def _start_run(self, target: str, options: dict, parent_run_id: str = "") -> dict:
@@ -1086,6 +1118,226 @@ class Server:
                 return _problem(404, "candidate not found")
             return _json(self.index.patch_candidate(candidate["id"],
                                                     status="dismissed"))
+
+        @add("POST", r"/api/v1/candidates/(?P<id>[A-Za-z0-9_]+)/poc")
+        def candidate_poc(ctx):
+            from .. import poc as poc_module
+
+            candidate = self.index.get_candidate(ctx.params["id"])
+            if not candidate:
+                return _problem(404, "candidate not found")
+            mission = self.index.get_mission(candidate.get("mission_id", "")) or {}
+            return _json(poc_module.build_poc(candidate, mission))
+
+        # -- toolbox: external offensive tools ------------------------------
+        @add("GET", r"/api/v1/toolbox")
+        def toolbox_catalog(ctx):
+            from .. import toolbox as toolbox_module
+
+            return _json({"items": toolbox_module.catalog(),
+                          "processes": toolbox_module.processes()})
+
+        @add("GET", r"/api/v1/toolbox/processes")
+        def toolbox_processes(ctx):
+            from .. import toolbox as toolbox_module
+
+            return _json({"items": toolbox_module.processes()})
+
+        @add("POST", r"/api/v1/toolbox/processes/(?P<id>[A-Za-z0-9_\-]+)/kill")
+        def toolbox_kill(ctx):
+            from .. import toolbox as toolbox_module
+
+            return _json({"killed": toolbox_module.kill(ctx.params["id"])})
+
+        @add("POST", r"/api/v1/missions/(?P<id>[A-Za-z0-9_]+)/toolbox/run")
+        def toolbox_run(ctx):
+            from .. import toolbox as toolbox_module
+
+            mission = self.index.get_mission(ctx.params["id"])
+            if not mission:
+                return _problem(404, "mission not found")
+            body = ctx.json()
+            body = body if isinstance(body, dict) else {}
+            target = str(body.get("target") or mission.get("target") or "")
+            try:
+                result = toolbox_module.run(
+                    self.index, str(body.get("tool") or ""), target,
+                    _mission_hosts(mission),
+                    options=body.get("options") if isinstance(body.get("options"), dict) else {},
+                    base=self.base, mission_id=mission["id"],
+                    background=bool(body.get("background")))
+            except toolbox_module.ToolboxError as exc:
+                return _problem(400, str(exc))
+            return _json(result)
+
+        @add("POST", r"/api/v1/missions/(?P<id>[A-Za-z0-9_]+)/apispec")
+        def apispec_ingest(ctx):
+            from .. import apispec as apispec_module
+
+            if not self.index.get_mission(ctx.params["id"]):
+                return _problem(404, "mission not found")
+            body = ctx.json()
+            body = body if isinstance(body, dict) else {}
+            try:
+                result = apispec_module.ingest(self.index, ctx.params["id"],
+                                               str(body.get("spec") or ""),
+                                               limit=int(body.get("limit", 500) or 500))
+            except (apispec_module.ApiSpecError, ValueError) as exc:
+                return _problem(400, str(exc))
+            return _json(result)
+
+        # -- host: shell and filesystem -------------------------------------
+        @add("GET", r"/api/v1/host/capabilities")
+        def host_capabilities(ctx):
+            from .. import host as host_module
+
+            return _json(host_module.capabilities())
+
+        @add("POST", r"/api/v1/host/shell")
+        def host_shell(ctx):
+            from .. import host as host_module
+
+            body = ctx.json()
+            body = body if isinstance(body, dict) else {}
+            try:
+                result = host_module.shell(
+                    str(body.get("command") or ""),
+                    cwd=body.get("cwd") or None,
+                    timeout=int(body.get("timeout", 60) or 60), base=self.base,
+                    env=body.get("env") if isinstance(body.get("env"), dict) else None)
+            except host_module.HostError as exc:
+                return _problem(400, str(exc))
+            self._audit_host("host_shell", body, result)
+            return _json(result)
+
+        @add("GET", r"/api/v1/host/read")
+        def host_read(ctx):
+            from .. import host as host_module
+
+            try:
+                result = host_module.read_file(
+                    str(ctx.query.get("path", "") or ""), base=self.base,
+                    allow_sensitive=str(ctx.query.get("sensitive", "")) in {"1", "true"})
+            except host_module.HostError as exc:
+                return _problem(400, str(exc))
+            return _json(result)
+
+        @add("POST", r"/api/v1/host/write")
+        def host_write(ctx):
+            from .. import host as host_module
+
+            body = ctx.json()
+            body = body if isinstance(body, dict) else {}
+            try:
+                result = host_module.write_file(
+                    str(body.get("path") or ""), content=str(body.get("content") or ""),
+                    append=bool(body.get("append")), base=self.base,
+                    allow_sensitive=bool(body.get("sensitive")))
+            except host_module.HostError as exc:
+                return _problem(400, str(exc))
+            return _json(result)
+
+        @add("GET", r"/api/v1/host/list")
+        def host_list(ctx):
+            from .. import host as host_module
+
+            try:
+                result = host_module.list_dir(
+                    str(ctx.query.get("path", ".") or "."), base=self.base,
+                    limit=int(ctx.query.get("limit", 500) or 500))
+            except host_module.HostError as exc:
+                return _problem(400, str(exc))
+            return _json(result)
+
+        @add("GET", r"/api/v1/host/find")
+        def host_find(ctx):
+            from .. import host as host_module
+
+            try:
+                result = host_module.find_files(
+                    str(ctx.query.get("root", ".") or "."),
+                    str(ctx.query.get("pattern", "*") or "*"),
+                    base=self.base, limit=int(ctx.query.get("limit", 500) or 500))
+            except host_module.HostError as exc:
+                return _problem(400, str(exc))
+            return _json(result)
+
+        @add("GET", r"/api/v1/host/stat")
+        def host_stat(ctx):
+            from .. import host as host_module
+
+            try:
+                result = host_module.stat_path(str(ctx.query.get("path", "") or ""),
+                                               base=self.base)
+            except host_module.HostError as exc:
+                return _problem(400, str(exc))
+            return _json(result)
+
+        @add("GET", r"/api/v1/host/processes")
+        def host_processes(ctx):
+            from .. import host as host_module
+
+            try:
+                result = host_module.processes(
+                    str(ctx.query.get("q", "") or ""),
+                    limit=int(ctx.query.get("limit", 200) or 200))
+            except host_module.HostError as exc:
+                return _problem(400, str(exc))
+            return _json(result)
+
+        @add("POST", r"/api/v1/host/kill")
+        def host_kill(ctx):
+            from .. import host as host_module
+
+            body = ctx.json()
+            body = body if isinstance(body, dict) else {}
+            try:
+                result = host_module.kill_process(
+                    body.get("pid"), str(body.get("signal") or "TERM"))
+            except host_module.HostError as exc:
+                return _problem(400, str(exc))
+            return _json(result)
+
+        # -- main brain ------------------------------------------------------
+        @add("GET", r"/api/v1/brain/context")
+        def brain_context(ctx):
+            from .. import brain as brain_module
+
+            return _json(brain_module.context(self.index, self._director(),
+                                              mission_id=str(ctx.query.get("mission_id", "") or "")))
+
+        @add("POST", r"/api/v1/brain/chat")
+        def brain_chat(ctx):
+            from .. import brain as brain_module
+
+            body = ctx.json()
+            body = body if isinstance(body, dict) else {}
+            message = str(body.get("message") or "").strip()
+            if not message:
+                return _problem(400, "message required")
+            try:
+                result = brain_module.chat(
+                    self, self.index, self._director(), message,
+                    history=body.get("history") if isinstance(body.get("history"), list) else [],
+                    mission_id=str(body.get("mission_id") or ""),
+                    act=bool(body.get("act", True)))
+            except Exception as exc:  # noqa: BLE001 - report, do not crash the API
+                return _problem(502, f"brain error: {type(exc).__name__}: {exc}")
+            return _json(result)
+
+        @add("POST", r"/api/v1/campaigns")
+        def campaign_start(ctx):
+            from .. import brain as brain_module
+
+            body = ctx.json()
+            body = body if isinstance(body, dict) else {}
+            try:
+                return _json(brain_module.start_campaign(
+                    self, self.index, str(body.get("target") or ""),
+                    title=str(body.get("title") or ""),
+                    objective=str(body.get("objective") or "")))
+            except ValueError as exc:
+                return _problem(400, str(exc))
 
         # -- knowledge base, profile, campaign, directions ------------------
         @add("GET", r"/api/v1/kb")

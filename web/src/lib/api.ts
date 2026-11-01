@@ -1,5 +1,5 @@
 import type {
-  Campaign, Candidate, ConnectInfo, Approval, Direction, DirectorLogEntry, DirectorStatus, ExploitPlan, Finding, Inventory, KeyEntry, McpInfo, Meta, Mission, MissionAgent, MissionGraph, Paged, Provider, ProviderHealth, RevengKinds, RevengResult, Run, RunEvent, Submission, SubmissionSummary, ToolCall, Totals, TrendPoint } from './types';
+  BrainReply, Campaign, Candidate, ConnectInfo, Approval, Direction, DirectorLogEntry, DirectorStatus, ExploitPlan, Finding, HostShellResult, Inventory, KeyEntry, McpInfo, Meta, Mission, MissionAgent, MissionGraph, Paged, Provider, ProviderHealth, RevengKinds, RevengResult, Run, RunEvent, Submission, SubmissionSummary, ToolCall, Totals, TrendPoint } from './types';
 
 const BASE = '/api/v1';
 
@@ -139,6 +139,23 @@ export const api = {
       'POST', `/candidates/${candidateId}/promote`, body),
   dismissCandidate: (candidateId: string) =>
     request<Candidate>('POST', `/candidates/${candidateId}/dismiss`, {}),
+  campaignStart: (target: string, title = '', objective = '') =>
+    request<{ mission: Mission; director: DirectorStatus }>('POST', '/campaigns', {
+      target, title, objective
+    }),
+  brainContext: (missionId = '') =>
+    request<Record<string, unknown>>(
+      'GET', `/brain/context${missionId ? `?mission_id=${missionId}` : ''}`),
+  brainChat: (message: string, body: Record<string, unknown> = {}) =>
+    request<BrainReply>('POST', '/brain/chat', { message, ...body }),
+  hostCapabilities: () =>
+    request<{ host: string; user: string; tools: Record<string, boolean> }>(
+      'GET', '/host/capabilities'),
+  hostShell: (command: string, cwd = '', timeout = 60) =>
+    request<HostShellResult>('POST', '/host/shell', { command, cwd, timeout }),
+  hostList: (path = '.') =>
+    request<{ path: string; count: number; entries: Array<Record<string, unknown>> }>(
+      'GET', `/host/list?path=${encodeURIComponent(path)}`),
   missionAgent: (id: string) =>
     request<MissionAgent>('GET', `/missions/${id}/agent`),
   startMissionAgent: (id: string, body: Record<string, unknown>) =>

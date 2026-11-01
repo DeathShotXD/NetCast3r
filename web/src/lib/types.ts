@@ -439,6 +439,34 @@ export interface Candidate {
   updated_at: string;
 }
 
+export interface BrainAction {
+  kind: string;
+  applied?: boolean;
+  reason?: string;
+  direction_id?: string;
+  run_id?: string;
+}
+
+export interface BrainReply {
+  reply: string;
+  focus: string;
+  actions: BrainAction[];
+  provider: string;
+  model: string;
+  findings: number;
+}
+
+export interface HostShellResult {
+  command: string;
+  cwd: string;
+  exit_code: number;
+  timed_out: boolean;
+  elapsed_ms: number;
+  stdout: string;
+  stderr: string;
+  truncated?: boolean;
+}
+
 export type Screen =
   | 'home'
   | 'missions'

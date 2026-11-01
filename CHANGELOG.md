@@ -6,6 +6,39 @@ Notable changes to NetCast3r, newest first.
 
 ### Added
 
+- Host control, the main brain, and the one-requirement hunt. The harness now
+  drives the operator's own machine and reasons above the whole control plane.
+  - **Host**: `host_shell`, `host_read`, `host_write`, `host_list`, `host_find`,
+    `host_stat`, `host_processes`, `host_kill`, and `host_capabilities`. A real
+    shell (`/bin/sh -lc`), wall-clock bounded with its process group killed on
+    timeout, output-capped, audited, and risk-gated (approval in supervised, or
+    an authorized autonomous mission). The path guard refuses NetCast3r's own
+    secret store. See `docs/HOST.md`.
+  - **Main brain**: `brain_context` and `brain_chat`. It reads every mission and
+    its campaign stage, the director, recent runs, the tool audit, the shared
+    knowledge, open leads, candidates, the host, and the MCP connections, then
+    answers and steers: queue a direction, engage/pause/tune the director, or run
+    a module. It never creates a finding or submits a report. The persona is a
+    hunter playbook: hypothesis first, evidence before prose, chains over single
+    bugs, P1-P4 priority. See `docs/BRAIN.md`.
+  - **One requirement**: `campaign_start` needs only a domain. It creates an
+    active, autonomous mission scoped to that host and engages the director,
+    which then drives the campaign and keeps going.
+  - The command center gains a **Main brain** chat panel and a **Host console**.
+- Capability broker and reproduction.
+  - **Toolbox**: a tiered, scope-checked catalog of external offensive tools
+    (nmap, subfinder, httpx, katana, whatweb, ffuf, gobuster, nuclei, sqlmap,
+    nikto, wpscan, nxc, enum4linux-ng) with allowlisted arguments, a scope check
+    before the binary starts, an absolute metadata/link-local refusal, output
+    parsing into graph nodes/technologies/candidates, and live process
+    management (`toolbox_catalog`, `toolbox_run`, `toolbox_processes`,
+    `toolbox_kill`). See `docs/CAPABILITIES.md`.
+  - **API specs**: `api_spec_ingest` turns an OpenAPI/Swagger or Postman contract
+    into graph endpoints and parameters.
+  - **Reproduction**: `candidate_poc` builds a minimal curl/python proof from a
+    candidate's recorded evidence.
+- Research: `docs/research/agentic-offsec-landscape.md` maps Penligent, HexStrike
+  v6, Strix, and the archived CAI, and records what NetCast3r adopts and refuses.
 - Module execution and finding candidates. `exploit_run` executes a module's
   typed steps in order through the same scoped, risk-gated tools as every other
   caller, judged by an independent model, and **stages a candidate** with the raw
@@ -92,7 +125,7 @@ Notable changes to NetCast3r, newest first.
   Agent Zero, a generic MCP client, and the HTTP API. The session token is
   never returned; a harness reads it from the 0600 control-plane file. A
   **Connect** screen shows the same information with a copyable config per
-  harness, a searchable list of all 187 typed tools, and their risk tiers.
+  harness, a searchable list of all 205 typed tools, and their risk tiers.
   Any harness drives the full surface and shares one database and audit trail.
 - Native operator: `autopilot` and
   `POST /api/v1/missions/{id}/autopilot` make NetCast3r its own harness. It

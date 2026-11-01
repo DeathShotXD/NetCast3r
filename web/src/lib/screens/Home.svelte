@@ -16,7 +16,7 @@
   import { countup, pauseOffscreen } from '../actions';
   import Icon from '../ui/Icon.svelte';
   import Sparkline from '../ui/Sparkline.svelte';
-  import type { Approval, DirectorLogEntry, DirectorStatus, Finding, ProviderHealth, Run, RunEvent, TrendPoint } from '../types';
+  import type { Approval, BrainAction, DirectorLogEntry, DirectorStatus, Finding, HostShellResult, ProviderHealth, Run, RunEvent, TrendPoint } from '../types';
   type Thought = { seq: number; ts: number; agent: string; stage: string; text: string };
   type Call = {
     seq: number;
@@ -88,6 +88,13 @@
   let directorLog = $state<DirectorLogEntry[]>([]);
   let directorBusy = $state('');
   let trend = $state<TrendPoint[]>([]);
+  let brainLog = $state<Array<{ role: string; text: string; focus?: string; actions?: BrainAction[] }>>([]);
+  let brainInput = $state('');
+  let brainBusy = $state(false);
+  let hostCwd = $state('');
+  let hostCmd = $state('');
+  let hostOut = $state<HostShellResult | null>(null);
+  let hostBusy = $state(false);
 
   let source: EventSource | null = null;
   let refreshTimer: number | undefined;
@@ -788,6 +795,47 @@
     }
   }
 
+  async function sendBrain() {
+    const message = brainInput.trim();
+    if (!message || brainBusy) return;
+    brainBusy = true;
+    const history = brainLog.slice(-8).map((turn) => ({
+      role: turn.role, content: turn.text
+    }));
+    brainLog = [...brainLog, { role: 'user', text: message }];
+    brainInput = '';
+    try {
+      const result = await api.brainChat(message, { history });
+      brainLog = [...brainLog, {
+        role: 'assistant', text: result.reply, focus: result.focus,
+        actions: result.actions
+      }];
+    } catch (exc) {
+      brainLog = [...brainLog, {
+        role: 'assistant',
+        text: exc instanceof Error ? exc.message : 'the brain did not answer'
+      }];
+    } finally {
+      brainBusy = false;
+    }
+  }
+
+  async function runHost() {
+    const command = hostCmd.trim();
+    if (!command || hostBusy) return;
+    hostBusy = true;
+    try {
+      hostOut = await api.hostShell(command, hostCwd.trim(), 120);
+    } catch (exc) {
+      hostOut = {
+        command, cwd: hostCwd, exit_code: 1, timed_out: false, elapsed_ms: 0,
+        stdout: '', stderr: exc instanceof Error ? exc.message : 'host call failed'
+      };
+    } finally {
+      hostBusy = false;
+    }
+  }
+
   const trendMax = $derived(Math.max(1, ...trend.map((point) => point.total)));
   const trendTotals = $derived.by(() => {
     const out = { critical: 0, high: 0, medium: 0, low: 0, info: 0 };
@@ -968,6 +1016,76 @@
       </div>
     </section>
   {/if}
+
+  <div class="obs-operator-grid">
+    <section class="obs-card obs-director" aria-label="main brain">
+      <div class="obs-director-head">
+        <div class="obs-director-title">
+          <p class="eyebrow">main brain</p>
+          <p class="obs-director-sub">Talk to the harness. It reads every mission, the director, the runs, the audit, the memory, and the host, and it can steer the hunt.</p>
+        </div>
+      </div>
+      <ul class="obs-brain-log" data-brain-log="1">
+        {#each brainLog as turn, index (index)}
+          <li class:user={turn.role === 'user'}>
+            <span class="obs-brain-role">{turn.role === 'user' ? 'you' : 'brain'}</span>
+            <span class="obs-brain-text">{turn.text}</span>
+            {#if turn.focus}
+              <span class="obs-brain-focus">next: {turn.focus}</span>
+            {/if}
+            {#if turn.actions && turn.actions.length}
+              <span class="obs-brain-actions">
+                {turn.actions.map((a) => `${a.kind}${a.applied ? '' : ' (refused)'}`).join(', ')}
+              </span>
+            {/if}
+          </li>
+        {/each}
+        {#if brainLog.length === 0}
+          <li class="obs-brain-empty">Ask what to do next, or give it guidance like "focus the order API".</li>
+        {/if}
+      </ul>
+      <div class="obs-console-actions">
+        <input
+          class="obs-console-input"
+          bind:value={brainInput}
+          placeholder="ask the brain, or steer the hunt..."
+          onkeydown={(event) => { if (event.key === 'Enter') void sendBrain(); }}
+        />
+        <button class="obs-btn obs-btn-primary" type="button" disabled={brainBusy || !brainInput.trim()} onclick={() => void sendBrain()}>
+          {brainBusy ? 'Thinking...' : 'Send'}
+        </button>
+      </div>
+    </section>
+
+    <section class="obs-card obs-director" aria-label="host">
+      <div class="obs-director-head">
+        <div class="obs-director-title">
+          <p class="eyebrow">host console</p>
+          <p class="obs-director-sub">A real shell on this machine. Audited, bounded, and gated; NetCast3r's own secret store stays out of reach.</p>
+        </div>
+      </div>
+      <div class="obs-console-actions">
+        <input class="obs-console-input obs-host-cwd" bind:value={hostCwd} placeholder="working directory" />
+      </div>
+      <div class="obs-console-actions">
+        <input
+          class="obs-console-input"
+          bind:value={hostCmd}
+          placeholder="command..."
+          onkeydown={(event) => { if (event.key === 'Enter') void runHost(); }}
+        />
+        <button class="obs-btn obs-btn-danger" type="button" disabled={hostBusy || !hostCmd.trim()} onclick={() => void runHost()}>
+          {hostBusy ? 'Running...' : 'Run'}
+        </button>
+      </div>
+      {#if hostOut}
+        <p class="obs-host-meta">
+          exit {hostOut.exit_code} - {hostOut.elapsed_ms} ms{hostOut.timed_out ? ' - timed out' : ''} - {hostOut.cwd}
+        </p>
+        <pre class="obs-host-out" data-host-out="1">{(hostOut.stdout || '') + (hostOut.stderr ? `\n[stderr]\n${hostOut.stderr}` : '')}</pre>
+      {/if}
+    </section>
+  </div>
 
   <div class="obs-command-grid">
     <div class="obs-command-main">

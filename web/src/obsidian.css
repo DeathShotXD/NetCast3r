@@ -6839,3 +6839,86 @@ html.nc-native .nc-tag {
   color: var(--obs-muted);
   font-size: 11px;
 }
+
+/* Main brain chat and the host console. */
+.obs-operator-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
+  gap: 14px;
+  margin-bottom: 14px;
+}
+
+.obs-brain-log {
+  display: grid;
+  gap: 6px;
+  max-height: 260px;
+  overflow-y: auto;
+  border-top: 1px solid var(--obs-line);
+  padding-top: 8px;
+}
+
+.obs-brain-log li {
+  display: grid;
+  gap: 3px;
+  border-left: 2px solid var(--obs-line-strong);
+  padding: 5px 9px;
+}
+
+.obs-brain-log li.user {
+  border-left-color: var(--obs-acid);
+}
+
+.obs-brain-role {
+  font-size: 9px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--obs-faint);
+}
+
+.obs-brain-text {
+  color: var(--obs-text-2);
+  font-size: 12px;
+  white-space: pre-wrap;
+}
+
+.obs-brain-focus {
+  color: var(--obs-violet-3);
+  font-size: 11px;
+}
+
+.obs-brain-actions {
+  color: var(--obs-acid);
+  font-size: 10px;
+  letter-spacing: 0.06em;
+}
+
+.obs-brain-empty {
+  color: var(--obs-muted);
+  font-size: 11.5px;
+}
+
+.obs-host-cwd {
+  margin-top: 8px;
+  font-size: 11.5px;
+}
+
+.obs-host-meta {
+  margin-top: 8px;
+  color: var(--obs-muted);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.obs-host-out {
+  max-height: 220px;
+  margin-top: 6px;
+  overflow: auto;
+  border: 1px solid var(--obs-line);
+  border-radius: var(--obs-radius-sm);
+  background: var(--obs-panel-2);
+  color: var(--obs-text-2);
+  font-family: var(--obs-mono, ui-monospace, monospace);
+  font-size: 11.5px;
+  padding: 8px 10px;
+  white-space: pre-wrap;
+}

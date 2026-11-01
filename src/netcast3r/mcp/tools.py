@@ -686,6 +686,99 @@ def params_extract(ctx: ToolContext, args: dict) -> dict:
                  body={"limit": args.get("limit", 200)})
 
 
+def toolbox_catalog(ctx: ToolContext, args: dict) -> dict:
+    return _call(ctx, "GET", "/api/v1/toolbox")
+
+
+def toolbox_run(ctx: ToolContext, args: dict) -> dict:
+    body = {key: args[key] for key in ("tool", "target", "options", "background")
+            if key in args}
+    return _call(ctx, "POST",
+                 f"/api/v1/missions/{args['mission_id']}/toolbox/run", body=body)
+
+
+def toolbox_processes(ctx: ToolContext, args: dict) -> dict:
+    return _call(ctx, "GET", "/api/v1/toolbox/processes")
+
+
+def toolbox_kill(ctx: ToolContext, args: dict) -> dict:
+    return _call(ctx, "POST",
+                 f"/api/v1/toolbox/processes/{args['process_id']}/kill", body={})
+
+
+def api_spec_ingest(ctx: ToolContext, args: dict) -> dict:
+    body = {key: args[key] for key in ("spec", "limit") if key in args}
+    return _call(ctx, "POST", f"/api/v1/missions/{args['mission_id']}/apispec",
+                 body=body)
+
+
+def candidate_poc(ctx: ToolContext, args: dict) -> dict:
+    return _call(ctx, "POST", f"/api/v1/candidates/{args['candidate_id']}/poc",
+                 body={})
+
+
+def host_capabilities(ctx: ToolContext, args: dict) -> dict:
+    return _call(ctx, "GET", "/api/v1/host/capabilities")
+
+
+def host_shell(ctx: ToolContext, args: dict) -> dict:
+    body = {key: args[key] for key in ("command", "cwd", "timeout", "env")
+            if key in args}
+    return _call(ctx, "POST", "/api/v1/host/shell", body=body)
+
+
+def host_read(ctx: ToolContext, args: dict) -> dict:
+    query = {key: args[key] for key in ("path", "sensitive") if key in args}
+    return _call(ctx, "GET", "/api/v1/host/read", query=query)
+
+
+def host_write(ctx: ToolContext, args: dict) -> dict:
+    body = {key: args[key] for key in ("path", "content", "append", "sensitive")
+            if key in args}
+    return _call(ctx, "POST", "/api/v1/host/write", body=body)
+
+
+def host_list(ctx: ToolContext, args: dict) -> dict:
+    query = {key: args[key] for key in ("path", "limit") if key in args}
+    return _call(ctx, "GET", "/api/v1/host/list", query=query or {"path": "."})
+
+
+def host_find(ctx: ToolContext, args: dict) -> dict:
+    query = {key: args[key] for key in ("root", "pattern", "limit") if key in args}
+    return _call(ctx, "GET", "/api/v1/host/find", query=query or {"root": "."})
+
+
+def host_stat(ctx: ToolContext, args: dict) -> dict:
+    return _call(ctx, "GET", "/api/v1/host/stat", query={"path": args["path"]})
+
+
+def host_processes(ctx: ToolContext, args: dict) -> dict:
+    query = {key: args[key] for key in ("q", "limit") if key in args}
+    return _call(ctx, "GET", "/api/v1/host/processes", query=query or None)
+
+
+def host_kill(ctx: ToolContext, args: dict) -> dict:
+    body = {key: args[key] for key in ("pid", "signal") if key in args}
+    return _call(ctx, "POST", "/api/v1/host/kill", body=body)
+
+
+def brain_context(ctx: ToolContext, args: dict) -> dict:
+    query = {"mission_id": args["mission_id"]} if args.get("mission_id") else None
+    return _call(ctx, "GET", "/api/v1/brain/context", query=query)
+
+
+def brain_chat(ctx: ToolContext, args: dict) -> dict:
+    body = {key: args[key] for key in
+            ("message", "mission_id", "history", "act") if key in args}
+    return _call(ctx, "POST", "/api/v1/brain/chat", body=body)
+
+
+def campaign_start(ctx: ToolContext, args: dict) -> dict:
+    body = {key: args[key] for key in ("target", "title", "objective")
+            if key in args}
+    return _call(ctx, "POST", "/api/v1/campaigns", body=body)
+
+
 def agent_start(ctx: ToolContext, args: dict) -> dict:
     mission = _mission(ctx, args["mission_id"])
     target = str(mission.get("target") or "").strip()
@@ -2854,6 +2947,24 @@ _HANDLERS.update({
     "candidate_promote": candidate_promote,
     "candidate_dismiss": candidate_dismiss,
     "params_extract": params_extract,
+    "toolbox_catalog": toolbox_catalog,
+    "toolbox_run": toolbox_run,
+    "toolbox_processes": toolbox_processes,
+    "toolbox_kill": toolbox_kill,
+    "api_spec_ingest": api_spec_ingest,
+    "candidate_poc": candidate_poc,
+    "host_capabilities": host_capabilities,
+    "host_shell": host_shell,
+    "host_read": host_read,
+    "host_write": host_write,
+    "host_list": host_list,
+    "host_find": host_find,
+    "host_stat": host_stat,
+    "host_processes": host_processes,
+    "host_kill": host_kill,
+    "brain_context": brain_context,
+    "brain_chat": brain_chat,
+    "campaign_start": campaign_start,
     "agent_notes_write": agent_notes_write,
     "agent_notes_list": agent_notes_list,
     "agent_notes_clear": agent_notes_clear,
@@ -3374,6 +3485,140 @@ TOOLS: tuple[Tool, ...] = (
          _schema({"mission_id": _string("mission id"),
                   "limit": _integer("parameters", 1, 500, 200)},
                  ["mission_id"]), "params_extract"),
+    Tool("toolbox_catalog", "List the external tool broker",
+         "The tiered, scope-checked catalog of external offensive tools (recon, "
+         "web, AD) with each tool's category, risk, stage, and whether its binary "
+         "is installed. An external tool is a source of leads, not findings.",
+         "low", "integrations", _schema({}), "toolbox_catalog"),
+    Tool("toolbox_run", "Run an external tool against a mission",
+         "Run one allowlisted external tool after checking the target against "
+         "the mission scope. Arguments are built only from an allowlisted flag "
+         "set - no shell. Output is parsed into graph nodes, technologies, and "
+         "candidates with raw evidence; never a finding. Metadata and link-local "
+         "hosts are always refused. High risk: it needs an approval or an "
+         "authorized autonomous mission.",
+         "high", "integrations",
+         _schema({"mission_id": _string("mission id"),
+                  "tool": _string("tool id from toolbox_catalog"),
+                  "target": _string("target, defaults to the mission target"),
+                  "options": {"type": "object", "description": "allowlisted options"},
+                  "background": _boolean("start and return immediately", False)},
+                 ["mission_id", "tool"]), "toolbox_run", open_world=True),
+    Tool("toolbox_processes", "List running and recent external tools",
+         "Show the external tools the broker has started, with pid, status, and "
+         "age, so a long run can be watched or stopped.",
+         "low", "integrations", _schema({}), "toolbox_processes"),
+    Tool("toolbox_kill", "Stop a running external tool",
+         "Terminate the process group of a tool the broker started.",
+         "medium", "integrations",
+         _schema({"process_id": _string("process id from toolbox_processes")},
+                 ["process_id"]), "toolbox_kill"),
+    Tool("api_spec_ingest", "Ingest an OpenAPI or Postman contract",
+         "Read an API contract and record every declared endpoint and parameter "
+         "as graph nodes, so a scoped API assessment starts from the published "
+         "surface instead of crawling. Each endpoint is a lead, not a finding.",
+         "medium", "recon",
+         _schema({"mission_id": _string("mission id"),
+                  "spec": _string("path to a local OpenAPI/Postman file or inline JSON"),
+                  "limit": _integer("endpoints", 1, 5000, 500)},
+                 ["mission_id", "spec"]), "api_spec_ingest"),
+    Tool("candidate_poc", "Build a reproduction for a candidate",
+         "Turn a candidate's recorded evidence into a minimal curl and Python "
+         "proof a reviewer can re-run. It reproduces the request that was made; "
+         "it does not invent an exploit.",
+         "low", "findings",
+         _schema({"candidate_id": _string("candidate id")}, ["candidate_id"]),
+         "candidate_poc"),
+    Tool("host_capabilities", "Read the host and its tools",
+         "Show the host name, kernel, user, and which offensive and general "
+         "tools are installed (nmap, ffuf, nuclei, sqlmap, metasploit, docker, "
+         "git, ...), so the brain can plan against what the box actually has.",
+         "low", "host", _schema({}), "host_capabilities"),
+    Tool("host_shell", "Run a command on the host",
+         "Run one shell command on the operator's own machine and return its "
+         "bounded stdout, stderr, and exit code. This is a real host shell: it is "
+         "high risk and runs under the risk gate (approval in supervised, or an "
+         "authorized autonomous mission), is wall-clock bounded, kills its whole "
+         "process group on timeout, and is audited. NetCast3r's own secret store "
+         "is not read here.",
+         "high", "host",
+         _schema({"command": _string("the command to run"),
+                  "cwd": _string("working directory, defaults to the workspace"),
+                  "timeout": _integer("seconds", 1, 600, 60),
+                  "env": {"type": "object", "description": "extra environment"}},
+                 ["command"]), "host_shell", open_world=True, destructive=True),
+    Tool("host_read", "Read a file on the host",
+         "Read a text file by path. Binary files report their type instead of "
+         "content. NetCast3r's own secret store is refused unless sensitive is "
+         "explicitly true.",
+         "medium", "host",
+         _schema({"path": _string("file path"),
+                  "sensitive": _boolean("allow NetCast3r's own secret store", False)},
+                 ["path"]), "host_read"),
+    Tool("host_write", "Write a file on the host",
+         "Create or overwrite a file, or append to it. Missing parent "
+         "directories are created. High risk and gated like the shell.",
+         "high", "host",
+         _schema({"path": _string("file path"),
+                  "content": _string("file content"),
+                  "append": _boolean("append instead of overwrite", False),
+                  "sensitive": _boolean("allow NetCast3r's own secret store", False)},
+                 ["path"]), "host_write", destructive=True),
+    Tool("host_list", "List a directory on the host",
+         "List one directory with each entry's kind, size, and mtime.",
+         "low", "host",
+         _schema({"path": _string("directory, defaults to the workspace"),
+                  "limit": _integer("entries", 1, 5000, 500)}, []), "host_list"),
+    Tool("host_find", "Find files on the host",
+         "Find files under a root by glob pattern.",
+         "low", "host",
+         _schema({"root": _string("root directory"),
+                  "pattern": _string("glob, e.g. **/*.sql"),
+                  "limit": _integer("matches", 1, 5000, 500)}, []), "host_find"),
+    Tool("host_stat", "Stat a path on the host",
+         "Show whether a path exists, its kind, size, mode, and mtime.",
+         "low", "host",
+         _schema({"path": _string("path")}, ["path"]), "host_stat"),
+    Tool("host_processes", "List host processes",
+         "List running processes, optionally filtered by a name substring.",
+         "low", "host",
+         _schema({"q": _string("substring filter"),
+                  "limit": _integer("rows", 1, 2000, 200)}, []), "host_processes"),
+    Tool("host_kill", "Signal a host process",
+         "Send TERM, KILL, or INT to a process by pid.",
+         "medium", "host",
+         _schema({"pid": _integer("process id", 2, 4194304),
+                  "signal": {"type": "string", "description": "signal",
+                             "enum": ["TERM", "KILL", "INT"]}},
+                 ["pid"]), "host_kill", destructive=True),
+    Tool("brain_context", "Read the main brain's situational snapshot",
+         "The compact snapshot the main brain reasons over: missions and their "
+         "stage, the director, recent runs and stops, the tool-call audit, shared "
+         "knowledge, open leads, candidates, the host, and the MCP connections.",
+         "low", "missions",
+         _schema({"mission_id": _string("optional focus mission")}, []),
+         "brain_context"),
+    Tool("brain_chat", "Talk to the main brain",
+         "Ask the main brain a question or give it guidance. It answers from a "
+         "live snapshot of the whole control plane and can steer the hunt: queue "
+         "a direction for a mission, engage, pause, or tune the director, or run "
+         "one exploit module. It never creates a finding or submits a report.",
+         "medium", "missions",
+         _schema({"message": _string("what to ask or instruct"),
+                  "mission_id": _string("optional focus mission"),
+                  "history": _array("prior turns", {"type": "object"}),
+                  "act": _boolean("apply the steering actions", True)},
+                 ["message"]), "brain_chat"),
+    Tool("campaign_start", "Start a hunt from just a domain",
+         "The only requirement is a domain or URL. It creates an active, "
+         "autonomous mission scoped to that host and engages the director, which "
+         "then drives the whole campaign and keeps going. Talk to the brain to "
+         "steer it; pause the director to stop.",
+         "medium", "missions",
+         _schema({"target": _string("domain or URL"),
+                  "title": _string("optional title"),
+                  "objective": _string("optional objective")},
+                 ["target"]), "campaign_start", open_world=True),
     Tool("mission_hunt", "Start a standalone hunt",
          "Run a deterministic read-only hunt for a mission: scope, fingerprint, "
          "safe surface paths, technique and chain ranking, and explicit "

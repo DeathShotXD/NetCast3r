@@ -158,7 +158,7 @@ Denied calls are audited with status `denied`.
 
 ## 3. Tools
 
-187 tools, grouped by job. Every tool publishes a JSON schema with
+205 tools, grouped by job. Every tool publishes a JSON schema with
 `additionalProperties: false`; unknown arguments are rejected rather than
 silently ignored.
 
@@ -197,6 +197,20 @@ silently ignored.
 | `candidate_promote` | medium | Promote a candidate into a finding |
 | `candidate_dismiss` | low | Dismiss a candidate |
 | `params_extract` | low | Extract observed parameters into the graph |
+| `toolbox_catalog` | low | List the external tool broker and its tools |
+| `toolbox_run` | high | Run one allowlisted external tool with scope enforcement |
+| `toolbox_processes` | low | List running and recent external tools |
+| `toolbox_kill` | medium | Stop a running external tool |
+| `api_spec_ingest` | medium | Ingest an OpenAPI or Postman contract into the graph |
+| `candidate_poc` | low | Build a reproduction for a candidate |
+| `host_capabilities` | low | Read the host and which tools are installed |
+| `host_shell` | high | Run a command on the host |
+| `host_read` / `host_write` | medium / high | Read or write a host file |
+| `host_list` / `host_find` / `host_stat` | low | Inspect the host filesystem |
+| `host_processes` / `host_kill` | low / medium | Manage host processes |
+| `brain_context` | low | The main brain's situational snapshot |
+| `brain_chat` | medium | Talk to and steer the main brain |
+| `campaign_start` | medium | Start a hunt from just a domain |
 | `graph_build` | medium | Derive the evidence graph and candidate paths for a mission |
 | `mission_graph` | low | Read a mission's nodes, edges, and paths |
 | `paths_list` | low | List a mission's candidate attack paths |
