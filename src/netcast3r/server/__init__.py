@@ -1339,6 +1339,42 @@ class Server:
             except ValueError as exc:
                 return _problem(400, str(exc))
 
+        # -- self-evolution and post-exploitation ---------------------------
+        @add("GET", r"/api/v1/evolve")
+        def evolve_status(ctx):
+            from .. import evolve as evolve_module
+
+            return _json(evolve_module.maturity(self.index))
+
+        @add("GET", r"/api/v1/evolve/ledger")
+        def evolve_ledger(ctx):
+            from .. import evolve as evolve_module
+
+            return _json(evolve_module.ledger(
+                self.index, limit=int(ctx.query.get("limit", 500) or 500)))
+
+        @add("POST", r"/api/v1/evolve/scan")
+        def evolve_scan(ctx):
+            from .. import evolve as evolve_module
+
+            body = ctx.json()
+            body = body if isinstance(body, dict) else {}
+            return _json(evolve_module.scan(
+                self.index, limit=int(body.get("limit", 3) or 3)))
+
+        @add("GET", r"/api/v1/missions/(?P<id>[A-Za-z0-9_]+)/postex")
+        def postex_plan(ctx):
+            from .. import postex as postex_module
+
+            if not self.index.get_mission(ctx.params["id"]):
+                return _problem(404, "mission not found")
+            try:
+                return _json(postex_module.plan(
+                    self.index, ctx.params["id"],
+                    limit=int(ctx.query.get("limit", 10) or 10)))
+            except ValueError as exc:
+                return _problem(400, str(exc))
+
         # -- knowledge base, profile, campaign, directions ------------------
         @add("GET", r"/api/v1/kb")
         def kb_list(ctx):

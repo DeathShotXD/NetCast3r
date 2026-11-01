@@ -158,7 +158,7 @@ Denied calls are audited with status `denied`.
 
 ## 3. Tools
 
-205 tools, grouped by job. Every tool publishes a JSON schema with
+209 tools, grouped by job. Every tool publishes a JSON schema with
 `additionalProperties: false`; unknown arguments are rejected rather than
 silently ignored.
 
@@ -211,6 +211,10 @@ silently ignored.
 | `brain_context` | low | The main brain's situational snapshot |
 | `brain_chat` | medium | Talk to and steer the main brain |
 | `campaign_start` | medium | Start a hunt from just a domain |
+| `evolve_status` | low | Capability maturity plus the outcome ledger |
+| `evolve_ledger` | low | Per-technique outcomes and win rates |
+| `evolve_scan` | medium | Propose improvements from gaps and outcomes |
+| `postex_plan` | low | Plan post-exploitation from the graph |
 | `graph_build` | medium | Derive the evidence graph and candidate paths for a mission |
 | `mission_graph` | low | Read a mission's nodes, edges, and paths |
 | `paths_list` | low | List a mission's candidate attack paths |

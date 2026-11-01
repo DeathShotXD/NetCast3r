@@ -779,6 +779,26 @@ def campaign_start(ctx: ToolContext, args: dict) -> dict:
     return _call(ctx, "POST", "/api/v1/campaigns", body=body)
 
 
+def evolve_status(ctx: ToolContext, args: dict) -> dict:
+    return _call(ctx, "GET", "/api/v1/evolve")
+
+
+def evolve_ledger(ctx: ToolContext, args: dict) -> dict:
+    query = {key: args[key] for key in ("limit",) if key in args}
+    return _call(ctx, "GET", "/api/v1/evolve/ledger", query=query or None)
+
+
+def evolve_scan(ctx: ToolContext, args: dict) -> dict:
+    return _call(ctx, "POST", "/api/v1/evolve/scan",
+                 body={"limit": args.get("limit", 3)})
+
+
+def postex_plan(ctx: ToolContext, args: dict) -> dict:
+    query = {key: args[key] for key in ("limit",) if key in args}
+    return _call(ctx, "GET", f"/api/v1/missions/{args['mission_id']}/postex",
+                 query=query or None)
+
+
 def agent_start(ctx: ToolContext, args: dict) -> dict:
     mission = _mission(ctx, args["mission_id"])
     target = str(mission.get("target") or "").strip()
@@ -2965,6 +2985,10 @@ _HANDLERS.update({
     "brain_context": brain_context,
     "brain_chat": brain_chat,
     "campaign_start": campaign_start,
+    "evolve_status": evolve_status,
+    "evolve_ledger": evolve_ledger,
+    "evolve_scan": evolve_scan,
+    "postex_plan": postex_plan,
     "agent_notes_write": agent_notes_write,
     "agent_notes_list": agent_notes_list,
     "agent_notes_clear": agent_notes_clear,
@@ -3619,6 +3643,32 @@ TOOLS: tuple[Tool, ...] = (
                   "title": _string("optional title"),
                   "objective": _string("optional objective")},
                  ["target"]), "campaign_start", open_world=True),
+    Tool("evolve_status", "Read the capability maturity",
+         "The self-model's capability scores next to the outcome ledger: what the "
+         "harness has actually landed and what keeps failing. Derived from stored "
+         "evidence only.",
+         "low", "learning", _schema({}), "evolve_status"),
+    Tool("evolve_ledger", "Read the technique outcome ledger",
+         "Per technique and module: supported, refuted, inconclusive, staged "
+         "candidates, exploit runs, verified runs, dead ends, and a win rate.",
+         "low", "learning",
+         _schema({"limit": _integer("records", 1, 2000, 500)}, []),
+         "evolve_ledger"),
+    Tool("evolve_scan", "Propose improvements from outcomes",
+         "Turn capability gaps and repeatedly-failed techniques into "
+         "deduplicated, human-gated upgrade proposals. It proposes; it never "
+         "applies a change.",
+         "medium", "learning",
+         _schema({"limit": _integer("proposals", 1, 20, 3)}, []), "evolve_scan"),
+    Tool("postex_plan", "Plan post-exploitation from the graph",
+         "From the observed services, identities, credentials, and technology, "
+         "propose ordered post-exploitation objectives - AD, cloud, and lateral "
+         "movement - each with its preconditions and the evidence it still needs. "
+         "It plans only; every objective is a gated module.",
+         "low", "missions",
+         _schema({"mission_id": _string("mission id"),
+                  "limit": _integer("objectives", 1, 40, 10)},
+                 ["mission_id"]), "postex_plan"),
     Tool("mission_hunt", "Start a standalone hunt",
          "Run a deterministic read-only hunt for a mission: scope, fingerprint, "
          "safe surface paths, technique and chain ranking, and explicit "

@@ -115,6 +115,11 @@ def context(index, director=None, mission_id: str = "", limit: int = 8) -> dict:
                        for c in candidates],
         "director": director.status() if director is not None else {},
     }
+    try:
+        from . import evolve as evolve_module
+        snapshot["maturity"] = evolve_module.maturity(index)
+    except Exception:  # noqa: BLE001
+        snapshot["maturity"] = {}
     if mission_id:
         mission = index.get_mission(mission_id)
         if mission:
@@ -130,6 +135,12 @@ def context(index, director=None, mission_id: str = "", limit: int = 8) -> dict:
                           "edges": len(index.list_graph_edges(mission_id)),
                           "paths": len(index.list_graph_paths(mission_id))},
             }
+            try:
+                from . import postex as postex_module
+                snapshot["focus_mission"]["postex"] = postex_module.plan(
+                    index, mission_id, limit=6)
+            except Exception:  # noqa: BLE001
+                snapshot["focus_mission"]["postex"] = {}
     try:
         from . import host as host_module
         capabilities = host_module.capabilities()

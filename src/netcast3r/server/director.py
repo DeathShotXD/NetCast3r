@@ -454,6 +454,10 @@ class Director:
                 pass  # a mission without a usable target has no profile
             out["learned"] = kb_module.learn_from_mission(self.server.index,
                                                           mission_id)
+            from .. import evolve as evolve_module
+
+            out["expertise"] = evolve_module.mature_outcomes(self.server.index,
+                                                             mission_id)
             stage = campaign_module.advance(self.server.index, mission_id)
             out["stage"] = stage["stage"]
             # In the hypotheses stage there are no open leads: turn the exploit

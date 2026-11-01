@@ -6,6 +6,26 @@ Notable changes to NetCast3r, newest first.
 
 ### Added
 
+- Self-evolution and post-exploitation. The harness now learns from what it
+  actually tried and plans past the first foothold.
+  - **Outcome ledger** (`src/netcast3r/evolve.py`): per-technique supported,
+    refuted, inconclusive, staged candidates, exploit runs, verified runs, dead
+    ends, a win rate, and a net score, plus `maturity` pairing the self-model's
+    capability scores with what worked and what kept failing.
+  - **Learning loop**: the director's `_mature` step now also bumps technology
+    expertise from a finished mission's real outcome, so exposure counts track
+    reality. `evolve_scan` writes human-gated upgrade proposals from capability
+    gaps and from techniques that were refuted or dead-ended repeatedly. It
+    proposes; it never applies a change or creates a finding.
+  - **Post-exploitation planning** (`src/netcast3r/postex.py`): from the observed
+    services, identities, credentials, and technology it proposes ordered AD,
+    cloud, and lateral-movement objectives, each with its preconditions and the
+    evidence it still needs. It plans only; every objective is a gated module and
+    the identity/cloud classes are high risk.
+  - The brain context now carries `maturity` and the focus mission's post-ex plan.
+  - HTTP `GET /api/v1/evolve`, `/api/v1/evolve/ledger`, `POST /api/v1/evolve/scan`,
+    and `GET /api/v1/missions/{id}/postex`; MCP `evolve_status`, `evolve_ledger`,
+    `evolve_scan`, and `postex_plan` (209 tools). See `docs/EVOLVE.md`.
 - Host control, the main brain, and the one-requirement hunt. The harness now
   drives the operator's own machine and reasons above the whole control plane.
   - **Host**: `host_shell`, `host_read`, `host_write`, `host_list`, `host_find`,
