@@ -66,6 +66,16 @@ class SolverLoopTests(unittest.TestCase):
         self.assertEqual(self.registry.calls, [])
         self.assertEqual(result["findings"], 0)
 
+    def test_a_failed_model_call_is_retried(self):
+        solver = self.make(scripted(
+            {"text": "", "error": "rate_limit", "provider": "", "model": ""},
+            reply("done", {"summary": "recovered after one retry"}),
+        ))
+        result = solver.run()
+        self.assertEqual(result["stop"], "model finished")
+        self.assertEqual(result["model_calls"], 2)
+        self.assertEqual(result["findings"], 0)
+
     def test_invalid_reply_stops_after_two_attempts(self):
         solver = self.make(scripted(
             {"text": "I will poke the target.", "provider": "fake", "model": "free"},

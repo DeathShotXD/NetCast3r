@@ -204,6 +204,7 @@ class Solver:
         summary = ""
         repeated = 0
         last_signature = ""
+        failures = 0
         for step in range(self.max_steps):
             if self.should_stop is not None and self.should_stop():
                 stop = "cancelled"
@@ -215,8 +216,13 @@ class Solver:
             model_calls += 1
             text = str(completion.get("text") or "")
             if not text:
+                failures += 1
+                if failures < 2:
+                    self._emit("reason", {"text": "model call failed; retrying"})
+                    continue
                 stop = "model unavailable: " + str(completion.get("error") or "empty reply")
                 break
+            failures = 0
             data = _first_json(text)
             action = str((data or {}).get("action") or "").strip() if isinstance(data, dict) else ""
             thought = str((data or {}).get("thought") or "")[:400] if isinstance(data, dict) else ""
