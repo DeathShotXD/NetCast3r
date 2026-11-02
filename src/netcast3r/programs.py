@@ -687,6 +687,12 @@ def apply(index, mission_id: str, brief: str, filename: str = "",
                                  run_id="")
         except Exception:  # noqa: BLE001 - a note is best effort
             pass
+        try:
+            index.add_program_import(
+                mission_id, result["parsed"], diff,
+                filename=filename, actor=actor)
+        except Exception:  # noqa: BLE001 - history is best effort
+            pass
     updated = index.get_mission(mission_id)
     result["applied"] = {
         "added": len(additions),

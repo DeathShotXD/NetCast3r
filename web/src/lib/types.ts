@@ -526,6 +526,46 @@ export interface CoverageSummary {
 }
 
 
+export interface BenchCaseResult {
+  id: string;
+  kind: string;
+  description: string;
+  passed: boolean;
+  error: string;
+  expected: string[];
+  actual: string[];
+  tp: number;
+  fp: number;
+  fn: number;
+  precision: number;
+  recall: number;
+  duration_ms: number;
+}
+
+export interface BenchResult {
+  cases: number;
+  passed: number;
+  failed: number;
+  tp: number;
+  fp: number;
+  fn: number;
+  precision: number;
+  recall: number;
+  f1: number;
+  duration_ms: number;
+  results: BenchCaseResult[];
+  failures: BenchCaseResult[];
+  note: string;
+  gate?: {
+    passed: boolean;
+    checks: Record<string, boolean>;
+    min_precision: number;
+    min_recall: number;
+    precision: number;
+    recall: number;
+  };
+}
+
 export interface ProgramPreview {
   mission_id: string;
   parsed: {
@@ -551,6 +591,22 @@ export interface ProgramPreview {
   scope_before: string[];
   scope_after: string[];
   applied?: { added: number; scope: string[]; mission_id: string; actor: string };
+}
+
+export interface ProgramImport {
+  id: string;
+  mission_id: string;
+  platform: string;
+  handle: string;
+  name: string;
+  source: string;
+  filename: string;
+  in_scope: string[];
+  out_of_scope: string[];
+  rules: string[];
+  diff: Record<string, unknown>;
+  actor: string;
+  created_at: string;
 }
 
 export interface HostShellResult {

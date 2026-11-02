@@ -3,7 +3,7 @@
   import { api } from '../api';
   import { store } from '../state.svelte';
   import { ago, sevColor, statusLabel } from '../format';
-  import type { AgentStatus, Approval, Autonomy, Campaign, Candidate, CoverageSummary, Direction, ExploitPlan, GraphNode, GraphPath, Mission, MissionAgent, MissionGraph, MissionStatus, ProgramPreview, ToolCall } from '../types';
+  import type { AgentStatus, Approval, Autonomy, Campaign, Candidate, CoverageSummary, Direction, ExploitPlan, GraphNode, GraphPath, Mission, MissionAgent, MissionGraph, MissionStatus, ProgramImport, ProgramPreview, ToolCall } from '../types';
   import Icon from '../ui/Icon.svelte';
   import Sparkline from '../ui/Sparkline.svelte';
 
@@ -55,6 +55,7 @@
   let programPlatform = $state('other');
   let programAllowExpand = $state(false);
   let programPreview = $state<ProgramPreview | null>(null);
+  let programHistory = $state<ProgramImport[]>([]);
   let programBusy = $state('');
   let campaign = $state<Campaign | null>(null);
   let directions = $state<Direction[]>([]);
@@ -323,6 +324,7 @@
     else if (detailTab === 'exploits') void loadExploits();
     else if (detailTab === 'candidates') void loadCandidates();
     else if (detailTab === 'coverage') void loadCoverage();
+    else if (detailTab === 'program') void loadProgramHistory();
     else if (detailTab === 'console') void loadDirections();
     else if (detailTab === 'tools') void loadTools();
     else if (detailTab === 'agent') void loadAgent();
@@ -478,6 +480,15 @@
     }
   }
 
+  async function loadProgramHistory() {
+    if (!selected) return;
+    try {
+      programHistory = (await api.programImports(selected.id)).items;
+    } catch {
+      programHistory = [];
+    }
+  }
+
   function programBody() {
     return {
       brief: programBrief,
@@ -517,6 +528,7 @@
       const result = await api.programImport(selected.id, programBody());
       programPreview = result;
       selected = await api.mission(selected.id);
+      void loadProgramHistory();
       const added = result.applied?.added ?? 0;
       store.toast('ok', `scope updated: ${added} entr${added === 1 ? 'y' : 'ies'}`);
     } catch (exc) {
@@ -1392,6 +1404,21 @@
                     {/if}
                   </div>
                 </div>
+                {#if programHistory.length}
+                  <div class="obs-program-history">
+                    <h4>Applied briefs</h4>
+                    <ul>
+                      {#each programHistory as item (item.id)}
+                        <li>
+                          <span class="obs-chip">{item.platform}</span>
+                          <strong>{item.name || item.handle || item.filename || item.id}</strong>
+                          <span class="mono">{item.in_scope.length} in / {item.out_of_scope.length} out - {ago(item.created_at)}</span>
+                          {#if item.actor}<span class="mono">{item.actor}</span>{/if}
+                        </li>
+                      {/each}
+                    </ul>
+                  </div>
+                {/if}
               </section>
             {:else if detailTab === 'console'}
               <section class="obs-detail-section">

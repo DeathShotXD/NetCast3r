@@ -6,6 +6,11 @@ Notable changes to NetCast3r, newest first.
 
 ### Added
 
+- **Regression bench**: an offline deterministic corpus runs the real scope,
+  source-audit, secret, checklist, and source-to-sink engines and reports
+  precision, recall, F1, per-case diffs, and a release gate. It never touches a
+  target and never changes the submission ledger. `GET /api/v1/bench` and MCP
+  `bench_run` (219 tools). See [docs/BENCH.md](docs/BENCH.md).
 - **Python source-to-sink call chains**: `sourceflow_scan` starts at a Flask or
   FastAPI route, follows the `request` object through assignments, branches,
   arguments, and returns, and reports the actual chain into eval/exec, shell,
@@ -14,6 +19,10 @@ Notable changes to NetCast3r, newest first.
   YAML loaders are not reported. `GET /api/v1/sourceflow` and MCP
   `sourceflow_scan` (218 tools), and the same chains appear as `source-flow`
   observations in the Reverse Lab.
+- **Program brief history**: every applied brief is persisted with its parsed
+  assets, rules, diff, filename, actor, and time. `GET
+  /api/v1/missions/{id}/program/imports`, MCP `program_imports` (220 tools),
+  and an **Applied briefs** list in the Program tab.
 - **Program brief ingestion**: `program_preview` and `program_import` parse a
   HackerOne, Bugcrowd, Intigriti, YesWeHack, or Immunefi CSV/JSON export, or a
   pasted brief, into mission scope. Exclusions apply immediately; a new

@@ -37,7 +37,7 @@ mock-driven; the blueprint below is the source of truth for production.
 runs/events/findings. The shell uses the Obsidian Signal system. Mission,
 Approval, and ToolCall entities, their SQLite tables, APIs, and the Missions
 portfolio screen exist. The MCP control plane is implemented: a local stdio
-server, 218 typed tools, scope and approval gates, single-use approvals, rate
+server, 220 typed tools, scope and approval gates, single-use approvals, rate
 limits, resources, prompts, and a complete tool-call audit. Disposable inboxes,
 OAST callbacks, named auth profiles, and a scoped authenticated request tool
 support account-gated testing without putting credentials in prompts or audit

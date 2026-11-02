@@ -97,7 +97,7 @@ exists but narrow or unverified; **no** = not present; **n/a** = not public.
 | Program/scope brief ingestion | yes | no | no | no | no | no | no | n/a |
 | Coverage checklist per mission | yes | no | no | no | no | no | no | n/a |
 | Self-learning knowledge base | yes | partial | no | partial | no | no | partial | n/a |
-| Benchmark harness | no | partial | partial | partial | no | no | partial | n/a |
+| Benchmark harness | partial | partial | partial | partial | no | no | partial | n/a |
 | Submission and payout ledger | yes | no | no | no | no | no | no | n/a |
 | Public report submission without approval | never | unknown | no | unknown | no | no | no | no |
 
@@ -196,8 +196,9 @@ The missing pieces are not "more agents." They are:
 - Program sync and scope diff: HackerOne/Bugcrowd/Intigriti/YesWeHack.
 - Expected-value ranking: reward range, competition, scope freshness,
   historical acceptance, and cost per proof.
-- Benchmark harness: replay a corpus, compare valid rate, false positives,
-  time to proof, and cost per proof against a fixed baseline.
+- Benchmark harness: the deterministic corpus and release gate are implemented
+  (`bench_run`); the live-target replay - valid rate, false positives,
+  time-to-proof, and cost-per-proof against a fixed baseline - is next.
 - Multi-identity auth profiles and a session broker for cross-tenant tests.
 
 ### P3 - make it a platform

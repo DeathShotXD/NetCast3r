@@ -1257,6 +1257,13 @@ class Server:
                 return _problem(400, str(exc))
             return _json(result)
 
+        @add("GET", r"/api/v1/missions/(?P<id>[A-Za-z0-9_]+)/program/imports")
+        def program_imports(ctx):
+            if not self.index.get_mission(ctx.params["id"]):
+                return _problem(404, "mission not found")
+            return _json({"items": self.index.list_program_imports(
+                ctx.params["id"], limit=ctx.limit)})
+
         @add("POST", r"/api/v1/missions/(?P<id>[A-Za-z0-9_]+)/program")
         def program_import(ctx):
             from .. import programs as programs_module
@@ -1920,6 +1927,15 @@ class Server:
                                             sourceflow_module.MAX_FILES)))
             except ValueError as exc:
                 return _problem(400, str(exc))
+
+        @add("GET", r"/api/v1/bench")
+        def bench_run(ctx):
+            from .. import bench as bench_module
+            result = bench_module.run(kind=str(ctx.query.get("kind") or ""),
+                                      case_id=str(ctx.query.get("case") or ""))
+            if str(ctx.query.get("gate") or "").lower() in {"1", "true", "yes"}:
+                result["gate"] = bench_module.gate(result)
+            return _json(result)
 
         @add("GET", r"/api/v1/connect")
         def connect(ctx):

@@ -5,6 +5,7 @@
   import { store } from '../state.svelte';
   import type {
     Approval,
+    BenchResult,
     McpInfo,
     McpTool,
     ToolCall,
@@ -60,6 +61,8 @@
   let expanded = $state<string | null>(null);
   let busy = $state('');
   let timer: ReturnType<typeof setInterval> | null = null;
+  let benchResult = $state<BenchResult | null>(null);
+  let benchBusy = $state(false);
 
   const tools = $derived(info?.tools ?? []);
   const server = $derived(info?.server ?? null);
@@ -159,6 +162,17 @@
     }
   }
 
+  async function loadBench() {
+    benchBusy = true;
+    try {
+      benchResult = await api.bench();
+    } catch {
+      benchResult = null;
+    } finally {
+      benchBusy = false;
+    }
+  }
+
   function openTool(tool: McpTool) {
     selectedTool = tool;
     if (window.innerWidth < 1180) {
@@ -246,6 +260,7 @@
 
   onMount(() => {
     void load();
+    void loadBench();
     void store.refreshTotals();
     timer = setInterval(() => {
       if (document.visibilityState === 'visible') void load(true);
@@ -306,6 +321,71 @@
       <strong>{callTotal}</strong>
       <small>calls recorded</small>
     </article>
+  </section>
+
+  <section class="obs-card obs-bench" aria-label="deterministic regression bench">
+    <header class="obs-card-head">
+      <div>
+        <div class="obs-card-title"><Icon name="check" size={13} />Regression bench</div>
+        <div class="obs-card-sub">
+          An offline corpus through the real scope, source-audit, secret, checklist, and source-to-sink engines. A failure is a framework regression, never a target finding.
+        </div>
+      </div>
+      <div class="flex items-center gap-2">
+        {#if benchResult?.gate}
+          <span class="obs-chip" style="color:{benchResult.gate.passed ? 'var(--obs-acid)' : 'var(--obs-red)'}">
+            gate {benchResult.gate.passed ? 'passed' : 'failed'}
+          </span>
+        {/if}
+        <button class="obs-btn obs-btn-ghost" type="button" disabled={benchBusy} onclick={() => void loadBench()}>
+          <Icon name="refresh" size={12} />
+          {benchBusy ? 'Running...' : 'Run bench'}
+        </button>
+      </div>
+    </header>
+    <div class="obs-card-body">
+      {#if benchResult}
+        <div class="obs-agent-stats" aria-label="bench totals">
+          <article class="obs-card">
+            <span>cases</span>
+            <strong class:acid={benchResult.failed === 0} class:violet={benchResult.failed > 0}>{benchResult.passed}/{benchResult.cases}</strong>
+            <small>{benchResult.failed} failed - {benchResult.duration_ms} ms</small>
+          </article>
+          <article class="obs-card">
+            <span>precision</span>
+            <strong class:acid={benchResult.precision >= 0.9}>{Math.round(benchResult.precision * 100)}%</strong>
+            <small>{benchResult.fp} false positive(s)</small>
+          </article>
+          <article class="obs-card">
+            <span>recall</span>
+            <strong class:acid={benchResult.recall >= 0.9}>{Math.round(benchResult.recall * 100)}%</strong>
+            <small>{benchResult.fn} false negative(s)</small>
+          </article>
+          <article class="obs-card">
+            <span>f1</span>
+            <strong>{benchResult.f1.toFixed(3)}</strong>
+            <small>{benchResult.tp} true positive(s)</small>
+          </article>
+        </div>
+        {#if benchResult.failures.length}
+          <ul class="obs-bench-failures">
+            {#each benchResult.failures as failure (failure.id)}
+              <li>
+                <span class="obs-chip" style="color:var(--obs-red)">{failure.kind}</span>
+                <strong>{failure.id}</strong>
+                <span class="mono">expected {failure.expected.join(', ') || 'none'} / actual {failure.actual.join(', ') || 'none'}</span>
+              </li>
+            {/each}
+          </ul>
+        {:else}
+          <p class="obs-detail-note">Every case matched its expected labels. The corpus is offline and deterministic.</p>
+        {/if}
+      {:else if benchBusy}
+        <p class="obs-detail-note">Running the deterministic corpus...</p>
+      {:else}
+        <p class="obs-detail-note">The bench could not be read. The controls are still available; run it again or inspect the server log.</p>
+      {/if}
+    </div>
   </section>
 
   {#if error && info}

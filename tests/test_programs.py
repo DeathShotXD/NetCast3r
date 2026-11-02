@@ -96,6 +96,13 @@ class ProgramApplyTests(unittest.TestCase):
                          ["other.example.net"])
         notes = self.index.list_agent_notes(self.mission["id"])
         self.assertTrue(any(note["kind"] == "program.ingest" for note in notes))
+        history = self.index.list_program_imports(self.mission["id"])
+        self.assertEqual(len(history), 1)
+        self.assertEqual(history[0]["in_scope"],
+                         ["api.example.com", "other.example.net"])
+        self.assertEqual(history[0]["out_of_scope"], ["staging.example.com"])
+        self.assertEqual(history[0]["diff"]["requires_allow_expand"],
+                         ["other.example.net"])
 
     def test_apply_with_allow_expand_authorises_the_new_asset(self):
         result = programs.apply(
@@ -156,6 +163,10 @@ class ProgramRouteTests(unittest.TestCase):
         self.assertEqual(self.data(applied)["applied"]["added"], 2)
         mission = self.server.index.get_mission(self.mission_id)
         self.assertIn("!old.example.com", mission["scope"])
+        history = self.call(
+            "GET", f"/api/v1/missions/{self.mission_id}/program/imports")
+        self.assertEqual(history.status, 200)
+        self.assertEqual(len(self.data(history)["items"]), 1)
 
     def test_bad_brief_is_a_problem_document(self):
         response = self.call(

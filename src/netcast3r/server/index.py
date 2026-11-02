@@ -544,6 +544,24 @@ CREATE TABLE IF NOT EXISTS mission_coverage (
 );
 CREATE INDEX IF NOT EXISTS idx_coverage_mission
     ON mission_coverage(mission_id, status);
+
+CREATE TABLE IF NOT EXISTS program_imports (
+    id TEXT PRIMARY KEY,
+    mission_id TEXT,
+    platform TEXT DEFAULT 'other',
+    handle TEXT DEFAULT '',
+    name TEXT DEFAULT '',
+    source TEXT DEFAULT 'text',
+    filename TEXT DEFAULT '',
+    in_scope_json TEXT DEFAULT '[]',
+    out_of_scope_json TEXT DEFAULT '[]',
+    rules_json TEXT DEFAULT '[]',
+    diff_json TEXT DEFAULT '{}',
+    actor TEXT DEFAULT '',
+    created_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_program_imports_mission
+    ON program_imports(mission_id, created_at DESC);
 """
 
 SEVERITY_ORDER = {"critical": 0, "high": 1, "medium": 2, "low": 3, "info": 4, "unknown": 5}
@@ -1338,6 +1356,62 @@ class Index:
                 "DELETE FROM agent_notes WHERE mission_id = ?", (mission_id,))
             self.conn.commit()
         return int(cur.rowcount or 0)
+
+    # -- program scope imports --------------------------------------------
+    def add_program_import(self, mission_id: str, parsed: dict, diff: dict,
+                           filename: str = "", actor: str = "") -> dict:
+        """Persist the exact scope brief that was applied.
+
+        The mission's scope is the live authorization. This row is the audit
+        record of why it changed: the platform, the parsed assets, the rules,
+        the diff that was applied, and who applied it.
+        """
+        if not self.get_mission(mission_id):
+            raise ValueError("unknown mission")
+        row_id = _new_id("prg")
+        now = _now()
+        parsed = parsed or {}
+        diff = diff or {}
+        with self._lock:
+            self.conn.execute(
+                "INSERT INTO program_imports (id, mission_id, platform, handle, "
+                "name, source, filename, in_scope_json, out_of_scope_json, "
+                "rules_json, diff_json, actor, created_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (row_id, mission_id, str(parsed.get("platform") or "other")[:40],
+                 str(parsed.get("handle") or "")[:200],
+                 str(parsed.get("name") or "")[:300],
+                 str(parsed.get("source") or "text")[:20],
+                 str(filename or "")[:500],
+                 json.dumps(parsed.get("in_scope") or [], default=str),
+                 json.dumps(parsed.get("out_of_scope") or [], default=str),
+                 json.dumps(parsed.get("rules") or [], default=str),
+                 json.dumps(diff, default=str), str(actor or "")[:120], now))
+            self.conn.commit()
+        return self.get_program_import(row_id) or {}
+
+    def get_program_import(self, import_id: str) -> dict | None:
+        with self._lock:
+            row = self.conn.execute(
+                "SELECT * FROM program_imports WHERE id = ?", (import_id,)
+            ).fetchone()
+        return self._program_import_row(row) if row else None
+
+    def list_program_imports(self, mission_id: str, limit: int = 50) -> list[dict]:
+        limit = max(1, min(int(limit or 50), 500))
+        with self._lock:
+            rows = self.conn.execute(
+                "SELECT * FROM program_imports WHERE mission_id = ? "
+                "ORDER BY created_at DESC LIMIT ?", (mission_id, limit)).fetchall()
+        return [self._program_import_row(row) for row in rows]
+
+    @staticmethod
+    def _program_import_row(row) -> dict:
+        item = dict(row)
+        for key in ("in_scope", "out_of_scope", "rules"):
+            item[key] = _loads(item.pop(f"{key}_json", "[]"), [])
+        item["diff"] = _loads(item.pop("diff_json", "{}"), {})
+        return item
 
     # -- lessons and skills ------------------------------------------------
     def add_lesson(self, title: str, lesson: str, technique: str = "",

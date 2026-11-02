@@ -53,6 +53,20 @@ jobs:
         env:
           PYTHONPATH: src
         run: python -m unittest discover -s tests
+      - name: Run the regression bench gate
+        env:
+          PYTHONPATH: src
+        run: |
+          python - <<'PY'
+          from netcast3r import bench
+          result = bench.run()
+          gate = bench.gate(result)
+          print(f"bench: {result['passed']}/{result['cases']} passed, "
+                f"precision {result['precision']}, recall {result['recall']}")
+          for failure in result["failures"]:
+              print("FAIL", failure["id"], failure["expected"], failure["actual"])
+          raise SystemExit(0 if gate["passed"] else 1)
+          PY
 
   web:
     runs-on: ubuntu-latest

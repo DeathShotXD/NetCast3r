@@ -79,8 +79,13 @@ The preview route shows the exact diff before anything is written. The MCP
 tool is high risk because expanding scope changes authorisation, so supervised
 deployments need a human approval.
 
+Every applied brief is persisted in `program_imports` with the platform,
+parsed assets, rules, diff, filename, actor, and time. The mission scope stays
+the live authorization; the history is its audit trail.
+
 - `POST /api/v1/missions/{id}/program/preview`
 - `POST /api/v1/missions/{id}/program`
+- `GET /api/v1/missions/{id}/program/imports`
 - `GET /api/v1/programs/formats`
 
 ## Reproduction

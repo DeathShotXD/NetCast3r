@@ -729,6 +729,13 @@ def program_import(ctx: ToolContext, args: dict) -> dict:
                  body=body)
 
 
+def program_imports(ctx: ToolContext, args: dict) -> dict:
+    query = {"limit": args.get("limit", 50)}
+    return _call(ctx, "GET",
+                 f"/api/v1/missions/{args['mission_id']}/program/imports",
+                 query=query)
+
+
 def candidate_poc(ctx: ToolContext, args: dict) -> dict:
     return _call(ctx, "POST", f"/api/v1/candidates/{args['candidate_id']}/poc",
                  body={})
@@ -1044,6 +1051,13 @@ def sourceflow_scan(ctx: ToolContext, args: dict) -> dict:
 
 def diagnostics(ctx: ToolContext, args: dict) -> dict:
     return _call(ctx, "GET", "/api/v1/diagnostics")
+
+
+def bench_run(ctx: ToolContext, args: dict) -> dict:
+    query = {key: args[key] for key in ("kind", "case") if args.get(key)}
+    if args.get("gate"):
+        query["gate"] = "1"
+    return _call(ctx, "GET", "/api/v1/bench", query=query or None)
 
 
 def expertise_profile(ctx: ToolContext, args: dict) -> dict:
@@ -3049,6 +3063,7 @@ _HANDLERS.update({
     "api_spec_ingest": api_spec_ingest,
     "program_preview": program_preview,
     "program_import": program_import,
+    "program_imports": program_imports,
     "candidate_poc": candidate_poc,
     "host_capabilities": host_capabilities,
     "host_shell": host_shell,
@@ -3104,6 +3119,7 @@ _HANDLERS.update({
     "codeaudit_scan": codeaudit_scan,
     "codeaudit_rules": codeaudit_rules,
     "sourceflow_scan": sourceflow_scan,
+    "bench_run": bench_run,
     "diagnostics": diagnostics,
     "expertise_profile": expertise_profile,
     "taxii_collections": taxii_collections,
@@ -3645,6 +3661,15 @@ TOOLS: tuple[Tool, ...] = (
                                         "yeswehack", "immunefi", "other"]},
                   "allow_expand": _boolean("show new in-scope assets as applicable", False)},
                  ["mission_id", "brief"]), "program_preview"),
+    Tool("program_imports", "Read the program briefs applied to a mission",
+         "Show the exact briefs that changed this mission's scope: platform, "
+         "parsed in-scope and out-of-scope assets, rules, the applied diff, "
+         "filename, actor, and time. The mission's live scope remains the "
+         "authorisation; this is its audit trail.",
+         "low", "missions",
+         _schema({"mission_id": _string("mission id"),
+                  "limit": _integer("entries", 1, 500, 50)},
+                 ["mission_id"]), "program_imports", read_only=True),
     Tool("program_import", "Apply a bounty program brief to a mission scope",
          "Parse and apply a program brief. Exclusions and assets already covered "
          "by the mission apply without widening authorisation. A new in-scope "
@@ -4041,6 +4066,16 @@ TOOLS: tuple[Tool, ...] = (
          _schema({"path": _string("source directory, defaults to the workspace"),
                   "max_files": _integer("maximum files", 1, 2000, 2000)}, []),
          "sourceflow_scan", read_only=True),
+    Tool("bench_run", "Run the deterministic regression bench",
+         "Run a small offline corpus through the real scope, source-audit, "
+         "secret, checklist, and source-to-sink engines. Returns precision, "
+         "recall, F1, per-case diffs, and an optional release gate. A failed "
+         "case is a regression, never a target finding.",
+         "low", "workspace",
+         _schema({"kind": _string("optional case kind"),
+                  "case": _string("optional case id"),
+                  "gate": _boolean("include the release gate", True)}, []),
+         "bench_run", read_only=True),
     Tool("codeaudit_rules", "List source-audit rules",
          "List every static rule the source auditor applies, with its severity and the "
          "fix it recommends. Low risk and read-only.",
