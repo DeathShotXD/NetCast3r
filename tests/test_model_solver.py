@@ -84,11 +84,20 @@ class SolverLoopTests(unittest.TestCase):
         result = solver.run()
         self.assertIn("action schema", result["stop"])
 
-    def test_repeated_action_stops(self):
+    def test_a_single_repeat_is_refused_then_the_model_moves_on(self):
         solver = self.make(scripted(
             reply("http_probe", {"target": "http://127.0.0.1:9/"}),
             reply("http_probe", {"target": "http://127.0.0.1:9/"}),
+            reply("done", {"summary": "nothing else to try"}),
         ))
+        result = solver.run()
+        self.assertEqual(result["stop"], "model finished")
+        self.assertEqual(len(self.registry.calls), 1)
+        self.assertIn("duplicate refused", result["steps"][1]["note"])
+
+    def test_three_identical_calls_stop(self):
+        same = reply("http_probe", {"target": "http://127.0.0.1:9/"})
+        solver = self.make(scripted(same, same, same, same))
         result = solver.run()
         self.assertIn("repeated", result["stop"])
 

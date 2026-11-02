@@ -204,6 +204,7 @@ class Solver:
         summary = ""
         repeated = 0
         last_signature = ""
+        seen: dict[str, int] = {}
         failures = 0
         for step in range(self.max_steps):
             if self.should_stop is not None and self.should_stop():
@@ -260,10 +261,24 @@ class Solver:
                                             sort_keys=True, default=str)
             repeated = repeated + 1 if signature == last_signature else 0
             last_signature = signature
+            seen[signature] = seen.get(signature, 0) + 1
             if repeated >= 1:
-                stop = "model repeated the same action"
-                self._emit("decide", {"text": "stopped a repeating action"})
-                break
+                # A weak model often repeats the call it just made. Refuse the
+                # duplicate once and tell it why, so it can pick a different
+                # probe; only a model that cannot move on ends the loop.
+                if repeated >= 2 or seen[signature] >= 3:
+                    stop = "model repeated the same action"
+                    self._emit("decide", {"text": "stopped a repeating action"})
+                    break
+                history.append({
+                    "action": action, "ok": False,
+                    "note": ("duplicate refused: this exact call already ran. "
+                             "Choose a different action, or done with a summary."),
+                })
+                self._emit("decide", {
+                    "text": "refused a duplicate call and asked for a different action",
+                })
+                continue
 
             self._emit("act", {"tool": action, "text": f"calling {action}"})
             try:
