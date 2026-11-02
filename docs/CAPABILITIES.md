@@ -35,6 +35,29 @@ shared knowledge, and **candidates** with raw evidence. `toolbox_processes` and
 declared endpoint and parameter as graph nodes, so a scoped API assessment starts
 from the published surface instead of crawling it.
 
+## Program and scope ingestion
+
+`program_preview` and `program_import` normalise a HackerOne, Bugcrowd,
+Intigriti, YesWeHack, or Immunefi CSV/JSON export, or a pasted program brief,
+into one mission scope. The parser recognises target columns, status columns,
+exclusions, max severity, and rules; it rejects anything that is not a host,
+URL, wildcard, IP, or network.
+
+The apply step is a boundary check, not a convenience:
+
+- an exclusion is added immediately;
+- an in-scope asset already covered by the mission is recorded explicitly;
+- a new in-scope asset is **held back** unless `allow_expand=true`;
+- an empty parse is an error, never a silent success.
+
+The preview route shows the exact diff before anything is written. The MCP
+tool is high risk because expanding scope changes authorisation, so supervised
+deployments need a human approval.
+
+- `POST /api/v1/missions/{id}/program/preview`
+- `POST /api/v1/missions/{id}/program`
+- `GET /api/v1/programs/formats`
+
 ## Reproduction
 
 `candidate_poc` turns a candidate's recorded steps into a minimal `curl` and a

@@ -714,6 +714,21 @@ def api_spec_ingest(ctx: ToolContext, args: dict) -> dict:
                  body=body)
 
 
+def program_preview(ctx: ToolContext, args: dict) -> dict:
+    body = {key: args[key] for key in
+            ("brief", "filename", "platform", "allow_expand") if key in args}
+    return _call(ctx, "POST",
+                 f"/api/v1/missions/{args['mission_id']}/program/preview",
+                 body=body)
+
+
+def program_import(ctx: ToolContext, args: dict) -> dict:
+    body = {key: args[key] for key in
+            ("brief", "filename", "platform", "allow_expand") if key in args}
+    return _call(ctx, "POST", f"/api/v1/missions/{args['mission_id']}/program",
+                 body=body)
+
+
 def candidate_poc(ctx: ToolContext, args: dict) -> dict:
     return _call(ctx, "POST", f"/api/v1/candidates/{args['candidate_id']}/poc",
                  body={})
@@ -3017,6 +3032,8 @@ _HANDLERS.update({
     "toolbox_processes": toolbox_processes,
     "toolbox_kill": toolbox_kill,
     "api_spec_ingest": api_spec_ingest,
+    "program_preview": program_preview,
+    "program_import": program_import,
     "candidate_poc": candidate_poc,
     "host_capabilities": host_capabilities,
     "host_shell": host_shell,
@@ -3598,6 +3615,35 @@ TOOLS: tuple[Tool, ...] = (
                   "spec": _string("path to a local OpenAPI/Postman file or inline JSON"),
                   "limit": _integer("endpoints", 1, 5000, 500)},
                  ["mission_id", "spec"]), "api_spec_ingest"),
+    Tool("program_preview", "Preview a bounty program brief against a mission",
+         "Parse a HackerOne, Bugcrowd, Intigriti, YesWeHack, or Immunefi CSV, "
+         "JSON, or pasted brief and show exactly which assets are already "
+         "covered, which exclusions would be added, and which new in-scope "
+         "assets would expand the mission's authorisation. It writes nothing.",
+         "low", "missions",
+         _schema({"mission_id": _string("mission id"),
+                  "brief": _string("CSV, JSON, or pasted program brief"),
+                  "filename": _string("optional filename, used to detect platform"),
+                  "platform": {"type": "string", "description": "optional platform",
+                               "enum": ["hackerone", "bugcrowd", "intigriti",
+                                        "yeswehack", "immunefi", "other"]},
+                  "allow_expand": _boolean("show new in-scope assets as applicable", False)},
+                 ["mission_id", "brief"]), "program_preview"),
+    Tool("program_import", "Apply a bounty program brief to a mission scope",
+         "Parse and apply a program brief. Exclusions and assets already covered "
+         "by the mission apply without widening authorisation. A new in-scope "
+         "asset is held back unless allow_expand is explicitly true; that flag "
+         "changes the mission's authorisation boundary, so it needs a human "
+         "decision in supervised mode. Never creates a finding.",
+         "high", "missions",
+         _schema({"mission_id": _string("mission id"),
+                  "brief": _string("CSV, JSON, or pasted program brief"),
+                  "filename": _string("optional filename, used to detect platform"),
+                  "platform": {"type": "string", "description": "optional platform",
+                               "enum": ["hackerone", "bugcrowd", "intigriti",
+                                        "yeswehack", "immunefi", "other"]},
+                  "allow_expand": _boolean("authorise new in-scope assets", False)},
+                 ["mission_id", "brief"]), "program_import", destructive=True),
     Tool("candidate_poc", "Build a reproduction for a candidate",
          "Turn a candidate's recorded evidence into a minimal curl and Python "
          "proof a reviewer can re-run. It reproduces the request that was made; "

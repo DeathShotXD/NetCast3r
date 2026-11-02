@@ -207,7 +207,7 @@ netcast3r mcp --print-config    # optional: paste into opencode.jsonc
 opencode mcp list
 ```
 
-The server has 215 typed tools with risk tiers, scope enforcement, single-use
+The server has 217 typed tools with risk tiers, scope enforcement, single-use
 approvals, rate limits, and a full tool-call audit, plus disposable inboxes,
 OAST callbacks, named auth profiles, a scoped authenticated `http_request`, a
 path-variant differential, run-to-run surface diffing, local reverse-engineering
@@ -299,7 +299,8 @@ required before a candidate is marked corroborated.
 - [Evidence graph](docs/GRAPH.md) - nodes, provenance, candidate paths, and verification
 - [Memory](docs/MEMORY.md) - the shared knowledge base, campaign stages, and the profile
 - [Exploits](docs/EXPLOITS.md) - the typed exploit module catalog and how it plans
-- [Capabilities](docs/CAPABILITIES.md) - the external tool broker, API-spec ingestion, and PoCs
+- [Capabilities](docs/CAPABILITIES.md) - the external tool broker, API-spec ingestion, program briefs, and PoCs
+- [Agentic landscape](docs/AGENTIC_LANDSCAPE.md) - public agent systems, the capability matrix, and the build order
 - [Host](docs/HOST.md) - the shell and filesystem, and the rules that gate them
 - [Main brain](docs/BRAIN.md) - the top-level reasoner and how to steer it
 - [Coverage](docs/COVERAGE.md) - the 103-item modern checklist the hunt closes

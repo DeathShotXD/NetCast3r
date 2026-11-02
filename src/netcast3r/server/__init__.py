@@ -1227,6 +1227,56 @@ class Server:
                 return _problem(400, str(exc))
             return _json(result)
 
+        @add("GET", r"/api/v1/programs/formats")
+        def program_formats(ctx):
+            from .. import programs as programs_module
+            return _json({
+                "platforms": list(programs_module.PLATFORMS),
+                "sources": ["csv", "json", "text"],
+                "note": ("CSV exports, JSON exports, and pasted briefs are "
+                         "accepted. An in-scope asset outside the mission's "
+                         "current authorisation needs allow_expand=true."),
+            })
+
+        @add("POST", r"/api/v1/missions/(?P<id>[A-Za-z0-9_]+)/program/preview")
+        def program_preview(ctx):
+            from .. import programs as programs_module
+
+            if not self.index.get_mission(ctx.params["id"]):
+                return _problem(404, "mission not found")
+            body = ctx.json()
+            body = body if isinstance(body, dict) else {}
+            try:
+                result = programs_module.preview(
+                    self.index, ctx.params["id"],
+                    str(body.get("brief") or body.get("text") or body.get("spec") or ""),
+                    filename=str(body.get("filename") or ""),
+                    platform=str(body.get("platform") or ""),
+                    allow_expand=bool(body.get("allow_expand")))
+            except (programs_module.ProgramBriefError, ValueError) as exc:
+                return _problem(400, str(exc))
+            return _json(result)
+
+        @add("POST", r"/api/v1/missions/(?P<id>[A-Za-z0-9_]+)/program")
+        def program_import(ctx):
+            from .. import programs as programs_module
+
+            if not self.index.get_mission(ctx.params["id"]):
+                return _problem(404, "mission not found")
+            body = ctx.json()
+            body = body if isinstance(body, dict) else {}
+            try:
+                result = programs_module.apply(
+                    self.index, ctx.params["id"],
+                    str(body.get("brief") or body.get("text") or body.get("spec") or ""),
+                    filename=str(body.get("filename") or ""),
+                    platform=str(body.get("platform") or ""),
+                    allow_expand=bool(body.get("allow_expand")),
+                    actor=str(body.get("actor") or ""))
+            except (programs_module.ProgramBriefError, ValueError) as exc:
+                return _problem(400, str(exc))
+            return _json(result)
+
         # -- host: shell and filesystem -------------------------------------
         @add("GET", r"/api/v1/host/capabilities")
         def host_capabilities(ctx):

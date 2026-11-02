@@ -18,6 +18,7 @@ submits a report. Its kill switch cancels everything it started.
 
 from __future__ import annotations
 
+import calendar
 import threading
 import time
 
@@ -36,6 +37,10 @@ MAX_COOLDOWN = 900.0
 NO_PROGRESS_LIMIT = 3
 MAX_MISSION_FAILS = 4
 RESUME_AFTER = 6 * 3600.0
+# A model-only brain is not worth starting when the brain loop has logged two
+# failures and no answer inside this window. The deterministic hunt is.
+MODEL_GATE_WINDOW = 900.0
+MODEL_GATE_FAILURES = 2
 # Per-mode budgets. Deliberately small: the director prefers many short,
 # observable runs over one long run that hides its work.
 MODE_BUDGETS = {
@@ -226,6 +231,7 @@ class Director:
                 for mission_id, entry in missions.items()
             ],
             "eligible": len(self._eligible(state)),
+            "model_health": self._model_health(),
             "running": self._thread is not None and self._thread.is_alive(),
         }
         if with_portfolio:
@@ -345,6 +351,60 @@ class Director:
         no_progress = int(entry.get("no_progress") or 0)
         cooldown = min(BASE_COOLDOWN * (2 ** no_progress), MAX_COOLDOWN)
         return max(0.0, cooldown - (time.time() - last))
+
+    def _model_health(self) -> dict:
+        """Read the recent brain journal for a model-availability signal.
+
+        This is not a provider probe: a probe costs money and can rate-limit
+        the key the hunt needs. It is an observation of what the brain loop
+        already experienced. No failure in the window means the gate is open,
+        which keeps a fresh install and a quiet brain from being downgraded.
+        """
+        try:
+            rows = self.server.index.list_director_log(limit=250)
+        except Exception:  # noqa: BLE001 - a broken log must not stop the hunt
+            return {"available": True, "reason": "journal unavailable"}
+        now = time.time()
+        last_success = -1.0
+        wait_at = -1.0
+        wait_text = ""
+        failures = 0
+        for row in rows:
+            try:
+                parsed = calendar.timegm(time.strptime(
+                    str(row.get("ts") or ""), "%Y-%m-%dT%H:%M:%SZ"))
+                age = now - parsed
+            except (ValueError, OverflowError):
+                continue
+            if age < 0 or age > MODEL_GATE_WINDOW:
+                continue
+            kind = str(row.get("kind") or "")
+            if kind == "brain" and str((row.get("data") or {}).get("model") or ""):
+                last_success = max(last_success, age)
+            elif kind == "brain-wait":
+                failures += 1
+                if age > wait_at:
+                    wait_at = age
+                    wait_text = str(row.get("message") or "")[:200]
+        if failures >= MODEL_GATE_FAILURES and (last_success < 0
+                                                or wait_at < last_success):
+            # Smaller age means newer. A failure is authoritative only when
+            # it is newer than the last successful brain turn.
+            return {"available": False, "failures": failures,
+                    "reason": wait_text or "no model answered recently",
+                    "window_seconds": int(MODEL_GATE_WINDOW)}
+        return {"available": True, "failures": failures,
+                "reason": "a model answered recently" if last_success >= 0
+                          else "no recent model failure"}
+
+    def _gate_mode(self, mode: str) -> tuple[str, str]:
+        """Downgrade a model-only brain to the deterministic hunt."""
+        if mode == "hunt":
+            return mode, ""
+        health = self._model_health()
+        if health.get("available"):
+            return mode, ""
+        return "hunt", f"model gate: {health.get('reason', 'no model answered')}"
 
     def _progress(self, mission_id: str) -> dict:
         mission = self.server.index.get_mission(mission_id) or {}
@@ -493,7 +553,8 @@ class Director:
         mission = self.server.index.get_mission(mission_id)
         if not mission:
             return {"action": "idle", "reason": "mission vanished"}
-        mode = row["mode"]
+        requested_mode = row["mode"]
+        mode, gate_reason = self._gate_mode(requested_mode)
         policy = "full" if mission.get("autonomy") == "autonomous" else "supervised"
         objective = row.get("objective") or {}
         goal = str(objective.get("goal") or mission.get("objective") or "")
@@ -535,6 +596,8 @@ class Director:
         note = (f"Director chose {mode} for '{mission.get('title', '')}' "
                 f"(score {row.get('score', 0)}, {row.get('autonomy', '')}). "
                 f"Objective: {goal[:200]}")
+        if gate_reason:
+            note += f" [{gate_reason}]"
         try:
             self.server.index.add_agent_note(
                 mission_id, "director.plan", f"Director: {mode}", note,
@@ -544,8 +607,10 @@ class Director:
         self.server.index.add_director_log(
             "start", f"{mode} on {mission.get('title', mission_id)}",
             mission_id=mission_id, run_id=run["id"],
-            data={"mode": mode, "policy": policy, "score": row.get("score"),
-                  "objective": goal[:300], "autonomy": mission.get("autonomy")})
+            data={"mode": mode, "requested_mode": requested_mode,
+                  "policy": policy, "score": row.get("score"),
+                  "objective": goal[:300], "autonomy": mission.get("autonomy"),
+                  "model_gate": gate_reason})
         try:
             self.server.bus.publish(Event(
                 type="director", run_id=run["id"], agent="director",
@@ -554,8 +619,9 @@ class Director:
         except Exception:  # noqa: BLE001
             pass
         return {"action": "start", "mission_id": mission_id, "mode": mode,
-                "run_id": run["id"], "policy": policy, "objective": goal,
-                "score": row.get("score")}
+                "requested_mode": requested_mode, "run_id": run["id"],
+                "policy": policy, "objective": goal,
+                "score": row.get("score"), "model_gate": gate_reason}
 
     @staticmethod
     def _stamp() -> str:

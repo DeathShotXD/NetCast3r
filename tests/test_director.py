@@ -234,6 +234,33 @@ class DirectorTests(unittest.TestCase):
         self.director._tick(force=True)
         self.assertEqual(self.server.index.totals().get("findings", 0), 0)
 
+    def test_model_failures_downgrade_a_model_only_brain_to_hunt(self):
+        mission = self.mission("gated")
+        prior = self.server.index.create_run("http://127.0.0.1:9/", {"mode": "hunt"})
+        self.server.index.add_mission_run(mission["id"], prior["id"])
+        self.server.index.update_run(prior["id"], status="done", counts_json={"actions": 1})
+        self.server.index.add_director_log("brain-wait", "no model answered: 429")
+        self.server.index.add_director_log("brain-wait", "no model answered: ConnectError")
+        decision = self.director._tick(force=True)
+        self.assertEqual(decision["action"], "start")
+        self.assertEqual(decision["requested_mode"], "autopilot")
+        self.assertEqual(decision["mode"], "hunt")
+        self.assertIn("model gate", decision["model_gate"])
+
+    def test_a_newer_model_answer_reopens_the_gate(self):
+        mission = self.mission("recovered")
+        prior = self.server.index.create_run("http://127.0.0.1:9/", {"mode": "hunt"})
+        self.server.index.add_mission_run(mission["id"], prior["id"])
+        self.server.index.update_run(prior["id"], status="done", counts_json={"actions": 1})
+        self.server.index.add_director_log("brain-wait", "no model answered: 429")
+        self.server.index.add_director_log("brain-wait", "no model answered: 429")
+        self.server.index.add_director_log(
+            "brain", "the model answered", data={"model": "test-model"})
+        decision = self.director._tick(force=True)
+        self.assertEqual(decision["action"], "start")
+        self.assertEqual(decision["mode"], "autopilot")
+        self.assertFalse(decision["model_gate"])
+
     def test_a_finished_run_matures_the_mission(self):
         mission = self.mission("mature")
         run = self.server.index.create_run("http://127.0.0.1:9/", {"mode": "hunt"})
