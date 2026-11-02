@@ -20,6 +20,10 @@ Notable changes to NetCast3r, newest first.
   in-scope asset is held back unless `allow_expand` is explicit. There is a
   read-only preview route, a high-risk MCP tool, and a **Program** tab in the
   Mission detail page. See [docs/CAPABILITIES.md](docs/CAPABILITIES.md).
+- **Live-target priority**: Prime now marks local and lab targets and makes
+  them yield to any real in-scope target in the portfolio. A local lab with
+  more open leads no longer takes compute from a live bounty mission; when it
+  is the only target, it still runs.
 - **Model-health gate**: when the brain journal shows repeated model failures
   and no newer answer, the director downgrades a model-only `swarm` or
   `autopilot` choice to the deterministic `hunt` instead of burning another

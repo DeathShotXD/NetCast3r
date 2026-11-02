@@ -47,6 +47,28 @@ class PrimeTests(unittest.TestCase):
         self.assertEqual(rows, [])
         self.assertNotIn(training["id"], [row["mission_id"] for row in rows])
 
+    def test_a_real_target_outranks_a_local_lab_with_more_leads(self):
+        lab = self.mission("lab")
+        for index in range(4):
+            self.index.create_hypothesis(
+                f"Lab lead {index}", target="http://127.0.0.1:9/",
+                mission_id=lab["id"])
+        real = self.index.create_mission(
+            "real", "https://example.com", status="active",
+            autonomy="autonomous")
+        rows = {row["mission_id"]: row for row in self.prime.portfolio()}
+        self.assertTrue(rows[lab["id"]]["local"])
+        self.assertFalse(rows[real["id"]]["local"])
+        self.assertGreater(rows[real["id"]]["score"], rows[lab["id"]]["score"])
+        self.assertEqual(rows[real["id"]]["mission_id"],
+                         self.prime.decide(limit=1)["ranked"][0]["mission_id"])
+
+    def test_a_local_lab_still_ranks_when_it_is_the_only_target(self):
+        lab = self.mission("only-local")
+        rows = self.prime.portfolio()
+        self.assertEqual([row["mission_id"] for row in rows], [lab["id"]])
+        self.assertTrue(rows[0]["local"])
+
     def test_open_leads_and_findings_raise_the_score(self):
         base = self.mission("plain")
         rich = self.mission("rich")

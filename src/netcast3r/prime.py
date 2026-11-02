@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import json
 import time
+from urllib.parse import urlsplit
 
 from . import learning
 
@@ -43,6 +44,25 @@ Rules:
 - Prefer a mission with an open, falsifiable lead over one that has only been
   mapped, and avoid a mission that is waiting on a human approval.
 """
+
+
+def _is_local_target(target) -> bool:
+    """True for localhost and lab targets, which should not outrank a real
+    in-scope bounty target just because the lab has more open leads."""
+    text = str(target or "").strip()
+    if not text:
+        return True
+    host = (urlsplit(text if "://" in text else f"https://{text}").hostname
+            or "").lower()
+    if not host:
+        return True
+    if host in {"localhost", "127.0.0.1", "0.0.0.0", "::1",
+                "host.docker.internal"}:
+        return True
+    if host.startswith("127.") or host.endswith((".local", ".localhost",
+                                                  ".internal")):
+        return True
+    return "." not in host
 
 
 def _minutes_since(stamp: str) -> float:
@@ -148,7 +168,16 @@ class Prime:
             if str(mission.get("status") or "") in INACTIVE_STATUSES:
                 continue
             signals = self._signals(mission)
-            rows.append({**signals, "score": self.score(signals)})
+            rows.append({**signals, "score": self.score(signals),
+                         "local": _is_local_target(mission.get("target"))})
+        # A live bounty target is the point of the portfolio. A local lab can
+        # have more leads and still be the wrong next unit of compute, so it
+        # yields to any real target while remaining available on its own.
+        if any(not row["local"] for row in rows):
+            for row in rows:
+                if row["local"]:
+                    row["score"] -= 50
+                    row["why_local"] = "local target yields to a live target"
         rows.sort(key=lambda item: (-item["score"], item["mission_id"]))
         return rows
 
