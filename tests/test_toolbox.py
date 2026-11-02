@@ -239,7 +239,7 @@ class PocTests(unittest.TestCase):
                                           "headers": {"content-type": "text/html"}}}]}}
         result = poc.build_poc(candidate, {"target": "https://lab.example.com/"})
         self.assertIn("curl", result["curl"])
-        self.assertIn("requests.get", result["python"])
+        self.assertIn("requests.request", result["python"])
         self.assertEqual(result["reproduced_steps"], 1)
         self.assertEqual(result["findings"], 0)
 

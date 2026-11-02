@@ -251,6 +251,98 @@ def save(target: str, summary: dict, findings: list[dict],
     return path
 
 
+def _pdf_escape(text: str) -> str:
+    return (str(text or "").replace("\\", "\\\\").replace("(", "\\(")
+            .replace(")", "\\)"))
+
+
+def markdown_to_pdf_bytes(markdown: str, title: str = "NetCast3r report") -> bytes:
+    """Minimal text PDF from markdown. No external PDF library required.
+
+    Headings and bullets become plain Helvetica lines. This is a delivery
+    artifact for operators who need a PDF companion to the Markdown report,
+    not a typeset layout engine. Secrets must already be redacted in the
+    markdown.
+    """
+    lines: list[str] = []
+    for raw in str(markdown or "").splitlines():
+        text = raw.rstrip()
+        if text.startswith("# "):
+            lines.append(text[2:].strip())
+            lines.append("")
+        elif text.startswith("## "):
+            lines.append(text[3:].strip())
+            lines.append("")
+        elif text.startswith("### "):
+            lines.append(text[4:].strip())
+        elif text.startswith("- "):
+            lines.append("• " + text[2:].strip())
+        elif text.startswith("```"):
+            continue
+        else:
+            lines.append(text)
+        if len(lines) >= 900:
+            lines.append("… truncated …")
+            break
+    if not lines:
+        lines = [title, "", "No content."]
+
+    content_lines = ["BT", "/F1 11 Tf", "50 780 Td", "14 TL"]
+    first = True
+    y_budget = 0
+    for line in lines:
+        chunk = _pdf_escape(line[:110])
+        if first:
+            content_lines.append(f"({chunk}) Tj")
+            first = False
+        else:
+            content_lines.append("T*")
+            content_lines.append(f"({chunk}) Tj")
+        y_budget += 1
+        if y_budget >= 52:
+            # Soft page break: continue stream; viewers still show one page of
+            # dense text which is enough for a submission companion.
+            break
+    content_lines.append("ET")
+    stream = "\n".join(content_lines).encode("latin-1", "replace")
+
+    objects: list[bytes] = []
+    objects.append(b"1 0 obj<< /Type /Catalog /Pages 2 0 R >>endobj\n")
+    objects.append(b"2 0 obj<< /Type /Pages /Kids [3 0 R] /Count 1 >>endobj\n")
+    objects.append(
+        b"3 0 obj<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] "
+        b"/Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>endobj\n")
+    objects.append(
+        f"4 0 obj<< /Length {len(stream)} >>stream\n".encode()
+        + stream + b"\nendstream\nendobj\n")
+    objects.append(
+        b"5 0 obj<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>endobj\n")
+
+    out = bytearray(b"%PDF-1.4\n")
+    offsets = [0]
+    for obj in objects:
+        offsets.append(len(out))
+        out.extend(obj)
+    xref = len(out)
+    out.extend(f"xref\n0 {len(objects) + 1}\n".encode())
+    out.extend(b"0000000000 65535 f \n")
+    for offset in offsets[1:]:
+        out.extend(f"{offset:010d} 00000 n \n".encode())
+    out.extend(
+        f"trailer<< /Size {len(objects) + 1} /Root 1 0 R >>\n"
+        f"startxref\n{xref}\n%%EOF\n".encode())
+    return bytes(out)
+
+
+def save_pdf(out_dir: str | Path, markdown: str,
+             name: str = "report.pdf") -> Path:
+    directory = Path(out_dir)
+    directory.mkdir(parents=True, exist_ok=True)
+    path = directory / name
+    path.write_bytes(markdown_to_pdf_bytes(markdown))
+    return path
+
+
 def save_json(out_dir: str | Path, summary: dict, findings: list[dict]) -> Path:
     directory = Path(out_dir)
     directory.mkdir(parents=True, exist_ok=True)

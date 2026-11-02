@@ -4,10 +4,12 @@
   <img src="assets/logo.webp" alt="NetCast3r logo" width="340">
 </p>
 
-Cast a net over the web. NetCast3r crawls a target, reads the JavaScript it
-serves, hunts 310 secret patterns, and checks every candidate against its
-provider with 135 recipes, read-only by default. It returns a four-state verdict, the
-evidence behind it, and a report you can submit as-is.
+Cast a net over the web. Give NetCast3r one authorised public-facing asset,
+connect your model providers, and it maps the attack surface, hunts with a
+modern web and app coverage checklist, verifies proof before promotion, and
+continues through post-exploitation when a foothold appears — while you
+spectate and instruct mid-hunt. Secret hunting (310 patterns, 135 recipes)
+remains part of the deterministic path.
 
 <p align="center">
   <img src="assets/banner.webp" alt="NetCast3r - cast a net over the web" width="100%">
@@ -67,12 +69,14 @@ redacted, so the report can go straight into a program.
   <img src="assets/checklist.svg" alt="Run checklist: crawl targets, collect JavaScript files, hunt secrets, validate credentials, escalate and report. More than just a crawler." width="100%">
 </p>
 
-- **Crawl** a target and every endpoint it can reach, then collect the JavaScript
-- **Read** each bundle line by line to map the logic and surface weak spots
-- **Hunt** for secrets, keys, tokens, and hardcoded credentials
-- **Validate** each credential against its provider and report what it can access
-- **Escalate** to the highest provable impact when write access is enabled
-- **Report** with proof, redacted values, and reproduction steps
+- **Seed** one authorised URL or host; lock scope; connect brain providers
+- **Map** the external surface (CT, passive DNS, resolve, HTTP/TLS, tech/WAF)
+- **Hunt** with the coverage checklist, swarm roles, and secret/credential paths
+- **Prove** candidates with a replayable PoC before promotion
+- **Pivot** into post-ex objectives (lateral, cloud, identity) after a foothold
+- **Spectate** brain and agent activity live; instruct mid-hunt without restart
+- **Continue** until you pause — stalls deepen (new angles, knowledge feeds), never auto-stop
+- **Report** continuously with redacted Markdown and PDF companions
 
 ## How it works
 
@@ -207,7 +211,7 @@ netcast3r mcp --print-config    # optional: paste into opencode.jsonc
 opencode mcp list
 ```
 
-The server has 222 typed tools with risk tiers, scope enforcement, single-use
+The server has 234 typed tools with risk tiers, scope enforcement, single-use
 approvals, rate limits, and a full tool-call audit, plus disposable inboxes,
 OAST callbacks, named auth profiles, a scoped authenticated `http_request`, a
 path-variant differential, run-to-run surface diffing, local reverse-engineering
@@ -300,7 +304,8 @@ required before a candidate is marked corroborated.
 - [Memory](docs/MEMORY.md) - the shared knowledge base, campaign stages, and the profile
 - [Exploits](docs/EXPLOITS.md) - the typed exploit module catalog and how it plans
 - [Capabilities](docs/CAPABILITIES.md) - the external tool broker, API-spec ingestion, program briefs, and PoCs
-- [Agentic landscape](docs/AGENTIC_LANDSCAPE.md) - public agent systems, the capability matrix, and the build order
+- [Web2root](docs/WEB2ROOT.md) - single-seed surface map through foothold and report
+- [Brain](docs/BRAIN.md) - main brain loop, spectate, and mid-hunt instruct
 - [Leads and evidence](docs/LEADS.md) - how to inspect a hypothesis, its tool calls, and its verdict
 - [Regression bench](docs/BENCH.md) - the offline corpus, precision/recall, and the release gate
 - [Host](docs/HOST.md) - the shell and filesystem, and the rules that gate them

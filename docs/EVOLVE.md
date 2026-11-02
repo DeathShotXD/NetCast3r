@@ -45,8 +45,33 @@ classes are high risk and run under the same scope, risk, and approval gates as
 everything else. The main brain sees this plan in its context, so "what next
 after this foothold?" is answerable.
 
+## The agent harness
+
+`src/netcast3r/harness.py` is the learning control loop around that memory:
+
+- `harness_status` - director, skills, lessons, hot/cold techniques, failure tops;
+- `harness_diagnose` - stall diagnosis from real tool calls and leads;
+- `harness_learn` - reflect unreflected failures into lessons and draft skills;
+- `harness_develop` - compound repeated successes into draft skill documents;
+- `harness_recall` - progressive disclosure pack before planning;
+- `harness_tick` - one learn + diagnose + proposal cycle.
+
+The director calls `harness_learn` when a run matures, so every finished
+engagement compounds the workspace. Draft skills stay inactive until an
+operator promotes them. The harness never creates a finding or submits a
+report.
+
+Finding writes now require reproducible evidence (at least 32 characters) or a
+supported `hypothesis_id`. Title and severity alone are refused. Promoting a
+candidate additionally requires a replayable PoC (`candidate_poc`); optional
+live verification (`candidate_poc_verify`) can be demanded with `verify=true`.
+
 ## Surface
 
 HTTP `GET /api/v1/evolve`, `GET /api/v1/evolve/ledger`, `POST /api/v1/evolve/scan`,
-and `GET /api/v1/missions/{id}/postex`. MCP `evolve_status`, `evolve_ledger`,
-`evolve_scan`, and `postex_plan`.
+`GET /api/v1/harness`, `GET /api/v1/harness/diagnose`, `POST /api/v1/harness/learn`,
+`POST /api/v1/harness/develop`, `GET /api/v1/harness/recall`,
+`POST /api/v1/harness/tick`, and `GET /api/v1/missions/{id}/postex`.
+MCP `evolve_status`, `evolve_ledger`, `evolve_scan`, `harness_status`,
+`harness_diagnose`, `harness_learn`, `harness_develop`, `harness_recall`,
+`harness_tick`, and `postex_plan`.

@@ -21,20 +21,22 @@
   } = $props();
 </script>
 
-<div class="empty px-6 py-14 text-center">
+<div class="obs-empty">
   <NetMotif
-    class="pointer-events-none absolute inset-x-0 top-0 h-[190px] w-full opacity-40"
+    class="pointer-events-none absolute inset-x-0 top-0 h-[190px] w-full opacity-35"
     animated={false}
   />
-  <div class="relative z-[1] mx-auto flex max-w-[460px] flex-col items-center gap-3">
-    <p class="eyebrow">{eyebrow}</p>
-    <p class="rule-in mt-1 text-lg text-bone">{title}</p>
-    <p class="mt-3 text-sm leading-relaxed text-bone-dust">{body}</p>
+  <div class="obs-empty-inner">
+    <p class="obs-eyebrow"><span class="tick"></span>{eyebrow}</p>
+    <p class="obs-empty-title">{title}</p>
+    <p class="obs-empty-body">{body}</p>
     {#if action}
-      <button class="btn btn-acid mt-3" type="button" onclick={onAction}>{action}</button>
+      <button class="obs-btn obs-btn-primary" type="button" onclick={onAction} style="margin-top:6px">
+        {action}
+      </button>
     {/if}
     {#if hint}
-      <p class="mono mt-1 text-xs text-ash">{hint}</p>
+      <p class="obs-empty-hint">{hint}</p>
     {/if}
     {#if children}
       {@render children()}

@@ -4,8 +4,9 @@ A clickable, framework-free prototype of the NetCast3r agentic control plane.
 It exists to make the product direction reviewable before any of it is rebuilt
 inside the Svelte app.
 
-The full product and architecture plan lives in
-[`../docs/AGENTIC_PLATFORM.md`](../docs/AGENTIC_PLATFORM.md).
+Product docs for the live control plane live in
+[`../docs/WEB2ROOT.md`](../docs/WEB2ROOT.md) and
+[`../docs/CAPABILITIES.md`](../docs/CAPABILITIES.md).
 
 ## Run it
 

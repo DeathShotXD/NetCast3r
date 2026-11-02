@@ -49,6 +49,18 @@ ACTIONS = {
     "lessons_record": "record a lesson you actually observed",
     "lessons_list": "recall lessons for this target",
     "threatintel_query": "search public threat intelligence",
+    "inbox_create": "create a disposable mailbox for in-scope signup flows",
+    "inbox_list": "list disposable mailboxes already created",
+    "inbox_read": "read one message from a disposable mailbox",
+    "inbox_wait": "wait for a matching message (verify / reset links)",
+    "auth_profile_set": "store a captured session for later authenticated probes",
+    "auth_profile_list": "list stored auth profiles for this workspace",
+    "browser_open": "open a managed browser profile for interactive auth flows",
+    "browser_goto": "navigate the managed browser to an in-scope URL",
+    "browser_snapshot": "read the current page accessibility tree",
+    "browser_type": "type into a focused browser control",
+    "browser_click": "click a browser control by ref",
+    "reveng_analyze": "reverse a local JS/source/APK/binary artifact for leaks",
 }
 
 DEFAULT_STEPS = 8
@@ -253,8 +265,8 @@ class Autopilot:
         }
         payload, _, _ = self._tool("hunt_brief", {"mission_id": self.mission_id, "limit": 4})
         brief["brief"] = _compact(payload)
-        payload, _, _ = self._tool("technique_plan", {"target": self.target, "limit": 5})
-        brief["techniques"] = _selection(payload, "items", 5)
+        payload, _, _ = self._tool("technique_plan", {"target": self.target, "limit": 12})
+        brief["techniques"] = _selection(payload, "items", 12)
         payload, _, _ = self._tool("chain_plan", {"target": self.target, "limit": 4})
         brief["chains"] = _selection(payload, "items", 4)
         payload, _, _ = self._tool("lessons_list", {"limit": 6})
@@ -263,10 +275,12 @@ class Autopilot:
         brief["skills"] = _selection(payload, "items", 8)
         payload, _, _ = self._tool("agent_notes_list", {"mission_id": self.mission_id, "limit": 12})
         brief["memory"] = _selection(payload, "items", 12)
-        # The shared, provider-agnostic memory plus any queued operator
-        # direction and the campaign stage. Any model inherits the same facts.
-        payload, _, _ = self._tool("kb_digest", {"mission_id": self.mission_id, "limit": 10})
-        brief["knowledge"] = _selection(payload, "items", 10)
+        # Shared technique corpus + mission memory: every model inherits the
+        # same critical/high web exploit knowledge from the global KB.
+        payload, _, _ = self._tool("kb_digest", {"mission_id": self.mission_id, "limit": 24})
+        brief["knowledge"] = _selection(payload, "items", 24)
+        payload, _, _ = self._tool("kb_corpus", {"limit": 28, "impact": "critical"})
+        brief["technique_corpus"] = _selection(payload, "items", 28)
         payload, _, _ = self._tool("directions_list", {"mission_id": self.mission_id, "status": "queued", "limit": 5})
         brief["directions"] = _selection(payload, "items", 5)
         payload, _, _ = self._tool("campaign_status", {"mission_id": self.mission_id})

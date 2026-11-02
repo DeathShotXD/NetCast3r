@@ -9,8 +9,7 @@ never-ending cognition loop.
 `brain_context` is the snapshot the brain reasons over, in one object:
 
 - every mission with its **campaign stage**, run count, and open-lead count;
-- the **director**: engaged, paused, tick, concurrency, in-flight runs, parked
-  missions;
+- the **director**: engaged, paused, tick, concurrency, in-flight runs;
 - recent **runs** with their mode and stop reason;
 - the **tool-call audit** and a compact **traffic** view: tool, actor, target,
   arguments, exit code, and the shape of the result (secrets never included);
@@ -70,6 +69,13 @@ outcome.
 steering actions it applied. It is the room to ask "what next?", to give guidance
 ("focus the order API and test IDOR"), or to change the plan mid-hunt. Both the
 operator message and the reply are journaled.
+
+`instruct` is the mid-hunt follow-up path. Route the same message to the brain,
+the director direction queue, or both (`target=brain|director|both|swarm|hunt`).
+Optional `@agent:name` mentions (or the `agent` field) steer a specific swarm
+role without restarting the engagement. Every instruct and every brain turn is
+published on the live event bus (`brain.turn`, `instruct`) so the Brain dock and
+Agent Studio can spectate reasoning in real time.
 
 The brain can take four **reversible** actions:
 

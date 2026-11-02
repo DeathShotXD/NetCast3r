@@ -40,8 +40,10 @@ def _default_complete(server):
     bus = ProviderBus(config, timeout=45.0)
 
     def call(messages):
-        completion = bus.complete("prime", messages, timeout=45.0,
-                                  max_candidates=6)
+        # Training lane: prefer th-learn-* TokenHarbor keys so lab solving
+        # never burns the hunt pool under rate limits.
+        completion = bus.complete("training", messages, timeout=45.0,
+                                  max_candidates=8)
         return {"text": completion.text or "",
                 "provider": completion.provider or "",
                 "model": completion.model or "",

@@ -242,7 +242,7 @@
   <div class="obs-sidebar-foot">
     <button class="obs-btn obs-btn-primary" type="button" onclick={() => go('new')} style="width:100%">
       <Icon name="crosshair" size={13} />
-      New operation
+      Engage target
     </button>
 
     <div class="obs-sidebar-sys">

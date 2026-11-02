@@ -54,7 +54,7 @@ def study_recipe(index, slug: str, recipe: dict) -> dict:
     text, provider, model, error = "", "", "", ""
     try:
         completion = ProviderBus(load_config(), timeout=60.0).complete(
-            "sentinel", messages, timeout=60.0)
+            "training", messages, timeout=60.0)
         text = (completion.text or "").strip()
         provider, model = completion.provider, completion.model
         error = completion.error or ""

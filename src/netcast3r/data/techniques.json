@@ -1524,6 +1524,1122 @@
         "secret",
         "api"
       ]
+    },
+    {
+      "id": "soapwn-wsdl-file-write",
+      "title": "SOAPwn .NET HTTP client proxy WSDL file write",
+      "class": "rce",
+      "rarity": "rare",
+      "impact": "critical",
+      "signals": [
+        ".net",
+        "soap",
+        "wsdl",
+        "asmx",
+        "httpwebclientprotocol",
+        "proxy"
+      ],
+      "prereqs": [
+        "A .NET Framework SOAP client proxy accepts attacker-influenced WSDL or Url.",
+        "file:// or UNC URLs are reachable from the server process."
+      ],
+      "steps": [
+        "Fingerprint ASMX/WCF/SOAP endpoints and any WSDL import or dynamic proxy generation.",
+        "Supply a WSDL that sets Url to a file:// or UNC path the process can write.",
+        "Confirm the SOAP request body is written to disk instead of sent over HTTP.",
+        "Escalate to code execution only with an authorized write path and a reversible PoC.",
+        "Keep impact demonstration minimal: a marker file under a temp path you control."
+      ],
+      "proof": "Show the WSDL Url override, the written file contents matching the SOAP body, and the process identity. Do not leave persistence.",
+      "tools": [
+        "http_request",
+        "browser",
+        "sandbox_run"
+      ],
+      "sources": [
+        "https://portswigger.net/research/top-10-web-hacking-techniques-of-2025",
+        "https://webhacklist.com/research/2025/"
+      ],
+      "tags": [
+        "soapwn",
+        "dotnet",
+        "wsdl",
+        "rce",
+        "2025"
+      ]
+    },
+    {
+      "id": "email-rebind-ato",
+      "title": "Account email rebind with weak step-up to permanent takeover",
+      "class": "ato",
+      "rarity": "common",
+      "impact": "critical",
+      "signals": [
+        "email change",
+        "email code",
+        "otp",
+        "2fa",
+        "bind-account",
+        "account settings"
+      ],
+      "prereqs": [
+        "An authenticated or email-code session can change the account email.",
+        "Password, TOTP, or recovery codes are not required for the rebind."
+      ],
+      "steps": [
+        "Map email-change / bind-account / confirm-email endpoints and which factors they require.",
+        "With only email OTP (or weaker), change to an attacker-controlled address.",
+        "Confirm login/recovery now uses the new address and the victim is locked out.",
+        "Test whether 2FA enrollment or password-verified flags reset during the rebind.",
+        "Revert the victim account after proof; attach before/after screenshots and request logs."
+      ],
+      "proof": "Attacker-controlled email becomes the account identifier; victim cannot recover without the new inbox. Show rebind requests and post-rebind login.",
+      "tools": [
+        "http_request",
+        "browser",
+        "inbox_create",
+        "inbox_wait"
+      ],
+      "sources": [
+        "https://tyrusrc.github.io/learnfromscratch/learn/topics/bug-bounty/case-study-h1-top-disclosed-2024-2025/"
+      ],
+      "tags": [
+        "ato",
+        "email-rebind",
+        "2fa-bypass",
+        "auth"
+      ]
+    },
+    {
+      "id": "second-step-idor-ato",
+      "title": "Second-step IDOR in recovery or email-change flows",
+      "class": "ato",
+      "rarity": "common",
+      "impact": "critical",
+      "signals": [
+        "forgot-password",
+        "reset",
+        "verify-otp",
+        "change-email",
+        "2fa-enable",
+        "userid",
+        "email"
+      ],
+      "prereqs": [
+        "A multi-step flow issues a token in step 1.",
+        "Step 2 accepts a target userId or email from the request body instead of the session."
+      ],
+      "steps": [
+        "Start reset/change/2FA flows for account A and capture the step-1 token.",
+        "On step 2, keep the token but swap body fields to victim B's userId or email.",
+        "Confirm the server applies the action to B (reset completes, email changes, 2FA binds).",
+        "Repeat with UUID vs numeric id and query vs body parameter variants.",
+        "Prove takeover with a login as B using attacker-controlled factors, then restore."
+      ],
+      "proof": "Step-2 request for B succeeds under A's token/session; B's credentials or email change. Show both accounts and the swapped body.",
+      "tools": [
+        "http_request",
+        "browser",
+        "inbox_create"
+      ],
+      "sources": [
+        "https://tyrusrc.github.io/learnfromscratch/learn/topics/bug-bounty/case-study-h1-top-disclosed-2024-2025/"
+      ],
+      "tags": [
+        "ato",
+        "idor",
+        "bola",
+        "recovery",
+        "auth"
+      ]
+    },
+    {
+      "id": "open-redirect-oauth-code-theft",
+      "title": "Open redirect chained to OAuth code or token theft",
+      "class": "oauth",
+      "rarity": "common",
+      "impact": "critical",
+      "signals": [
+        "oauth",
+        "openid",
+        "redirect_uri",
+        "callback",
+        "redirect=",
+        "next=",
+        "consent"
+      ],
+      "prereqs": [
+        "An in-scope open redirect or weak redirect_uri match exists.",
+        "An OAuth/OIDC authorization code or token is delivered via redirect."
+      ],
+      "steps": [
+        "Map /oauth/authorize, /api/auth/callback, consent, and next/redirect parameters.",
+        "Test prefix, substring, encoded, and path-regex redirect_uri matching.",
+        "Chain an open redirect on an allowlisted host to an attacker listener.",
+        "Complete the OAuth flow as a test victim and capture code/token at the listener.",
+        "Exchange only with a test client; do not touch third-party accounts."
+      ],
+      "proof": "Authorization code or token arrives at the attacker-controlled redirect. Show the crafted authorize URL and the captured callback.",
+      "tools": [
+        "http_request",
+        "browser",
+        "oast_create"
+      ],
+      "sources": [
+        "https://portswigger.net/web-security/oauth",
+        "https://datatracker.ietf.org/doc/html/draft-ietf-oauth-security-topics"
+      ],
+      "tags": [
+        "oauth",
+        "open-redirect",
+        "ato",
+        "redirect_uri"
+      ]
+    },
+    {
+      "id": "parser-differential-generic",
+      "title": "Parser differential across proxy, CDN, and app layers",
+      "class": "parser",
+      "rarity": "rare",
+      "impact": "high",
+      "signals": [
+        "cdn",
+        "waf",
+        "proxy",
+        "json",
+        "multipart",
+        "path",
+        "host header"
+      ],
+      "prereqs": [
+        "Two components parse the same request differently (path, Host, JSON, multipart)."
+      ],
+      "steps": [
+        "Send ambiguous paths, duplicate headers, and JSON with duplicate keys.",
+        "Compare edge vs origin status, routing, and auth decisions.",
+        "Weaponize only differentials that bypass an access control or cache key.",
+        "Keep proofs read-only until a gated module is approved."
+      ],
+      "proof": "Edge and origin disagree on identity or ACL for the same bytes; show both views.",
+      "tools": [
+        "http_request",
+        "http_path_diff"
+      ],
+      "sources": [
+        "https://portswigger.net/research/top-10-web-hacking-techniques-of-2025"
+      ],
+      "tags": [
+        "parser",
+        "differential",
+        "2025"
+      ]
+    },
+    {
+      "id": "sqli-auth-bypass",
+      "title": "SQL injection authentication bypass",
+      "class": "injection",
+      "rarity": "common",
+      "impact": "critical",
+      "signals": [
+        "login",
+        "sql",
+        "mysql",
+        "postgres",
+        "orm",
+        "error based",
+        "union"
+      ],
+      "prereqs": [
+        "A login or search parameter is concatenated into SQL.",
+        "Error or boolean differentials reveal injection."
+      ],
+      "steps": [
+        "Probe login, search, and order-by parameters with boolean and error payloads.",
+        "Confirm differential responses without dumping tables.",
+        "Escalate to auth bypass or data access on a test account only.",
+        "Capture request/response as PoC."
+      ],
+      "proof": "Injected predicate changes auth or returns another user's row. Show baseline vs injected response.",
+      "tools": [
+        "http_request",
+        "sqlmap"
+      ],
+      "sources": [
+        "https://portswigger.net/web-security/sql-injection",
+        "https://owasp.org/www-community/attacks/SQL_Injection"
+      ],
+      "tags": [
+        "sqli",
+        "ato",
+        "auth-bypass",
+        "injection",
+        "classic"
+      ]
+    },
+    {
+      "id": "nosql-operator-auth-bypass",
+      "title": "NoSQL operator injection authentication bypass",
+      "class": "injection",
+      "rarity": "common",
+      "impact": "critical",
+      "signals": [
+        "mongodb",
+        "nosql",
+        "access_token",
+        "$ne",
+        "$gt",
+        "json login",
+        "rocket.chat"
+      ],
+      "prereqs": [
+        "JSON auth fields are passed into Mongo-style queries without operator sanitization."
+      ],
+      "steps": [
+        "On login/token lookup fields send {\"$ne\":null} or {\"$gt\":\"\"}.",
+        "Confirm first matching document authenticates.",
+        "Prove admin/user takeover on a disposable account.",
+        "Do not mass-enumerate production users."
+      ],
+      "proof": "Unauthenticated request with operator payload returns a valid session for another account.",
+      "tools": [
+        "http_request"
+      ],
+      "sources": [
+        "https://hackerone.com/reports/3564655",
+        "https://owasp.org/www-project-web-security-testing-guide/latest/4-Web_Application_Security_Testing/07-Input_Validation_Testing/05.6-Testing_for_NoSQL_Injection"
+      ],
+      "tags": [
+        "nosql",
+        "mongodb",
+        "ato",
+        "auth-bypass",
+        "hackerone"
+      ]
+    },
+    {
+      "id": "ssrf-to-cloud-metadata",
+      "title": "SSRF to cloud metadata credentials",
+      "class": "ssrf",
+      "rarity": "common",
+      "impact": "critical",
+      "signals": [
+        "webhook",
+        "pdf",
+        "og:image",
+        "avatar",
+        "url=",
+        "proxy",
+        "imds",
+        "169.254.169.254"
+      ],
+      "prereqs": [
+        "Server fetches a user-supplied URL.",
+        "Cloud IMDS or internal admin is reachable from that fetcher."
+      ],
+      "steps": [
+        "Map URL sinks (preview, webhook, import, PDF).",
+        "Probe 169.254.169.254, metadata.google.internal, 100.100.100.200 with redirect/DNS tricks.",
+        "Prefer OAST proof before reading secrets.",
+        "If credentials return, stop at role identity proof; do not pivot out of scope."
+      ],
+      "proof": "Fetcher retrieves IMDS or internal response bytes under your control. Show sink and response excerpt redacted.",
+      "tools": [
+        "http_request",
+        "oast_create"
+      ],
+      "sources": [
+        "https://portswigger.net/web-security/ssrf",
+        "https://hackerone.com/reports/3024673"
+      ],
+      "tags": [
+        "ssrf",
+        "cloud",
+        "imds",
+        "ato",
+        "hackerone"
+      ]
+    },
+    {
+      "id": "xxe-filter-bypass",
+      "title": "XXE via multiline or encoding filter bypass",
+      "class": "xxe",
+      "rarity": "rare",
+      "impact": "critical",
+      "signals": [
+        "xml",
+        "soap",
+        "docx",
+        "svg",
+        "aql",
+        "DOCTYPE",
+        "xxe"
+      ],
+      "prereqs": [
+        "XML parser resolves external entities.",
+        "A regex filter fails on multiline/encoded DOCTYPE."
+      ],
+      "steps": [
+        "Submit XML/SVG/Office with multiline DOCTYPE.",
+        "Confirm OAST callback or file/http entity expansion.",
+        "Enumerate only authorized internal hosts.",
+        "Keep PoC non-destructive."
+      ],
+      "proof": "External entity causes outbound fetch or file read differential.",
+      "tools": [
+        "http_request",
+        "oast_create"
+      ],
+      "sources": [
+        "https://bugcrowd.com/disclosures/9d2c7b28-7ff7-439c-9149-f74a883815e3",
+        "https://portswigger.net/web-security/xxe"
+      ],
+      "tags": [
+        "xxe",
+        "ssrf",
+        "bugcrowd",
+        "filter-bypass"
+      ]
+    },
+    {
+      "id": "unsafe-deser-rce",
+      "title": "Unsafe deserialization remote code execution",
+      "class": "rce",
+      "rarity": "rare",
+      "impact": "critical",
+      "signals": [
+        "java",
+        "php",
+        "python pickle",
+        "clojure",
+        "read-string",
+        "ysoserial",
+        "serialized"
+      ],
+      "prereqs": [
+        "User input reaches an unsafe deserializer (readObject, pickle, read-string, etc.)."
+      ],
+      "steps": [
+        "Fingerprint serialization sinks.",
+        "Send a benign gadget that proves code path (sleep/DNS) before any shell.",
+        "Use sandbox or authorized lab for weaponized gadgets.",
+        "Document class/library and fixed-safe alternative."
+      ],
+      "proof": "Controlled payload triggers observable code execution (OAST/sleep) without leaving persistence.",
+      "tools": [
+        "http_request",
+        "oast_create",
+        "sandbox_run"
+      ],
+      "sources": [
+        "https://bugcrowd.com/disclosures/948921ed-6603-4d2b-9022-f25f6552138f",
+        "https://owasp.org/www-community/vulnerabilities/Deserialization_of_untrusted_data"
+      ],
+      "tags": [
+        "rce",
+        "deserialization",
+        "bugcrowd"
+      ]
+    },
+    {
+      "id": "react2shell-rsc",
+      "title": "React Server Components unsafe deserialization RCE",
+      "class": "rce",
+      "rarity": "rare",
+      "impact": "critical",
+      "signals": [
+        "next.js",
+        "react server components",
+        "rsc",
+        "flight",
+        "CVE-2025-55182"
+      ],
+      "prereqs": [
+        "Target runs vulnerable React Server Components / Next.js Flight protocol."
+      ],
+      "steps": [
+        "Fingerprint Next.js/RSC versions from headers and build IDs.",
+        "Send the published detection request that triggers the known 500 signature only on vulnerable builds.",
+        "Do not run destructive payloads on production; prove version+signature.",
+        "Recommend patched RSC package versions."
+      ],
+      "proof": "Reproducible malicious Flight request yields the vulnerable error signature or confirmed RCE in an authorized lab.",
+      "tools": [
+        "http_request"
+      ],
+      "sources": [
+        "https://www.bugcrowd.com/blog/cve-2025-55182-what-you-need-to-know-about-react2shell/"
+      ],
+      "tags": [
+        "rce",
+        "nextjs",
+        "react",
+        "bugcrowd",
+        "2025"
+      ]
+    },
+    {
+      "id": "one-click-token-theft-redirect",
+      "title": "One-click auth token theft via open redirect",
+      "class": "ato",
+      "rarity": "common",
+      "impact": "critical",
+      "signals": [
+        "redirect",
+        "token",
+        "magic link",
+        "marketing subdomain",
+        "oauth callback",
+        "postMessage"
+      ],
+      "prereqs": [
+        "A whitelisted redirect delivers an auth token or session in query/hash/fragment."
+      ],
+      "steps": [
+        "Find open redirects on allowlisted hosts.",
+        "Craft a victim link that lands the token on attacker storage.",
+        "Replay token only on a test account.",
+        "Show full one-click chain."
+      ],
+      "proof": "Victim click places a usable auth token under attacker control; session works on attacker browser.",
+      "tools": [
+        "http_request",
+        "browser"
+      ],
+      "sources": [
+        "https://hackerone.com/reports/3081691"
+      ],
+      "tags": [
+        "ato",
+        "open-redirect",
+        "token-theft",
+        "hackerone"
+      ]
+    },
+    {
+      "id": "bola-unauth-crud",
+      "title": "Broken object authorization unauthenticated CRUD",
+      "class": "idor",
+      "rarity": "common",
+      "impact": "critical",
+      "signals": [
+        "api",
+        "uuid",
+        "name=",
+        "user_id",
+        "graphql",
+        "rest",
+        "crud"
+      ],
+      "prereqs": [
+        "Object IDs are guessable or enumerable and lack ownership checks."
+      ],
+      "steps": [
+        "Enumerate object identifiers across two test accounts.",
+        "Attempt read/update/delete without auth and cross-account.",
+        "Prove access to another user's object with minimal data.",
+        "Restore deleted test objects."
+      ],
+      "proof": "Cross-account or unauthenticated CRUD succeeds on another user's object.",
+      "tools": [
+        "http_request"
+      ],
+      "sources": [
+        "https://owasp.org/API-Security/editions/2023/en/0xa1-broken-object-level-authorization/",
+        "https://bugcrowd.com/disclosures/eb823c31-5e78-4bf9-9b2a-4c339918e879"
+      ],
+      "tags": [
+        "idor",
+        "bola",
+        "api",
+        "bugcrowd",
+        "classic"
+      ]
+    },
+    {
+      "id": "cmdi-rce",
+      "title": "OS command injection leading to RCE",
+      "class": "rce",
+      "rarity": "common",
+      "impact": "critical",
+      "signals": [
+        "ping",
+        "traceroute",
+        "export",
+        "convert",
+        "shell",
+        ";`|"
+      ],
+      "prereqs": [
+        "User input reaches a shell or exec without argument separation."
+      ],
+      "steps": [
+        "Identify command sinks.",
+        "Prove with time-based or OAST injection (sleep/curl).",
+        "Never drop a reverse shell on production; use benign marker.",
+        "Record exact argument position."
+      ],
+      "proof": "Injected command produces timed delay or OAST hit under your control.",
+      "tools": [
+        "http_request",
+        "oast_create"
+      ],
+      "sources": [
+        "https://owasp.org/www-community/attacks/Command_Injection",
+        "https://portswigger.net/web-security/os-command-injection"
+      ],
+      "tags": [
+        "rce",
+        "command-injection",
+        "classic"
+      ]
+    },
+    {
+      "id": "ssti-rce",
+      "title": "Server-side template injection to RCE",
+      "class": "rce",
+      "rarity": "common",
+      "impact": "critical",
+      "signals": [
+        "jinja",
+        "twig",
+        "freemarker",
+        "velocity",
+        "{{",
+        "${",
+        "template"
+      ],
+      "prereqs": [
+        "User input is evaluated by a server template engine."
+      ],
+      "steps": [
+        "Detect engine with math/polyglot probes.",
+        "Escalate with error-based or boolean-error techniques when blind.",
+        "Prove RCE only with non-destructive payload in scope.",
+        "Prefer Successful Errors methodology for blind SSTI."
+      ],
+      "proof": "Template expression executes server-side (computed value, error output, or OAST).",
+      "tools": [
+        "http_request",
+        "oast_create"
+      ],
+      "sources": [
+        "https://portswigger.net/research/top-10-web-hacking-techniques-of-2025",
+        "https://portswigger.net/web-security/server-side-template-injection"
+      ],
+      "tags": [
+        "ssti",
+        "rce",
+        "injection",
+        "2025"
+      ]
+    },
+    {
+      "id": "http-request-smuggling",
+      "title": "HTTP request smuggling CL.TE / TE.CL",
+      "class": "smuggling",
+      "rarity": "rare",
+      "impact": "critical",
+      "signals": [
+        "cdn",
+        "reverse proxy",
+        "chunked",
+        "content-length",
+        "http/1.1"
+      ],
+      "prereqs": [
+        "Front-end and back-end disagree on Content-Length vs Transfer-Encoding."
+      ],
+      "steps": [
+        "Run CL.TE and TE.CL probes safely.",
+        "Confirm desync via poisoned queue or differential.",
+        "Capture only on authorized targets; avoid DoS.",
+        "Document both parsers' behavior."
+      ],
+      "proof": "Desync demonstrated by a poisoned subsequent request you control.",
+      "tools": [
+        "http_request"
+      ],
+      "sources": [
+        "https://portswigger.net/research/http-desync-attacks",
+        "https://portswigger.net/web-security/request-smuggling"
+      ],
+      "tags": [
+        "smuggling",
+        "desync",
+        "critical",
+        "classic"
+      ]
+    },
+    {
+      "id": "stored-xss-session-theft",
+      "title": "Stored XSS to session or token theft",
+      "class": "xss",
+      "rarity": "common",
+      "impact": "critical",
+      "signals": [
+        "stored xss",
+        "profile",
+        "comment",
+        "markdown",
+        "csp",
+        "cookie"
+      ],
+      "prereqs": [
+        "Attacker-controlled HTML/JS persists and executes in a victim session context."
+      ],
+      "steps": [
+        "Find stored sinks and CSP gaps.",
+        "Prove execution with alert or fetch to OAST.",
+        "Steal only a test-account session cookie/token.",
+        "Show admin/privileged victim impact if role allows."
+      ],
+      "proof": "Stored payload executes in another session and exfiltrates a test token to OAST.",
+      "tools": [
+        "browser",
+        "oast_create",
+        "http_request"
+      ],
+      "sources": [
+        "https://portswigger.net/web-security/cross-site-scripting/stored",
+        "https://owasp.org/www-community/attacks/xss/"
+      ],
+      "tags": [
+        "xss",
+        "ato",
+        "classic"
+      ]
+    },
+    {
+      "id": "path-traversal-lfi",
+      "title": "Path traversal / local file inclusion",
+      "class": "lfi",
+      "rarity": "common",
+      "impact": "high",
+      "signals": [
+        "file=",
+        "template=",
+        "download",
+        "include",
+        "..%2f",
+        "path"
+      ],
+      "prereqs": [
+        "User-controlled path reaches filesystem read without normalization."
+      ],
+      "steps": [
+        "Probe ../ and encoded variants.",
+        "Read only non-sensitive marker files first.",
+        "Escalate to config/secrets only when in scope and minimized.",
+        "Prefer absolute path allowlists as remediation advice."
+      ],
+      "proof": "Traversal returns a file outside the intended directory.",
+      "tools": [
+        "http_request"
+      ],
+      "sources": [
+        "https://portswigger.net/web-security/file-path-traversal",
+        "https://owasp.org/www-community/attacks/Path_Traversal"
+      ],
+      "tags": [
+        "lfi",
+        "traversal",
+        "classic"
+      ]
+    },
+    {
+      "id": "cors-misconfig-ato",
+      "title": "CORS misconfiguration to credentialed data theft",
+      "class": "cors",
+      "rarity": "common",
+      "impact": "high",
+      "signals": [
+        "access-control-allow-origin",
+        "credentials",
+        "null origin",
+        "reflected origin"
+      ],
+      "prereqs": [
+        "ACA-Origin reflects untrusted origin with ACA-Credentials true."
+      ],
+      "steps": [
+        "Test reflected Origin and null.",
+        "From attacker origin, fetch credentialed API as victim.",
+        "Exfiltrate only test-account PII.",
+        "Record response headers."
+      ],
+      "proof": "Cross-origin credentialed read returns victim data to attacker page.",
+      "tools": [
+        "browser",
+        "http_request"
+      ],
+      "sources": [
+        "https://portswigger.net/web-security/cors",
+        "https://owasp.org/www-project-web-security-testing-guide/latest/4-Web_Application_Security_Testing/05-Authorization_Testing/04-Testing_for_Cross_Origin_Resource_Sharing"
+      ],
+      "tags": [
+        "cors",
+        "ato",
+        "classic"
+      ]
+    },
+    {
+      "id": "graphql-batch-otp-bruteforce",
+      "title": "GraphQL alias batching bypasses OTP rate limits",
+      "class": "graphql",
+      "rarity": "common",
+      "impact": "critical",
+      "signals": [
+        "graphql",
+        "otp",
+        "alias",
+        "batch",
+        "rate limit",
+        "resetPassword"
+      ],
+      "prereqs": [
+        "Rate limit counts HTTP requests not GraphQL operations.",
+        "OTP verify mutation lacks lockout."
+      ],
+      "steps": [
+        "Confirm introspection or known mutation names.",
+        "Batch aliased verifyOTP mutations in one POST.",
+        "Prove code space exhaustion on a test account only.",
+        "Recommend per-operation limits and attempt lockout."
+      ],
+      "proof": "Single HTTP request verifies a test OTP via aliases that would be blocked one-by-one.",
+      "tools": [
+        "http_request"
+      ],
+      "sources": [
+        "https://owasp.org/API-Security/editions/2023/en/0xa4-unrestricted-resource-consumption/"
+      ],
+      "tags": [
+        "graphql",
+        "ato",
+        "otp",
+        "api"
+      ]
+    },
+    {
+      "id": "websocket-cswh",
+      "title": "Cross-site WebSocket hijacking",
+      "class": "websocket",
+      "rarity": "rare",
+      "impact": "high",
+      "signals": [
+        "websocket",
+        "ws://",
+        "wss://",
+        "origin",
+        "csrf"
+      ],
+      "prereqs": [
+        "WebSocket handshake authenticates via cookies without Origin check."
+      ],
+      "steps": [
+        "From attacker origin open WS to target with victim cookies.",
+        "Read or write sensitive channels.",
+        "Prove with test account traffic only."
+      ],
+      "proof": "Cross-site page maintains an authenticated WebSocket and reads private messages.",
+      "tools": [
+        "browser"
+      ],
+      "sources": [
+        "https://portswigger.net/research/cross-site-websocket-hijacking",
+        "https://owasp.org/www-community/vulnerabilities/Cross_Site_WebSocket_Hijacking"
+      ],
+      "tags": [
+        "websocket",
+        "csrf",
+        "classic"
+      ]
+    },
+    {
+      "id": "host-header-password-reset",
+      "title": "Host-header injection password-reset poisoning",
+      "class": "ato",
+      "rarity": "common",
+      "impact": "critical",
+      "signals": [
+        "password reset",
+        "host header",
+        "x-forwarded-host",
+        "reset link"
+      ],
+      "prereqs": [
+        "Reset email link is built from Host/X-Forwarded-Host."
+      ],
+      "steps": [
+        "Trigger reset with poisoned Host headers.",
+        "Catch link on attacker domain via OAST/inbox.",
+        "Complete reset only on attacker-owned account pairing.",
+        "Show email body with poisoned host."
+      ],
+      "proof": "Reset email contains attacker-controlled host and token can complete takeover of the targeted test account.",
+      "tools": [
+        "http_request",
+        "inbox_create",
+        "oast_create"
+      ],
+      "sources": [
+        "https://portswigger.net/web-security/host-header/password-reset-poisoning"
+      ],
+      "tags": [
+        "ato",
+        "host-header",
+        "classic"
+      ]
+    },
+    {
+      "id": "jwt-alg-none-kid",
+      "title": "JWT algorithm confusion / none / kid injection",
+      "class": "auth",
+      "rarity": "common",
+      "impact": "critical",
+      "signals": [
+        "jwt",
+        "jwk",
+        "jwks",
+        "kid",
+        "alg none",
+        "rs256",
+        "hs256"
+      ],
+      "prereqs": [
+        "Token verification trusts alg/kid without pinning."
+      ],
+      "steps": [
+        "Decode JWT; try alg=none, HS256 with public key, kid path/JWKS injection.",
+        "Escalate claims (sub/role) on a test user.",
+        "Keep keys out of reports; redact."
+      ],
+      "proof": "Forged token accepted as another user or elevated role.",
+      "tools": [
+        "http_request"
+      ],
+      "sources": [
+        "https://portswigger.net/web-security/jwt",
+        "https://auth0.com/blog/critical-vulnerabilities-in-json-web-token-libraries/"
+      ],
+      "tags": [
+        "jwt",
+        "ato",
+        "auth",
+        "classic"
+      ]
+    },
+    {
+      "id": "csrf-state-change",
+      "title": "Cross-site request forgery on state-changing auth actions",
+      "class": "csrf",
+      "rarity": "common",
+      "impact": "high",
+      "signals": [
+        "csrf",
+        "samesite",
+        "state change",
+        "email change",
+        "password change"
+      ],
+      "prereqs": [
+        "Cookie auth without CSRF token/SameSite on sensitive POST."
+      ],
+      "steps": [
+        "Build cross-site form/fetch for email/password/2FA change.",
+        "Prove on two test browsers.",
+        "Prefer SameSite=Lax/Strict + token advice."
+      ],
+      "proof": "Victim browser issues the state change without an explicit user gesture on the target origin.",
+      "tools": [
+        "browser"
+      ],
+      "sources": [
+        "https://portswigger.net/web-security/csrf",
+        "https://owasp.org/www-community/attacks/csrf"
+      ],
+      "tags": [
+        "csrf",
+        "ato",
+        "classic"
+      ]
+    },
+    {
+      "id": "prototype-pollution-rce-gadget",
+      "title": "Prototype pollution to RCE or auth bypass gadget",
+      "class": "prototype",
+      "rarity": "rare",
+      "impact": "critical",
+      "signals": [
+        "__proto__",
+        "constructor.prototype",
+        "merge",
+        "lodash",
+        "node"
+      ],
+      "prereqs": [
+        "Untrusted JSON merges into objects later used in dangerous sinks."
+      ],
+      "steps": [
+        "Pollute via query/JSON merge.",
+        "Find gadgets (template, child_process, auth checks).",
+        "Prove with harmless property then escalate carefully."
+      ],
+      "proof": "Polluted property changes security-relevant control flow or reaches a code-exec gadget.",
+      "tools": [
+        "http_request"
+      ],
+      "sources": [
+        "https://portswigger.net/research/prototype-pollution-the-client-side-danger-lurking-in-your-application"
+      ],
+      "tags": [
+        "prototype-pollution",
+        "rce",
+        "classic"
+      ]
+    },
+    {
+      "id": "race-coupon-balance",
+      "title": "Single-packet race on redeem/balance/limit",
+      "class": "race",
+      "rarity": "common",
+      "impact": "high",
+      "signals": [
+        "coupon",
+        "balance",
+        "limit",
+        "race",
+        "http2"
+      ],
+      "prereqs": [
+        "Limit check and commit are not atomic."
+      ],
+      "steps": [
+        "Issue parallel redeem/transfer with HTTP/2 single-packet attack.",
+        "Prove balance/limit exceeded on test funds.",
+        "Revert test state."
+      ],
+      "proof": "Parallel requests exceed the intended single-use or balance limit.",
+      "tools": [
+        "http_request"
+      ],
+      "sources": [
+        "https://portswigger.net/research/smashing-the-state-machine"
+      ],
+      "tags": [
+        "race",
+        "business-logic",
+        "classic"
+      ]
+    },
+    {
+      "id": "cache-poison-unkeyed-header",
+      "title": "Web cache poisoning via unkeyed header",
+      "class": "cache",
+      "rarity": "common",
+      "impact": "critical",
+      "signals": [
+        "cdn",
+        "x-forwarded-host",
+        "x-original-url",
+        "cache-control",
+        "cf-"
+      ],
+      "prereqs": [
+        "Cache key omits a header that influences response body."
+      ],
+      "steps": [
+        "Find unkeyed header reflection.",
+        "Poison a cacheable path with XSS or open redirect.",
+        "Fetch anonymously to confirm.",
+        "Limit poison TTL on production."
+      ],
+      "proof": "Anonymous client receives attacker-controlled cached body for a shared URL.",
+      "tools": [
+        "http_request"
+      ],
+      "sources": [
+        "https://portswigger.net/research/practical-web-cache-poisoning"
+      ],
+      "tags": [
+        "cache",
+        "xss",
+        "classic"
+      ]
+    },
+    {
+      "id": "file-upload-webshell",
+      "title": "Unrestricted file upload to RCE",
+      "class": "rce",
+      "rarity": "common",
+      "impact": "critical",
+      "signals": [
+        "upload",
+        "multipart",
+        "content-type",
+        "extension",
+        "image"
+      ],
+      "prereqs": [
+        "Uploaded file is stored under a web-executable path or processed unsafely."
+      ],
+      "steps": [
+        "Bypass extension/Content-Type checks with polyglots.",
+        "Prove code execution with a benign marker script in authorized lab only.",
+        "On BB programs prefer stored XSS/SSRF from upload over webshells when policy forbids RCE."
+      ],
+      "proof": "Uploaded artifact executes server-side or is retrieved as active content unexpectedly.",
+      "tools": [
+        "http_request"
+      ],
+      "sources": [
+        "https://owasp.org/www-community/vulnerabilities/Unrestricted_File_Upload",
+        "https://portswigger.net/web-security/file-upload"
+      ],
+      "tags": [
+        "upload",
+        "rce",
+        "classic"
+      ]
+    },
+    {
+      "id": "ai-indirect-prompt-exfil",
+      "title": "Indirect prompt injection tool exfiltration",
+      "class": "ai",
+      "rarity": "rare",
+      "impact": "critical",
+      "signals": [
+        "llm",
+        "rag",
+        "tool",
+        "mcp",
+        "agent",
+        "prompt"
+      ],
+      "prereqs": [
+        "Model reads untrusted content and can call tools or fetch URLs."
+      ],
+      "steps": [
+        "Plant instructions in a document the agent will read.",
+        "Induce tool call to attacker URL with secrets.",
+        "Use test secrets only.",
+        "Map to AI VRP style impact."
+      ],
+      "proof": "Agent follows planted instructions and sends sensitive test data to OAST.",
+      "tools": [
+        "oast_create",
+        "browser"
+      ],
+      "sources": [
+        "https://bughunters.google.com/blog/google-vrps-in-review-2025",
+        "https://owasp.org/www-project-top-10-for-large-language-model-applications/"
+      ],
+      "tags": [
+        "ai",
+        "llm",
+        "exfil",
+        "google-vrp"
+      ]
     }
   ]
 }

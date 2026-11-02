@@ -32,58 +32,52 @@
   }
 </script>
 
-<div class="grid min-h-full place-items-center px-5 py-10">
-  <div class="panel-raised panel-hud relative w-full max-w-[440px] overflow-hidden p-7">
-    <div class="mb-4 flex items-center gap-3">
+<div class="obs-unlock">
+  <div class="obs-unlock-card">
+    <div class="obs-unlock-head">
       <Mark class="h-11 w-11 shrink-0" />
-      <div class="leading-tight">
-        <p class="eyebrow">session</p>
-        <h1 class="font-mono text-xl tracking-[0.14em] text-acid">NETCAST3R</h1>
+      <div>
+        <p class="obs-eyebrow"><span class="tick"></span> session</p>
+        <h1 class="obs-unlock-title">NETCAST3R</h1>
       </div>
     </div>
-    <p class="text-sm leading-relaxed text-bone-dust">
+    <p class="obs-unlock-copy">
       This dashboard is locked with a per-session token so nothing on your machine can reach it
       from another tab or another process.
     </p>
 
-    <form class="mt-5 flex flex-col gap-3" onsubmit={submit}>
-      <label class="eyebrow" for="token">session token</label>
+    <form class="obs-unlock-form" onsubmit={submit}>
+      <label class="obs-eyebrow" for="token">session token</label>
       <input
         id="token"
         name="token"
-        class="field"
+        class="obs-field"
         type="password"
         autocomplete="off"
         spellcheck="false"
         placeholder="paste the token from your terminal"
         bind:value={token}
       />
-      <button class="btn btn-acid w-full" type="submit" disabled={!token.trim() || busy}>
+      <button class="obs-btn obs-btn-primary" type="submit" disabled={!token.trim() || busy} style="width:100%;height:36px">
         {busy ? 'checking...' : 'unlock'}
       </button>
       {#if error}
-        <p class="rounded-lg border border-violet-deep bg-violet-abyss px-3 py-2 text-xs text-bone">
-          {error}
-        </p>
+        <p class="obs-alert" role="alert">{error}</p>
       {/if}
     </form>
 
-    <button
-      class="mt-4 text-left text-xs text-ash transition-colors hover:text-bone"
-      onclick={() => (hint = !hint)}
-      type="button"
-    >
-      {hint ? 'x close' : '> where do I find it?'}
+    <button class="obs-unlock-hint" onclick={() => (hint = !hint)} type="button">
+      {hint ? 'close hint' : 'where do I find it?'}
     </button>
     {#if hint}
-      <p class="mt-2 text-xs leading-relaxed text-bone-dust">
-        Run <code class="mono text-acid-dim">netcast3r ui</code> in a terminal. The first line it
-        prints is <code class="mono text-acid-dim">NetCast3r API on http://127.0.0.1:7857/?token=...</code>
-        - open that link, or paste the token here. The token changes every time the server restarts.
+      <p class="obs-unlock-copy" style="margin-top:8px">
+        Run <code class="obs-mono" style="color:var(--obs-acid)">netcast3r ui</code> in a terminal. The first line it
+        prints is <code class="obs-mono" style="color:var(--obs-acid)">NetCast3r API on http://127.0.0.1:7857/?token=...</code>
+        — open that link, or paste the token here. The token changes every time the server restarts.
       </p>
     {/if}
 
-    <p class="mt-5 border-t border-indigo-deep pt-3 text-[11px] leading-relaxed text-ash">
+    <p class="obs-unlock-legal">
       Authorized security research only. The dashboard binds to loopback and never leaves this
       machine.
     </p>

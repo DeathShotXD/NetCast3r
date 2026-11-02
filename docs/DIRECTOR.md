@@ -73,15 +73,16 @@ limiter. On top of that:
 - it never creates a finding, never decides an approval, and never submits a
   report. A validated finding is still a separate, human-gated write.
 
-## Progress, parking, and the kill switch
+## Progress, deepening, and the kill switch
 
 After each run the director compares a progress fingerprint (recorded actions,
-non-director notes, open leads, findings). Its own plan notes are excluded, so
-bookkeeping never looks like progress.
+non-director notes, open leads, findings, graph size, coverage marks). Its own
+plan notes are excluded, so bookkeeping never looks like progress.
 
-- no new progress once: the mission's cooldown doubles, up to fifteen minutes;
-- no new progress twice, or three failures: the mission is **parked** and left
-  alone until a human clears it or the work changes.
+- no new progress: the mission's cooldown doubles, up to five minutes;
+- after three flat runs: the director queues a **deepen** direction from graph
+  endpoints and keeps scheduling — missions never park themselves;
+- only the operator **pause** or **kill** stops continuous hunting.
 
 `POST /api/v1/director/kill` (or the **Kill** button, or `director_control`
 with `action=kill`) is the kill switch. It cancels every run the director
@@ -111,12 +112,13 @@ to hand it the domain and let it run.
 
 ## Continuous operation
 
-The director runs a ten-second tick. It parks a mission only after **three**
-no-progress runs or four failures, and a park is a long rest, not a stop: after
-six hours (`RESUME_AFTER`) the director tries it again with a fresh view. Prime
-adds weight for leads whose technique maps to a high or critical impact exploit
-module, so the bounty-eligible work is picked first. Between a restart the state
-lives in the index, so the loop resumes on its own.
+The director runs a ten-second tick. An active mission stays in rotation until
+the operator pauses; stalls deepen rather than stop. On a multi-hour cadence it
+also refreshes public research feeds into the knowledge base so the mesh keeps
+learning new techniques. Prime adds weight for leads whose technique maps to a
+high or critical impact exploit module, so the bounty-eligible work is picked
+first. Between a restart the state lives in the index, so the loop resumes on
+its own.
 
 ## Surface
 
@@ -155,7 +157,7 @@ Everything the director needs to resume lives in the index:
 
 - `director_state` is one row: engaged, paused, filter, tick, concurrency,
   counters, and an `active_json` blob holding the in-flight runs and each
-  mission's cooldown, progress fingerprint, failure count, and park flag;
+  mission's cooldown, progress fingerprint, and stall counters;
 - `director_log` is the bounded audit feed.
 
 A restart reads that row and keeps scheduling. It never re-plans from scratch.

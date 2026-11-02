@@ -48,6 +48,36 @@ class HypothesisStoreTests(unittest.TestCase):
             "Test the API", mission_id=mission["id"])
         self.assertEqual(hypothesis["target"], "example.com")
 
+    def test_open_hypotheses_are_deduped_per_mission(self):
+        mission = self.index.create_mission(
+            "Example", target="example.com", scope=["example.com"])
+        first = self.index.create_hypothesis(
+            "Test Cloud metadata SSRF on example.com",
+            mission_id=mission["id"], technique="cloud-ssrf")
+        second = self.index.create_hypothesis(
+            "Test Cloud metadata SSRF on example.com",
+            mission_id=mission["id"], technique="cloud-ssrf")
+        self.assertEqual(first["id"], second["id"])
+        items, total = self.index.list_hypotheses(
+            mission_id=mission["id"], status="open")
+        self.assertEqual(total, 1)
+        self.assertEqual(items[0]["id"], first["id"])
+
+    def test_open_hypotheses_are_deduped_per_mission(self):
+        mission = self.index.create_mission(
+            "Example", target="example.com", scope=["example.com"])
+        first = self.index.create_hypothesis(
+            "Test Cloud metadata SSRF on example.com",
+            mission_id=mission["id"], technique="cloud-ssrf")
+        second = self.index.create_hypothesis(
+            "Test Cloud metadata SSRF on example.com",
+            mission_id=mission["id"], technique="cloud-ssrf")
+        self.assertEqual(first["id"], second["id"])
+        items, total = self.index.list_hypotheses(
+            mission_id=mission["id"], status="open")
+        self.assertEqual(total, 1)
+        self.assertEqual(items[0]["id"], first["id"])
+
     def test_promotion_is_refused_until_supported(self):
         hypothesis = self.index.create_hypothesis(
             "A precise test", target="https://example.com")
@@ -68,7 +98,8 @@ class HypothesisStoreTests(unittest.TestCase):
             "Example", target="example.com", scope=["example.com"])
         hypothesis = self.index.create_hypothesis(
             "Encoded path bypass", mission_id=mission["id"],
-            technique="path-encoding", expected="encoded path returns 200")
+            technique="path-encoding",
+            expected="encoded /api/%2e%2e/admin returns 200 while /api/../admin returns 403")
         self.index.patch_hypothesis(
             hypothesis["id"], status="supported",
             result={"ok": True, "passed": 2, "failed": 0,

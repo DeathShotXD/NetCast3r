@@ -32,11 +32,14 @@ class BrainContextTests(unittest.TestCase):
         snapshot = brain.context(self.index, self.server._director(),
                                  mission_id=self.mission["id"])
         for key in ("missions", "runs", "tool_calls", "knowledge", "open_leads",
-                    "candidates", "director", "host", "mcp", "focus_mission"):
+                    "candidates", "director", "host", "mcp", "focus_mission",
+                    "plane"):
             self.assertIn(key, snapshot)
         self.assertEqual(snapshot["focus_mission"]["id"], self.mission["id"])
         self.assertIn("recent_events", snapshot["focus_mission"])
         self.assertIn("tools", snapshot["host"])
+        self.assertEqual(snapshot["plane"]["actually_running"], 0)
+        self.assertIn("running_ids", snapshot["plane"])
 
 
 class BrainChatTests(unittest.TestCase):
@@ -80,6 +83,42 @@ class BrainChatTests(unittest.TestCase):
         kinds = {a["kind"]: a["applied"] for a in result["actions"]}
         self.assertTrue(kinds.get("pause"))
         self.assertFalse(kinds.get("teleport", True))
+
+    def test_helix_can_start_campaign_and_host_shell(self):
+        def complete(messages):
+            return reply({"reply": "scanning example.com", "actions": [
+                {"kind": "start_campaign", "target": "lab.example.com"},
+                {"kind": "host_shell", "command": "echo helix-ok"}]})
+
+        result = brain.chat(self.server, self.index, self.director,
+                            "hunt lab.example.com and echo helix-ok",
+                            complete=complete)
+        by_kind = {a["kind"]: a for a in result["actions"]}
+        self.assertTrue(by_kind["start_campaign"]["applied"])
+        self.assertTrue(by_kind["host_shell"]["applied"])
+        self.assertEqual(by_kind["host_shell"].get("exit_code"), 0)
+        self.assertIn("helix-ok", by_kind["host_shell"].get("stdout", ""))
+        missions, _ = self.index.list_missions(limit=10)
+        self.assertTrue(any("lab.example.com" in str(m.get("target") or "")
+                            for m in missions))
+
+    def test_context_does_not_claim_interrupted_scans_are_live(self):
+        run = self.index.create_run("https://lab.example.com/", {"mode": "hunt"})
+        self.index.update_run(run["id"], status="running")
+        state = self.index.ensure_director_state()
+        active = dict(state.get("active") or {})
+        active["runs"] = {run["id"]: {"mission_id": self.mission["id"],
+                                      "mode": "hunt", "runner": "hunt",
+                                      "started": 0.0, "started_at": ""}}
+        self.index.patch_director_state(active=active, engaged=1)
+        self.index.update_run(run["id"], status="interrupted",
+                              error="server restarted")
+        snapshot = brain.context(self.index, self.director,
+                                 mission_id=self.mission["id"])
+        self.assertEqual(snapshot["plane"]["actually_running"], 0)
+        self.assertEqual(snapshot["director"].get("in_flight"), [])
+        self.assertTrue(any(r["id"] == run["id"] and r["status"] == "interrupted"
+                            for r in snapshot["runs"]))
 
     def test_the_brain_creates_no_finding(self):
         def complete(messages):
@@ -160,9 +199,42 @@ class CampaignStartTests(unittest.TestCase):
 
         names = [tool["name"] for tool in catalog()]
         for name in ("brain_chat", "brain_context", "campaign_start",
-                     "brain_journal", "brain_loop"):
+                     "brain_journal", "brain_loop", "instruct"):
             self.assertIn(name, _TOOL_MAP)
             self.assertIn(name, names)
+
+    def test_instruct_queues_director_without_brain(self):
+        headers = {"host": "127.0.0.1:7857",
+                   "x-netcast3r-token": self.server.token}
+        mission = self.server.index.create_mission(
+            "Instruct", "https://lab.example.com/", status="active",
+            autonomy="autonomous", scope=["lab.example.com"])
+        body = json.dumps({
+            "message": "focus staging auth, skip CDN",
+            "mission_id": mission["id"],
+            "target": "director",
+        }).encode()
+        response = self.server.route("POST", "/api/v1/instruct", {},
+                                     headers, body)
+        self.assertEqual(response.status, 200)
+        payload = json.loads(response.body.decode())
+        self.assertEqual(payload["target"], "director")
+        self.assertIn("direction", payload)
+        queued = self.server.index.list_directions(
+            mission["id"], status="queued")
+        self.assertEqual(len(queued), 1)
+        self.assertIn("staging auth", queued[0]["body"])
+
+    def test_instruct_requires_mission_for_director(self):
+        headers = {"host": "127.0.0.1:7857",
+                   "x-netcast3r-token": self.server.token}
+        body = json.dumps({
+            "message": "pivot east",
+            "target": "director",
+        }).encode()
+        response = self.server.route("POST", "/api/v1/instruct", {},
+                                     headers, body)
+        self.assertEqual(response.status, 400)
 
 
 class CognitionTests(unittest.TestCase):

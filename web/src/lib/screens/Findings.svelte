@@ -8,6 +8,7 @@
   import Chip from '../ui/Chip.svelte';
   import Confirm from '../ui/Confirm.svelte';
   import EmptyState from '../ui/EmptyState.svelte';
+  import Icon from '../ui/Icon.svelte';
 
   let items = $state<Finding[]>([]);
   let total = $state(0);
@@ -100,46 +101,54 @@
   });
 </script>
 
-<div class="stagger mx-auto flex max-w-[1180px] flex-col gap-5">
-  <section class="flex flex-wrap items-end gap-4">
-    <div class="mr-auto">
-      <p class="eyebrow">findings</p>
-      <h1 class="mt-1 text-xl text-bone">
-        {total} {total === 1 ? 'finding' : 'findings'}
-      </h1>
+<div class="obs-page">
+  <header class="obs-page-head">
+    <div>
+      <div class="obs-eyebrow"><span class="tick"></span> Intelligence / Findings</div>
+      <h1>{total} {total === 1 ? 'finding' : 'findings'}</h1>
+      <p class="obs-page-sub">
+        Triage validated credentials and exploit leads. Confirm what is real, escalate what is ready, reject noise.
+      </p>
     </div>
-    <div class="flex flex-wrap items-end gap-3">
-      <label class="block">
-        <span class="eyebrow">search</span>
-        <input class="field mt-1 w-[220px]! py-1.5! text-sm!" type="search" bind:value={q} oninput={debouncedLoad} />
-      </label>
-      <label class="block">
-        <span class="eyebrow">severity</span>
-        <select class="field mt-1 w-[150px]! py-1.5! text-sm!" bind:value={severity} onchange={load}>
-          <option value="">all</option>
-          <option value="critical">critical</option>
-          <option value="high">high</option>
-          <option value="medium">medium</option>
-          <option value="low">low</option>
-          <option value="info">info</option>
-        </select>
-      </label>
-      <label class="block">
-        <span class="eyebrow">state</span>
-        <select class="field mt-1 w-[170px]! py-1.5! text-sm!" bind:value={triage} onchange={load}>
-          <option value="">all</option>
-          <option value="new">needs review</option>
-          <option value="confirmed">confirmed</option>
-          <option value="escalated">escalate-ready</option>
-          <option value="rejected">rejected</option>
-        </select>
-      </label>
+    <div class="obs-page-actions">
+      <button class="obs-btn obs-btn-primary" type="button" onclick={() => store.go('new')}>
+        <Icon name="plus" size={13} />
+        Engage target
+      </button>
     </div>
-  </section>
+  </header>
 
-  <section class="panel overflow-hidden" use:pauseOffscreen>
+  <div class="obs-findings-tools" style="margin-bottom:14px">
+    <label>
+      <span class="obs-eyebrow">search</span>
+      <input class="obs-field" style="width:min(240px,70vw);padding:8px 10px" type="search" bind:value={q} oninput={debouncedLoad} />
+    </label>
+    <label>
+      <span class="obs-eyebrow">severity</span>
+      <select class="obs-field" style="width:150px;padding:8px 10px" bind:value={severity} onchange={load}>
+        <option value="">all</option>
+        <option value="critical">critical</option>
+        <option value="high">high</option>
+        <option value="medium">medium</option>
+        <option value="low">low</option>
+        <option value="info">info</option>
+      </select>
+    </label>
+    <label>
+      <span class="obs-eyebrow">state</span>
+      <select class="obs-field" style="width:170px;padding:8px 10px" bind:value={triage} onchange={load}>
+        <option value="">all</option>
+        <option value="new">needs review</option>
+        <option value="confirmed">confirmed</option>
+        <option value="escalated">escalate-ready</option>
+        <option value="rejected">rejected</option>
+      </select>
+    </label>
+  </div>
+
+  <section class="obs-card" use:pauseOffscreen>
     {#if error}
-      <p class="border-b border-violet-deep bg-violet-abyss px-4 py-3 text-sm text-bone">{error}</p>
+      <p class="obs-alert" style="margin:12px 14px 0">{error}</p>
     {/if}
     {#if items.length === 0}
       <EmptyState
@@ -148,46 +157,45 @@
         body={q || severity || triage
           ? 'No finding satisfies every filter at once. Clear one of the boxes above, or run another scan.'
           : 'Findings land here the moment a run validates a credential against the provider that issued it.'}
-        action="start an operation"
+        action="engage a target"
         onAction={() => store.go('new')}
-        hint={q || severity || triage ? '> tip: leave a filter blank to include everything' : ''}
+        hint={q || severity || triage ? 'tip: leave a filter blank to include everything' : ''}
       />
     {:else}
-      <div class="max-h-[68vh] overflow-auto">
-        <table class="sticky-head w-full min-w-[860px] border-collapse text-left">
+      <div class="obs-findings-table-wrap">
+        <table class="obs-findings-table">
           <thead>
-            <tr class="border-b border-indigo-deep">
-              <th class="eyebrow px-4 py-3">severity</th>
-              <th class="eyebrow px-4 py-3">finding</th>
-              <th class="eyebrow px-4 py-3">value</th>
-              <th class="eyebrow px-4 py-3">confidence</th>
-              <th class="eyebrow px-4 py-3">state</th>
-              <th class="eyebrow px-4 py-3">seen</th>
+            <tr>
+              <th>severity</th>
+              <th>finding</th>
+              <th>value</th>
+              <th>confidence</th>
+              <th>state</th>
+              <th>seen</th>
             </tr>
           </thead>
           <tbody>
             {#each items as finding (finding.id)}
               {@const sev = finding.severity_override || finding.severity}
               <tr
-                class="row-link cursor-pointer border-b border-indigo-deep/60 last:border-0"
                 style="--row-accent:{sevColor(sev)}"
                 onclick={() => open(finding)}
                 onkeydown={(event) => event.key === 'Enter' && open(finding)}
                 tabindex="0"
               >
-                <td class="px-4 py-3">
+                <td>
                   <Chip label={sev} color={sevColor(sev)} shape={sevShape(sev)} />
                 </td>
-                <td class="max-w-[320px] px-4 py-3">
-                  <span class="block truncate text-sm text-bone">{finding.title}</span>
-                  <span class="mono block truncate text-xs text-bone-dust">{finding.secret_type}</span>
+                <td style="max-width:320px">
+                  <span style="display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12.5px;color:var(--obs-text)">{finding.title}</span>
+                  <span class="obs-mono" style="display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:10px;color:var(--obs-muted)">{finding.secret_type}</span>
                 </td>
-                <td class="mono max-w-[220px] truncate px-4 py-3 text-xs text-bone-dust">
+                <td class="obs-mono" style="max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11px;color:var(--obs-muted)">
                   {finding.value}
                 </td>
-                <td class="px-4 py-3">
-                  <span class="flex items-center gap-2">
-                    <span class="num text-xs text-bone">{Math.round((finding.confidence ?? 0) * 100)}%</span>
+                <td>
+                  <span style="display:inline-flex;align-items:center;gap:8px">
+                    <span class="obs-mono" style="font-size:11px">{Math.round((finding.confidence ?? 0) * 100)}%</span>
                     <span
                       class="meter conf"
                       style="--m:{Math.min(1, finding.confidence ?? 0)};--m-color:{sevColor(sev)}"
@@ -195,8 +203,8 @@
                     ></span>
                   </span>
                 </td>
-                <td class="px-4 py-3 text-xs text-bone-dust">{triageLabel(finding.triage_status)}</td>
-                <td class="mono whitespace-nowrap px-4 py-3 text-xs text-ash">{ago(finding.created_at)}</td>
+                <td style="font-size:11.5px;color:var(--obs-muted)">{triageLabel(finding.triage_status)}</td>
+                <td class="obs-mono" style="white-space:nowrap;font-size:11px;color:var(--obs-faint)">{ago(finding.created_at)}</td>
               </tr>
             {/each}
           </tbody>
@@ -207,21 +215,20 @@
 </div>
 
 {#if selected}
-  <button class="fixed inset-0 z-30 bg-black/60" aria-label="close detail" onclick={close}></button>
-  <aside
-    class="drawer fixed inset-y-0 right-0 z-40 flex w-[min(460px,100vw)] flex-col overflow-y-auto border-l border-indigo-deep bg-void-soft"
-    aria-label="finding detail"
-  >
-    <div class="flex items-start gap-3 border-b border-indigo-deep px-5 py-4">
+  <button class="obs-drawer-veil" aria-label="close detail" onclick={close}></button>
+  <aside class="obs-drawer" aria-label="finding detail">
+    <div class="obs-drawer-head">
       <div class="min-w-0 flex-1">
-        <p class="eyebrow">finding</p>
-        <h2 class="mt-1 text-lg leading-snug text-bone">{selected.title}</h2>
+        <p class="obs-eyebrow"><span class="tick"></span>finding</p>
+        <h2>{selected.title}</h2>
       </div>
-      <button class="btn btn-quiet px-2!" type="button" onclick={close} aria-label="close">x</button>
+      <button class="obs-icon-btn" type="button" onclick={close} aria-label="close">
+        <Icon name="x" size={14} />
+      </button>
     </div>
 
-    <div class="flex flex-col gap-5 px-5 py-5">
-      <div class="flex flex-wrap gap-2">
+    <div class="obs-drawer-scroll">
+      <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:16px">
         <Chip
           label={selected.severity_override || selected.severity}
           color={sevColor(selected.severity_override || selected.severity)}
@@ -231,23 +238,23 @@
         <Chip label={triageLabel(selected.triage_status)} color="var(--nc-violet)" shape="ring" />
       </div>
 
-      <div>
-        <p class="eyebrow">explain this finding</p>
-        <p class="mt-2 text-sm leading-relaxed text-bone-dust">
+      <div style="margin-bottom:16px">
+        <p class="obs-eyebrow">explain this finding</p>
+        <p style="margin:8px 0 0;font-size:12.5px;line-height:1.55;color:var(--obs-muted)">
           {selected.impact ||
             'A credential was recovered from this target and recognised as a real secret type. Open the evidence below before you decide what it means.'}
         </p>
       </div>
 
-      <dl class="grid grid-cols-2 gap-3">
-        <div class="panel px-3 py-2">
-          <dt class="eyebrow">type</dt>
-          <dd class="mono mt-1 text-sm text-bone">{selected.secret_type}</dd>
+      <dl style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:16px">
+        <div class="obs-card" style="padding:10px 12px">
+          <dt class="obs-eyebrow">type</dt>
+          <dd class="obs-mono" style="margin-top:6px;font-size:12px">{selected.secret_type}</dd>
         </div>
-        <div class="panel px-3 py-2">
-          <dt class="eyebrow">confidence</dt>
-          <dd class="mt-1 flex items-center gap-2">
-            <span class="num text-sm text-bone">{Math.round((selected.confidence ?? 0) * 100)}%</span>
+        <div class="obs-card" style="padding:10px 12px">
+          <dt class="obs-eyebrow">confidence</dt>
+          <dd style="margin-top:6px;display:flex;align-items:center;gap:8px">
+            <span class="obs-mono" style="font-size:12px">{Math.round((selected.confidence ?? 0) * 100)}%</span>
             <span
               class="meter flex-1"
               style="--m:{Math.min(1, selected.confidence ?? 0)};--m-color:{sevColor(selected.severity_override || selected.severity)}"
@@ -255,49 +262,57 @@
             ></span>
           </dd>
         </div>
-        <div class="panel col-span-2 px-3 py-2">
-          <dt class="eyebrow">value (masked)</dt>
-          <dd class="mono mt-1 break-all text-sm text-acid">{selected.value}</dd>
+        <div class="obs-card" style="grid-column:1 / -1;padding:10px 12px">
+          <dt class="obs-eyebrow">value (masked)</dt>
+          <dd class="obs-mono" style="margin-top:6px;word-break:break-all;font-size:12px;color:var(--obs-acid)">{selected.value}</dd>
         </div>
-        <div class="panel col-span-2 px-3 py-2">
-          <dt class="eyebrow">source</dt>
-          <dd class="mono mt-1 break-all text-xs text-bone-dust">{selected.source || '-'}</dd>
+        <div class="obs-card" style="grid-column:1 / -1;padding:10px 12px">
+          <dt class="obs-eyebrow">source</dt>
+          <dd class="obs-mono" style="margin-top:6px;word-break:break-all;font-size:11px;color:var(--obs-muted)">{selected.source || '-'}</dd>
         </div>
       </dl>
 
       {#if selected.evidence}
-        <div>
-          <p class="eyebrow">evidence</p>
+        <div style="margin-bottom:16px">
+          <p class="obs-eyebrow">evidence</p>
           <pre
-            class="mono mt-2 max-h-[220px] overflow-auto whitespace-pre-wrap break-words rounded-lg border border-indigo-deep bg-void px-3 py-3 text-xs leading-relaxed text-bone-dust">{selected.evidence}</pre>
+            class="obs-mono"
+            style="margin-top:8px;max-height:220px;overflow:auto;white-space:pre-wrap;word-break:break-word;border:1px solid var(--obs-line);border-radius:9px;background:var(--obs-bg-2);padding:12px;font-size:11px;line-height:1.5;color:var(--obs-muted)">{selected.evidence}</pre>
         </div>
       {/if}
 
       <div>
-        <p class="eyebrow">triage</p>
-        <div class="mt-2 flex flex-wrap gap-2">
+        <p class="obs-eyebrow">triage</p>
+        <div style="margin-top:8px;display:flex;flex-wrap:wrap;gap:8px">
           <button
-            class="btn"
+            class="obs-btn obs-btn-swarm"
             type="button"
             disabled={busy}
             onclick={() => patch({ status: 'confirmed' }, 'marked as confirmed')}
-            style="color:var(--nc-acid)">confirm</button
-          >
-          <button class="btn" type="button" disabled={busy} onclick={() => patch({ status: 'escalated' }, 'marked escalate-ready')}
-            >escalate</button
-          >
+          >confirm</button>
           <button
-            class="btn btn-danger"
+            class="obs-btn"
             type="button"
             disabled={busy}
-            onclick={() => (pendingReject = selected)}>reject</button
-          >
+            onclick={() => patch({ status: 'escalated' }, 'marked escalate-ready')}
+          >escalate</button>
+          <button
+            class="obs-btn obs-btn-danger"
+            type="button"
+            disabled={busy}
+            onclick={() => (pendingReject = selected)}
+          >reject</button>
         </div>
-        <label class="mt-3 block">
-          <span class="eyebrow">notes</span>
-          <textarea class="field mt-2 min-h-[90px] text-sm!" bind:value={notes} placeholder="why it matters, where it came from, what you did"></textarea>
+        <label style="display:block;margin-top:14px">
+          <span class="obs-eyebrow">notes</span>
+          <textarea
+            class="obs-field obs-field-area"
+            style="margin-top:6px"
+            bind:value={notes}
+            placeholder="why it matters, where it came from, what you did"
+          ></textarea>
         </label>
-        <button class="btn mt-2" type="button" disabled={busy} onclick={() => patch({ notes }, 'notes saved')}>
+        <button class="obs-btn" type="button" style="margin-top:8px" disabled={busy} onclick={() => patch({ notes }, 'notes saved')}>
           save notes
         </button>
       </div>

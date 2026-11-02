@@ -142,8 +142,8 @@ class DirectorTests(unittest.TestCase):
         self.assertEqual(decision["reason"], "paused")
         self.assertEqual(self.hunts.started, [])
 
-    # -- progress and parking ---------------------------------------------
-    def test_no_progress_runs_park_the_mission_after_the_limit(self):
+    # -- progress and continuous hunt -------------------------------------
+    def test_stall_deepens_instead_of_parking(self):
         mission = self.mission("stuck")
         for _ in range(3):
             decision = self.director._tick(force=True)
@@ -152,17 +152,29 @@ class DirectorTests(unittest.TestCase):
             self.director._tick(force=True)  # reap
             self.clear_cooldowns()
         rows = {row["mission_id"]: row for row in self.director.eligibility()}
-        self.assertTrue(rows[mission["id"]]["parked"])
-        third = self.director._tick(force=True)
-        self.assertEqual(third["action"], "idle")
-        self.assertIn("parked", third["reason"])
+        self.assertFalse(rows[mission["id"]]["parked"])
+        queued = self.server.index.list_directions(
+            mission["id"], status="queued")
+        self.assertTrue(any("Deepen continuous hunt" in str(d.get("body") or "")
+                            for d in queued))
+        # Continuous hunt: the mission stays eligible after a stall.
+        nxt = self.director._tick(force=True)
+        self.assertEqual(nxt["action"], "start")
+        self.assertEqual(nxt["mission_id"], mission["id"])
 
-    def test_a_park_clears_on_its_own_after_the_rest(self):
-        entry = {"parked": True, "parked_at": time.time()}
-        self.assertTrue(Director._still_parked(entry))
-        entry["parked_at"] = time.time() - (7 * 3600)
-        self.assertFalse(Director._still_parked(entry))
-        self.assertFalse(Director._still_parked({"parked": False}))
+    def test_legacy_parks_are_cleared_on_tick(self):
+        mission = self.mission("was-parked")
+        state = self.server.index.ensure_director_state()
+        active = dict(state.get("active") or {})
+        missions = dict(active.get("missions") or {})
+        missions[mission["id"]] = {
+            "parked": True, "parked_at": time.time(), "no_progress": 9}
+        active["missions"] = missions
+        self.server.index.patch_director_state(active=active)
+        decision = self.director._tick(force=True)
+        self.assertEqual(decision["action"], "start")
+        rows = {row["mission_id"]: row for row in self.director.eligibility()}
+        self.assertFalse(rows[mission["id"]]["parked"])
 
     def test_the_scope_filter_is_enforced_at_selection(self):
         auto = self.mission("auto", autonomy="autonomous")
@@ -216,6 +228,21 @@ class DirectorTests(unittest.TestCase):
         after = self.director._tick()
         self.assertEqual(after["action"], "idle")
 
+    def test_reconcile_drops_interrupted_ghost_runs(self):
+        """After a restart, recover marks runs interrupted; director must not
+        still claim they are in flight when Helix asks for status."""
+        self.mission("ghost")
+        decision = self.director._tick(force=True)
+        run_id = decision["run_id"]
+        self.assertEqual(len(self.director.status()["in_flight"]), 1)
+        self.server.index.update_run(run_id, status="interrupted",
+                                     finished_at="2026-01-01T00:00:00Z",
+                                     error="server restarted")
+        status = self.director.status()
+        self.assertEqual(status["in_flight"], [])
+        state = self.server.index.ensure_director_state()
+        self.assertNotIn(run_id, (state.get("active") or {}).get("runs") or {})
+
     def test_director_state_is_durable_across_instances(self):
         self.mission("durable")
         self.director._tick(force=True)
@@ -239,21 +266,39 @@ class DirectorTests(unittest.TestCase):
         prior = self.server.index.create_run("http://127.0.0.1:9/", {"mode": "hunt"})
         self.server.index.add_mission_run(mission["id"], prior["id"])
         self.server.index.update_run(prior["id"], status="done", counts_json={"actions": 1})
-        self.server.index.add_director_log("brain-wait", "no model answered: 429")
-        self.server.index.add_director_log("brain-wait", "no model answered: ConnectError")
+        for _ in range(8):
+            self.server.index.add_director_log(
+                "brain-wait", "no model answered: ConnectError")
         decision = self.director._tick(force=True)
         self.assertEqual(decision["action"], "start")
         self.assertEqual(decision["requested_mode"], "autopilot")
         self.assertEqual(decision["mode"], "hunt")
         self.assertIn("model gate", decision["model_gate"])
 
+    def test_free_tier_429s_do_not_close_the_moe_gate(self):
+        mission = self.mission("soft")
+        prior = self.server.index.create_run("http://127.0.0.1:9/", {"mode": "hunt"})
+        self.server.index.add_mission_run(mission["id"], prior["id"])
+        self.server.index.update_run(prior["id"], status="done", counts_json={"actions": 1})
+        for _ in range(12):
+            self.server.index.add_director_log(
+                "brain-wait", "no model answered: th-hunt-3 returned 429")
+        decision = self.director._tick(force=True)
+        self.assertEqual(decision["action"], "start")
+        self.assertEqual(decision["mode"], "autopilot")
+        self.assertFalse(decision.get("model_gate"))
+        health = self.director._model_health()
+        self.assertTrue(health["available"])
+        self.assertGreaterEqual(health.get("soft_failures", 0), 8)
+
     def test_a_newer_model_answer_reopens_the_gate(self):
         mission = self.mission("recovered")
         prior = self.server.index.create_run("http://127.0.0.1:9/", {"mode": "hunt"})
         self.server.index.add_mission_run(mission["id"], prior["id"])
         self.server.index.update_run(prior["id"], status="done", counts_json={"actions": 1})
-        self.server.index.add_director_log("brain-wait", "no model answered: 429")
-        self.server.index.add_director_log("brain-wait", "no model answered: 429")
+        for _ in range(8):
+            self.server.index.add_director_log(
+                "brain-wait", "no model answered: ConnectError")
         self.server.index.add_director_log(
             "brain", "the model answered", data={"model": "test-model"})
         decision = self.director._tick(force=True)

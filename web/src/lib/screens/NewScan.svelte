@@ -2,307 +2,279 @@
   import { api } from '../api';
   import { store } from '../state.svelte';
   import { spotlight } from '../actions';
-  import PipelineLadder from '../ui/PipelineLadder.svelte';
-  import Confirm from '../ui/Confirm.svelte';
+  import Icon from '../ui/Icon.svelte';
 
-  const presets = [
+  const mesh = [
     {
-      id: 'quick',
-      name: 'Quick look',
-      blurb: 'One page and its scripts. The fastest honest pass.',
-      options: { depth: 1, tier: 'read', subdomains: false }
+      id: 'osint',
+      title: 'OSINT map',
+      detail: 'Certs, DNS, subdomains, Wayback, live hosts via web2root + cast.'
     },
     {
-      id: 'standard',
-      name: 'Standard audit',
-      blurb: 'Follow links two hops deep and validate everything it catches.',
-      options: { depth: 2, tier: 'read', subdomains: true }
+      id: 'scout',
+      title: 'Scout mesh',
+      detail: 'Fingerprint stacks, crawl routes, inventory APIs and JS surfaces.'
     },
     {
-      id: 'deep',
-      name: 'Deep hunt',
-      blurb: 'Four hops through every endpoint and bundle. Slow, thorough.',
-      options: { depth: 4, tier: 'read', subdomains: true }
+      id: 'auth',
+      title: 'Auth agents',
+      detail: 'Temp-mail signup, session capture, authenticated probing.'
+    },
+    {
+      id: 'exegete',
+      title: 'JS / source reverse',
+      detail: 'Bundle and artifact reverse for secrets, endpoints, hidden params.'
+    },
+    {
+      id: 'attack',
+      title: 'Attack + validate',
+      detail: 'Falsify leads; independent validators refuse reachability-as-vuln.'
+    },
+    {
+      id: 'pivot',
+      title: 'Escalate + pivot',
+      detail: 'Chain supported impact; lateral only inside the mission scope.'
     }
   ];
 
   let target = $state('');
-  let preset = $state('standard');
-  let advanced = $state(false);
-  let depth = $state(2);
-  let timeout = $state<number | null>(null);
-  let writeTier = $state(false);
-  let rate = $state<number | null>(null);
-  let delay = $state<number | null>(null);
-  let retries = $state<number | null>(null);
-  let maxPages = $state<number | null>(null);
-  let randomAgent = $state(false);
-  let wayback = $state(true);
-  let subdomains = $state(true);
   let busy = $state(false);
   let error = $state('');
-  let confirmOpen = $state(false);
+  let phase = $state('');
 
   const trimmed = $derived(target.trim());
-  const ready = $derived(trimmed.length > 3 && !busy);
+  const ready = $derived(trimmed.length > 2 && !busy);
 
-  function choose(id: string) {
-    preset = id;
-    const found = presets.find((item) => item.id === id)!;
-    depth = Number(found.options.depth);
-    subdomains = Boolean(found.options.subdomains);
-  }
-
-  async function start() {
+  async function engage() {
     if (!ready) return;
-    if (writeTier) {
-      confirmOpen = true;
-      return;
-    }
-    await launch();
-  }
-
-  async function launch() {
-    confirmOpen = false;
     busy = true;
     error = '';
-    const found = presets.find((item) => item.id === preset)!;
-    const safeDepth = Number.isFinite(depth) ? Math.min(8, Math.max(0, Math.trunc(depth))) : 2;
-    const options: Record<string, unknown> = { depth: safeDepth, tier: writeTier ? 'write' : found.options.tier };
-    if (timeout != null && !Number.isNaN(timeout)) options.timeout = timeout;
-    if (rate != null && !Number.isNaN(rate)) options.rate = rate;
-    if (delay != null && !Number.isNaN(delay)) options.delay = delay;
-    if (retries != null && !Number.isNaN(retries)) options.retries = retries;
-    if (maxPages != null && !Number.isNaN(maxPages)) options.max_pages = maxPages;
-    options.random_agent = randomAgent;
-    options.wayback = wayback;
-    options.subdomains = subdomains;
+    phase = 'seeding mission + engaging brain…';
     try {
-      const run = await api.startRun(trimmed, options);
-      store.toast('ok', `scan started against ${trimmed}`);
-      store.runs = [{ ...run }, ...store.runs];
-      store.watch(run.id);
-      await store.refreshTotals();
+      const result = await api.campaignStart(trimmed);
+      const mission = result.mission;
+      store.toast('ok', `hunt engaged on ${trimmed}`);
+      store.brainDock = true;
+      phase = 'bootstrapping OSINT cast + swarm + hunt…';
+      try {
+        await store.refreshTotals();
+      } catch {
+        /* non-fatal */
+      }
+      // Prefer live spectate when a cast already exists; else mission board.
+      const runs = store.runs.filter((run) => run.status === 'running' || run.status === 'queued');
+      if (runs[0]) {
+        store.watch(runs[0].id);
+      } else {
+        store.go('missions');
+        // Soft poll: cast may appear a moment after bootstrap thread starts.
+        window.setTimeout(() => {
+          void store.refreshTotals().then(() => {
+            const live =
+              store.runs.find((run) => run.status === 'running' || run.status === 'queued') ??
+              null;
+            if (live) store.watch(live.id);
+          });
+        }, 1800);
+      }
+      if (mission?.id) {
+        store.toast(
+          'ok',
+          `mission ${mission.id.slice(0, 12)} · brain + director autonomous — spectate or instruct`
+        );
+      }
     } catch (exc) {
-      error = exc instanceof Error ? exc.message : 'the operation could not be started';
+      error = exc instanceof Error ? exc.message : 'could not engage the hunt';
+      phase = '';
     } finally {
       busy = false;
     }
   }
 </script>
 
-<div class="stagger mx-auto grid max-w-[1180px] gap-5 lg:grid-cols-[1.15fr_1fr]">
-  <section class="panel p-6" use:spotlight>
-    <p class="eyebrow">new scan</p>
-    <h1 class="mt-1 text-xl text-bone">Where should we look?</h1>
-
-    <form class="mt-5 flex flex-col gap-5" onsubmit={(event) => { event.preventDefault(); start(); }}>
-      <div>
-        <label class="eyebrow" for="target">target</label>
-        <input
-          id="target"
-          class="field mt-2"
-          placeholder="https://example.com"
-          bind:value={target}
-          autocomplete="off"
-          spellcheck="false"
-        />
-        <p class="mt-2 text-xs text-ash">
-          A host or a full URL. Only test targets you are authorized to test.
-        </p>
-      </div>
-
-      <fieldset>
-        <legend class="eyebrow">how deep</legend>
-        <div class="mt-2 grid gap-2">
-          {#each presets as item (item.id)}
-            <button
-              type="button"
-              class="flex items-start gap-3 rounded-lg border px-4 py-3 text-left transition-[border-color,background] duration-150 {preset ===
-              item.id
-                ? 'border-acid bg-acid-abyss'
-                : 'border-indigo-deep hover:border-violet-deep'}"
-              aria-pressed={preset === item.id}
-              onclick={() => choose(item.id)}
-            >
-              <span
-                class="mt-1 h-3 w-3 shrink-0 rounded-full border"
-                class:border-acid={preset === item.id}
-                class:bg-acid={preset === item.id}
-                class:border-indigo={preset !== item.id}
-                aria-hidden="true"
-              ></span>
-              <span>
-                <span class="mono block text-sm tracking-wide text-bone">{item.name}</span>
-                <span class="mt-0.5 block text-xs leading-relaxed text-bone-dust">{item.blurb}</span>
-              </span>
-            </button>
-          {/each}
-        </div>
-      </fieldset>
-
-      <div class="border-t border-indigo-deep pt-4">
-        <button
-          class="mono text-sm text-bone-dust transition-colors hover:text-bone"
-          type="button"
-          onclick={() => (advanced = !advanced)}
-          aria-expanded={advanced}
-        >
-          {advanced ? 'x' : '>'} advanced options
-        </button>
-
-        {#if advanced}
-          <div class="mt-4 grid gap-4 sm:grid-cols-2">
-            <div>
-              <label class="eyebrow" for="depth">crawl depth</label>
-              <input id="depth" class="field mt-2" type="number" min="0" max="8" bind:value={depth} />
-            </div>
-            <div>
-              <label class="eyebrow" for="timeout">request timeout (s)</label>
-              <input
-                id="timeout"
-                class="field mt-2"
-                type="number"
-                min="1"
-                max="120"
-                placeholder="default 15"
-                bind:value={timeout}
-              />
-            </div>
-            <div>
-              <label class="eyebrow" for="rate">requests per second</label>
-              <input
-                id="rate"
-                class="field mt-2"
-                type="number"
-                min="0"
-                max="50"
-                step="0.5"
-                placeholder="0 = unlimited"
-                bind:value={rate}
-              />
-            </div>
-            <div>
-              <label class="eyebrow" for="delay">delay between requests (s)</label>
-              <input
-                id="delay"
-                class="field mt-2"
-                type="number"
-                min="0"
-                max="10"
-                step="0.1"
-                placeholder="default 0"
-                bind:value={delay}
-              />
-            </div>
-            <div>
-              <label class="eyebrow" for="retries">retries per request</label>
-              <input
-                id="retries"
-                class="field mt-2"
-                type="number"
-                min="0"
-                max="6"
-                placeholder="default 2"
-                bind:value={retries}
-              />
-            </div>
-            <div>
-              <label class="eyebrow" for="maxpages">max pages</label>
-              <input
-                id="maxpages"
-                class="field mt-2"
-                type="number"
-                min="25"
-                max="2000"
-                placeholder="auto"
-                bind:value={maxPages}
-              />
-            </div>
-          </div>
-
-          <div class="mt-4 grid gap-2 sm:grid-cols-2">
-            <label class="flex cursor-pointer items-start gap-3 rounded-lg border border-indigo-deep px-4 py-3">
-              <input class="mt-1 accent-[var(--nc-acid)]" type="checkbox" bind:checked={subdomains} />
-              <span>
-                <span class="mono block text-sm text-bone">map subdomains</span>
-                <span class="mt-1 block text-xs leading-relaxed text-bone-dust">
-                  Enumerate the host's subdomains from certificate transparency and DNS, then crawl
-                  each one for JavaScript.
-                </span>
-              </span>
-            </label>
-            <label class="flex cursor-pointer items-start gap-3 rounded-lg border border-indigo-deep px-4 py-3">
-              <input class="mt-1 accent-[var(--nc-acid)]" type="checkbox" bind:checked={randomAgent} />
-              <span>
-                <span class="mono block text-sm text-bone">randomize user agent</span>
-                <span class="mt-1 block text-xs leading-relaxed text-bone-dust">
-                  Rotate through a pool of browser identities on every request.
-                </span>
-              </span>
-            </label>
-            <label class="flex cursor-pointer items-start gap-3 rounded-lg border border-indigo-deep px-4 py-3">
-              <input class="mt-1 accent-[var(--nc-acid)]" type="checkbox" bind:checked={wayback} />
-              <span>
-                <span class="mono block text-sm text-bone">mine the wayback machine</span>
-                <span class="mt-1 block text-xs leading-relaxed text-bone-dust">
-                  Pull historic URLs and js bundles from archive snapshots.
-                </span>
-              </span>
-            </label>
-          </div>
-
-          <label class="mt-4 flex cursor-pointer items-start gap-3 rounded-lg border border-indigo-deep px-4 py-3">
-            <input class="mt-1 accent-[var(--nc-acid)]" type="checkbox" bind:checked={writeTier} />
-            <span>
-              <span class="mono block text-sm text-bone">allow impact proof (write tier)</span>
-              <span class="mt-1 block text-xs leading-relaxed text-bone-dust">
-                Sends a real write call to the provider that issued a credential, to prove what an
-                attacker could do. Off by default. Leave it off unless you own the account.
-              </span>
-            </span>
-          </label>
-        {/if}
-      </div>
-
-      {#if error}
-        <p class="rounded-lg border border-violet-deep bg-violet-abyss px-4 py-3 text-sm text-bone">
-          {error}
-        </p>
-      {/if}
-
-      <div class="flex flex-wrap items-center gap-3">
-        <button class="btn btn-acid" type="submit" disabled={!ready}>
-          {busy ? 'starting...' : writeTier ? 'review and start' : 'start scan'}
-        </button>
-        <button class="btn btn-quiet" type="button" onclick={() => store.go('home')}>cancel</button>
-        <span class="mono text-xs text-ash">presets are non-destructive</span>
-      </div>
-    </form>
-  </section>
-
-  <section class="panel flex flex-col gap-4 p-6">
+<div class="obs-page">
+  <header class="obs-page-head">
     <div>
-      <p class="eyebrow">what will happen</p>
-      <h2 class="mt-1 text-lg text-bone">Six stages, in order</h2>
+      <div class="obs-eyebrow"><span class="tick"></span> Engage</div>
+      <h1>One seed. Full hunt.</h1>
+      <p class="obs-page-sub">
+        Drop a domain, URL, or public endpoint. Helix maps the surface, spins the agent mesh
+        (OSINT, auth via temp mail, JS reverse, validate, escalate), and will hail you mid-hunt — instruct anytime.
+      </p>
     </div>
-    <div class="mt-1">
-      <PipelineLadder />
-    </div>
-    <p class="mt-auto border-t border-indigo-deep pt-4 text-xs leading-relaxed text-ash">
-      Results are written to your own results folder as markdown, JSON, SARIF, and an HTML
-      dashboard. Nothing is uploaded anywhere.
-    </p>
-  </section>
+  </header>
+
+  <div class="obs-op-grid">
+    <section class="obs-card obs-engage-card" use:spotlight>
+      <div class="obs-card-body">
+        <form
+          class="obs-engage-form"
+          onsubmit={(event) => {
+            event.preventDefault();
+            void engage();
+          }}
+        >
+          <div>
+            <label class="obs-eyebrow" for="seed">target seed</label>
+            <input
+              id="seed"
+              class="obs-field obs-engage-input"
+              style="margin-top:8px"
+              placeholder="app.example.com  ·  https://api.example.com  ·  staging.example.io"
+              bind:value={target}
+              autocomplete="off"
+              spellcheck="false"
+            />
+            <p class="obs-engage-hint">
+              Authorized targets only. One string is enough — no separate “mission” vs “operation”.
+            </p>
+          </div>
+
+          {#if error}
+            <p class="obs-alert" role="alert">{error}</p>
+          {/if}
+          {#if phase && busy}
+            <p class="obs-engage-phase" role="status">
+              <span class="obs-pulse" aria-hidden="true"></span>
+              {phase}
+            </p>
+          {/if}
+
+          <div class="obs-engage-actions">
+            <button class="obs-btn obs-btn-primary obs-engage-cta" type="submit" disabled={!ready}>
+              <Icon name="crosshair" size={14} />
+              {busy ? 'engaging…' : 'engage hunt'}
+            </button>
+            <button class="obs-btn obs-btn-ghost" type="button" onclick={() => store.go('home')}>
+              cancel
+            </button>
+          </div>
+        </form>
+      </div>
+    </section>
+
+    <section class="obs-card obs-mesh-card">
+      <div class="obs-card-head">
+        <div>
+          <div class="obs-card-title">What Helix starts</div>
+          <div class="obs-card-sub">Parallel agent mesh — Helix hails you when it matters</div>
+        </div>
+      </div>
+      <div class="obs-card-body">
+        <ol class="obs-mesh-list" aria-label="agent mesh">
+          {#each mesh as role, i (role.id)}
+            <li class="obs-mesh-item" style="animation-delay:{i * 60}ms">
+              <span class="obs-mesh-idx" aria-hidden="true">{String(i + 1).padStart(2, '0')}</span>
+              <span>
+                <strong>{role.title}</strong>
+                <span>{role.detail}</span>
+              </span>
+            </li>
+          {/each}
+        </ol>
+        <p class="obs-mesh-foot">
+          Open Helix (B) anytime — fullscreen from the panel. Successful proofs and attempts stream into Live and the conversation feed.
+        </p>
+      </div>
+    </section>
+  </div>
 </div>
 
-{#if confirmOpen}
-  <Confirm
-    title="Send a write request to {trimmed}?"
-    body="Write tier sends a real API call that changes data in the account that owns the credential. Run it only against accounts you control. Cancel to start a read-only scan instead."
-    confirmLabel="start write-tier scan"
-    danger
-    onConfirm={launch}
-    onCancel={() => (confirmOpen = false)}
-  />
-{/if}
+<style>
+  .obs-engage-form {
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+  }
+
+  .obs-engage-input {
+    font-size: 15px;
+    letter-spacing: 0.01em;
+  }
+
+  .obs-engage-hint {
+    margin: 10px 0 0;
+    font-size: 11px;
+    line-height: 1.5;
+    color: var(--obs-faint);
+  }
+
+  .obs-engage-phase {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    margin: 0;
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--obs-acid);
+  }
+
+  .obs-engage-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .obs-engage-cta {
+    min-width: 148px;
+  }
+
+  .obs-mesh-list {
+    display: grid;
+    gap: 10px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .obs-mesh-item {
+    display: grid;
+    grid-template-columns: 28px 1fr;
+    gap: 10px;
+    align-items: start;
+    animation: fade-rise 420ms ease both;
+  }
+
+  .obs-mesh-item strong {
+    display: block;
+    font-size: 12px;
+    color: var(--obs-text);
+  }
+
+  .obs-mesh-item span span {
+    display: block;
+    margin-top: 2px;
+    font-size: 11px;
+    line-height: 1.45;
+    color: var(--obs-faint);
+  }
+
+  .obs-mesh-idx {
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: 0.08em;
+    color: var(--obs-acid);
+    padding-top: 2px;
+  }
+
+  .obs-mesh-foot {
+    margin: 16px 0 0;
+    padding-top: 14px;
+    border-top: 1px solid var(--obs-line);
+    font-size: 11px;
+    line-height: 1.55;
+    color: var(--obs-faint);
+  }
+
+  @keyframes fade-rise {
+    from {
+      opacity: 0;
+      transform: translateY(6px);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+</style>

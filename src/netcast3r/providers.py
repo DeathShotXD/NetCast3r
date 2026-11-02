@@ -59,6 +59,89 @@ def _ms(since: float) -> int:
     return int((time.monotonic() - since) * 1000)
 
 
+# Mixture-of-Experts: free catalogues ship deepseek / mimo / qwen / nemotron
+# with different strengths. Agent roles pick a preferred family, and each
+# provider key rotates its primary so sixteen TokenHarbor lanes do not all
+# hammer the same free model into a 429 wall.
+_EXPERT_FAMILIES = ("deepseek", "mimo", "qwen", "nemotron", "coder", "llama",
+                    "mistral", "gemini", "other")
+
+_AGENT_EXPERTS: dict[str, tuple[str, ...]] = {
+    "prime": ("deepseek", "nemotron", "qwen", "mimo"),
+    "strategist": ("deepseek", "nemotron", "qwen", "mimo"),
+    "scout": ("mimo", "deepseek", "qwen", "nemotron"),
+    "attacker": ("deepseek", "qwen", "mimo", "nemotron"),
+    "validator": ("deepseek", "mimo", "qwen", "nemotron"),
+    "verifier": ("deepseek", "mimo", "qwen"),
+    "sentinel": ("deepseek", "qwen", "mimo"),
+    "exegete": ("qwen", "coder", "deepseek", "mimo"),
+    "chainer": ("deepseek", "qwen", "nemotron", "mimo"),
+    "scribe": ("mimo", "qwen", "deepseek"),
+    "prospector": ("mimo", "deepseek", "qwen"),
+    "code": ("qwen", "coder", "deepseek", "mimo"),
+    "upgrade": ("qwen", "coder", "deepseek", "nemotron"),
+    "train": ("mimo", "deepseek", "qwen"),
+    "lab": ("mimo", "deepseek", "qwen"),
+}
+
+
+# Default free MoE catalogue for TokenHarbor hunt/learn lanes. Order is a
+# starting hint; ProviderBus MoE reorders per agent and per key at call time.
+TOKENHARBOR_MOE_MODELS = [
+    "deepseek-v4.1-flash:free",
+    "deepseek-v4-flash:free",
+    "mimo-v2.6-flash:free",
+    "mimo-v2.5:free",
+    "qwen3-coder:free",
+    "qwen3-8b:free",
+    "qwen-2.5-coder-32b:free",
+]
+
+
+def diversify_tokenharbor_catalogs(index) -> dict:
+    """Ensure th-hunt/th-learn lanes carry the full free MoE mix.
+
+    Older installs only listed DeepSeek first on every key, which stampeded
+    one model into 429s. This merges the MoE catalogue without dropping
+    operator-added ids, and rotates the primary per lane.
+    """
+    updated = []
+    for row in index.list_providers():
+        name = str(row.get("name") or "")
+        if not (name.startswith("th-hunt-") or name.startswith("th-learn-")
+                or name in {"tokenharbor"}):
+            continue
+        current = [str(m) for m in (row.get("models") or []) if str(m).strip()]
+        merged = list(current)
+        for model in TOKENHARBOR_MOE_MODELS:
+            if model not in merged:
+                merged.append(model)
+        if not merged:
+            merged = list(TOKENHARBOR_MOE_MODELS)
+        # Rotate primary so lane N prefers a different family.
+        offset = abs(hash(name)) % len(merged)
+        rotated = merged[offset:] + merged[:offset]
+        if rotated != current:
+            index.update_provider(row["id"], models=rotated)
+            updated.append({"name": name, "models": rotated[:6]})
+    return {"updated": updated, "count": len(updated)}
+
+
+def model_family(model: str) -> str:
+    """Classify a catalogue id into an expert family for MoE ordering."""
+    name = str(model or "").strip().lower()
+    if not name:
+        return "other"
+    for family in _EXPERT_FAMILIES:
+        if family == "other":
+            continue
+        if family in name:
+            return family
+    if "code" in name:
+        return "coder"
+    return "other"
+
+
 class ProviderBus:
     def __init__(self, config, egress=None, timeout: float = 120.0, observer=None):
         self.config = config
@@ -78,25 +161,81 @@ class ProviderBus:
         # counter below is mutated under one lock
         self._lock = threading.Lock()
 
-    COOLDOWN_BASE = 30.0
-    COOLDOWN_MAX = 300.0
-    DEAD_TTL = 900.0
+    COOLDOWN_BASE = 20.0
+    COOLDOWN_MAX = 180.0
+    DEAD_TTL = 420.0
+    RATE_DEAD_TTL = 90.0
 
     def _model_dead(self, provider: str, model: str) -> bool:
         with self._lock:
             return time.monotonic() < self._dead.get((provider, model), 0.0)
 
-    def _retire(self, provider: str, model: str) -> None:
+    def _retire(self, provider: str, model: str, ttl: float | None = None) -> None:
         with self._lock:
-            self._dead[(provider, model)] = time.monotonic() + self.DEAD_TTL
+            self._dead[(provider, model)] = time.monotonic() + (
+                self.DEAD_TTL if ttl is None else float(ttl))
 
-    def _strike(self, provider: str, model: str, fatal: bool = False) -> None:
+    def _strike(self, provider: str, model: str, fatal: bool = False,
+                ttl: float | None = None) -> None:
         with self._lock:
             key = (provider, model)
             count = self._strikes.get(key, 0) + 1
             self._strikes[key] = count
             if fatal or count >= 2:
-                self._dead[key] = time.monotonic() + self.DEAD_TTL
+                self._dead[key] = time.monotonic() + (
+                    self.DEAD_TTL if ttl is None else float(ttl))
+
+    @staticmethod
+    def _expert_prefs(agent: str, provider_name: str) -> list[str]:
+        base = list(_AGENT_EXPERTS.get(str(agent or "").strip().lower(),
+                                       ("deepseek", "mimo", "qwen", "nemotron")))
+        # Rotate preferred family per provider so th-hunt-1..N diversify.
+        if not base:
+            return base
+        offset = abs(hash(str(provider_name or ""))) % len(base)
+        return base[offset:] + base[:offset]
+
+    def _moe_models(self, provider, agent: str, route) -> list[str]:
+        """Order this provider's models for the agent (mixture of experts)."""
+        models = [m for m in list(provider.models or []) if m]
+        # An empty catalogue still accepts the routed model id (local ollama /
+        # single-model keys). TokenHarbor lanes always carry an explicit list.
+        if not models and route.model:
+            models = [route.model]
+        if not models:
+            return []
+        prefs = self._expert_prefs(agent, provider.name)
+        routed_here = bool(route.model) and (
+            not route.provider or provider.name == route.provider)
+
+        def rank(model: str) -> tuple[int, int]:
+            family = model_family(model)
+            try:
+                pref = prefs.index(family)
+            except ValueError:
+                pref = len(prefs) + (0 if family == "other" else 1)
+            stagger = abs(hash(f"{provider.name}:{agent}")) % len(models)
+            try:
+                idx = models.index(model)
+            except ValueError:
+                idx = 0
+            return pref, (idx - stagger) % len(models)
+
+        pool = list(models)
+        # The routed provider may name a model that is not yet listed (tests /
+        # single-id routes). Other providers must never inherit that pin —
+        # that was how every th-hunt key stampeded one free DeepSeek into 429.
+        if routed_here and route.model and route.model not in pool:
+            pool = [route.model] + pool
+        ordered = sorted(pool, key=rank)
+        if routed_here and route.model and route.model in ordered:
+            ordered = [route.model] + [m for m in ordered if m != route.model]
+        elif (not route.provider and route.model and route.model in ordered
+              and model_family(route.model) == (prefs[0] if prefs else "")):
+            # No explicit provider: soft-pin only when the route matches the
+            # preferred expert family for this agent.
+            ordered = [route.model] + [m for m in ordered if m != route.model]
+        return ordered
 
     def _penalize(self, name: str) -> None:
         with self._lock:
@@ -132,9 +271,37 @@ class ProviderBus:
         except Exception:  # noqa: BLE001 - an observer must not break the stream
             pass
 
+    # Lane prefixes keep hunt quota and lab training from starving each other.
+    # Providers named th-hunt-* serve live bounty work; th-learn-* serve labs.
+    LEARN_AGENTS = frozenset({
+        "train", "training", "learn", "learning", "lab", "study", "model-study",
+    })
+
+    @staticmethod
+    def _lane_for_agent(agent: str) -> str:
+        name = str(agent or "").strip().lower()
+        if name in ProviderBus.LEARN_AGENTS or name.startswith("train"):
+            return "learn"
+        return "hunt"
+
+    @staticmethod
+    def _order_for_lane(providers: list, lane: str) -> list:
+        if lane == "learn":
+            primary = [p for p in providers if str(p.name).startswith("th-learn-")]
+            shared = [p for p in providers
+                      if not str(p.name).startswith(("th-learn-", "th-hunt-"))]
+            spare = [p for p in providers if str(p.name).startswith("th-hunt-")]
+            return primary + shared + spare
+        primary = [p for p in providers if str(p.name).startswith("th-hunt-")]
+        shared = [p for p in providers
+                  if not str(p.name).startswith(("th-learn-", "th-hunt-"))]
+        spare = [p for p in providers if str(p.name).startswith("th-learn-")]
+        return primary + shared + spare
+
     def _candidates(self, agent: str, exclude_providers=None):
         route = self.config.route_for(agent)
-        ordered = self.config.ordered_providers()
+        ordered = self._order_for_lane(
+            self.config.ordered_providers(), self._lane_for_agent(agent))
         if route.provider:
             preferred = [p for p in ordered if p.name == route.provider]
             rest = [p for p in ordered if p.name != route.provider]
@@ -149,11 +316,7 @@ class ProviderBus:
             key = provider.resolve_key()
             if not key and provider.name != "ollama" and not _local_endpoint(provider.base_url):
                 continue
-            models = list(provider.models)
-            if route.model and (not route.provider or provider.name == route.provider):
-                if route.model in models:
-                    models.remove(route.model)
-                models.insert(0, route.model)
+            models = self._moe_models(provider, agent, route)
             if not models:
                 continue
             for model in models:
@@ -182,8 +345,13 @@ class ProviderBus:
         budget = getattr(self.config.run, "max_call_seconds", 90)
         call_timeout = min(self.timeout, budget)
         last_error = "no provider available"
+        rate_limited: set[str] = set()
+        prev_provider = ""
         for provider, model, key in self._candidates(agent,
                                                      exclude_providers=exclude_providers):
+            if prev_provider and provider.name != prev_provider and prev_provider in rate_limited:
+                self._penalize(prev_provider)
+            prev_provider = provider.name
             attempt = time.monotonic()
             self._observe({"kind": "call", "agent": agent,
                            "provider": provider.name, "model": model})
@@ -207,8 +375,15 @@ class ProviderBus:
                         if response.status_code in (403, 429):
                             if self.egress and proxy:
                                 self.egress.mark_failed(proxy)
-                            self._penalize(provider.name)
-                            self._strike(provider.name, model)
+                            # 429 is quota on one free model, not a dead expert.
+                            # Soft-retire briefly and walk siblings / other keys.
+                            if response.status_code == 429:
+                                self._retire(provider.name, model,
+                                             ttl=self.RATE_DEAD_TTL)
+                                rate_limited.add(provider.name)
+                            else:
+                                self._strike(provider.name, model, fatal=True)
+                                self._penalize(provider.name)
                             last_error = f"{provider.name} returned {response.status_code}"
                             self._observe({"kind": "done", "agent": agent,
                                            "provider": provider.name, "model": model,
@@ -270,6 +445,9 @@ class ProviderBus:
                                            "ok": False, "ms": _ms(attempt),
                                            "error": last_error[:140]})
                             continue
+                        for name in rate_limited:
+                            if name != provider.name:
+                                self._penalize(name)
                         self._settle(provider.name, model)
                         self._observe({"kind": "done", "agent": agent,
                                        "provider": provider.name, "model": model,
@@ -285,10 +463,11 @@ class ProviderBus:
                 if self.egress and proxy:
                     self.egress.mark_failed(proxy)
                 continue
+        for name in rate_limited:
+            self._penalize(name)
         if on_chunk:
             on_chunk(Chunk("error", last_error))
         return "", "", ""
-
     def complete(self, agent: str, messages: list[dict], timeout: float = 45.0,
                  exclude_providers=None, max_candidates: int | None = None) -> Completion:
         """One non-streaming call that keeps the provider's usage block.
@@ -307,11 +486,18 @@ class ProviderBus:
         last_provider = ""
         last_model = ""
         failed: list[str] = []
+        rate_limited: set[str] = set()
         attempts = 0
+        prev_provider = ""
         for provider, model, key in self._candidates(
                 agent, exclude_providers=exclude_providers):
             if max_candidates is not None and attempts >= max_candidates:
                 break
+            # Cool a rate-limited provider only after we leave it, so sibling
+            # models on the same catalogue still get one shot in this walk.
+            if prev_provider and provider.name != prev_provider and prev_provider in rate_limited:
+                self._penalize(prev_provider)
+            prev_provider = provider.name
             if self._cooling(provider.name):
                 continue
             attempts += 1
@@ -339,9 +525,18 @@ class ProviderBus:
                     if response.status_code in (403, 429):
                         if self.egress and proxy:
                             self.egress.mark_failed(proxy)
-                        self._penalize(provider.name)
-                        self._strike(provider.name, model)
-                        failed.append(provider.name)
+                        # 429: soft-retire this free model briefly and keep
+                        # walking MoE siblings / other keys. Do not treat it
+                        # as a hard provider death that gates the whole hunt.
+                        if response.status_code == 429:
+                            self._retire(provider.name, model,
+                                         ttl=self.RATE_DEAD_TTL)
+                            rate_limited.add(provider.name)
+                            failed.append(provider.name)
+                        else:
+                            self._strike(provider.name, model, fatal=True)
+                            self._penalize(provider.name)
+                            failed.append(provider.name)
                         last_error = f"{provider.name} returned {response.status_code}"
                         self._observe({"kind": "done", "agent": agent,
                                        "provider": provider.name, "model": model,
@@ -386,6 +581,11 @@ class ProviderBus:
                                        "error": last_error[:140]})
                         continue
                     usage = data.get("usage")
+                    # Cool other providers that 429'd; the one that answered
+                    # settles so a working catalogue is not locked out.
+                    for name in rate_limited:
+                        if name != provider.name:
+                            self._penalize(name)
                     self._settle(provider.name, model)
                     self._observe({"kind": "done", "agent": agent,
                                    "provider": provider.name, "model": model,
@@ -403,6 +603,8 @@ class ProviderBus:
                 if self.egress and proxy:
                     self.egress.mark_failed(proxy)
                 continue
+        for name in rate_limited:
+            self._penalize(name)
         return Completion(error=last_error, provider=last_provider,
                           model=last_model, failed=failed,
                           duration_ms=_ms(started))

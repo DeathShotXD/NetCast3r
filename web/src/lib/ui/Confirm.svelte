@@ -37,21 +37,21 @@
 
 <dialog
   bind:this={dialog}
-  class="m-auto w-[min(460px,92vw)] rounded-xl border border-violet-deep bg-void-soft p-0 text-bone backdrop:bg-black/70"
+  class="obs-confirm"
   oncancel={(event) => {
     event.preventDefault();
     close('cancel');
   }}
   {onkeydown}
 >
-  <div class="p-6">
-    <p class="eyebrow">confirm</p>
-    <h2 class="mt-2 text-lg text-bone">{title}</h2>
-    <p class="mt-3 text-sm leading-relaxed text-bone-dust">{body}</p>
-    <div class="mt-6 flex justify-end gap-3">
-      <button class="btn btn-quiet" type="button" onclick={() => close('cancel')}>cancel</button>
+  <div class="obs-confirm-body">
+    <p class="obs-eyebrow"><span class="tick"></span>confirm</p>
+    <h2 class="obs-confirm-title">{title}</h2>
+    <p class="obs-confirm-copy">{body}</p>
+    <div class="obs-confirm-actions">
+      <button class="obs-btn obs-btn-ghost" type="button" onclick={() => close('cancel')}>cancel</button>
       <button
-        class={danger ? 'btn btn-danger' : 'btn btn-acid'}
+        class={danger ? 'obs-btn obs-btn-danger' : 'obs-btn obs-btn-primary'}
         type="button"
         onclick={() => close('confirm')}
       >

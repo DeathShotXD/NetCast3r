@@ -59,9 +59,29 @@ class KnowledgeBaseTests(MemoryHarness):
         second = kb.record(self.index, "global", "technology", "apache",
                            title="apache")
         self.index.bump_kb_hit(second["id"])
-        digest = kb.digest(self.index, self.mission["id"], limit=5)
-        self.assertEqual(digest[0]["title"], "apache")
-        self.assertEqual(kb.stats(self.index)["total"], 2)
+        self.index.bump_kb_hit(second["id"])
+        # Critical technique corpus shares the digest with lived observations.
+        tech = [row for row in kb.digest(self.index, self.mission["id"], limit=40)
+                if row.get("kind") == "technology"]
+        self.assertTrue(tech)
+        titles = {row["title"] for row in tech}
+        self.assertIn("apache", titles)
+        self.assertIn("nginx v2", titles)
+        ranked = kb.search(self.index, scope="global", kind="technology")
+        self.assertEqual(ranked[0]["title"], "apache")
+        self.assertGreaterEqual(kb.stats(self.index)["total"], 2)
+
+    def test_critical_technique_corpus_is_shared(self):
+        result = kb.seed_technique_corpus(self.index)
+        self.assertGreaterEqual(result["seeded"], 40)
+        digest = kb.digest(self.index, self.mission["id"], limit=24)
+        titles = " ".join(str(row.get("title") or "") for row in digest).lower()
+        self.assertIn("critical:", titles)
+        corpus = kb.corpus_digest(limit=20, impact="critical")
+        self.assertTrue(any(item.get("impact") == "critical" for item in corpus))
+        self.assertTrue(any("ssrf" in str(item.get("id") or "")
+                            or "oauth" in str(item.get("id") or "")
+                            for item in corpus))
 
     def test_learn_from_mission_writes_global_knowledge(self):
         self.add_probe()
@@ -217,6 +237,7 @@ class MemorySurfaceTests(MemoryHarness):
 
         names = [tool["name"] for tool in catalog()]
         for name in ("kb_search", "kb_write", "kb_digest", "kb_stats", "kb_learn",
+                     "kb_corpus", "kb_seed_techniques",
                      "target_profile", "campaign_status", "direction_add",
                      "directions_list"):
             self.assertIn(name, _TOOL_MAP)

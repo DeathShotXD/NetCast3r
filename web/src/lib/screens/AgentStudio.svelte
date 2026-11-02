@@ -6,6 +6,8 @@
   import type {
     Approval,
     BenchResult,
+    HarnessDiagnose,
+    HarnessStatus,
     McpInfo,
     McpTool,
     ToolCall,
@@ -61,8 +63,12 @@
   let expanded = $state<string | null>(null);
   let busy = $state('');
   let timer: ReturnType<typeof setInterval> | null = null;
+  let source: EventSource | null = null;
   let benchResult = $state<BenchResult | null>(null);
   let benchBusy = $state(false);
+  let harness = $state<HarnessStatus | null>(null);
+  let harnessIssues = $state<HarnessDiagnose | null>(null);
+  let harnessBusy = $state('');
 
   const tools = $derived(info?.tools ?? []);
   const server = $derived(info?.server ?? null);
@@ -142,15 +148,17 @@
       error = '';
     }
     try {
-      const [nextInfo, audit, approvalPage] = await Promise.all([
+      const [nextInfo, audit, approvalPage, nextHarness] = await Promise.all([
         api.mcpInfo(),
         api.toolCalls(auditQuery()),
-        api.approvals('?status=pending&size=50')
+        api.approvals('?status=pending&size=50'),
+        api.harnessStatus().catch(() => null)
       ]);
       info = nextInfo;
       calls = audit.items;
       callTotal = audit.total;
       approvals = approvalPage.items;
+      harness = nextHarness;
       if (selectedTool) {
         selectedTool = nextInfo.tools.find((tool) => tool.name === selectedTool?.name) ?? null;
       }
@@ -170,6 +178,42 @@
       benchResult = null;
     } finally {
       benchBusy = false;
+    }
+  }
+
+  async function runHarness(action: 'diagnose' | 'learn' | 'tick') {
+    harnessBusy = action;
+    try {
+      if (action === 'diagnose') {
+        harnessIssues = await api.harnessDiagnose();
+        store.toast('ok', `${harnessIssues.issues.length} harness issue(s)`);
+      } else if (action === 'learn') {
+        const learned = await api.harnessLearn({});
+        store.toast(
+          'ok',
+          `learned ${learned.lessons_created.length} lesson(s), ${learned.skills.created.length} draft skill(s)`
+        );
+        harness = await api.harnessStatus();
+      } else {
+        const tick = await api.harnessTick({});
+        store.toast(
+          'ok',
+          `harness tick: ${tick.learned.lessons} lessons, ${tick.diagnosis.length} issue(s)`
+        );
+        harness = await api.harnessStatus();
+        harnessIssues = {
+          mission_id: tick.mission_id,
+          target: '',
+          failure_counts: {},
+          issues: tick.diagnosis,
+          generated_at: tick.generated_at,
+          note: tick.note
+        };
+      }
+    } catch (exc) {
+      void store.fail(exc instanceof Error ? exc.message : 'harness action failed');
+    } finally {
+      harnessBusy = '';
     }
   }
 
@@ -265,10 +309,29 @@
     timer = setInterval(() => {
       if (document.visibilityState === 'visible') void load(true);
     }, 15000);
+    try {
+      source = new EventSource(api.eventsUrl());
+      source.onmessage = (ev) => {
+        try {
+          const data = JSON.parse(ev.data);
+          const type = String(data?.type || '');
+          if (type.startsWith('tool') || type === 'brain.turn' || type === 'instruct'
+              || type === 'director' || type === 'approval' || type === 'finding'
+              || type === 'candidate') {
+            if (document.visibilityState === 'visible') void load(true);
+          }
+        } catch {
+          /* ignore malformed frames */
+        }
+      };
+    } catch {
+      /* polling remains the fallback */
+    }
   });
 
   onDestroy(() => {
     if (timer) clearInterval(timer);
+    source?.close();
   });
 </script>
 
@@ -635,6 +698,73 @@
             </div>
           </section>
         {/if}
+
+        <article class="obs-card" aria-label="agent harness">
+          <header class="obs-card-head">
+            <div>
+              <div class="obs-card-title"><Icon name="bot" size={13} />Agent harness</div>
+              <div class="obs-card-sub">
+                Real-time learning, skill development, and stall diagnosis for the agent harness.
+              </div>
+            </div>
+            {#if harness}
+              <span class="obs-chip acid">{harness.hunt.capability_level || 'nascent'}</span>
+            {/if}
+          </header>
+          <div class="obs-card-body" style="padding-top:0;display:grid;gap:12px">
+            {#if harness}
+              <div class="obs-agent-policy-list">
+                <div class="obs-agent-policy-row">
+                  <strong>memory</strong>
+                  <p>
+                    {harness.memory.active_skills} active skills · {harness.memory.lessons_total} lessons ·
+                    {harness.memory.open_proposals} proposals
+                  </p>
+                </div>
+                <div class="obs-agent-policy-row">
+                  <strong>hunt</strong>
+                  <p>
+                    {harness.hunt.open_leads} open leads · {harness.hunt.supported_leads} supported ·
+                    capability {harness.hunt.capability_overall ?? 0}
+                  </p>
+                </div>
+                <div class="obs-agent-policy-row">
+                  <strong>health</strong>
+                  <p>
+                    {harness.health.recent_tool_failures} recent failures
+                    {#if harness.health.top_failing_tools[0]}
+                      · top {harness.health.top_failing_tools[0].tool}
+                      ({harness.health.top_failing_tools[0].count})
+                    {/if}
+                  </p>
+                </div>
+              </div>
+            {:else}
+              <p class="obs-agent-fine">Harness status unavailable until the control plane answers.</p>
+            {/if}
+            <div class="obs-approval-actions">
+              <button class="obs-btn" type="button" disabled={!!harnessBusy} onclick={() => void runHarness('diagnose')}>
+                {harnessBusy === 'diagnose' ? 'Diagnosing...' : 'Diagnose'}
+              </button>
+              <button class="obs-btn" type="button" disabled={!!harnessBusy} onclick={() => void runHarness('learn')}>
+                {harnessBusy === 'learn' ? 'Learning...' : 'Learn now'}
+              </button>
+              <button class="obs-btn obs-btn-primary" type="button" disabled={!!harnessBusy} onclick={() => void runHarness('tick')}>
+                {harnessBusy === 'tick' ? 'Ticking...' : 'Harness tick'}
+              </button>
+            </div>
+            {#if harnessIssues?.issues?.length}
+              <ul class="obs-agent-rules">
+                {#each harnessIssues.issues.slice(0, 5) as issue (issue.title + issue.kind)}
+                  <li>
+                    <strong>{issue.title}</strong>
+                    — {issue.fix}
+                  </li>
+                {/each}
+              </ul>
+            {/if}
+          </div>
+        </article>
 
         <article class="obs-card obs-approvals" aria-label="approval queue">
           <header class="obs-card-head">

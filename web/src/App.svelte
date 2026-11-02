@@ -46,6 +46,10 @@
           store.palette = false;
           return;
         }
+        if (store.brainDock) {
+          store.brainDock = false;
+          return;
+        }
         if (railOpen) {
           railOpen = false;
           return;
@@ -55,6 +59,11 @@
       if (event.key === '/' && !typing) {
         event.preventDefault();
         document.querySelector<HTMLInputElement>('header [data-search]')?.focus();
+        return;
+      }
+      if ((event.key === 'b' || event.key === 'B') && !typing && !event.metaKey && !event.ctrlKey && !event.altKey) {
+        event.preventDefault();
+        store.brainDock = !store.brainDock;
       }
     };
 
@@ -68,13 +77,28 @@
 
 {#if !store.ready}
   <Backdrop />
-  <div class="grid h-full place-items-center">
-    <p class="mono text-sm text-ash">loading dashboard...</p>
+  <div class="obs-boot" role="status" aria-live="polite">
+    <div class="obs-boot-card">
+      <div class="obs-boot-mark" aria-hidden="true">
+        <svg viewBox="0 0 28 28" fill="none">
+          <path
+            d="M14 2.5 24.5 8.6v10.8L14 25.5 3.5 19.4V8.6z"
+            stroke="#C8F81A"
+            stroke-width="1.3"
+          />
+          <circle cx="14" cy="14" r="2.1" fill="#C8F81A" />
+        </svg>
+      </div>
+      <div class="obs-boot-title">NetCast3r</div>
+      <div class="obs-boot-sub">warming the control plane</div>
+      <div class="obs-boot-bar" aria-hidden="true"><i></i></div>
+    </div>
   </div>
 {:else if store.locked}
   <Backdrop />
   <Unlock />
 {:else}
+  <a class="obs-skip" href="#main">Skip to content</a>
   <Backdrop />
   <Symbols />
   <NetCursor />
@@ -84,7 +108,7 @@
     <div class="obs-main">
       <CommandBar onMenu={() => (railOpen = true)} />
 
-      <main class="obs-content">
+      <main id="main" class="obs-content" tabindex="-1">
         {#key store.screen === 'live' ? `live:${store.activeRunId}` : store.screen}
         <div class="screen-in">
           {#if store.screen === 'new'}

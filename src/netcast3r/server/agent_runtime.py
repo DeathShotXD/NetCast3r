@@ -867,12 +867,16 @@ class AgentRuntime:
         except Exception:  # noqa: BLE001 - a broken provider row must not kill the run
             pass
         started = time.monotonic()
+        role = str((self.index.get_agent_state(mission_id) or {})
+                   .get("options", {}).get("role") or "recon")
+        # Training missions burn th-learn-* keys; hunt roles stay on th-hunt-*.
+        agent_lane = "training" if role == "training" else "sentinel"
         completion = ProviderBus(config, timeout=30.0).complete(
-            "sentinel", messages, timeout=30.0)
+            agent_lane, messages, timeout=30.0)
         usage = completion.usage or {}
         prompt_chars = sum(len(str(item.get("content", ""))) for item in messages)
         call = self.index.add_agent_model_call(
-            mission_id, task_id=task_id, agent="sentinel",
+            mission_id, task_id=task_id, agent=agent_lane,
             provider=completion.provider, model=completion.model,
             status="ok" if completion.text else "unavailable",
             prompt_chars=prompt_chars,

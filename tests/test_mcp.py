@@ -198,6 +198,11 @@ class MCPIntegrationTests(unittest.TestCase):
         bad, is_error = self.call("findings_create", title="x", severity="nope")
         self.assertTrue(is_error)
 
+        bare, is_error = self.call(
+            "findings_create", title="no proof yet", severity="high")
+        self.assertTrue(is_error, bare)
+        self.assertIn("evidence", str(bare).lower())
+
     def test_learning_tools_round_trip(self):
         mission = self.create_mission()
         lesson = self.call("lessons_record", title="Path variants",
@@ -220,8 +225,9 @@ class MCPIntegrationTests(unittest.TestCase):
         self.assertTrue(actions["actions"])
 
 
-        finding = self.call("findings_create", title="artifact finding",
-                            severity="high")[0]
+        finding = self.call(
+            "findings_create", title="artifact finding", severity="high",
+            evidence="GET /api/item/1 returned another user's object with 200.")[0]
         artifact = self.registry.call("finding_artifact_add", {
             "finding_id": finding["id"], "name": "poc.txt",
             "content": "request\nresponse\n", "content_type": "text/plain",

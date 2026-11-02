@@ -1,10 +1,9 @@
 """The evidence graph and attack paths.
 
-Penligent calls this attack-path management. NetCast3r's version keeps one
-rule Penligent's public material does not: every node and every edge is either
-derived from a real observation (a run, a tool call, a hypothesis, a finding)
-or added explicitly by an agent, and every edge records that provenance and a
-confidence. The graph never presents a guess as a fact.
+Every node and every edge is either derived from a real observation (a run, a
+tool call, a hypothesis, a finding) or added explicitly by an agent, and every
+edge records that provenance and a confidence. The graph never presents a guess
+as a fact.
 
 From the graph, `derive_paths` proposes candidate chains toward an impact, and
 `verify_path` tests a path step by step through the same scoped, risk-gated

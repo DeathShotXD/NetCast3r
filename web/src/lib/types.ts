@@ -921,3 +921,86 @@ export interface ConnectInfo {
   tools: { name: string; title: string; risk: string; category: string; read_only: boolean }[];
   note: string;
 }
+
+export interface HarnessStatus {
+  ok: boolean;
+  generated_at: string;
+  director: {
+    engaged: boolean;
+    paused: boolean;
+    scope_filter: string;
+    cycles: number;
+    runs_started: number;
+    live_runs: string[];
+    last_tick: string;
+  };
+  memory: {
+    active_skills: number;
+    skills_total: number;
+    lessons_total: number;
+    open_proposals: number;
+  };
+  hunt: {
+    open_leads: number;
+    supported_leads: number;
+    hot_techniques: Array<{ technique: string; supported?: number; win_rate?: number | null }>;
+    cold_techniques: Array<{ technique: string; refuted?: number; dead_ends?: number }>;
+    capability_overall?: number;
+    capability_level?: string;
+  };
+  health: {
+    recent_tool_failures: number;
+    top_failing_tools: Array<{ tool: string; count: number }>;
+  };
+  note: string;
+}
+
+export interface HarnessIssue {
+  kind: string;
+  title: string;
+  detail: string;
+  fix: string;
+  severity: string;
+  tool: string;
+  args: Record<string, unknown>;
+}
+
+export interface HarnessDiagnose {
+  mission_id: string;
+  target: string;
+  failure_counts: Record<string, number>;
+  issues: HarnessIssue[];
+  generated_at: string;
+  note: string;
+}
+
+export interface HarnessLearn {
+  mission_id: string;
+  lessons_created: Array<{ id: string; title: string; outcome: string; source: string }>;
+  skipped: number;
+  expertise: Record<string, unknown> | null;
+  skills: { created: Array<Record<string, unknown>>; proposed: Array<Record<string, unknown>> };
+  generated_at: string;
+  note: string;
+}
+
+export interface HarnessRecall {
+  mission_id: string;
+  goal: string;
+  skills: Array<{ name: string; title: string; status: string; score: number; summary: string; tags: string[] }>;
+  lessons: Array<Record<string, unknown>>;
+  issues: HarnessIssue[];
+  next_actions: Array<Record<string, unknown>>;
+  generated_at: string;
+  note: string;
+}
+
+export interface HarnessTick {
+  mission_id: string;
+  learned: { lessons: number; skills_created: number };
+  diagnosis: HarnessIssue[];
+  proposals_created: number;
+  capability: { overall?: number; level?: string };
+  generated_at: string;
+  note: string;
+}

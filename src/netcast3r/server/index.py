@@ -562,6 +562,25 @@ CREATE TABLE IF NOT EXISTS program_imports (
 );
 CREATE INDEX IF NOT EXISTS idx_program_imports_mission
     ON program_imports(mission_id, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS mission_schedules (
+    id TEXT PRIMARY KEY,
+    mission_id TEXT NOT NULL,
+    name TEXT DEFAULT '',
+    mode TEXT DEFAULT 'weekly',
+    status TEXT DEFAULT 'active',
+    run_at TEXT DEFAULT '',
+    last_run_at TEXT DEFAULT '',
+    auth_profile TEXT DEFAULT '',
+    note TEXT DEFAULT '',
+    last_direction_id TEXT DEFAULT '',
+    created_at TEXT,
+    updated_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_schedules_due
+    ON mission_schedules(status, run_at);
+CREATE INDEX IF NOT EXISTS idx_schedules_mission
+    ON mission_schedules(mission_id, status);
 """
 
 SEVERITY_ORDER = {"critical": 0, "high": 1, "medium": 2, "low": 3, "info": 4, "unknown": 5}
@@ -591,7 +610,7 @@ SUBMISSION_STATUSES = {"draft", "ready", "submitted", "triaged", "accepted",
                        "informative", "duplicate", "rejected", "paid", "withdrawn"}
 SUBMISSION_SEVERITIES = {"critical", "high", "medium", "low", "info"}
 OUTCOME_STATUSES = {"accepted", "informative", "duplicate", "rejected", "paid"}
-LESSON_OUTCOMES = {"success", "failure", "partial", "blocked"}
+LESSON_OUTCOMES = {"success", "failure", "partial", "blocked", "observation"}
 TECH_TAGS = {
     "wordpress", "php", "graphql", "oauth", "oidc", "saml", "jwt", "aws", "gcp",
     "azure", "kubernetes", "docker", "apache", "nginx", "nodejs", "nextjs", "nuxt",
@@ -895,12 +914,15 @@ class Index:
                        impact: str = "", evidence: str = "", source: str = "",
                        secret_type: str = "manual", value: str = "",
                        confidence: float = 0.0, tags: list | None = None,
-                       notes: str = "", fingerprint: str = "") -> dict:
+                       notes: str = "", fingerprint: str = "",
+                       hypothesis_id: str = "",
+                       require_evidence: bool = True) -> dict:
         """Record a finding an operator or agent actually validated.
 
         This is deliberately explicit: nothing infers a finding from a scan or
         a model response. Callers must supply the title and severity they are
-        willing to defend. Secret values are masked before storage.
+        willing to defend, plus reproducible evidence (or a supported
+        hypothesis id). Secret values are masked before storage.
         """
         from .keys import mask
 
@@ -913,6 +935,24 @@ class Index:
         run_id = (run_id or "").strip()
         if run_id and not self.get_run(run_id):
             raise ValueError(f"unknown run: {run_id}")
+        evidence = (evidence or "").strip()
+        hypothesis_id = (hypothesis_id or "").strip()
+        if require_evidence:
+            if hypothesis_id:
+                hypothesis = self.get_hypothesis(hypothesis_id)
+                if not hypothesis:
+                    raise ValueError(f"unknown hypothesis: {hypothesis_id}")
+                if hypothesis.get("status") not in {"supported", "promoted"}:
+                    raise ValueError(
+                        "hypothesis_id must reference a supported hypothesis")
+                if not evidence:
+                    evidence = str(hypothesis.get("expected")
+                                   or hypothesis.get("rationale") or "").strip()
+            if len(evidence) < 32:
+                raise ValueError(
+                    "evidence required: at least 32 characters of reproducible "
+                    "proof (request/response, artifact path, or test result), "
+                    "or pass a supported hypothesis_id")
         try:
             confidence = float(confidence or 0.0)
         except (TypeError, ValueError):
@@ -920,11 +960,14 @@ class Index:
         if not 0.0 <= confidence <= 1.0:
             raise ValueError("confidence must be between 0 and 1")
         tags = [str(tag) for tag in (tags or []) if str(tag).strip()]
+        if hypothesis_id and hypothesis_id not in tags:
+            tags.append(hypothesis_id)
         secret_type = (secret_type or "manual").strip() or "manual"
         raw_value = str(value or "")
         if not fingerprint:
             import hashlib
-            seed = "|".join([secret_type, raw_value or title, run_id, source])
+            seed = "|".join([secret_type, raw_value or title, run_id, source,
+                             hypothesis_id])
             fingerprint = hashlib.sha256(seed.encode("utf-8", "ignore")).hexdigest()
 
         finding_id = _new_id("fnd")
@@ -936,7 +979,7 @@ class Index:
                 "triage_status, severity_override, tags_json, notes) "
                 "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (finding_id, run_id, fingerprint, severity, title, secret_type,
-                 "", mask(raw_value), impact.strip(), evidence.strip(), source.strip(),
+                 "", mask(raw_value), impact.strip(), evidence, source.strip(),
                  confidence, now, "new", None, json.dumps(tags), notes.strip()),
             )
             self.conn.commit()
@@ -1050,13 +1093,16 @@ class Index:
 
         A hypothesis is not a finding. It is the precise question, the target,
         and the expected observation; it only becomes a finding after a test
-        case supports it and the operator promotes it with evidence.
+        case supports it and the operator promotes it with evidence. An open
+        hypothesis with the same title (and technique, when set) on the same
+        mission is returned as-is so continuous hunts do not spam duplicates.
         """
         title = (title or "").strip()
         if not title:
             raise ValueError("title required")
         mission_id = (mission_id or "").strip()
         target = (target or "").strip()
+        technique = (technique or "").strip()
         if mission_id:
             mission = self.get_mission(mission_id)
             if not mission:
@@ -1064,6 +1110,19 @@ class Index:
             target = target or str(mission.get("target") or "")
         if not target:
             raise ValueError("target required")
+        # Dedupe open leads so the continuous loop deepens instead of cloning.
+        if mission_id:
+            open_items, _ = self.list_hypotheses(
+                mission_id=mission_id, status="open", limit=200)
+            title_key = title.casefold()
+            tech_key = technique.casefold()
+            for item in open_items:
+                if str(item.get("title") or "").casefold() != title_key:
+                    continue
+                if tech_key and str(item.get("technique") or "").casefold() not in {
+                        "", tech_key}:
+                    continue
+                return item
         hypothesis_id = _new_id("hyp")
         now = _now()
         with self._lock:
@@ -1071,11 +1130,35 @@ class Index:
                 "INSERT INTO hypotheses (id, mission_id, target, title, technique, "
                 "rationale, expected, status, test_json, result_json, finding_id, "
                 "created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                (hypothesis_id, mission_id, target, title, technique.strip(),
+                (hypothesis_id, mission_id, target, title, technique,
                  rationale.strip(), expected.strip(), "open", "", "", None, now, now),
             )
             self.conn.commit()
         return self.get_hypothesis(hypothesis_id) or {}
+
+    def collapse_duplicate_hypotheses(self, mission_id: str) -> dict:
+        """Archive duplicate open hypotheses; keep the newest of each title."""
+        mission_id = (mission_id or "").strip()
+        if not mission_id:
+            return {"archived": 0, "kept": 0}
+        items, _ = self.list_hypotheses(mission_id=mission_id, status="open",
+                                        limit=200)
+        seen: dict[str, str] = {}
+        archived = 0
+        for item in items:  # newest first from list order
+            key = str(item.get("title") or "").casefold()
+            if not key:
+                continue
+            if key in seen:
+                try:
+                    self.patch_hypothesis(item["id"], status="archived",
+                                          result={"reason": "duplicate open lead"})
+                    archived += 1
+                except Exception:  # noqa: BLE001
+                    pass
+            else:
+                seen[key] = item["id"]
+        return {"archived": archived, "kept": len(seen)}
 
     def list_hypotheses(self, mission_id: str = "", status: str = "",
                         q: str = "", limit: int = 50,
@@ -1167,7 +1250,8 @@ class Index:
             source=source or f"hypothesis:{hypothesis_id}",
             secret_type=str(hypothesis.get("technique") or "manual"),
             confidence=0.9, tags=tags,
-            notes=f"Promoted from {hypothesis_id}; target {hypothesis.get('target')}.")
+            notes=f"Promoted from {hypothesis_id}; target {hypothesis.get('target')}.",
+            hypothesis_id=hypothesis_id)
         payload = json.dumps({
             "hypothesis": hypothesis, "test_result": result,
         }, indent=2, sort_keys=True).encode("utf-8")
@@ -3442,6 +3526,77 @@ class Index:
             cur = self.conn.execute("DELETE FROM providers WHERE id = ?", (provider_id,))
             self.conn.commit()
         return cur.rowcount > 0
+
+    # -- schedules --------------------------------------------------------
+    def create_schedule(self, mission_id: str, name: str = "", mode: str = "weekly",
+                        run_at: str = "", auth_profile: str = "",
+                        note: str = "") -> dict:
+        if not self.get_mission(mission_id):
+            raise ValueError("unknown mission")
+        schedule_id = _new_id("sch")
+        now = _now()
+        with self._lock:
+            self.conn.execute(
+                "INSERT INTO mission_schedules (id, mission_id, name, mode, status, "
+                "run_at, last_run_at, auth_profile, note, last_direction_id, "
+                "created_at, updated_at) VALUES (?, ?, ?, ?, 'active', ?, '', ?, ?, "
+                "'', ?, ?)",
+                (schedule_id, mission_id, str(name or "")[:160],
+                 str(mode or "weekly")[:32], str(run_at or now),
+                 str(auth_profile or "")[:120], str(note or "")[:2000], now, now))
+            self.conn.commit()
+        return self.get_schedule(schedule_id) or {}
+
+    def get_schedule(self, schedule_id: str) -> dict | None:
+        with self._lock:
+            row = self.conn.execute(
+                "SELECT * FROM mission_schedules WHERE id = ?",
+                (schedule_id,)).fetchone()
+        return dict(row) if row else None
+
+    def list_schedules(self, mission_id: str = "", status: str = "",
+                       limit: int = 50) -> list[dict]:
+        where, params = [], []
+        if mission_id:
+            where.append("mission_id = ?")
+            params.append(mission_id)
+        if status:
+            where.append("status = ?")
+            params.append(status)
+        clause = ("WHERE " + " AND ".join(where)) if where else ""
+        with self._lock:
+            rows = self.conn.execute(
+                f"SELECT * FROM mission_schedules {clause} "
+                "ORDER BY run_at ASC LIMIT ?",
+                [*params, max(1, min(int(limit or 50), 200))]).fetchall()
+        return [dict(row) for row in rows]
+
+    def list_due_schedules(self, before: str, limit: int = 50) -> list[dict]:
+        with self._lock:
+            rows = self.conn.execute(
+                "SELECT * FROM mission_schedules WHERE status = 'active' "
+                "AND run_at != '' AND run_at <= ? ORDER BY run_at ASC LIMIT ?",
+                (str(before), max(1, min(int(limit or 50), 100)))).fetchall()
+        return [dict(row) for row in rows]
+
+    def patch_schedule(self, schedule_id: str, **fields) -> dict | None:
+        allowed = {"name", "mode", "status", "run_at", "last_run_at",
+                   "auth_profile", "note", "last_direction_id"}
+        sets, values = [], []
+        for key in allowed:
+            if key in fields and fields[key] is not None:
+                sets.append(f"{key} = ?")
+                values.append(str(fields[key]))
+        if not sets:
+            return self.get_schedule(schedule_id)
+        sets.append("updated_at = ?")
+        values.extend([_now(), schedule_id])
+        with self._lock:
+            self.conn.execute(
+                f"UPDATE mission_schedules SET {', '.join(sets)} WHERE id = ?",
+                values)
+            self.conn.commit()
+        return self.get_schedule(schedule_id)
 
     # -- settings ---------------------------------------------------------
     def get_setting(self, key: str, default=None):

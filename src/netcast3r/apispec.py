@@ -1,9 +1,8 @@
 """API-spec ingestion.
 
-Strix can test every endpoint declared by an OpenAPI/Swagger/Postman contract
-instead of discovering them by crawling. This reads the same contracts and turns
-them into graph endpoints and parameters, so a scoped API assessment starts from
-the surface the client already published.
+Reads OpenAPI/Swagger or Postman contracts into graph endpoints and parameters
+so a scoped API assessment can start from the surface the client already
+published, without waiting on crawl-only discovery.
 """
 
 from __future__ import annotations

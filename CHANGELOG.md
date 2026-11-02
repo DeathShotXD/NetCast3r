@@ -6,6 +6,44 @@ Notable changes to NetCast3r, newest first.
 
 ### Added
 
+- **Web2root attack-surface map**: `web2root_map` / `POST
+  /api/v1/missions/{id}/web2root` turns one authorised seed into CT + passive
+  DNS + DNS brute names, live HTTP/TLS probes, graph assets, a refreshed
+  target profile, and ranked next actions. Hosts are leads, never findings.
+  The director seeds a map when a mature run still has almost no hosts. See
+  [docs/WEB2ROOT.md](docs/WEB2ROOT.md).
+- **Scheduled verify-again**: Once/Weekly schedules queue a director direction
+  when due (`schedule_create`, `schedule_fire`). Never widens scope.
+- **Mission PDF report**: `mission_report_pdf` / `GET .../report.pdf` exports a
+  redacted PDF companion with a SOC 2 / ISO 27001 supporting-evidence note.
+- **PoC verify and promotion gate**: `candidate_poc` now builds assertions and
+  attaches a matching research technique when one exists. New
+  `candidate_poc_verify` / `POST /api/v1/candidates/{id}/poc/verify` replays
+  recorded steps against the authorised target and scores expected status or
+  marker checks. Promoting a candidate requires a replayable PoC (or
+  `force=true` with operator notes); optional `verify=true` demands a live
+  pass. Finding evidence carries the PoC markdown. See
+  [docs/CAPABILITIES.md](docs/CAPABILITIES.md).
+
+### Changed
+
+- **Provider 429 handling**: a rate-limited model is retired for the walk, but
+  sibling models on the same provider still get a shot before the provider
+  cools down. Stops a single DeepSeek free-tier 429 from skipping the rest of
+  the TokenHarbor catalogue in the same call.
+
+### Added (continued)
+
+- **Agent harness**: control loop for real-time learning, stall diagnosis, skill
+  development, and progressive recall before planning (`harness_status`,
+  `harness_diagnose`, `harness_learn`, `harness_develop`, `harness_recall`,
+  `harness_tick`). The director runs a learn tick when a run matures; the brain
+  snapshot carries harness status, issues, and a recall pack. Agent Studio gains
+  Diagnose / Learn now / Harness tick controls. See
+  [docs/EVOLVE.md](docs/EVOLVE.md).
+- **Finding evidence gate**: `findings_create` and `POST /api/v1/findings` now
+  require at least 32 characters of reproducible evidence, or a supported
+  `hypothesis_id`. Title and severity alone are refused.
 - **Leads and evidence**: a new **Leads** tab on the Mission detail page shows
   every hypothesis with its status, proof criterion, related tool calls,
   observations, runs, graph nodes, and finding link. `hypothesis_evidence`
@@ -55,9 +93,6 @@ Notable changes to NetCast3r, newest first.
 - **General SARIF export**: `save_sarif` now accepts any finding shape (secret,
   IDOR, source audit, exploit candidate), carries line numbers, confidence,
   CWE, CVSS, and module metadata, and still scrubs paired secrets.
-- **Agentic landscape research**: [docs/AGENTIC_LANDSCAPE.md](docs/AGENTIC_LANDSCAPE.md)
-  compares PentAGI, PentestGPT, Strix, Shannon, Vulnhuntr, CAI, XBOW, and the
-  commercial field against NetCast3r, with a capability matrix and build order.
 - **The coverage engine**: a 103-item modern testing checklist the hunt actually
   closes. Grounded in OWASP WSTG v4.2, the API Security Top 10 2023, the LLM
   Top 10 2025, the PortSwigger Top 10 Web Hacking Techniques of 2025, cloud,
@@ -155,8 +190,6 @@ Notable changes to NetCast3r, newest first.
     into graph endpoints and parameters.
   - **Reproduction**: `candidate_poc` builds a minimal curl/python proof from a
     candidate's recorded evidence.
-- Research: `docs/research/agentic-offsec-landscape.md` maps Penligent, HexStrike
-  v6, Strix, and the archived CAI, and records what NetCast3r adopts and refuses.
 - Module execution and finding candidates. `exploit_run` executes a module's
   typed steps in order through the same scoped, risk-gated tools as every other
   caller, judged by an independent model, and **stages a candidate** with the raw
@@ -460,9 +493,6 @@ Notable changes to NetCast3r, newest first.
   and promotes a hypothesis.
 - The `boot2root-methodology` skill pack covers scope, enumeration, access,
   foothold, Linux/Windows privesc, AD, pivoting, proof, and cleanup.
-- `docs/research/penligent-public-comparison.md` records what Penligent's
-  public repository and site actually expose. The application source is not
-  public, so the note does not claim a source-code review.
 - `test_case_run` executes up to 12 ordered, scope-checked requests with
   explicit status, body, and header assertions, replacing broad scanners in
   the active path.
@@ -525,12 +555,8 @@ Notable changes to NetCast3r, newest first.
   cover path-encoding differentials, the login-method x 2FA matrix, account
   rebind takeover, and the two-account object matrix.
 - Outbound MCP registry: `mcp_servers_list`, `mcp_server_tools`, and
-  `mcp_server_call` drive operator-configured HTTP/SSE or stdio MCP servers
-  (Hermes Agent, Agent Zero, HexStrike, OpenCode, internal servers). Target
-  arguments are scope-checked; calls are high risk and approval-gated.
-- Research note: `docs/research/agentic-frameworks.md` maps Hermes Agent, Agent
-  Zero, HexStrike, Strix, STIX/TAXII, MCP/A2A, and planner-executor patterns to
-  a phased NetCast3r roadmap.
+  `mcp_server_call` drive operator-configured HTTP/SSE or stdio MCP servers.
+  Target arguments are scope-checked; calls are high risk and approval-gated.
 - Skill lifecycle: skills now carry `status`, `use_count`, `success_count`, and
   `last_used_at`; `skills_use` and `skills_status` manage them, and the agent
   recalls active skills only.
@@ -564,11 +590,6 @@ Notable changes to NetCast3r, newest first.
   redirects (`httpx`, `katana`, `whatweb` stay on the registered
   domain), request and sandbox stdin are capped at 1 MiB, and remote MCP
   argument checking now covers nested objects and more target keys.
-- Research note: `docs/research/penligent-and-commercial-features.md` studies
-  Penligent AI's public product pattern and lists profit-making features
-  (surface diff, presets, quality gate, payout ROI, verified pipeline, CI gate,
-  workspace/RBAC) without copying proprietary code.
-
 ### Fixed
 
 - The public knowledge watcher fetches its seven curated feeds in parallel with

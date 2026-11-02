@@ -3,19 +3,21 @@
   import { ago } from '../format';
   import type { Screen } from '../types';
 
-  type Item = { label: string; hint: string; glyph: string; run: () => void };
+  type Item = { label: string; hint: string; glyph: string; group: string; run: () => void };
 
   const NAV: { id: Screen; label: string; glyph: string; hint: string }[] = [
-    { id: 'home', label: 'Home', glyph: '#', hint: 'overview, what to do next' },
+    { id: 'home', label: 'Command Center', glyph: '#', hint: 'overview, what needs you' },
     { id: 'missions', label: 'Missions', glyph: '@', hint: 'scoped objectives and their runs' },
-    { id: 'new', label: 'New operation', glyph: '>', hint: 'point the tool at a target' },
-    { id: 'live', label: 'Live runs', glyph: '[*]', hint: 'watch an operation, inspect everything it found' },
+    { id: 'new', label: 'Engage target', glyph: '>', hint: 'one seed → full agentic hunt' },
+    { id: 'live', label: 'Live runs', glyph: '[*]', hint: 'watch a cast mid-hunt' },
     { id: 'findings', label: 'Findings', glyph: '*', hint: 'triage what came back' },
-    { id: 'runs', label: 'Runs', glyph: '//', hint: 'history, rerun, delete' },
+    { id: 'runs', label: 'Cast history', glyph: '//', hint: 'every cast, rerun, delete' },
+    { id: 'reveng', label: 'Reverse Lab', glyph: '</>', hint: 'source, APK, contracts, drivers' },
     { id: 'reports', label: 'Reports', glyph: '=', hint: 'submissions, outcomes, payouts' },
     { id: 'agent', label: 'Agent Studio', glyph: '::', hint: 'MCP tools, policy, audit' },
+    { id: 'connect', label: 'Connect', glyph: '~', hint: 'OpenCode, Hermes, Agent Zero' },
     { id: 'keys', label: 'Providers', glyph: '^', hint: 'keys, models, health' },
-    { id: 'help', label: 'Help', glyph: '?', hint: 'what every state means' }
+    { id: 'help', label: 'Field guide', glyph: '?', hint: 'what every state means' }
   ];
 
   let q = $state('');
@@ -23,7 +25,13 @@
   let input = $state<HTMLInputElement | null>(null);
 
   const navItems = $derived<Item[]>(
-    NAV.map((s) => ({ label: s.label, hint: s.hint, glyph: s.glyph, run: () => store.go(s.id) }))
+    NAV.map((s) => ({
+      label: s.label,
+      hint: s.hint,
+      glyph: s.glyph,
+      group: 'Navigate',
+      run: () => store.go(s.id)
+    }))
   );
 
   const actionItems = $derived.by<Item[]>(() => {
@@ -38,6 +46,7 @@
         label: `Watch ${running.target}`,
         hint: 'open the live run',
         glyph: '[*]',
+        group: 'Actions',
         run: () => store.watch(running.id)
       });
     } else if (last) {
@@ -45,6 +54,7 @@
         label: `Open ${last.target}`,
         hint: `last cast ${ago(last.created_at)}`,
         glyph: '[*]',
+        group: 'Actions',
         run: () => store.watch(last.id)
       });
     }
@@ -53,6 +63,7 @@
         label: 'Open the latest report',
         hint: 'submission markdown',
         glyph: 'R',
+        group: 'Actions',
         run: () => store.watch(last.id, 'report')
       });
     }
@@ -63,6 +74,7 @@
         label: 'Review the human queue',
         hint: `${open} waiting`,
         glyph: '*',
+        group: 'Actions',
         run: () => store.go('findings')
       });
     } else if ((store.totals?.findings ?? 0) > 0) {
@@ -70,13 +82,24 @@
         label: 'Search findings',
         hint: `${store.totals?.findings} in the index`,
         glyph: '*',
+        group: 'Actions',
         run: () => store.go('findings')
       });
     }
     list.push({
+      label: store.brainDock ? 'Close main brain' : 'Open main brain',
+      hint: 'instruct mid-hunt · shortcut B',
+      glyph: 'B',
+      group: 'Actions',
+      run: () => {
+        store.brainDock = !store.brainDock;
+      }
+    });
+    list.push({
       label: 'Refresh the control plane',
       hint: 'summary + run ledger',
       glyph: '~',
+      group: 'Actions',
       run: () => {
         void store.refreshPulse();
         store.toast('ok', 'control plane refreshed');
@@ -86,6 +109,7 @@
       label: 'Copy this view',
       hint: 'share the current screen',
       glyph: '#',
+      group: 'Actions',
       run: () => {
         void navigator.clipboard?.writeText(window.location.href);
         store.toast('ok', 'view link copied');
@@ -95,13 +119,28 @@
   });
 
   const items = $derived.by<Item[]>(() => {
-    const all = [...navItems, ...actionItems];
+    const all = [...actionItems, ...navItems];
     const needle = q.trim().toLowerCase();
     if (!needle) return all;
     return all.filter(
       (item) =>
-        item.label.toLowerCase().includes(needle) || item.hint.toLowerCase().includes(needle)
+        item.label.toLowerCase().includes(needle) ||
+        item.hint.toLowerCase().includes(needle) ||
+        item.group.toLowerCase().includes(needle)
     );
+  });
+
+  const sections = $derived.by(() => {
+    const order = ['Actions', 'Navigate'];
+    const grouped = new Map<string, { item: Item; index: number }[]>();
+    items.forEach((item, index) => {
+      const rows = grouped.get(item.group) ?? [];
+      rows.push({ item, index });
+      grouped.set(item.group, rows);
+    });
+    return order
+      .filter((name) => grouped.has(name))
+      .map((name) => ({ name, rows: grouped.get(name)! }));
   });
 
   const sel = $derived(Math.min(cursor, Math.max(0, items.length - 1)));
@@ -137,11 +176,12 @@
 </script>
 
 {#if store.palette}
-  <div class="palette-veil" role="presentation" onclick={() => (store.palette = false)}>
+  <div class="palette-veil fixed inset-0 z-[60]" role="presentation" onclick={() => (store.palette = false)}>
     <div
-      class="mx-auto mt-[14vh] w-[min(560px,92vw)]"
+      class="mx-auto mt-[12vh] w-[min(580px,92vw)]"
       role="dialog"
       aria-label="command palette"
+      aria-modal="true"
       tabindex="-1"
       onclick={(event) => event.stopPropagation()}
       onkeydown={(event) => event.stopPropagation()}
@@ -150,8 +190,8 @@
         <div class="flex items-center gap-3 border-b border-indigo-deep px-4">
           <span class="mono text-sm text-acid" aria-hidden="true">&gt;</span>
           <input
-            class="w-full min-w-0 bg-transparent py-3 text-sm text-bone outline-none placeholder:text-slate"
-            placeholder="jump to a screen, or search..."
+            class="w-full min-w-0 bg-transparent py-3.5 text-sm text-bone outline-none placeholder:text-slate"
+            placeholder="Jump, instruct, search..."
             aria-label="command palette search"
             bind:value={q}
             bind:this={input}
@@ -160,21 +200,24 @@
           <span class="kbd shrink-0">esc</span>
         </div>
 
-        <ul class="max-h-[46vh] overflow-auto p-2">
-          {#each items as item, i (item.label)}
-            <li>
-              <button
-                class="palette-item"
-                class:on={i === sel}
-                type="button"
-                onmouseenter={() => (cursor = i)}
-                onclick={() => pick(item)}
-              >
-                <span class="palette-glyph" aria-hidden="true">{item.glyph}</span>
-                <span class="min-w-0 flex-1 truncate">{item.label}</span>
-                <span class="hidden shrink-0 text-xs text-ash sm:inline">{item.hint}</span>
-              </button>
-            </li>
+        <ul class="max-h-[52vh] overflow-auto p-2">
+          {#each sections as section (section.name)}
+            <li class="palette-section" aria-hidden="true">{section.name}</li>
+            {#each section.rows as row (row.item.label)}
+              <li>
+                <button
+                  class="palette-item"
+                  class:on={row.index === sel}
+                  type="button"
+                  onmouseenter={() => (cursor = row.index)}
+                  onclick={() => pick(row.item)}
+                >
+                  <span class="palette-glyph" aria-hidden="true">{row.item.glyph}</span>
+                  <span class="min-w-0 flex-1 truncate">{row.item.label}</span>
+                  <span class="hidden shrink-0 text-xs text-ash sm:inline">{row.item.hint}</span>
+                </button>
+              </li>
+            {/each}
           {:else}
             <li class="px-3 py-5 text-center text-xs text-ash">no command matches</li>
           {/each}
@@ -182,11 +225,13 @@
 
         <div class="flex items-center gap-2 border-t border-indigo-deep px-4 py-2">
           <span class="mono text-[10px] tracking-[0.14em] text-ash">move</span>
-          <span class="kbd">up</span>
-          <span class="kbd">down</span>
+          <span class="kbd">↑</span>
+          <span class="kbd">↓</span>
           <span class="mono ml-2 text-[10px] tracking-[0.14em] text-ash">run</span>
-          <span class="kbd">enter</span>
-          <span class="mono ml-auto text-[10px] tracking-[0.24em] text-slate">netcast3r palette</span>
+          <span class="kbd">↵</span>
+          <span class="mono ml-2 text-[10px] tracking-[0.14em] text-ash">brain</span>
+          <span class="kbd">B</span>
+          <span class="mono ml-auto text-[10px] tracking-[0.24em] text-slate">netcast3r</span>
         </div>
       </div>
     </div>

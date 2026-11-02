@@ -1,10 +1,9 @@
 """The target profile.
 
-Penligent shows a consolidated target overview: network, web, and TLS data.
-This builds the same object from real evidence only. Everything here comes from
-a stored tool result (an HTTP response, a host probe) or a graph node. If a
-field was never observed, it stays empty; the profile never invents an ASN, a
-cloud provider, or a certificate.
+Consolidates network, web, and TLS data from real evidence only. Everything
+here comes from a stored tool result (an HTTP response, a host probe) or a
+graph node. If a field was never observed, it stays empty; the profile never
+invents an ASN, a cloud provider, or a certificate.
 """
 
 from __future__ import annotations

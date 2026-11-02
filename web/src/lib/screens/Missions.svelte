@@ -837,9 +837,12 @@
         <Icon name="bug" size={13} />
         Findings
       </button>
-      <button class="obs-btn obs-btn-primary" type="button" onclick={startComposer}>
-        <Icon name="plus" size={13} />
-        New mission
+      <button class="obs-btn obs-btn-primary" type="button" onclick={() => store.go('new')}>
+        <Icon name="crosshair" size={13} />
+        Engage target
+      </button>
+      <button class="obs-btn obs-btn-ghost" type="button" onclick={startComposer} title="advanced draft without auto-engage">
+        Draft only
       </button>
     </div>
   </header>

@@ -19,7 +19,8 @@ class QualityTests(unittest.TestCase):
         self.tmp.cleanup()
 
     def test_score_rises_with_evidence_and_detail(self):
-        finding = self.index.create_finding("x", "high")
+        finding = self.index.create_finding(
+            "x", "high", require_evidence=False)
         low = quality.score_finding(self.index, finding["id"])
         self.assertLess(low["score"], 55)
         self.assertTrue(low["missing"])
@@ -46,6 +47,40 @@ class QualityTests(unittest.TestCase):
     def test_unknown_finding_is_rejected(self):
         with self.assertRaises(ValueError):
             quality.score_finding(self.index, "fnd_missing")
+
+    def test_lab_findings_are_not_bounty_ready(self):
+        lab = self.index.create_finding(
+            "SQL injection authentication bypass in the login form (admin JWT)",
+            "critical",
+            impact=("An unauthenticated attacker can send an email value of ' OR 1=1-- "
+                    "and receive a valid JWT for the administrator account."),
+            evidence=("Baseline POST /rest/user/login returned 401; injected request "
+                      "returned 200 with admin JWT. Verified twice."),
+            confidence=0.95, tags=["sqli", "local-lab", "confirmed"])
+        gate = quality.bounty_eligibility(self.index, lab["id"])
+        self.assertTrue(gate["is_lab"])
+        self.assertFalse(gate["ready"])
+        self.assertFalse(gate["critical_ready"])
+
+    def test_confirmed_high_ato_is_ready_but_not_critical_count(self):
+        finding = self.index.create_finding(
+            "Bambu Lab: account email rebind enables permanent takeover",
+            "high",
+            impact=("An email-code session can change the account email using two email "
+                    "codes with no password. The attacker locks out the victim permanently."),
+            evidence=("findings/bambu-email-rebind-account-takeover.md; rebind log shows "
+                      "POST /api/auth/bind-account succeeded for attacker inbox."),
+            confidence=0.95,
+            tags=["bambu", "account-takeover", "confirmed", "reproduced"])
+        self.index.add_finding_artifact(finding["id"], "rebind.log",
+                                        b"POST /api/auth/bind-account -> 200\n", "text/plain")
+        gate = quality.bounty_eligibility(self.index, finding["id"])
+        self.assertTrue(gate["ready"])
+        self.assertFalse(gate["critical_ready"])
+        portfolio = quality.critical_portfolio(self.index, goal=5)
+        self.assertEqual(portfolio["critical_ready"], 0)
+        self.assertEqual(portfolio["high_ready"], 1)
+        self.assertEqual(portfolio["remaining_critical"], 5)
 
 
 class ProgramStatsTests(unittest.TestCase):

@@ -89,14 +89,17 @@ def _problem(status: int, title: str, detail: str = "") -> Response:
     return Response(status=status, body=body, content_type="application/problem+json")
 
 
-_MENTION_RE = re.compile(r"@(lead|finding|hypothesis):([A-Za-z0-9_]+)")
+_MENTION_RE = re.compile(
+    r"@(lead|finding|hypothesis|agent):([A-Za-z0-9_\-]+)", re.I)
 
 
 def _parse_mentions(text: str) -> list[dict]:
-    """Resolve @lead:<id> and @finding:<id> mentions in a direction."""
+    """Resolve @lead/@finding/@hypothesis/@agent mentions in a direction."""
     found = []
     for kind, ref in _MENTION_RE.findall(str(text or "")):
-        kind = "hypothesis" if kind == "lead" else kind
+        kind = kind.lower()
+        if kind == "lead":
+            kind = "hypothesis"
         found.append({"kind": kind, "id": ref})
     return found
 
@@ -215,11 +218,19 @@ class Server:
         self.path_runner = None
         self.exploit_runner = None
         self.director = None
+        self.training_director = None
         self.brain_loop = None
+        self._training_director_lock = threading.Lock()
         self._routes = self._build_routes()
         try:
             learning.seed_builtin_skills(self.index)
         except Exception:  # noqa: BLE001 - seeding must never stop the server
+            pass
+        try:
+            from .. import kb as kb_module
+
+            kb_module.seed_technique_corpus(self.index)
+        except Exception:  # noqa: BLE001 - corpus seed must never stop the server
             pass
 
     # -- mission agent ----------------------------------------------------
@@ -277,6 +288,18 @@ class Server:
                     from .director import Director
                     runtime = Director(self)
                     self.director = runtime
+        return runtime
+
+    def _training_director(self):
+        """Continuous lab trainer on the learn-lane TokenHarbor pool."""
+        runtime = self.training_director
+        if runtime is None:
+            with self._training_director_lock:
+                runtime = self.training_director
+                if runtime is None:
+                    from .training_director import TrainingDirector
+                    runtime = TrainingDirector(self)
+                    self.training_director = runtime
         return runtime
 
     def _brain_loop(self):
@@ -593,6 +616,7 @@ class Server:
                     tags=body.get("tags") if isinstance(body.get("tags"), list) else [],
                     notes=str(body.get("notes", "")),
                     fingerprint=str(body.get("fingerprint", "")),
+                    hypothesis_id=str(body.get("hypothesis_id", "")),
                 )
             except (TypeError, ValueError) as exc:
                 return _problem(400, str(exc))
@@ -718,6 +742,18 @@ class Server:
             except ValueError as exc:
                 return _problem(404, str(exc))
 
+        @add("GET", r"/api/v1/findings/(?P<id>[A-Za-z0-9_]+)/bounty")
+        def finding_bounty(ctx):
+            try:
+                return _json(quality.bounty_eligibility(self.index, ctx.params["id"]))
+            except ValueError as exc:
+                return _problem(404, str(exc))
+
+        @add("GET", r"/api/v1/portfolio/critical")
+        def portfolio_critical(ctx):
+            goal = _int_or(ctx.query.get("goal"), 5)
+            return _json(quality.critical_portfolio(self.index, goal=goal))
+
         @add("GET", r"/api/v1/hypotheses")
         def list_hypotheses(ctx):
             try:
@@ -828,6 +864,30 @@ class Server:
                     source=ctx.query.get("source", "")))
             except ValueError as exc:
                 return _problem(400, str(exc))
+
+        @add("GET", r"/api/v1/training/director")
+        def training_director_status(ctx):
+            return _json(self._training_director().status())
+
+        @add("POST", r"/api/v1/training/director/control")
+        def training_director_control(ctx):
+            body = ctx.json()
+            body = body if isinstance(body, dict) else {}
+            action = str(body.get("action") or "").strip().lower()
+            trainer = self._training_director()
+            if action in {"engage", "start", "resume"}:
+                return _json(trainer.resume() if action == "resume"
+                             else trainer.start())
+            if action in {"pause", "disengage", "stop"}:
+                return _json(trainer.pause())
+            if action == "tune":
+                if body.get("tick_seconds") is not None:
+                    trainer.tick_seconds = max(8.0, float(body["tick_seconds"]))
+                if body.get("max_inflight") is not None:
+                    trainer.max_inflight = max(
+                        1, min(int(body["max_inflight"]), 6))
+                return _json(trainer.status())
+            return _problem(400, f"unknown training director action: {action or 'none'}")
 
         @add("POST", r"/api/v1/training/solve")
         def training_solve(ctx):
@@ -1164,6 +1224,8 @@ class Server:
 
         @add("POST", r"/api/v1/candidates/(?P<id>[A-Za-z0-9_]+)/promote")
         def candidate_promote(ctx):
+            from .. import poc as poc_module
+
             candidate = self.index.get_candidate(ctx.params["id"])
             if not candidate:
                 return _problem(404, "candidate not found")
@@ -1173,20 +1235,43 @@ class Server:
             body = body if isinstance(body, dict) else {}
             severity = str(body.get("severity") or candidate.get("severity")
                            or "medium")
-            evidence = candidate.get("evidence") or {}
-            finding = self.index.create_finding(
-                title=str(candidate.get("title") or "candidate"),
-                severity=severity, run_id=str(candidate.get("run_id") or ""),
-                impact=str(body.get("impact") or ""),
-                evidence=json.dumps(evidence, default=str)[:8000],
-                source="candidate",
-                tags=[str(candidate.get("module_id") or "candidate")],
-                notes=str(body.get("notes") or
-                          "Promoted from a candidate by an operator."))
+            mission = self.index.get_mission(candidate.get("mission_id", "")) or {}
+            gate = poc_module.promotion_gate(
+                candidate, mission,
+                force=bool(body.get("force")),
+                notes=str(body.get("notes") or ""),
+                require_verify=bool(body.get("verify") or body.get("require_verify")))
+            if not gate.get("allowed"):
+                return _problem(400, str(gate.get("reason") or "promotion refused"),
+                                detail=json.dumps({
+                                    "ready": bool((gate.get("poc") or {}).get("ready")),
+                                    "verified": (gate.get("verification") or {}).get("verified"),
+                                }, default=str)[:500])
+            evidence_text = str(gate.get("evidence") or "")
+            if len(evidence_text.strip()) < 32:
+                # Fall back to the raw candidate evidence blob so the finding
+                # gate still has reproducible material.
+                evidence_text = json.dumps(candidate.get("evidence") or {},
+                                           default=str)[:8000]
+            try:
+                finding = self.index.create_finding(
+                    title=str(candidate.get("title") or "candidate"),
+                    severity=severity, run_id=str(candidate.get("run_id") or ""),
+                    impact=str(body.get("impact") or ""),
+                    evidence=evidence_text[:8000],
+                    source="candidate",
+                    tags=[str(candidate.get("module_id") or "candidate")],
+                    notes=str(body.get("notes") or
+                              "Promoted from a candidate by an operator."))
+            except ValueError as exc:
+                return _problem(400, str(exc))
             updated = self.index.patch_candidate(
                 candidate["id"], status="promoted", finding_id=finding["id"],
                 severity=severity)
-            return _json({"candidate": updated, "finding": finding})
+            return _json({"candidate": updated, "finding": finding,
+                          "poc": gate.get("poc"),
+                          "verification": gate.get("verification"),
+                          "gate": gate.get("reason")})
 
         @add("POST", r"/api/v1/candidates/(?P<id>[A-Za-z0-9_]+)/dismiss")
         def candidate_dismiss(ctx):
@@ -1205,6 +1290,16 @@ class Server:
                 return _problem(404, "candidate not found")
             mission = self.index.get_mission(candidate.get("mission_id", "")) or {}
             return _json(poc_module.build_poc(candidate, mission))
+
+        @add("POST", r"/api/v1/candidates/(?P<id>[A-Za-z0-9_]+)/poc/verify")
+        def candidate_poc_verify(ctx):
+            from .. import poc as poc_module
+
+            candidate = self.index.get_candidate(ctx.params["id"])
+            if not candidate:
+                return _problem(404, "candidate not found")
+            mission = self.index.get_mission(candidate.get("mission_id", "")) or {}
+            return _json(poc_module.verify_poc(candidate, mission))
 
         # -- toolbox: external offensive tools ------------------------------
         @add("GET", r"/api/v1/toolbox")
@@ -1458,7 +1553,60 @@ class Server:
                     source=self._client_source(ctx.headers))
             except Exception as exc:  # noqa: BLE001 - report, do not crash the API
                 return _problem(502, f"brain error: {type(exc).__name__}: {exc}")
+            self._publish_brain_turn(result, role="brain")
             return _json(result)
+
+        @add("POST", r"/api/v1/instruct")
+        def instruct(ctx):
+            """Mid-hunt follow-up for the brain, director queue, or both."""
+            from .. import brain as brain_module
+
+            body = ctx.json()
+            body = body if isinstance(body, dict) else {}
+            message = str(body.get("message") or body.get("body") or "").strip()
+            if not message:
+                return _problem(400, "message required")
+            mission_id = str(body.get("mission_id") or "").strip()
+            target = str(body.get("target") or "both").strip().lower()
+            if target not in {"brain", "director", "both", "swarm", "hunt"}:
+                return _problem(400, "target must be brain|director|both|swarm|hunt")
+            if mission_id and not self.index.get_mission(mission_id):
+                return _problem(404, "mission not found")
+            out: dict = {"target": target, "mission_id": mission_id}
+            if target in {"director", "both", "swarm", "hunt"}:
+                if not mission_id:
+                    return _problem(400, "mission_id required for director/swarm/hunt")
+                prefix = ""
+                if target in {"swarm", "hunt"}:
+                    prefix = f"@agent:{target} "
+                elif "@agent:" not in message.lower():
+                    agent = str(body.get("agent") or "").strip()
+                    if agent:
+                        prefix = f"@agent:{agent} "
+                direction = self.index.create_direction(
+                    mission_id, f"{prefix}{message}".strip(),
+                    mentions=_parse_mentions(f"{prefix}{message}"),
+                    created_by=self._client_source(ctx.headers) or "operator")
+                out["direction"] = direction
+            if target in {"brain", "both"}:
+                try:
+                    result = brain_module.chat(
+                        self, self.index, self._director(), message,
+                        mission_id=mission_id, act=True,
+                        source=self._client_source(ctx.headers) or "instruct")
+                    out["brain"] = result
+                    self._publish_brain_turn(result, role="brain")
+                except Exception as exc:  # noqa: BLE001
+                    out["brain_error"] = f"{type(exc).__name__}: {exc}"
+            try:
+                from .events import Event
+                self.bus.publish(Event(
+                    type="instruct", agent="operator",
+                    payload={"target": target, "mission_id": mission_id,
+                             "message": message[:400]}))
+            except Exception:  # noqa: BLE001
+                pass
+            return _json(out)
 
         @add("GET", r"/api/v1/brain/journal")
         def brain_journal(ctx):
@@ -1571,6 +1719,113 @@ class Server:
             return _json(evolve_module.scan(
                 self.index, limit=int(body.get("limit", 3) or 3)))
 
+        @add("GET", r"/api/v1/harness")
+        def harness_status(ctx):
+            from .. import harness as harness_module
+
+            return _json(harness_module.status(self.index))
+
+        @add("GET", r"/api/v1/harness/diagnose")
+        def harness_diagnose(ctx):
+            from .. import harness as harness_module
+
+            try:
+                return _json(harness_module.diagnose(
+                    self.index, mission_id=str(ctx.query.get("mission_id") or ""),
+                    limit=int(ctx.query.get("limit", 8) or 8)))
+            except ValueError as exc:
+                return _problem(400, str(exc))
+
+        @add("POST", r"/api/v1/harness/learn")
+        def harness_learn(ctx):
+            from .. import harness as harness_module
+
+            body = ctx.json()
+            body = body if isinstance(body, dict) else {}
+            try:
+                return _json(harness_module.learn_tick(
+                    self.index, mission_id=str(body.get("mission_id") or ""),
+                    limit=int(body.get("limit", 40) or 40)))
+            except ValueError as exc:
+                return _problem(400, str(exc))
+
+        @add("POST", r"/api/v1/harness/develop")
+        def harness_develop(ctx):
+            from .. import harness as harness_module
+
+            body = ctx.json()
+            body = body if isinstance(body, dict) else {}
+            try:
+                return _json(harness_module.develop_skill(
+                    self.index, mission_id=str(body.get("mission_id") or ""),
+                    limit=int(body.get("limit", 3) or 3),
+                    apply=bool(body.get("apply", True))))
+            except ValueError as exc:
+                return _problem(400, str(exc))
+
+        @add("GET", r"/api/v1/harness/recall")
+        def harness_recall(ctx):
+            from .. import harness as harness_module
+
+            try:
+                return _json(harness_module.recall(
+                    self.index, mission_id=str(ctx.query.get("mission_id") or ""),
+                    goal=str(ctx.query.get("goal") or ""),
+                    limit_skills=int(ctx.query.get("limit_skills", 6) or 6),
+                    limit_lessons=int(ctx.query.get("limit_lessons", 8) or 8)))
+            except ValueError as exc:
+                return _problem(400, str(exc))
+
+        @add("POST", r"/api/v1/harness/tick")
+        def harness_tick(ctx):
+            from .. import harness as harness_module
+
+            body = ctx.json()
+            body = body if isinstance(body, dict) else {}
+            try:
+                return _json(harness_module.tick(
+                    self.index, mission_id=str(body.get("mission_id") or "")))
+            except ValueError as exc:
+                return _problem(400, str(exc))
+
+        @add("GET", r"/api/v1/second-brain")
+        def second_brain_status(ctx):
+            from .. import second_brain as second_brain_module
+
+            return _json(second_brain_module.status(self.index, self.base))
+
+        @add("POST", r"/api/v1/second-brain/sync")
+        def second_brain_sync(ctx):
+            from .. import second_brain as second_brain_module
+
+            body = ctx.json()
+            body = body if isinstance(body, dict) else {}
+            return _json(second_brain_module.sync_learning(
+                self.index,
+                mission_id=str(body.get("mission_id") or ""),
+                peer_note=str(body.get("peer_note") or body.get("note") or ""),
+                peer_name=str(body.get("peer_name") or "")))
+
+        @add("POST", r"/api/v1/second-brain/upgrade")
+        def second_brain_upgrade(ctx):
+            from .. import second_brain as second_brain_module
+
+            body = ctx.json()
+            body = body if isinstance(body, dict) else {}
+            peer = second_brain_module.peers(self.base)
+            try:
+                return _json(second_brain_module.self_upgrade(
+                    self.index, self.base,
+                    title=str(body.get("title") or ""),
+                    rationale=str(body.get("rationale") or body.get("reason") or ""),
+                    body=str(body.get("body") or body.get("code") or ""),
+                    area=str(body.get("area") or "exploit"),
+                    apply_code=bool(body.get("apply_code", peer.get("heavy"))),
+                    filename=str(body.get("filename") or ""),
+                    peer_heavy=bool(peer.get("heavy") or body.get("force_heavy"))))
+            except ValueError as exc:
+                return _problem(400, str(exc))
+
         @add("GET", r"/api/v1/missions/(?P<id>[A-Za-z0-9_]+)/postex")
         def postex_plan(ctx):
             from .. import postex as postex_module
@@ -1624,6 +1879,29 @@ class Server:
 
             return _json(kb_module.stats(self.index))
 
+        @add("POST", r"/api/v1/kb/seed-techniques")
+        def kb_seed_techniques(ctx):
+            from .. import kb as kb_module
+
+            body = ctx.json()
+            body = body if isinstance(body, dict) else {}
+            impacts = body.get("impacts") or ["critical", "high"]
+            if not isinstance(impacts, list):
+                impacts = ["critical", "high"]
+            return _json(kb_module.seed_technique_corpus(
+                self.index, impacts=tuple(str(i) for i in impacts)), 201)
+
+        @add("GET", r"/api/v1/kb/corpus")
+        def kb_corpus(ctx):
+            from .. import kb as kb_module
+
+            return _json({
+                "items": kb_module.corpus_digest(
+                    limit=_int_or(ctx.query.get("limit"), 40),
+                    impact=str(ctx.query.get("impact", "critical") or "critical")),
+                "note": "Critical/high web technique catalogue shared with every agent.",
+            })
+
         @add("POST", r"/api/v1/missions/(?P<id>[A-Za-z0-9_]+)/kb/learn")
         def kb_learn(ctx):
             from .. import kb as kb_module
@@ -1649,6 +1927,112 @@ class Server:
                                                          ctx.params["id"]))
             except ValueError as exc:
                 return _problem(400, str(exc))
+
+        @add("POST", r"/api/v1/missions/(?P<id>[A-Za-z0-9_]+)/web2root")
+        def web2root_map(ctx):
+            from .. import web2root as web2root_module
+
+            if not self.index.get_mission(ctx.params["id"]):
+                return _problem(404, "mission not found")
+            body = ctx.json()
+            body = body if isinstance(body, dict) else {}
+            try:
+                return _json(web2root_module.map_surface(
+                    self.index, ctx.params["id"],
+                    depth=str(body.get("depth") or "standard"),
+                    probe_limit=int(body.get("probe_limit") or 40)))
+            except ValueError as exc:
+                return _problem(400, str(exc))
+            except Exception as exc:  # noqa: BLE001
+                return _problem(502, f"web2root error: {type(exc).__name__}: {exc}")
+
+        @add("GET", r"/api/v1/missions/(?P<id>[A-Za-z0-9_]+)/schedules")
+        def schedules_list(ctx):
+            from .. import schedule as schedule_module
+
+            if not self.index.get_mission(ctx.params["id"]):
+                return _problem(404, "mission not found")
+            return _json({"items": schedule_module.list_schedules(
+                self.index, mission_id=ctx.params["id"],
+                status=str(ctx.query.get("status", "active") or "active"),
+                limit=int(ctx.query.get("limit", 50) or 50))})
+
+        @add("POST", r"/api/v1/missions/(?P<id>[A-Za-z0-9_]+)/schedules")
+        def schedules_create(ctx):
+            from .. import schedule as schedule_module
+
+            if not self.index.get_mission(ctx.params["id"]):
+                return _problem(404, "mission not found")
+            body = ctx.json()
+            body = body if isinstance(body, dict) else {}
+            try:
+                return _json(schedule_module.create(
+                    self.index, ctx.params["id"],
+                    name=str(body.get("name") or ""),
+                    mode=str(body.get("mode") or "weekly"),
+                    run_at=str(body.get("run_at") or ""),
+                    auth_profile=str(body.get("auth_profile") or ""),
+                    note=str(body.get("note") or "")))
+            except ValueError as exc:
+                return _problem(400, str(exc))
+
+        @add("POST", r"/api/v1/schedules/(?P<id>[A-Za-z0-9_]+)/fire")
+        def schedule_fire(ctx):
+            from .. import schedule as schedule_module
+
+            row = self.index.get_schedule(ctx.params["id"])
+            if not row:
+                return _problem(404, "schedule not found")
+            try:
+                return _json(schedule_module.fire(self.index, row))
+            except ValueError as exc:
+                return _problem(400, str(exc))
+
+        @add("GET", r"/api/v1/missions/(?P<id>[A-Za-z0-9_]+)/report.pdf")
+        def mission_report_pdf(ctx):
+            from .. import report as report_module
+
+            mission = self.index.get_mission(ctx.params["id"])
+            if not mission:
+                return _problem(404, "mission not found")
+            findings = []
+            for run in (mission.get("runs") or [])[:50]:
+                rows, _ = self.index.list_findings(run_id=str(run.get("id") or ""),
+                                                   limit=100)
+                findings.extend(rows)
+            # Deduplicate by id while preserving order.
+            seen: set[str] = set()
+            unique = []
+            for row in findings:
+                fid = str(row.get("id") or "")
+                if fid and fid not in seen:
+                    seen.add(fid)
+                    unique.append(row)
+            public = [report_module.public_finding(f) for f in unique[:100]]
+            profile = self.index.get_target_profile(ctx.params["id"]) or {}
+            summary = {
+                "mission": mission.get("title") or mission.get("id"),
+                "target": mission.get("target"),
+                "findings": len(public),
+                "host": profile.get("host") or "",
+                "tech": ", ".join(profile.get("tech") or []),
+            }
+            markdown = report_module.render(
+                str(mission.get("target") or ""), summary, public)
+            mapping = [
+                "",
+                "## Compliance mapping (supporting evidence only)",
+                "",
+                "- SOC 2: documents scope, methodology limits, evidence, and remediation.",
+                "- ISO/IEC 27001: supports risk treatment records; not a certificate.",
+                "- A penetration-test report is evidence for auditors, not an attestation.",
+            ]
+            pdf = report_module.markdown_to_pdf_bytes(
+                markdown + "\n".join(mapping),
+                title=str(mission.get("title") or "NetCast3r report"))
+            return Response(body=pdf, content_type="application/pdf",
+                            headers={"content-disposition":
+                                     f'attachment; filename="{ctx.params["id"]}.pdf"'})
 
         @add("GET", r"/api/v1/missions/(?P<id>[A-Za-z0-9_]+)/campaign")
         def campaign_get(ctx):
@@ -2859,6 +3243,26 @@ class Server:
                     break
         return self._matches(supplied, self.token)
 
+    def _publish_brain_turn(self, result: dict, role: str = "brain") -> None:
+        """Push a brain turn onto the live SSE bus for spectators."""
+        if not isinstance(result, dict):
+            return
+        try:
+            from .events import Event
+            self.bus.publish(Event(
+                type="brain.turn", agent="brain",
+                payload={
+                    "role": role,
+                    "reply": str(result.get("reply") or "")[:800],
+                    "focus": str(result.get("focus") or "")[:400],
+                    "model": str(result.get("model") or ""),
+                    "provider": str(result.get("provider") or ""),
+                    "mission_id": str(result.get("mission_id") or ""),
+                    "actions": result.get("actions") or [],
+                }))
+        except Exception:  # noqa: BLE001 - spectate must never break a reply
+            pass
+
     @staticmethod
     def _client_source(headers: dict) -> str:
         """Attribute an operator message: the browser UI, an MCP client, or a
@@ -2944,6 +3348,18 @@ def _connect_info(server: "Server", ctx) -> dict:
             }
         }
     }
+    hermes_block = {
+        "mcpServers": {
+            "netcast3r": {
+                "command": python,
+                "args": ["-m", "netcast3r.cli", "mcp",
+                         "--policy", DEFAULT_POLICY, "--backend", "auto"],
+                "cwd": str(repo),
+                "env": {**environment,
+                        "NETCAST3R_RESULTS": str(repo / "results")},
+            }
+        }
+    }
     harnesses = [
         {
             "id": "opencode",
@@ -2960,27 +3376,31 @@ def _connect_info(server: "Server", ctx) -> dict:
             "id": "hermes",
             "name": "Hermes",
             "transport": "stdio",
-            "summary": "Standard mcpServers entry; every NetCast3r tool is live.",
-            "config": generic,
-            "notes": "Point the MCP client at this JSON and keep the control plane running.",
-        },
-        {
-            "id": "deepseek",
-            "name": "DeepSeek harness",
-            "transport": "stdio or HTTP",
-            "summary": "Use the MCP block for tools, or the HTTP API for a direct runtime.",
-            "config": generic,
-            "notes": ("A DeepSeek/OpenAI-compatible harness can also register "
-                      "NetCast3r as a provider and drive the HTTP API with the "
-                      "token from the control-plane file."),
+            "summary": ("Full agentic harness: NetCast3r MCP tools + campaign "
+                        "seed API so Hermes drives OSINT, auth, JS reverse, "
+                        "validate, and escalate under one control plane."),
+            "config": hermes_block,
+            "notes": ("Point Hermes at this MCP server. Prefer POST /api/v1/"
+                      "campaigns with a single target seed; the brain + "
+                      "director + swarm bootstrap automatically."),
         },
         {
             "id": "agent-zero",
             "name": "Agent Zero",
             "transport": "stdio",
-            "summary": "Register the command as an MCP server; tools are namespaced by Agent Zero.",
+            "summary": "Agent Zero as an outer planner with NetCast3r as the OffSec tool plane.",
+            "config": hermes_block,
+            "notes": ("Register NetCast3r as an MCP tool server. Scope, "
+                      "approvals, and audit stay on the NetCast3r plane."),
+        },
+        {
+            "id": "deepseek",
+            "name": "DeepSeek-compatible harness",
+            "transport": "stdio or HTTP",
+            "summary": "Use the MCP block for tools, or the HTTP API for a direct runtime.",
             "config": generic,
-            "notes": "Use the absolute python path and cwd so the child process finds the package.",
+            "notes": ("An OpenAI-compatible harness can register NetCast3r as a "
+                      "provider and drive the HTTP API with the control-plane token."),
         },
         {
             "id": "generic",
@@ -3139,6 +3559,12 @@ def build_server(results_dir: str | Path = "results", base: Path | None = None,
                     base=base)
     if recover:
         jobs.recover()
+    try:
+        from ..providers import diversify_tokenharbor_catalogs
+
+        diversify_tokenharbor_catalogs(index)
+    except Exception:  # noqa: BLE001 - MoE bootstrap must not block boot
+        pass
     return server
 
 
@@ -3172,6 +3598,12 @@ def serve(host: str = "127.0.0.1", port: int = 7857, *, open_browser: bool = Tru
         server._director().start()
     except Exception:  # noqa: BLE001 - the API must still come up
         pass
+    # Continuous lab trainer: learn-lane TokenHarbor keys grind Academy /
+    # Juice Shop / Acunetix and peers without burning the hunt pool.
+    try:
+        server._training_director().start()
+    except Exception:  # noqa: BLE001 - the API must still come up
+        pass
     # The main brain thinks on its own loop beside the director: it reads the
     # whole plane, decides the next move, and steers. It respects its own pause
     # and never creates a finding.
@@ -3191,6 +3623,8 @@ def serve(host: str = "127.0.0.1", port: int = 7857, *, open_browser: bool = Tru
     finally:
         if getattr(server, "director", None) is not None:
             server.director.shutdown()
+        if getattr(server, "training_director", None) is not None:
+            server.training_director.shutdown()
         if getattr(server, "brain_loop", None) is not None:
             server.brain_loop.shutdown()
         if server.agent_runtime is not None:

@@ -1,10 +1,8 @@
 """The toolbox: a tiered, scope-checked broker for external offensive tools.
 
-HexStrike wraps 150+ tools behind an MCP server; Strix ships a full toolkit in a
-sandbox. This is NetCast3r's version with one rule kept: an external tool is a
-source of **leads, not findings**. Output is parsed into graph nodes, endpoints,
-technologies, and candidates with raw evidence; a finding is still a human-gated
-promotion.
+An external tool is a source of **leads, not findings**. Output is parsed into
+graph nodes, endpoints, technologies, and candidates with raw evidence; a
+finding is still a human-gated promotion.
 
 Safety is not optional here:
 

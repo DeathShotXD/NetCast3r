@@ -12,14 +12,28 @@
       "name": "Google Project Zero",
       "url": "https://googleprojectzero.blogspot.com/feeds/posts/default",
       "kind": "rss",
-      "tags": ["research", "browser", "kernel"]
+      "tags": ["research", "browser", "kernel", "fuzzing"]
     },
     {
       "id": "google-security",
       "name": "Google Security Blog",
       "url": "https://security.googleblog.com/feeds/posts/default",
       "kind": "rss",
-      "tags": ["google", "android", "cloud"]
+      "tags": ["google", "android", "cloud", "vrp"]
+    },
+    {
+      "id": "chrome-releases",
+      "name": "Chrome Releases (Stable)",
+      "url": "https://chromereleases.googleblog.com/feeds/posts/default/-/Stable%20updates",
+      "kind": "rss",
+      "tags": ["chrome", "vrp", "browser", "cve"]
+    },
+    {
+      "id": "hackerone-disclosed",
+      "name": "HackerOne disclosed reports",
+      "url": "http://h1.nobbd.de/reports_rss.xml",
+      "kind": "rss",
+      "tags": ["hackerone", "bug-bounty", "disclosed", "critical"]
     },
     {
       "id": "github-advisories",
@@ -40,7 +54,14 @@
       "name": "Bugcrowd Blog",
       "url": "https://www.bugcrowd.com/blog/feed/",
       "kind": "rss",
-      "tags": ["bug-bounty", "methodology"]
+      "tags": ["bug-bounty", "methodology", "vdp"]
+    },
+    {
+      "id": "cloudflare-security",
+      "name": "Cloudflare Blog",
+      "url": "https://blog.cloudflare.com/rss/",
+      "kind": "rss",
+      "tags": ["cdn", "waf", "web", "research"]
     },
     {
       "id": "cisa-kev",

@@ -551,7 +551,7 @@
         id: 'scan',
         title: 'Cast a deeper net',
         body: 'Change the target, widen the depth or revisit a stopped run with the current provider fleet.',
-        cta: 'configure an operation',
+        cta: 'engage a target',
         color: 'var(--nc-acid)',
         go: () => store.go('new')
       });
@@ -929,8 +929,8 @@
         </button>
       {/if}
       <button class="obs-btn obs-btn-primary" type="button" onclick={() => store.go('new')}>
-        <Icon name="plus" size={13} />
-        New operation
+        <Icon name="crosshair" size={13} />
+        Engage target
       </button>
     </div>
   </header>
@@ -1236,7 +1236,7 @@
               {:else}
                 <button class="obs-btn obs-btn-primary" type="button" onclick={() => store.go('new')}>
                   <Icon name="crosshair" size={13} />
-                  Start your first cast
+                  Engage your first target
                 </button>
                 <button class="obs-btn" type="button" onclick={() => store.go('help')}>
                   <Icon name="terminal" size={13} />
@@ -1245,7 +1245,7 @@
               {/if}
               <button class="obs-btn obs-btn-ghost" type="button" onclick={() => store.go('new')}>
                 <Icon name="plus" size={13} />
-                New operation
+                Engage target
               </button>
               <span class="obs-hero-elapsed">
                 <span class="obs-status-dot" class:idle={!live} aria-hidden="true"></span>
@@ -1836,7 +1836,7 @@
         <span class="obs-empty-icon"><Icon name="layers" size={18} /></span>
         <div class="obs-empty-title">No casts in the ledger</div>
         <p class="obs-empty-copy">Start an operation and every run will appear here with its surface, signals and findings.</p>
-        <button class="obs-btn" type="button" onclick={() => store.go('new')}>Start a cast</button>
+        <button class="obs-btn" type="button" onclick={() => store.go('new')}>Engage target</button>
       </div>
     {:else}
       <div class="obs-ledger-head" aria-hidden="true">

@@ -92,8 +92,16 @@ def audit_pages(base: str | Path | None = None, routes: list | None = None,
         failed: list[str] = []
         page.on("console", lambda msg: console.append(msg.text)
                 if msg.type == "error" else None)
-        page.on("requestfailed", lambda req: failed.append(
-            f"{req.method} {req.url} {req.failure}") if req.failure else None)
+        def _on_failed(req):
+            if not req.failure:
+                return
+            url = str(req.url or "")
+            # SPA route changes abort the long-lived SSE stream; not a defect.
+            if "/api/v1/events/stream" in url and "ERR_ABORTED" in str(req.failure):
+                return
+            failed.append(f"{req.method} {url} {req.failure}")
+
+        page.on("requestfailed", _on_failed)
         page.on("pageerror", lambda exc: console.append(f"pageerror: {exc}"))
         page.goto(f"{base_url}/?token={token}", wait_until="networkidle",
                   timeout=60000)

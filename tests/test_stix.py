@@ -45,7 +45,9 @@ class ExportTests(unittest.TestCase):
         self.assertEqual(bundle["x_netcast3r_count"], 1)
 
     def test_severity_filter_and_empty_export(self):
-        self.index.create_finding("Low note", "low")
+        self.index.create_finding(
+            "Low note", "low",
+            evidence="Informational note only: verbose error page observed once.")
         bundle = stix.export_bundle(self.index, severity="high")
         self.assertEqual(bundle["x_netcast3r_count"], 0)
         self.assertEqual([item["type"] for item in bundle["objects"]],

@@ -631,8 +631,8 @@ them in `~/.netcast3r/integrations.json`:
 ```json
 {
   "mcp_servers": {
-    "hexstrike": {"transport": "stdio", "command": ["python3", "/opt/hexstrike/server.py"]},
-    "hermes": {"transport": "http", "url": "http://127.0.0.1:9876", "token": ""}
+    "local-tools": {"transport": "stdio", "command": ["python3", "/opt/tools/mcp_server.py"]},
+    "lab-harness": {"transport": "http", "url": "http://127.0.0.1:9876", "token": ""}
   }
 }
 ```
@@ -646,8 +646,7 @@ them in `~/.netcast3r/integrations.json`:
 `mcp_server_call` is high risk and needs an approval under supervised policy.
 A remote tool is not an authorization: every target-bearing argument is checked
 against the mission before the call, and the result is audited. This is the
-bridge for Hermes Agent, Agent Zero, HexStrike, OpenCode, and an internal MCP
-server.
+bridge for operator-configured external MCP servers and an internal MCP server.
 
 ### Continuous surface diff
 

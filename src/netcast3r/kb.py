@@ -16,6 +16,10 @@ Two scopes:
 Nothing here is invented. ``learn_from_mission`` only restates what stored
 evidence shows - a graph node, a hypothesis outcome, a verified path - and
 marks a claim that is not yet observed as ``hypothesis``.
+
+``seed_technique_corpus`` loads the curated critical/high web technique
+catalogue into the global scope so every agent and the brain share the same
+modern exploit knowledge regardless of which model provider is answering.
 """
 
 from __future__ import annotations
@@ -26,6 +30,7 @@ KINDS = {"technology", "service", "endpoint", "parameter", "technique", "chain",
          "credential-path", "dead-end", "signature", "payload", "pattern",
          "lesson", "capability"}
 CONFIDENCE = {"observed", "inferred", "hypothesis"}
+IMPACT_RANK = {"critical": 0, "high": 1, "medium": 2, "low": 3, "info": 4}
 
 _NUMBER = re.compile(r"\d+")
 
@@ -53,27 +58,174 @@ def search(index, query: str = "", scope: str = "", kind: str = "",
     return rows
 
 
+def seed_technique_corpus(index, impacts: tuple[str, ...] = ("critical", "high"),
+                          force: bool = False) -> dict:
+    """Upsert the curated technique catalogue into the global shared KB.
+
+    Critical and high-impact web techniques are seeded on control-plane boot so
+    every brain, swarm role, and MCP agent inherits the same corpus. Entries are
+    idempotent by key; re-running refreshes titles/bodies when the catalogue
+    grows.
+    """
+    from . import research as research_module
+
+    wanted = {str(i).lower() for i in impacts}
+    seeded = skipped = 0
+    for item in research_module.techniques():
+        impact = str(item.get("impact") or "medium").lower()
+        if wanted and impact not in wanted:
+            skipped += 1
+            continue
+        tech_id = str(item.get("id") or "").strip()
+        if not tech_id:
+            continue
+        title = str(item.get("title") or tech_id)
+        steps = item.get("steps") or []
+        proof = str(item.get("proof") or "")
+        signals = ", ".join(str(s) for s in (item.get("signals") or [])[:8])
+        tags = ", ".join(str(t) for t in (item.get("tags") or [])[:8])
+        body = (
+            f"[{impact.upper()}] {item.get('class') or 'web'} | "
+            f"signals: {signals}. "
+            f"Proof: {proof[:280]} "
+            f"Steps: " + " -> ".join(str(s)[:80] for s in steps[:4])
+            + (f" Tags: {tags}." if tags else "")
+        )
+        record(
+            index, "global", "technique", f"corpus:{tech_id}",
+            title=f"{impact}: {title}",
+            body=body[:1800],
+            confidence="hypothesis",
+            source={"catalogue": "techniques.json", "technique_id": tech_id,
+                    "impact": impact},
+            data={"technique_id": tech_id, "impact": impact,
+                  "class": item.get("class"), "rarity": item.get("rarity"),
+                  "tags": list(item.get("tags") or [])[:12],
+                  "sources": list(item.get("sources") or [])[:4]})
+        seeded += 1
+    return {
+        "seeded": seeded,
+        "skipped": skipped,
+        "catalogue": len(research_module.techniques()),
+        "impacts": sorted(wanted),
+        "force": bool(force),
+        "note": ("Technique corpus entries are shared hypotheses until a mission "
+                 "observes them; they never become findings by themselves."),
+    }
+
+
+def corpus_digest(limit: int = 24, impact: str = "critical") -> list[dict]:
+    """Compact catalogue view for prompts (does not require SQLite)."""
+    from . import research as research_module
+
+    rank = IMPACT_RANK
+    want = str(impact or "critical").lower()
+    allow = {
+        "critical": {"critical", "high"},
+        "high": {"critical", "high"},
+        "all": None,
+    }.get(want, {"critical", "high"})
+    items = []
+    for item in research_module.techniques():
+        imp = str(item.get("impact") or "medium").lower()
+        if allow is not None and imp not in allow:
+            continue
+        items.append({
+            "id": item.get("id"),
+            "title": item.get("title"),
+            "impact": imp,
+            "class": item.get("class"),
+            "proof": str(item.get("proof") or "")[:160],
+            "tags": list(item.get("tags") or [])[:6],
+        })
+    items.sort(key=lambda row: (rank.get(row["impact"], 9),
+                                str(row.get("title") or "").lower()))
+    return items[:max(1, min(int(limit or 24), 80))]
+
+
 def digest(index, mission_id: str, limit: int = 12) -> list[dict]:
-    """The memory a brain reads before it plans: global plus this mission."""
-    merged: dict[str, dict] = {}
+    """The memory a brain reads before it plans: corpus + global + mission."""
+    limit = max(1, min(int(limit or 12), 80))
+    # Ensure the shared technique corpus is present for every provider.
+    try:
+        existing = index.list_kb_entries(scope="global", kind="technique",
+                                         limit=5)
+        if len(existing) < 8:
+            seed_technique_corpus(index)
+    except Exception:  # noqa: BLE001 - digest must never raise
+        pass
+
+    def _pack(row: dict) -> dict:
+        return {
+            "kind": row.get("kind", ""),
+            "title": row.get("title", ""),
+            "body": str(row.get("body") or "")[:280],
+            "confidence": row.get("confidence", "observed"),
+            "scope": row.get("scope", "global"),
+        }
+
+    def _impact_rank(row: dict) -> tuple:
+        title = str(row.get("title") or "").lower()
+        impact = 3
+        if title.startswith("critical:"):
+            impact = 0
+        elif title.startswith("high:"):
+            impact = 1
+        return (impact, -int(row.get("hits") or 0),
+                str(row.get("updated_at") or ""))
+
+    corpus_rows: list[dict] = []
+    other_rows: list[dict] = []
+    seen: set[str] = set()
+    try:
+        for row in index.list_kb_entries(scope="global", kind="technique",
+                                         limit=max(limit * 3, 60)):
+            key = str(row.get("key") or "")
+            title = str(row.get("title") or "").lower()
+            if key.startswith("corpus:") or title.startswith(("critical:", "high:")):
+                if row["id"] not in seen:
+                    corpus_rows.append(row)
+                    seen.add(row["id"])
+    except Exception:  # noqa: BLE001
+        pass
+    observation_kinds = (
+        "technology", "service", "endpoint", "parameter", "pattern",
+        "lesson", "signature", "payload", "dead-end", "chain", "capability",
+        "credential-path")
     for scope in ("global", mission_id):
         if not scope:
             continue
-        for row in index.list_kb_entries(scope=scope, limit=limit * 2):
-            merged.setdefault(row["id"], row)
-    ordered = sorted(merged.values(),
-                     key=lambda row: (int(row.get("hits") or 0),
-                                      row.get("updated_at") or ""),
-                     reverse=True)
-    out = []
-    for row in ordered[:limit]:
-        out.append({
-            "kind": row.get("kind", ""),
-            "title": row.get("title", ""),
-            "body": str(row.get("body") or "")[:240],
-            "confidence": row.get("confidence", "observed"),
-            "scope": row.get("scope", "global"),
-        })
+        try:
+            # Query observation kinds directly so corpus techniques cannot
+            # exhaust the SQLite LIMIT window before nginx/endpoints appear.
+            for kind in observation_kinds:
+                for row in index.list_kb_entries(
+                        scope=scope, kind=kind, limit=max(8, limit)):
+                    if row["id"] in seen:
+                        continue
+                    seen.add(row["id"])
+                    other_rows.append(row)
+            if scope == mission_id:
+                for row in index.list_kb_entries(scope=scope, limit=limit * 2):
+                    if row["id"] in seen:
+                        continue
+                    seen.add(row["id"])
+                    other_rows.append(row)
+        except Exception:  # noqa: BLE001
+            pass
+    corpus_rows.sort(key=_impact_rank)
+    other_rows.sort(key=lambda row: (-int(row.get("hits") or 0),
+                                     str(row.get("updated_at") or "")),
+                    reverse=True)
+    # Split the brief: half critical/high corpus, half lived observations so
+    # agents keep both modern exploit knowledge and mission-specific memory.
+    corpus_slots = min(len(corpus_rows), max(4, limit // 2))
+    other_slots = limit - corpus_slots
+    if len(other_rows) < other_slots:
+        corpus_slots = min(len(corpus_rows), limit - len(other_rows))
+        other_slots = limit - corpus_slots
+    out = [_pack(row) for row in corpus_rows[:corpus_slots]]
+    out.extend(_pack(row) for row in other_rows[:other_slots])
     return out
 
 

@@ -91,8 +91,18 @@ the live authorization; the history is its audit trail.
 ## Reproduction
 
 `candidate_poc` turns a candidate's recorded steps into a minimal `curl` and a
-`python` snippet a reviewer can re-run. It reproduces the request that was made;
-it does not invent an exploit.
+`python` snippet a reviewer can re-run. It attaches a matching research
+technique when the module or title hints one. It reproduces the request that
+was made; it does not invent an exploit.
+
+`candidate_poc_verify` replays those steps against the authorised mission
+target and scores expected status or marker assertions. A pass is evidence; a
+fail is a refutation. Neither tool creates a finding.
+
+Promotion (`candidate_promote`) requires a replayable PoC with at least one
+recorded request step. An operator may pass `force=true` with notes to
+override a missing PoC, or `verify=true` to demand a live assertion pass
+before the finding is written. The finding evidence carries the PoC markdown.
 
 ## The line that does not move
 

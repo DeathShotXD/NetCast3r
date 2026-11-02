@@ -30,6 +30,7 @@ class Store {
   ready = $state(false);
   busy = $state('');
   palette = $state(false);
+  brainDock = $state(false);
   netCursor = $state(false);
   query = $state('');
   toasts = $state<Toast[]>([]);
@@ -249,15 +250,24 @@ class Store {
 
   toast(kind: Toast['kind'], text: string): void {
     const id = ++this.toastSeq;
-    this.toasts = [...this.toasts, { id, kind, text }];
+    this.toasts = [...this.toasts, { id, kind, text }].slice(-5);
     window.setTimeout(() => {
       this.toasts = this.toasts.map((toast) =>
         toast.id === id ? { ...toast, leaving: true } : toast
       );
-    }, 3980);
+    }, 3800);
     window.setTimeout(() => {
       this.toasts = this.toasts.filter((toast) => toast.id !== id);
     }, 4200);
+  }
+
+  dismissToast(id: number): void {
+    this.toasts = this.toasts.map((toast) =>
+      toast.id === id ? { ...toast, leaving: true } : toast
+    );
+    window.setTimeout(() => {
+      this.toasts = this.toasts.filter((toast) => toast.id !== id);
+    }, 180);
   }
 
   async fail(message: string): Promise<void> {

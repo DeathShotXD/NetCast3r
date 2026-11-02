@@ -14,7 +14,7 @@
   const labels: Record<string, string> = {
     home: 'Command Center',
     missions: 'Missions',
-    new: 'New operation',
+    new: 'Engage target',
     live: 'Live run',
     findings: 'Findings',
     runs: 'Cast history',
@@ -142,6 +142,18 @@
   </button>
 
   <button
+    class="obs-icon-btn"
+    type="button"
+    class:on={store.brainDock}
+    aria-pressed={store.brainDock}
+    title="Helix — hunt steward (B)"
+    aria-label="toggle Helix"
+    onclick={() => (store.brainDock = !store.brainDock)}
+  >
+    <Icon name="sparkles" size={14} />
+  </button>
+
+  <button
     class="obs-palette-btn obs-kbd"
     type="button"
     onclick={() => (store.palette = true)}
@@ -150,9 +162,18 @@
   >
     Ctrl K
   </button>
+  <button
+    class="obs-palette-glyph"
+    type="button"
+    onclick={() => (store.palette = true)}
+    title="open the command palette"
+    aria-label="open command palette"
+  >
+    <Icon name="terminal" size={13} />
+  </button>
 
-  <button class="obs-btn obs-btn-primary" type="button" onclick={() => store.go('new')} title="start an operation">
-    <Icon name="plus" size={13} />
-    <span class="hidden sm:inline">New operation</span>
+  <button class="obs-btn obs-btn-primary" type="button" onclick={() => store.go('new')} title="engage a target — one seed starts the full hunt">
+    <Icon name="crosshair" size={13} />
+    <span class="hidden sm:inline">Engage</span>
   </button>
 </header>

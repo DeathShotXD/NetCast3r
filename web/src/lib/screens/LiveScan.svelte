@@ -647,7 +647,7 @@
         eyebrow="live runs"
         title="No run selected"
         body="Start an operation and it appears here live: the stage rail, a verbose transmission of every agent line, and inspectable evidence for each run - assets, endpoints, scripts, secrets, findings and the report."
-        action="start an operation"
+        action="engage a target"
         onAction={() => store.go('new')}
       >
         {#if store.runs.length > 0}

@@ -1,5 +1,5 @@
 import type {
-  BenchResult, BrainReply, Campaign, Candidate, ConnectInfo, Approval, CoverageSummary, Direction, DirectorLogEntry, DirectorStatus, ExploitPlan, Finding, HostShellResult, Hypothesis, HypothesisEvidence, Inventory, KeyEntry, McpInfo, Meta, Mission, MissionAgent, MissionGraph, Paged, ProgramImport, ProgramPreview, Provider, ProviderHealth, RevengKinds, RevengResult, Run, RunEvent, Submission, SubmissionSummary, ToolCall, Totals, TrendPoint, BrainTurn, BrainLoopStatus } from './types';
+  BenchResult, BrainReply, Campaign, Candidate, ConnectInfo, Approval, CoverageSummary, Direction, DirectorLogEntry, DirectorStatus, ExploitPlan, Finding, HarnessDiagnose, HarnessLearn, HarnessRecall, HarnessStatus, HarnessTick, HostShellResult, Hypothesis, HypothesisEvidence, Inventory, KeyEntry, McpInfo, Meta, Mission, MissionAgent, MissionGraph, Paged, ProgramImport, ProgramPreview, Provider, ProviderHealth, RevengKinds, RevengResult, Run, RunEvent, Submission, SubmissionSummary, ToolCall, Totals, TrendPoint, BrainTurn, BrainLoopStatus } from './types';
 
 const BASE = '/api/v1';
 
@@ -140,9 +140,13 @@ export const api = {
   dismissCandidate: (candidateId: string) =>
     request<Candidate>('POST', `/candidates/${candidateId}/dismiss`, {}),
   campaignStart: (target: string, title = '', objective = '') =>
-    request<{ mission: Mission; director: DirectorStatus }>('POST', '/campaigns', {
-      target, title, objective
-    }),
+    request<{
+      mission: Mission;
+      director: DirectorStatus;
+      brain?: Record<string, unknown>;
+      bootstrapping?: boolean;
+      note?: string;
+    }>('POST', '/campaigns', { target, title, objective }),
   brainContext: (missionId = '') =>
     request<Record<string, unknown>>(
       'GET', `/brain/context${missionId ? `?mission_id=${missionId}` : ''}`),
@@ -155,11 +159,31 @@ export const api = {
   brainLoop: (action = 'status', interval = 0) =>
     request<BrainLoopStatus>('POST', '/brain/loop',
       interval ? { action, interval } : { action }),
+  instruct: (message: string, body: Record<string, unknown> = {}) =>
+    request<Record<string, unknown>>('POST', '/instruct', { message, ...body }),
   missionCoverage: (id: string) =>
     request<CoverageSummary>('GET', `/missions/${id}/coverage`),
   markCoverage: (id: string, body: Record<string, unknown>) =>
     request<Record<string, unknown>>('POST', `/missions/${id}/coverage`, body),
   bench: () => request<BenchResult>('GET', '/bench?gate=1'),
+  harnessStatus: () => request<HarnessStatus>('GET', '/harness'),
+  harnessDiagnose: (missionId = '', limit = 8) =>
+    request<HarnessDiagnose>(
+      'GET',
+      `/harness/diagnose?limit=${limit}${missionId ? `&mission_id=${encodeURIComponent(missionId)}` : ''}`),
+  harnessLearn: (body: Record<string, unknown> = {}) =>
+    request<HarnessLearn>('POST', '/harness/learn', body),
+  harnessTick: (body: Record<string, unknown> = {}) =>
+    request<HarnessTick>('POST', '/harness/tick', body),
+  harnessRecall: (missionId = '', goal = '') =>
+    request<HarnessRecall>(
+      'GET',
+      `/harness/recall?${[
+        missionId ? `mission_id=${encodeURIComponent(missionId)}` : '',
+        goal ? `goal=${encodeURIComponent(goal)}` : ''
+      ]
+        .filter(Boolean)
+        .join('&')}`),
   hypotheses: (missionId: string) =>
     request<Paged<Hypothesis>>('GET', `/hypotheses?mission_id=${missionId}&size=100`),
   hypothesisEvidence: (id: string) =>

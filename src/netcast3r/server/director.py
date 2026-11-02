@@ -1,11 +1,12 @@
 """The director.
 
 NetCast3r already has brains: the deterministic hunt, the operator, the five
-role mesh, the runtime. Each one runs to a budget and stops. The director is
-the layer that keeps them moving without an external harness: it wakes on a
-tick, asks Prime to rank the portfolio, picks one mission and one brain,
-starts a run through the same runners the API uses, watches it to completion,
-learns whether the mission actually moved, and ticks again.
+role mesh, the runtime. Each run is short and observable. The director is the
+layer that keeps them moving without an external harness: it wakes on a tick,
+asks Prime to rank the portfolio, picks one mission and one brain, starts a
+run through the same runners the API uses, matures the mission, learns, and
+ticks again. An active mission never parks itself — only the operator pause
+(or kill switch) stops the continuous hunt.
 
 It is durable. State lives in the index (``director_state``), so a restart
 resumes instead of re-planning, and ``director_log`` is the audit feed.
@@ -27,20 +28,24 @@ from .. import prime as prime_module
 
 MIN_TICK = 5.0
 MAX_TICK = 300.0
-MAX_CONCURRENT = 4
+# Parallel mission slots — sized for multi-key TokenHarbor hunt lanes.
+# Match the TokenHarbor hunt-lane pool (21+ free keys) so MoE can fan out.
+MAX_CONCURRENT = 24
 # How long a mission rests after a run before it can be picked again.
 BASE_COOLDOWN = 45.0
-# Backoff ceiling once a mission keeps producing nothing.
-MAX_COOLDOWN = 900.0
-# Three no-progress runs (or four failures) rests a mission, but a park is not
-# forever: after this long the director tries it again with a fresh view.
-NO_PROGRESS_LIMIT = 3
-MAX_MISSION_FAILS = 4
-RESUME_AFTER = 6 * 3600.0
-# A model-only brain is not worth starting when the brain loop has logged two
-# failures and no answer inside this window. The deterministic hunt is.
+# Backoff ceiling once a mission keeps producing nothing. Never a stop —
+# only a longer breath before the next deeper pass.
+MAX_COOLDOWN = 300.0
+# After this many flat runs, queue a deepen direction and reset the stall
+# counter. Missions never park; only the operator pause stops the hunt.
+STALL_DEEPEN_AFTER = 3
+# How often the director pulls public research feeds into the knowledge base.
+KNOWLEDGE_REFRESH_EVERY = 6 * 3600.0
+# A model-only brain is not worth starting when the brain loop has logged many
+# *hard* failures and no answer inside this window. Transient free-tier 429s
+# across a MoE catalogue are not a gate — sibling keys/models still answer.
 MODEL_GATE_WINDOW = 900.0
-MODEL_GATE_FAILURES = 2
+MODEL_GATE_FAILURES = 8
 # Per-mode budgets. Deliberately small: the director prefers many short,
 # observable runs over one long run that hides its work.
 MODE_BUDGETS = {
@@ -49,8 +54,8 @@ MODE_BUDGETS = {
 }
 
 DIRECTOR_NOTE = (
-    "The director drives one mission at a time through the scoped runners. "
-    "It records plans and outcomes, never findings."
+    "The director drives active missions continuously until the operator "
+    "pauses. It records plans and outcomes, never findings."
 )
 
 
@@ -84,6 +89,10 @@ class Director:
         self.max_concurrent = max(1, min(
             int(state.get("max_concurrent") or self.max_concurrent),
             MAX_CONCURRENT))
+        try:
+            self.reconcile_inflight(reason="boot")
+        except Exception:  # noqa: BLE001 - never block boot on reconcile
+            pass
         with self._lock:
             if self._thread is not None and self._thread.is_alive():
                 return self.status()
@@ -94,6 +103,89 @@ class Director:
         self.server.index.add_director_log(
             "boot", "director started; scheduling per the scope filter")
         return self.status()
+
+    def _live_run_ids(self) -> set[str]:
+        """Run ids that still have an in-process handle right now."""
+        live: set[str] = set()
+        try:
+            live.update(self.server.jobs.active() or [])
+        except Exception:  # noqa: BLE001
+            pass
+        for attr in ("hunt_runner", "solver_runner", "lab_runner",
+                     "path_runner", "exploit_runner"):
+            runner = getattr(self.server, attr, None)
+            if runner is None:
+                continue
+            handles = getattr(runner, "_handles", None)
+            if isinstance(handles, dict):
+                live.update(handles.keys())
+        return live
+
+    def _busy_run_count(self, runs: dict) -> int:
+        """Concurrency slots: live workers + brief start grace, not ghosts."""
+        live = self._live_run_ids()
+        now = time.time()
+        busy = 0
+        for run_id, entry in (runs or {}).items():
+            if run_id in live:
+                busy += 1
+                continue
+            # Allow a short window for the runner to register its handle
+            # (and for FakeHunts in tests that never register one).
+            age = now - float((entry or {}).get("started") or 0.0)
+            if 0 <= age < 45.0:
+                busy += 1
+        return busy
+
+    def reconcile_inflight(self, reason: str = "reconcile") -> dict:
+        """Drop director in-flight rows that died with the previous process.
+
+        After a UI/API restart, ``JobManager.recover`` marks DB runs
+        ``interrupted``, but the director's persisted ``active.runs`` can still
+        claim they are flying. Helix and the operator must see the truth.
+        Finished/failed runs stay for ``_reap`` so progress accounting still
+        runs; only restart ghosts (interrupted / cancelled / missing) go here.
+        """
+        state = self.server.index.ensure_director_state()
+        active = dict(state.get("active") or {})
+        runs = dict(active.get("runs") or {})
+        if not runs:
+            return {"dropped": [], "kept": []}
+        live = self._live_run_ids()
+        ghost_status = {"interrupted", "cancelled"}
+        dropped, kept = [], {}
+        for run_id, entry in runs.items():
+            if run_id in live:
+                kept[run_id] = entry
+                continue
+            row = self.server.index.get_run(run_id) or {}
+            status = str(row.get("status") or "")
+            if not row or status in ghost_status:
+                dropped.append({"run_id": run_id, "status": status or "missing"})
+                continue
+            # Still queued/running in the DB with no live handle after a
+            # recover=False path or a crashed worker — treat as interrupted.
+            age = time.time() - float((entry or {}).get("started") or 0.0)
+            stale = status in {"queued", "running"} and (
+                reason in {"boot", "recover"} or age > 90.0)
+            if stale:
+                try:
+                    self.server.index.update_run(
+                        run_id, status="interrupted", finished_at=self._stamp(),
+                        error="director reconcile: no live worker")
+                except Exception:  # noqa: BLE001
+                    pass
+                dropped.append({"run_id": run_id, "status": "interrupted"})
+                continue
+            kept[run_id] = entry
+        if dropped:
+            active["runs"] = kept
+            self.server.index.patch_director_state(active=active)
+            self.server.index.add_director_log(
+                "reconcile",
+                f"{reason}: dropped {len(dropped)} stale in-flight run(s)",
+                data={"dropped": dropped})
+        return {"dropped": dropped, "kept": list(kept.keys())}
 
     def shutdown(self, timeout: float = 10.0) -> None:
         self._stop.set()
@@ -199,10 +291,20 @@ class Director:
 
     # -- status ------------------------------------------------------------
     def status(self, with_portfolio: bool = False) -> dict:
+        # Always reconcile before reporting so Helix never sees ghost scans.
+        try:
+            self.reconcile_inflight(reason="status")
+        except Exception:  # noqa: BLE001
+            pass
         state = self.server.index.ensure_director_state()
         active = state.get("active") or {}
         runs = active.get("runs") or {}
         missions = active.get("missions") or {}
+        live = set()
+        try:
+            live.update(self.server.jobs.active() or [])
+        except Exception:  # noqa: BLE001
+            pass
         payload = {
             "engaged": bool(state.get("engaged")),
             "paused": bool(state.get("paused")),
@@ -214,10 +316,12 @@ class Director:
             "stop_reason": state.get("stop_reason") or "",
             "note": state.get("note") or "",
             "last_tick": state.get("last_tick") or "",
+            "live_job_ids": sorted(live),
             "in_flight": [
                 {"run_id": run_id, "mission_id": entry.get("mission_id", ""),
                  "mode": entry.get("mode", ""), "runner": entry.get("runner", ""),
                  "started_at": entry.get("started_at", ""),
+                 "live": run_id in live,
                  "age": round(time.time() - float(entry.get("started", 0.0)), 1)}
                 for run_id, entry in runs.items()
             ],
@@ -258,6 +362,25 @@ class Director:
             })
         return rows
 
+    def _fire_schedules(self) -> None:
+        """Queue due Once/Weekly verify-again directions without starting runs."""
+        try:
+            from .. import schedule as schedule_module
+
+            for row in schedule_module.due(self.server.index)[:5]:
+                try:
+                    schedule_module.fire(self.server.index, row)
+                    self.server.index.add_director_log(
+                        "schedule", f"fired {row.get('id')} ({row.get('mode')})",
+                        mission_id=str(row.get("mission_id") or ""))
+                except Exception as exc:  # noqa: BLE001
+                    self.server.index.add_director_log(
+                        "schedule-error",
+                        f"{row.get('id')}: {type(exc).__name__}: {exc}",
+                        mission_id=str(row.get("mission_id") or ""))
+        except Exception:  # noqa: BLE001 - schedules must not stop the director
+            pass
+
     # -- the tick ----------------------------------------------------------
     def _tick(self, force: bool = False) -> dict:
         state = self.server.index.ensure_director_state()
@@ -265,13 +388,23 @@ class Director:
             return {"action": "idle", "reason": "disengaged"}
         if state.get("paused") and not force:
             return {"action": "idle", "reason": "paused"}
+        self._fire_schedules()
+        self._refresh_knowledge_if_due(state)
         self._reap()
+        try:
+            self.reconcile_inflight(reason="tick")
+        except Exception:  # noqa: BLE001
+            pass
         state = self.server.index.ensure_director_state()
         active = state.get("active") or {}
+        # Legacy parks never stick: an active mission keeps hunting until
+        # the operator pauses the director.
+        self._clear_parks(active)
         runs = active.get("runs") or {}
-        if len(runs) >= int(state.get("max_concurrent") or 1):
+        busy = self._busy_run_count(runs)
+        if busy >= int(state.get("max_concurrent") or 1):
             self._touch(active, state)
-            return {"action": "wait", "reason": f"{len(runs)} run(s) in flight"}
+            return {"action": "wait", "reason": f"{busy} run(s) in flight"}
         eligible = {mission["id"] for mission in self._eligible(state)}
         if not eligible:
             self._touch(active, state)
@@ -287,15 +420,12 @@ class Director:
                 continue
             if self._cooldown_left(row["mission_id"], row, active) > 0:
                 continue
-            entry = (active.get("missions", {}) or {}).get(row["mission_id"], {})
-            if self._still_parked(entry):
-                continue
             chosen = row
             break
         if chosen is None:
             self._touch(active, state)
             return {"action": "idle",
-                    "reason": "every candidate is in flight, cooling down, or parked"}
+                    "reason": "every candidate is in flight or cooling down"}
         return self._start(chosen, active, state)
 
     # -- eligibility -------------------------------------------------------
@@ -327,15 +457,56 @@ class Director:
         return ""
 
     # -- bookkeeping -------------------------------------------------------
-    @staticmethod
-    def _still_parked(entry: dict) -> bool:
-        """A park is a long rest, not a permanent stop. It clears on its own."""
-        if not entry.get("parked"):
-            return False
-        parked_at = float(entry.get("parked_at") or 0.0)
-        if parked_at and time.time() - parked_at >= RESUME_AFTER:
-            return False
-        return True
+    def _clear_parks(self, active: dict) -> None:
+        """Drop any legacy parked flags so active missions stay in rotation."""
+        missions = dict(active.get("missions") or {})
+        changed = False
+        for mission_id, entry in list(missions.items()):
+            if not entry.get("parked"):
+                continue
+            entry = dict(entry)
+            entry["parked"] = False
+            entry.pop("parked_at", None)
+            missions[mission_id] = entry
+            changed = True
+            try:
+                self.server.index.add_director_log(
+                    "unpark", "continuous hunt resumed; parks disabled",
+                    mission_id=mission_id)
+            except Exception:  # noqa: BLE001
+                pass
+        if changed:
+            active["missions"] = missions
+            self.server.index.patch_director_state(active=active)
+
+    def _refresh_knowledge_if_due(self, state: dict) -> None:
+        """Pull public research feeds on a cadence so the mesh keeps learning."""
+        active = dict(state.get("active") or {})
+        meta = dict(active.get("meta") or {})
+        last = float(meta.get("knowledge_refreshed_at") or 0.0)
+        if last and time.time() - last < KNOWLEDGE_REFRESH_EVERY:
+            return
+        try:
+            from .. import feedwatch as feedwatch_module
+
+            result = feedwatch_module.refresh(self.server.index, limit=20)
+            meta["knowledge_refreshed_at"] = time.time()
+            meta["knowledge_last"] = {
+                "added": int(result.get("new") or 0),
+                "sources": result.get("sources") or [],
+                "errors": len(result.get("errors") or []),
+            }
+            active["meta"] = meta
+            self.server.index.patch_director_state(active=active)
+            self.server.index.add_director_log(
+                "knowledge", "refreshed public research feeds",
+                data=meta.get("knowledge_last") or {})
+        except Exception as exc:  # noqa: BLE001 - learning must not stop hunts
+            try:
+                self.server.index.add_director_log(
+                    "knowledge-error", f"{type(exc).__name__}: {exc}")
+            except Exception:  # noqa: BLE001
+                pass
 
     def _busy(self, mission_id: str, active: dict) -> bool:
         for entry in (active.get("runs") or {}).values():
@@ -357,18 +528,21 @@ class Director:
 
         This is not a provider probe: a probe costs money and can rate-limit
         the key the hunt needs. It is an observation of what the brain loop
-        already experienced. No failure in the window means the gate is open,
-        which keeps a fresh install and a quiet brain from being downgraded.
+        already experienced. Transient free-tier 429s never close the gate —
+        MoE walks sibling models and other TokenHarbor keys. Only repeated
+        hard failures with no later success downgrade a model-only brain.
         """
         try:
             rows = self.server.index.list_director_log(limit=250)
         except Exception:  # noqa: BLE001 - a broken log must not stop the hunt
-            return {"available": True, "reason": "journal unavailable"}
+            return {"available": True, "reason": "journal unavailable",
+                    "soft_failures": 0, "hard_failures": 0}
         now = time.time()
         last_success = -1.0
         wait_at = -1.0
         wait_text = ""
-        failures = 0
+        hard_failures = 0
+        soft_failures = 0
         for row in rows:
             try:
                 parsed = calendar.timegm(time.strptime(
@@ -382,20 +556,30 @@ class Director:
             if kind == "brain" and str((row.get("data") or {}).get("model") or ""):
                 last_success = max(last_success, age)
             elif kind == "brain-wait":
-                failures += 1
+                message = str(row.get("message") or "")
+                soft = any(token in message.lower()
+                           for token in ("429", "rate limit", "rate_limited",
+                                         "too many requests"))
+                if soft:
+                    soft_failures += 1
+                else:
+                    hard_failures += 1
                 if age > wait_at:
                     wait_at = age
-                    wait_text = str(row.get("message") or "")[:200]
-        if failures >= MODEL_GATE_FAILURES and (last_success < 0
-                                                or wait_at < last_success):
-            # Smaller age means newer. A failure is authoritative only when
-            # it is newer than the last successful brain turn.
-            return {"available": False, "failures": failures,
+                    wait_text = message[:200]
+        # Soft 429s are MoE rotation noise — never close the gate on them alone.
+        if hard_failures >= MODEL_GATE_FAILURES and (last_success < 0
+                                                     or wait_at < last_success):
+            return {"available": False, "failures": hard_failures,
+                    "hard_failures": hard_failures, "soft_failures": soft_failures,
                     "reason": wait_text or "no model answered recently",
                     "window_seconds": int(MODEL_GATE_WINDOW)}
-        return {"available": True, "failures": failures,
-                "reason": "a model answered recently" if last_success >= 0
-                          else "no recent model failure"}
+        reason = "a model answered recently" if last_success >= 0 \
+            else ("free-tier rate limits only; MoE still rotating"
+                  if soft_failures else "no recent model failure")
+        return {"available": True, "failures": hard_failures,
+                "hard_failures": hard_failures, "soft_failures": soft_failures,
+                "reason": reason}
 
     def _gate_mode(self, mode: str) -> tuple[str, str]:
         """Downgrade a model-only brain to the deterministic hunt."""
@@ -426,8 +610,63 @@ class Director:
                 mission_id=mission_id, status="open", limit=1)[1]
         except Exception:  # noqa: BLE001
             leads = 0
+        graph_nodes = graph_edges = covered = 0
+        try:
+            graph_nodes = len(self.server.index.list_graph_nodes(mission_id))
+            graph_edges = len(self.server.index.list_graph_edges(mission_id))
+        except Exception:  # noqa: BLE001
+            pass
+        try:
+            from .. import checklists as checklists_module
+
+            counts = (checklists_module.summary(self.server.index, mission_id)
+                      or {}).get("counts") or {}
+            covered = (int(counts.get("covered") or 0)
+                       + int(counts.get("vulnerable") or 0)
+                       + int(counts.get("in_progress") or 0))
+        except Exception:  # noqa: BLE001
+            pass
         return {"steps": steps, "notes": notes, "leads": int(leads or 0),
-                "findings": int(mission.get("finding_count") or 0)}
+                "findings": int(mission.get("finding_count") or 0),
+                "graph_nodes": graph_nodes, "graph_edges": graph_edges,
+                "covered": covered}
+
+    def _queue_deepen(self, mission_id: str, mstate: dict) -> None:
+        """When a mission stalls, push a deeper angle instead of stopping."""
+        hints: list[str] = []
+        try:
+            endpoints = self.server.index.list_graph_nodes(
+                mission_id, kind="endpoint")[:8]
+            for node in endpoints:
+                label = str(node.get("label") or node.get("name") or "")[:80]
+                if label:
+                    hints.append(label)
+        except Exception:  # noqa: BLE001
+            pass
+        if not hints:
+            hints = ["auth surfaces", "API object IDs", "OAuth callbacks",
+                     "cloud metadata SSRF only after URL sinks are mapped"]
+        body = (
+            "Deepen continuous hunt (stall pivot): probe distinct angles on "
+            + "; ".join(hints[:5])
+            + ". Do not recreate existing open hypotheses. Prefer coverage "
+            "gaps, auth/IDOR/OAuth, and PoC-gated promotion. Never stop."
+        )
+        try:
+            existing = self.server.index.list_directions(
+                mission_id, status="queued", limit=20)
+            if any("Deepen continuous hunt" in str(d.get("body") or "")
+                   for d in existing):
+                return
+            self.server.index.create_direction(
+                mission_id, body, created_by="agent:director")
+            self.server.index.add_director_log(
+                "deepen", "queued deepen direction after stall",
+                mission_id=mission_id,
+                data={"no_progress": mstate.get("no_progress"),
+                      "hints": hints[:5]})
+        except Exception:  # noqa: BLE001
+            pass
 
     def _reap(self) -> list[dict]:
         """Retire finished runs and update each mission's progress counters."""
@@ -446,15 +685,19 @@ class Director:
             after = self._progress(mission_id)
             if run and run.get("status") == "failed":
                 mstate["fails"] = int(mstate.get("fails") or 0) + 1
+            else:
+                mstate["fails"] = 0
             if before and all(before.get(key) == after.get(key) for key in after):
                 mstate["no_progress"] = int(mstate.get("no_progress") or 0) + 1
             else:
                 mstate["no_progress"] = 0
             mstate["progress"] = after
-            if (mstate.get("no_progress", 0) >= NO_PROGRESS_LIMIT
-                    or mstate.get("fails", 0) >= MAX_MISSION_FAILS):
-                mstate["parked"] = True
-                mstate["parked_at"] = time.time()
+            # Never park. On a stall, deepen and keep hunting.
+            mstate["parked"] = False
+            mstate.pop("parked_at", None)
+            if int(mstate.get("no_progress") or 0) >= STALL_DEEPEN_AFTER:
+                self._queue_deepen(mission_id, mstate)
+                mstate["no_progress"] = 0
             missions[mission_id] = mstate
             runs.pop(run_id, None)
             status = (run or {}).get("status", "missing")
@@ -466,15 +709,10 @@ class Director:
                 data={"status": status, "actions": counts.get("actions", 0),
                       "stop": counts.get("stop", ""),
                       "no_progress": mstate.get("no_progress", 0),
-                      "parked": bool(mstate.get("parked"))})
+                      "parked": False})
             # Every finished run matures the mission: rebuild the graph, the
             # target profile, the campaign stage, and the shared memory.
             self._mature(mission_id)
-            if mstate.get("parked"):
-                self.server.index.add_director_log(
-                    "parked",
-                    "mission parked after no progress or repeated failures",
-                    mission_id=mission_id, run_id=run_id)
             finished.append({"run_id": run_id, "mission_id": mission_id,
                              "status": status})
         if finished:
@@ -512,17 +750,79 @@ class Director:
                 target_module.build_profile(self.server.index, mission_id)
             except ValueError:
                 pass  # a mission without a usable target has no profile
+            # If the mission still has almost no host nodes, seed a web2root
+            # surface map so the next runs have assets to reason over.
+            try:
+                hosts = self.server.index.list_graph_nodes(mission_id, kind="host")
+                if len(hosts) < 2:
+                    from .. import web2root as web2root_module
+
+                    mapped = web2root_module.map_surface(
+                        self.server.index, mission_id, depth="standard",
+                        probe_limit=25)
+                    out["web2root"] = {
+                        "hosts_live": mapped.get("hosts_live"),
+                        "hosts_discovered": mapped.get("hosts_discovered"),
+                    }
+            except Exception:  # noqa: BLE001 - mapping must not stop maturing
+                pass
+            # After a foothold / exploit stage, queue a post-ex plan so the
+            # next autonomous run continues lateral/cloud/identity work.
+            try:
+                stage = (campaign_module.stage_of(self.server.index, mission_id)
+                         or {}).get("stage")
+                if stage in {"exploit", "chain"}:
+                    from .. import postex as postex_module
+
+                    plan = postex_module.plan(self.server.index, mission_id,
+                                              limit=5)
+                    ready = [o for o in (plan.get("objectives") or [])
+                             if o.get("ready")]
+                    if ready:
+                        body = (
+                            "Post-exploitation continue: "
+                            + "; ".join(
+                                f"{o.get('name')} ({o.get('why')})"
+                                for o in ready[:3])
+                            + ". Prefer gated modules; do not widen scope."
+                        )
+                        existing = self.server.index.list_directions(
+                            mission_id, status="queued", limit=20)
+                        if not any("Post-exploitation continue" in str(
+                                d.get("body") or "") for d in existing):
+                            direction = self.server.index.create_direction(
+                                mission_id, body, created_by="agent:postex")
+                            out["postex_direction"] = direction.get("id")
+                            out["postex_ready"] = len(ready)
+            except Exception:  # noqa: BLE001
+                pass
+            try:
+                collapsed = self.server.index.collapse_duplicate_hypotheses(
+                    mission_id)
+                if collapsed.get("archived"):
+                    out["hypotheses_collapsed"] = collapsed
+            except Exception:  # noqa: BLE001
+                pass
             out["learned"] = kb_module.learn_from_mission(self.server.index,
                                                           mission_id)
             from .. import evolve as evolve_module
 
             out["expertise"] = evolve_module.mature_outcomes(self.server.index,
                                                              mission_id)
+            from .. import harness as harness_module
             from .. import investigations as investigations_module
 
             synced = investigations_module.sync_from_notes(
                 self.server.index, mission_id, limit=2)
             out["leads_synced"] = synced["counts"]["created"]
+            # Compound operational memory from this run's real tool failures
+            # and repeated successes. Draft skills stay human-gated.
+            learned = harness_module.learn_tick(self.server.index,
+                                                mission_id=mission_id)
+            out["harness"] = {
+                "lessons": len(learned.get("lessons_created") or []),
+                "skills": len((learned.get("skills") or {}).get("created") or []),
+            }
             stage = campaign_module.advance(self.server.index, mission_id)
             out["stage"] = stage["stage"]
             # In the hypotheses stage there are no open leads: turn the exploit
@@ -539,7 +839,8 @@ class Director:
                 data={"stage": stage["stage"], "learned": out["learned"],
                       "verified_paths": stage["verified_paths"],
                       "open_leads": stage["open_leads"],
-                      "leads_synced": out.get("leads_synced", 0)})
+                      "leads_synced": out.get("leads_synced", 0),
+                      "harness": out.get("harness") or {}})
         except Exception as exc:  # noqa: BLE001 - maturing must not stop the loop
             try:
                 self.server.index.add_director_log(

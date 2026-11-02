@@ -1,10 +1,8 @@
 # The evidence graph and attack paths
 
-Penligent calls this attack-path management. NetCast3r's version keeps one
-rule the public material does not describe: every node and every edge is
-either derived from a real observation or added explicitly by an agent, and
-every edge records that provenance and a confidence. The graph never presents
-a guess as a fact.
+Every node and every edge is either derived from a real observation or added
+explicitly by an agent, and every edge records that provenance and a
+confidence. The graph never presents a guess as a fact.
 
 ## Nodes and edges
 

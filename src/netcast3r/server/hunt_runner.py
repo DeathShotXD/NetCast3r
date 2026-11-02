@@ -136,8 +136,47 @@ class HuntRunner:
                    (headers.get("server"), headers.get("x-powered-by"),
                     headers.get("via"), title) if value]
         signals = [value for value in signals if value]
+        # Enrich signals from the evidence graph so continuous hunts rotate
+        # through auth, API, and tech-specific angles instead of two staples.
+        graph_paths: list[str] = []
+        try:
+            for node in self.server.index.list_graph_nodes(
+                    mission_id, kind="technology")[:12]:
+                label = str(node.get("label") or node.get("name") or "").strip()
+                if label:
+                    signals.append(label.lower())
+            for node in self.server.index.list_graph_nodes(
+                    mission_id, kind="endpoint")[:20]:
+                label = str(node.get("label") or node.get("name") or "").strip()
+                if not label:
+                    continue
+                graph_paths.append(label)
+                low = label.lower()
+                if any(token in low for token in
+                       ("/auth", "oauth", "oidc", "login", "sso", "callback",
+                        "consent", "token", "session")):
+                    signals.extend(["oauth", "auth", "session"])
+                if "/api" in low or "graphql" in low:
+                    signals.extend(["api", "idor", "bola"])
+                if any(token in low for token in
+                       ("upload", "import", "webhook", "proxy", "fetch", "pdf")):
+                    signals.append("ssrf")
+        except Exception:  # noqa: BLE001 - graph enrichment is best effort
+            pass
+        # De-dupe signals while preserving order.
+        seen_sig: set[str] = set()
+        signals = [s for s in signals
+                   if not (s in seen_sig or seen_sig.add(s))]
 
         safe_paths = ["/robots.txt", "/.well-known/security.txt", "/sitemap.xml"]
+        # Rotate a few graph endpoints into the safe surface pass.
+        for path in graph_paths:
+            if path.startswith("http"):
+                continue
+            if not path.startswith("/"):
+                path = "/" + path
+            if path not in safe_paths and len(safe_paths) < 8:
+                safe_paths.append(path.split("?", 1)[0][:120])
         surface = []
         for path in safe_paths:
             if cancel.is_set():
@@ -169,27 +208,63 @@ class HuntRunner:
         emit(Event(type="log", agent="hunt", stage="research",
                    payload={"text": "ranking research techniques and chains"}))
         techniques = self._call(registry, "technique_plan", {
-            "target": target, "signals": signals, "limit": 4})
+            "target": target, "signals": signals, "limit": 8})
         chains = self._call(registry, "chain_plan", {
             "target": target, "signals": signals, "limit": 3})
 
+        # Rotate which ranked techniques become leads across continuous runs.
+        run_count = 0
+        try:
+            mission = self.server.index.get_mission(mission_id) or {}
+            run_count = len(mission.get("runs") or [])
+        except Exception:  # noqa: BLE001
+            run_count = 0
+        ranked = list(techniques.get("items") or [])
+        if ranked:
+            offset = run_count % max(1, len(ranked))
+            ranked = ranked[offset:] + ranked[:offset]
+
+        open_titles: set[str] = set()
+        open_techs: set[str] = set()
+        try:
+            open_items, _ = self.server.index.list_hypotheses(
+                mission_id=mission_id, status="open", limit=200)
+            for item in open_items:
+                open_titles.add(str(item.get("title") or "").casefold())
+                tech = str(item.get("technique") or "").casefold()
+                if tech:
+                    open_techs.add(tech)
+        except Exception:  # noqa: BLE001
+            pass
+
         hypotheses = []
-        for item in (techniques.get("items") or [])[:2]:
-            if cancel.is_set():
+        for item in ranked:
+            if cancel.is_set() or len(hypotheses) >= 2:
                 break
+            title = f"Test {item['title']} on {host}"
+            tech_id = str(item.get("id") or "")
+            if title.casefold() in open_titles:
+                continue
+            if tech_id.casefold() in open_techs:
+                continue
             try:
                 hypothesis = self._call(registry, "hypothesis_create", {
-                    "title": f"Test {item['title']} on {host}",
+                    "title": title,
                     "target": target, "mission_id": mission_id,
-                    "technique": item["id"],
+                    "technique": tech_id,
                     "rationale": ", ".join(item.get("why") or []) or item.get("class", ""),
                     "expected": item.get("proof") or "a reproducible effect",
                 })
             except RuntimeError:
                 continue
-            hypotheses.append(hypothesis)
-            emit(Event(type="log", agent="hunt", stage="hypotheses", payload={
-                "text": f"hypothesis: {hypothesis.get('title')}"}))
+            # create_hypothesis may return an existing open lead; only count new.
+            if hypothesis.get("id") and title.casefold() not in open_titles:
+                hypotheses.append(hypothesis)
+                open_titles.add(title.casefold())
+                if tech_id:
+                    open_techs.add(tech_id.casefold())
+                emit(Event(type="log", agent="hunt", stage="hypotheses", payload={
+                    "text": f"hypothesis: {hypothesis.get('title')}"}))
 
         summary = {
             "mode": "hunt", "target": target, "title": title,
