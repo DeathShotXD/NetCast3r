@@ -35,6 +35,28 @@ shared knowledge, and **candidates** with raw evidence. `toolbox_processes` and
 declared endpoint and parameter as graph nodes, so a scoped API assessment starts
 from the published surface instead of crawling it.
 
+## Source-to-sink call chains
+
+`sourceflow_scan` follows remote input through a local Python source tree. It
+starts at a Flask or FastAPI route, tracks the `request` object through
+assignments, branches, function arguments, and return values, and stops at a
+real sink: `eval`/`exec`, shell execution, string-built SQL, SSRF, template
+rendering, unsafe deserialisation, file access, or an open redirect.
+
+The output is a chain, not a pattern match:
+
+- the route and file that reach the sink;
+- the exact source expression and assignment lines;
+- the sink line, severity, and confidence;
+- only routes and functions actually reachable from a route.
+
+Safe parameterised SQL and `yaml.safe_load`/`SafeLoader` are deliberately not
+reported. A lead still needs a reachable request and a reviewer; source flow
+never creates a finding.
+
+- `GET /api/v1/sourceflow?path=...`
+- MCP `sourceflow_scan`
+
 ## Program and scope ingestion
 
 `program_preview` and `program_import` normalise a HackerOne, Bugcrowd,

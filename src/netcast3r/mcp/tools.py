@@ -1027,6 +1027,21 @@ def codeaudit_rules(ctx: ToolContext, args: dict) -> dict:
                      "to record a reviewed exception.")}
 
 
+def sourceflow_scan(ctx: ToolContext, args: dict) -> dict:
+    """Trace Python remote input to a dangerous sink. Local, read-only."""
+    from .. import sourceflow
+
+    root = _guard_local_path(ctx, str(args.get("path") or "").strip() or str(ctx.base),
+                             allow_base=True)
+    if not Path(root).exists():
+        raise ToolError("invalid_arguments", f"path does not exist: {root}")
+    try:
+        return sourceflow.scan(
+            root, max_files=int(args.get("max_files") or sourceflow.MAX_FILES))
+    except ValueError as exc:
+        raise ToolError("sourceflow_failed", str(exc))
+
+
 def diagnostics(ctx: ToolContext, args: dict) -> dict:
     return _call(ctx, "GET", "/api/v1/diagnostics")
 
@@ -3088,6 +3103,7 @@ _HANDLERS.update({
     "connect_info": connect_info,
     "codeaudit_scan": codeaudit_scan,
     "codeaudit_rules": codeaudit_rules,
+    "sourceflow_scan": sourceflow_scan,
     "diagnostics": diagnostics,
     "expertise_profile": expertise_profile,
     "taxii_collections": taxii_collections,
@@ -4014,6 +4030,17 @@ TOOLS: tuple[Tool, ...] = (
                   "extensions": _array("file extensions to include", _string("e.g. .py")),
                   "max_files": _integer("file cap", 1, 20000, codeaudit.MAX_FILES)}),
          "codeaudit_scan", read_only=True),
+    Tool("sourceflow_scan", "Trace Python input to a dangerous sink",
+         "Walk a local Python source tree and follow remote input from a route "
+         "request through assignments, branches, function arguments, and "
+         "return values to a code, shell, SQL, SSRF, template, deserialisation, "
+         "file, or redirect sink. Returns the actual chain, severity, and "
+         "confidence. A lead is not a finding; it still needs a reachable route "
+         "and a working request.",
+         "low", "workspace",
+         _schema({"path": _string("source directory, defaults to the workspace"),
+                  "max_files": _integer("maximum files", 1, 2000, 2000)}, []),
+         "sourceflow_scan", read_only=True),
     Tool("codeaudit_rules", "List source-audit rules",
          "List every static rule the source auditor applies, with its severity and the "
          "fix it recommends. Low risk and read-only.",

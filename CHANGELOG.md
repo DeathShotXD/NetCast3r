@@ -6,6 +6,13 @@ Notable changes to NetCast3r, newest first.
 
 ### Added
 
+- **Python source-to-sink call chains**: `sourceflow_scan` starts at a Flask or
+  FastAPI route, follows the `request` object through assignments, branches,
+  arguments, and returns, and reports the actual chain into eval/exec, shell,
+  string-built SQL, SSRF, template, deserialisation, file, or redirect sinks.
+  Only route-reachable functions are analysed; safe parameterised SQL and safe
+  YAML loaders are not reported. `GET /api/v1/sourceflow` and MCP
+  `sourceflow_scan` (218 tools).
 - **Program brief ingestion**: `program_preview` and `program_import` parse a
   HackerOne, Bugcrowd, Intigriti, YesWeHack, or Immunefi CSV/JSON export, or a
   pasted brief, into mission scope. Exclusions apply immediately; a new

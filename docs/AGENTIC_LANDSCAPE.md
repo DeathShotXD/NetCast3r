@@ -182,9 +182,9 @@ The missing pieces are not "more agents." They are:
 
 ### P1 - make findings provable
 
-- Source call-chain audit for Python, JavaScript/TypeScript, PHP, Java, Go,
-  and Ruby: entry point -> propagation -> sink, with a confidence and a
-  suggested test.
+- Source call-chain audit: the Python route-to-sink tracer is implemented
+  (`sourceflow_scan`); JavaScript/TypeScript, PHP, Java, Go, and Ruby front
+  ends are next. Each chain carries a confidence and a suggested test.
 - Sandbox runtime: per-run container, read-only target mount for source
   audits, evidence volume, no host secrets.
 - PoC builder for every candidate class: HTTP replay, browser script,

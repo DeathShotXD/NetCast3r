@@ -1910,6 +1910,17 @@ class Server:
             from .. import codeaudit as codeaudit_module
             return _json({"items": codeaudit_module.rules()})
 
+        @add("GET", r"/api/v1/sourceflow")
+        def sourceflow_scan(ctx):
+            from .. import sourceflow as sourceflow_module
+            path = str(ctx.query.get("path") or "").strip() or str(self.index.path.parent)
+            try:
+                return _json(sourceflow_module.scan(
+                    path, max_files=_int_or(ctx.query.get("max_files"),
+                                            sourceflow_module.MAX_FILES)))
+            except ValueError as exc:
+                return _problem(400, str(exc))
+
         @add("GET", r"/api/v1/connect")
         def connect(ctx):
             return _json(_connect_info(self, ctx))
