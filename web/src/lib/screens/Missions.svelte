@@ -3,7 +3,7 @@
   import { api } from '../api';
   import { store } from '../state.svelte';
   import { ago, sevColor, statusLabel } from '../format';
-  import type { AgentStatus, Approval, Autonomy, Campaign, Candidate, CoverageSummary, Direction, ExploitPlan, GraphNode, GraphPath, Mission, MissionAgent, MissionGraph, MissionStatus, ToolCall } from '../types';
+  import type { AgentStatus, Approval, Autonomy, Campaign, Candidate, CoverageSummary, Direction, ExploitPlan, GraphNode, GraphPath, Mission, MissionAgent, MissionGraph, MissionStatus, ProgramPreview, ToolCall } from '../types';
   import Icon from '../ui/Icon.svelte';
   import Sparkline from '../ui/Sparkline.svelte';
 
@@ -45,11 +45,17 @@
   let loading = $state(true);
   let error = $state('');
   let filter = $state<Filter>('all');
-  let detailTab = $state<'overview' | 'runs' | 'approvals' | 'graph' | 'exploits' | 'candidates' | 'coverage' | 'console' | 'tools' | 'agent'>('overview');
+  let detailTab = $state<'overview' | 'runs' | 'approvals' | 'graph' | 'exploits' | 'candidates' | 'coverage' | 'program' | 'console' | 'tools' | 'agent'>('overview');
   let graph = $state<MissionGraph | null>(null);
   let graphBusy = $state('');
   let coverage = $state<CoverageSummary | null>(null);
   let coverageBusy = $state('');
+  let programBrief = $state('');
+  let programFilename = $state('');
+  let programPlatform = $state('other');
+  let programAllowExpand = $state(false);
+  let programPreview = $state<ProgramPreview | null>(null);
+  let programBusy = $state('');
   let campaign = $state<Campaign | null>(null);
   let directions = $state<Direction[]>([]);
   let toolCalls = $state<ToolCall[]>([]);
@@ -141,7 +147,13 @@
     busy = `open:${mission.id}`;
     const tab = detailTab;
     try {
+      const changedMission = selected?.id !== mission.id;
       selected = await api.mission(mission.id);
+      if (changedMission) {
+        programPreview = null;
+        programBrief = '';
+        coverage = null;
+      }
       agent = null;
       graph = null;
       directions = [];
@@ -463,6 +475,54 @@
       coverage = null;
     } finally {
       coverageBusy = '';
+    }
+  }
+
+  function programBody() {
+    return {
+      brief: programBrief,
+      filename: programFilename,
+      platform: programPlatform,
+      allow_expand: programAllowExpand
+    };
+  }
+
+  async function previewProgram() {
+    if (!selected) return;
+    if (!programBrief.trim()) {
+      store.toast('warn', 'paste a CSV, JSON export, or programme brief first');
+      return;
+    }
+    programBusy = 'preview';
+    try {
+      programPreview = await api.programPreview(selected.id, programBody());
+      const diff = programPreview.diff;
+      store.toast('ok', `${diff.add_in_scope.length} in scope, ${diff.add_exclusions.length} exclusion(s)${diff.requires_allow_expand.length ? `, ${diff.requires_allow_expand.length} would expand` : ''}`);
+    } catch (exc) {
+      programPreview = null;
+      void store.fail(exc instanceof Error ? exc.message : 'could not parse the brief');
+    } finally {
+      programBusy = '';
+    }
+  }
+
+  async function importProgram() {
+    if (!selected) return;
+    if (!programBrief.trim()) {
+      store.toast('warn', 'paste a CSV, JSON export, or programme brief first');
+      return;
+    }
+    programBusy = 'apply';
+    try {
+      const result = await api.programImport(selected.id, programBody());
+      programPreview = result;
+      selected = await api.mission(selected.id);
+      const added = result.applied?.added ?? 0;
+      store.toast('ok', `scope updated: ${added} entr${added === 1 ? 'y' : 'ies'}`);
+    } catch (exc) {
+      void store.fail(exc instanceof Error ? exc.message : 'could not apply the brief');
+    } finally {
+      programBusy = '';
     }
   }
 
@@ -906,6 +966,7 @@
               ['exploits', 'Exploits'],
               ['candidates', 'Candidates'],
               ['coverage', 'Coverage'],
+              ['program', 'Program'],
               ['console', 'Console'],
               ['tools', 'Tools'],
               ['agent', `Agent${agent && ['planning', 'running', 'paused', 'stopping'].includes(agent.status) ? ' *' : ''}`]
@@ -1235,6 +1296,102 @@
                 {:else}
                   <p class="obs-detail-note">Coverage could not be loaded.</p>
                 {/if}
+              </section>
+            {:else if detailTab === 'program'}
+              <section class="obs-detail-section">
+                <div class="obs-graph-head">
+                  <div>
+                    <h3>Program scope</h3>
+                    <p class="obs-graph-copy">
+                      Paste a HackerOne, Bugcrowd, Intigriti, YesWeHack, or Immunefi CSV/JSON export, or a programme brief. The preview is read-only. Applying an exclusion is safe; a new in-scope asset that the mission does not already cover needs the explicit expansion flag.
+                    </p>
+                  </div>
+                  {#if programPreview}
+                    <button class="obs-btn obs-btn-ghost" type="button" onclick={() => (programPreview = null)}>
+                      Clear
+                    </button>
+                  {/if}
+                </div>
+                <div class="obs-program-grid">
+                  <div class="obs-program-form">
+                    <label class="obs-field">
+                      <span>Brief</span>
+                      <textarea rows="10" bind:value={programBrief} placeholder="In scope&#10;- app.example.com&#10;&#10;Out of scope&#10;- staging.example.com"></textarea>
+                    </label>
+                    <div class="obs-form-row">
+                      <label class="obs-field">
+                        <span>Filename</span>
+                        <input bind:value={programFilename} placeholder="hackerone_scope.csv" />
+                      </label>
+                      <label class="obs-field">
+                        <span>Platform</span>
+                        <select bind:value={programPlatform}>
+                          <option value="other">Auto-detect</option>
+                          <option value="hackerone">HackerOne</option>
+                          <option value="bugcrowd">Bugcrowd</option>
+                          <option value="intigriti">Intigriti</option>
+                          <option value="yeswehack">YesWeHack</option>
+                          <option value="immunefi">Immunefi</option>
+                        </select>
+                      </label>
+                    </div>
+                    <label class="obs-program-check">
+                      <input type="checkbox" bind:checked={programAllowExpand} />
+                      <span>Authorise new in-scope assets outside the current mission scope</span>
+                    </label>
+                    <div class="obs-program-actions">
+                      <button class="obs-btn obs-btn-ghost" type="button" disabled={programBusy !== ''} onclick={() => void previewProgram()}>
+                        {programBusy === 'preview' ? 'Parsing...' : 'Preview'}
+                      </button>
+                      <button class="obs-btn obs-btn-primary" type="button" disabled={programBusy !== ''} onclick={() => void importProgram()}>
+                        {programBusy === 'apply' ? 'Applying...' : 'Apply to scope'}
+                      </button>
+                    </div>
+                  </div>
+                  <div class="obs-program-result">
+                    {#if programPreview}
+                      <div class="obs-program-counts">
+                        <span class="obs-chip" style="color:var(--obs-acid)">{programPreview.parsed.counts.in_scope} in scope</span>
+                        <span class="obs-chip" style="color:var(--obs-red)">{programPreview.parsed.counts.out_of_scope} excluded</span>
+                        <span class="obs-chip">{programPreview.parsed.platform}</span>
+                        <span class="obs-chip">{programPreview.parsed.source}</span>
+                      </div>
+                      {#if programPreview.parsed.rules.length}
+                        <div class="obs-program-block">
+                          <h4>Rules</h4>
+                          <ul>
+                            {#each programPreview.parsed.rules.slice(0, 6) as rule (rule)}
+                              <li>{rule}</li>
+                            {/each}
+                          </ul>
+                        </div>
+                      {/if}
+                      <div class="obs-program-block">
+                        <h4>Scope diff</h4>
+                        {#if programPreview.diff.add_in_scope.length}
+                          <p class="obs-program-line"><span class="obs-chip" style="color:var(--obs-acid)">add</span> {programPreview.diff.add_in_scope.join(', ')}</p>
+                        {/if}
+                        {#if programPreview.diff.add_exclusions.length}
+                          <p class="obs-program-line"><span class="obs-chip" style="color:var(--obs-red)">exclude</span> {programPreview.diff.add_exclusions.join(', ')}</p>
+                        {/if}
+                        {#if programPreview.diff.already_present.length}
+                          <p class="obs-program-line"><span class="obs-chip">already present</span> {programPreview.diff.already_present.join(', ')}</p>
+                        {/if}
+                        {#if programPreview.diff.requires_allow_expand.length}
+                          <p class="obs-program-line"><span class="obs-chip" style="color:var(--obs-orange)">needs expansion</span> {programPreview.diff.requires_allow_expand.join(', ')}</p>
+                        {/if}
+                        {#if !programPreview.diff.add_in_scope.length && !programPreview.diff.add_exclusions.length}
+                          <p class="obs-detail-note">No scope change. The brief is already represented on this mission.</p>
+                        {/if}
+                      </div>
+                    {:else}
+                      <div class="obs-program-empty">
+                        <span class="obs-eyebrow"><span class="tick"></span> Read-only preview</span>
+                        <p>Parse a brief to see the exact in-scope additions, exclusions, and assets held back because they would widen authorisation.</p>
+                      </div>
+                    {/if}
+                  </div>
+                </div>
               </section>
             {:else if detailTab === 'console'}
               <section class="obs-detail-section">

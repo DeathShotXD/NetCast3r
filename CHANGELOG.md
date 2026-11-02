@@ -6,6 +6,22 @@ Notable changes to NetCast3r, newest first.
 
 ### Added
 
+- **Program brief ingestion**: `program_preview` and `program_import` parse a
+  HackerOne, Bugcrowd, Intigriti, YesWeHack, or Immunefi CSV/JSON export, or a
+  pasted brief, into mission scope. Exclusions apply immediately; a new
+  in-scope asset is held back unless `allow_expand` is explicit. There is a
+  read-only preview route, a high-risk MCP tool, and a **Program** tab in the
+  Mission detail page. See [docs/CAPABILITIES.md](docs/CAPABILITIES.md).
+- **Model-health gate**: when the brain journal shows repeated model failures
+  and no newer answer, the director downgrades a model-only `swarm` or
+  `autopilot` choice to the deterministic `hunt` instead of burning another
+  run. `GET /api/v1/director` now reports `model_health`.
+- **General SARIF export**: `save_sarif` now accepts any finding shape (secret,
+  IDOR, source audit, exploit candidate), carries line numbers, confidence,
+  CWE, CVSS, and module metadata, and still scrubs paired secrets.
+- **Agentic landscape research**: [docs/AGENTIC_LANDSCAPE.md](docs/AGENTIC_LANDSCAPE.md)
+  compares PentAGI, PentestGPT, Strix, Shannon, Vulnhuntr, CAI, XBOW, and the
+  commercial field against NetCast3r, with a capability matrix and build order.
 - **The coverage engine**: a 103-item modern testing checklist the hunt actually
   closes. Grounded in OWASP WSTG v4.2, the API Security Top 10 2023, the LLM
   Top 10 2025, the PortSwigger Top 10 Web Hacking Techniques of 2025, cloud,

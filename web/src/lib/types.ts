@@ -526,6 +526,33 @@ export interface CoverageSummary {
 }
 
 
+export interface ProgramPreview {
+  mission_id: string;
+  parsed: {
+    platform: string;
+    handle: string;
+    name: string;
+    url: string;
+    in_scope: string[];
+    out_of_scope: string[];
+    rules: string[];
+    source: string;
+    warnings: string[];
+    counts: { in_scope: number; out_of_scope: number; rules: number };
+  };
+  diff: {
+    add_in_scope: string[];
+    add_exclusions: string[];
+    already_present: string[];
+    requires_allow_expand: string[];
+    would_expand: boolean;
+  };
+  allow_expand: boolean;
+  scope_before: string[];
+  scope_after: string[];
+  applied?: { added: number; scope: string[]; mission_id: string; actor: string };
+}
+
 export interface HostShellResult {
   command: string;
   cwd: string;

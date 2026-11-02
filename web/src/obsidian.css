@@ -7041,3 +7041,116 @@ html.nc-native .nc-tag {
   text-transform: uppercase;
   color: var(--obs-faint);
 }
+
+/* Programme scope ingestion */
+.obs-program-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.15fr) minmax(280px, 0.85fr);
+  gap: 18px;
+  margin-top: 14px;
+  padding-bottom: 64px;
+}
+
+.obs-program-form,
+.obs-program-result {
+  min-width: 0;
+}
+
+.obs-program-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.obs-program-form textarea {
+  min-height: 150px;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  line-height: 1.6;
+}
+
+.obs-program-check {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  color: var(--obs-text-2);
+  font-size: 10.5px;
+  line-height: 1.45;
+}
+
+.obs-program-check input {
+  margin-top: 2px;
+  accent-color: var(--obs-acid);
+}
+
+.obs-program-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.obs-program-result {
+  border: 1px solid var(--obs-line);
+  border-radius: 9px;
+  background: var(--obs-panel-2);
+  padding: 14px;
+}
+
+.obs-program-counts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+
+.obs-program-block + .obs-program-block {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--obs-line);
+}
+
+.obs-program-block h4 {
+  margin: 0 0 6px;
+  font-family: var(--mono);
+  font-size: 8px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--obs-faint);
+}
+
+.obs-program-block ul {
+  margin: 0;
+  padding-left: 16px;
+  color: var(--obs-text-2);
+  font-size: 10.5px;
+  line-height: 1.55;
+}
+
+.obs-program-line {
+  margin: 5px 0;
+  color: var(--obs-text-2);
+  font-size: 10.5px;
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+}
+
+.obs-program-empty {
+  display: flex;
+  min-height: 190px;
+  flex-direction: column;
+  justify-content: center;
+  gap: 8px;
+}
+
+.obs-program-empty p {
+  margin: 0;
+  color: var(--obs-faint);
+  font-size: 10.5px;
+  line-height: 1.55;
+}
+
+@media (max-width: 980px) {
+  .obs-program-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

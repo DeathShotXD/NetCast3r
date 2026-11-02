@@ -140,6 +140,25 @@ class RenderTests(unittest.TestCase):
         self.assertEqual(document["runs"][0]["results"][0]["ruleId"], "stripe_live")
         self.assertEqual(document["runs"][0]["results"][0]["level"], "error")
 
+    def test_sarif_accepts_a_generic_finding_with_a_line(self):
+        findings = [{
+            "title": "IDOR exposes another tenant invoice",
+            "severity": "medium",
+            "category": "idor",
+            "source": "src/api/invoices.py",
+            "line": 42,
+            "confidence": 0.9,
+            "module_id": "auth-idor",
+        }]
+        workdir = Path(tempfile.mkdtemp())
+        path = save_sarif(workdir, findings)
+        result = json.loads(path.read_text())["runs"][0]["results"][0]
+        self.assertEqual(result["ruleId"], "idor")
+        self.assertEqual(result["level"], "warning")
+        self.assertEqual(
+            result["locations"][0]["physicalLocation"]["region"]["startLine"], 42)
+        self.assertEqual(result["properties"]["module_id"], "auth-idor")
+
     def test_sarif_scrubs_a_paired_credential_from_title_and_source(self):
         pair = "SuperSecretPair"
         findings = [{

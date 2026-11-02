@@ -270,7 +270,17 @@ def save_jsonl(out_dir: str | Path, findings: list[dict]) -> Path:
     return path
 
 
-LEVELS = {"critical": "error", "high": "error", "medium": "warning", "low": "note"}
+LEVELS = {"critical": "error", "high": "error", "medium": "warning",
+          "low": "note", "info": "note", "informational": "note"}
+
+
+def _sarif_rule_id(finding: dict) -> str:
+    """A stable rule id for any finding, not only a secret type."""
+    raw = str(finding.get("rule_id") or finding.get("secret_type")
+              or finding.get("category") or finding.get("cwe")
+              or "netcast3r.finding")
+    clean = re.sub(r"[^A-Za-z0-9_.-]+", "-", raw).strip("-")
+    return clean[:100] or "netcast3r.finding"
 
 
 def save_sarif(out_dir: str | Path, findings: list[dict]) -> Path:
@@ -280,29 +290,54 @@ def save_sarif(out_dir: str | Path, findings: list[dict]) -> Path:
     rules: dict[str, dict] = {}
     results: list[dict] = []
     for finding in findings:
-        secret_type = finding.get("secret_type", "secret")
+        rule_id = _sarif_rule_id(finding)
+        secret_type = str(finding.get("secret_type") or "")
         value = str(finding.get("value", ""))
         pair = str(finding.get("pair_value") or "")
+        title = str(finding.get("title") or finding.get("summary")
+                    or "finding")[:500]
 
         def scrub(text):
-            return _scrub(_scrub(text, value), pair)
+            text = _scrub(text, value)
+            return _scrub(text, pair)
 
-        rules.setdefault(secret_type, {
-            "id": secret_type,
-            "name": secret_type,
-            "shortDescription": {"text": f"Exposed {secret_type} credential"},
+        description = str(finding.get("description") or finding.get("impact")
+                          or finding.get("proof") or title)[:2000]
+        source = str(finding.get("source") or finding.get("target")
+                     or finding.get("url") or "")
+        line = finding.get("line") or finding.get("start_line")
+        severity = str(finding.get("severity", "")).lower()
+        rules.setdefault(rule_id, {
+            "id": rule_id,
+            "name": rule_id,
+            "shortDescription": {
+                "text": (f"Exposed {secret_type} credential" if secret_type
+                         else title[:200])},
+            "fullDescription": {"text": scrub(description)},
             "helpUri": "https://github.com/DeathShotXD/NetCast3r",
+            "properties": {"tags": ["security"]},
         })
-        results.append({
-            "ruleId": secret_type,
-            "level": LEVELS.get(str(finding.get("severity", "")).lower(), "warning"),
-            "message": {"text": scrub(finding.get("title", "exposed credential"))},
-            "locations": [{
-                "physicalLocation": {
-                    "artifactLocation": {"uri": scrub(finding.get("source", ""))}
-                }
-            }],
-        })
+        physical = {"artifactLocation": {"uri": scrub(source)}}
+        try:
+            start = int(line)
+        except (TypeError, ValueError):
+            start = 0
+        if start > 0:
+            physical["region"] = {"startLine": start}
+        result = {
+            "ruleId": rule_id,
+            "level": LEVELS.get(severity, "warning"),
+            "message": {"text": scrub(title)},
+            "locations": [{"physicalLocation": physical}],
+            "properties": {},
+        }
+        for key in ("confidence", "status", "cwe", "cvss", "module_id",
+                    "technique", "source_kind"):
+            if finding.get(key) not in (None, "", []):
+                result["properties"][key] = finding[key]
+        if not result["properties"]:
+            result.pop("properties")
+        results.append(result)
     document = {
         "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
         "version": "2.1.0",

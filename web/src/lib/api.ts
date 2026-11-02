@@ -1,5 +1,5 @@
 import type {
-  BrainReply, Campaign, Candidate, ConnectInfo, Approval, CoverageSummary, Direction, DirectorLogEntry, DirectorStatus, ExploitPlan, Finding, HostShellResult, Inventory, KeyEntry, McpInfo, Meta, Mission, MissionAgent, MissionGraph, Paged, Provider, ProviderHealth, RevengKinds, RevengResult, Run, RunEvent, Submission, SubmissionSummary, ToolCall, Totals, TrendPoint, BrainTurn, BrainLoopStatus } from './types';
+  BrainReply, Campaign, Candidate, ConnectInfo, Approval, CoverageSummary, Direction, DirectorLogEntry, DirectorStatus, ExploitPlan, Finding, HostShellResult, Inventory, KeyEntry, McpInfo, Meta, Mission, MissionAgent, MissionGraph, Paged, ProgramPreview, Provider, ProviderHealth, RevengKinds, RevengResult, Run, RunEvent, Submission, SubmissionSummary, ToolCall, Totals, TrendPoint, BrainTurn, BrainLoopStatus } from './types';
 
 const BASE = '/api/v1';
 
@@ -159,6 +159,10 @@ export const api = {
     request<CoverageSummary>('GET', `/missions/${id}/coverage`),
   markCoverage: (id: string, body: Record<string, unknown>) =>
     request<Record<string, unknown>>('POST', `/missions/${id}/coverage`, body),
+  programPreview: (id: string, body: Record<string, unknown>) =>
+    request<ProgramPreview>('POST', `/missions/${id}/program/preview`, body),
+  programImport: (id: string, body: Record<string, unknown>) =>
+    request<ProgramPreview>('POST', `/missions/${id}/program`, body),
   hostCapabilities: () =>
     request<{ host: string; user: string; tools: Record<string, boolean> }>(
       'GET', '/host/capabilities'),
