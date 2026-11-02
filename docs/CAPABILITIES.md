@@ -54,6 +54,9 @@ Safe parameterised SQL and `yaml.safe_load`/`SafeLoader` are deliberately not
 reported. A lead still needs a reachable request and a reviewer; source flow
 never creates a finding.
 
+The same chains appear as `source-flow` observations in the **Reverse Lab**
+when a source tree is analysed, so the UI and the standalone tool agree.
+
 - `GET /api/v1/sourceflow?path=...`
 - MCP `sourceflow_scan`
 

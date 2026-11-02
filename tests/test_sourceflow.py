@@ -100,6 +100,17 @@ class SourceFlowTests(unittest.TestCase):
         self.assertEqual(result["count"], 1)
         self.assertIn("not a finding", result["note"])
 
+    def test_a_single_python_file_is_supported(self):
+        path = Path(tempfile.mkdtemp()) / "app.py"
+        path.write_text(
+            FLASK_HEAD
+            + "@app.route('/run')\n"
+              "def run():\n"
+              "    return eval(request.args['x'])\n")
+        result = sourceflow.scan(path)
+        self.assertEqual(result["files"], 1)
+        self.assertEqual(result["leads"][0]["file"], "app.py")
+
     def test_non_python_and_unknown_paths_are_handled(self):
         with self.assertRaises(ValueError):
             sourceflow.scan("/definitely/not/here")

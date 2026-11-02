@@ -402,8 +402,28 @@ def analyze_source(path: str, max_files: int = MAX_FILES) -> dict:
         files += 1
         languages[file.suffix.lower() or "(none)"] += 1
         _scan_text(text, rel, observations, endpoints, secrets)
+    flows = 0
+    try:
+        from . import sourceflow
+
+        traced = sourceflow.scan(root, max_files=min(max_files, sourceflow.MAX_FILES))
+        flows = int(traced.get("count") or 0)
+        for lead in traced.get("leads") or []:
+            _finding(
+                observations,
+                f"source flow: {lead['sink']} from {lead.get('route') or 'a route'}",
+                str(lead.get("severity") or "medium"), "source-flow",
+                str(lead.get("file") or ""), int(lead.get("line") or 0),
+                " -> ".join(lead.get("steps") or [])[:1200],
+                ("Confirm the route is reachable and reproduce the request with a "
+                 "safe test value before recording a finding."),
+                {"high": 0.85, "medium": 0.65}.get(
+                    str(lead.get("confidence")), 0.55))
+    except Exception:  # noqa: BLE001 - flow tracing must not hide the other checks
+        flows = 0
     return _result("source", str(root.resolve()), observations, endpoints, secrets,
-                   {"files": files, "languages": dict(languages.most_common(20))})
+                   {"files": files, "source_flows": flows,
+                    "languages": dict(languages.most_common(20))})
 
 
 def analyze_js(text: str, source: str = "<inline>") -> dict:

@@ -36,6 +36,25 @@ class SourceAnalysisTests(unittest.TestCase):
         for secret in result["secrets"]:
             self.assertIn("...", secret["preview"])
 
+    def test_source_tree_includes_route_to_sink_chains(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "app.py").write_text(
+                "from flask import Flask, request\n"
+                "app = Flask(__name__)\n"
+                "@app.route('/run')\n"
+                "def run():\n"
+                "    return eval(request.args['cmd'])\n")
+            result = reveng.analyze("source", str(root))
+        flows = [item for item in result["observations"]
+                 if item["category"] == "source-flow"]
+        self.assertEqual(len(flows), 1)
+        self.assertEqual(flows[0]["severity"], "critical")
+        self.assertIn("ROUTE /run", flows[0]["title"])
+        self.assertIn("eval()", flows[0]["title"])
+        self.assertIn("request.args", flows[0]["evidence"])
+        self.assertEqual(result["summary"]["source_flows"], 1)
+
     def test_single_javascript_file_uses_the_js_analyzer(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "bundle.js"

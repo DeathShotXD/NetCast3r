@@ -12,7 +12,8 @@ Notable changes to NetCast3r, newest first.
   string-built SQL, SSRF, template, deserialisation, file, or redirect sinks.
   Only route-reachable functions are analysed; safe parameterised SQL and safe
   YAML loaders are not reported. `GET /api/v1/sourceflow` and MCP
-  `sourceflow_scan` (218 tools).
+  `sourceflow_scan` (218 tools), and the same chains appear as `source-flow`
+  observations in the Reverse Lab.
 - **Program brief ingestion**: `program_preview` and `program_import` parse a
   HackerOne, Bugcrowd, Intigriti, YesWeHack, or Immunefi CSV/JSON export, or a
   pasted brief, into mission scope. Exclusions apply immediately; a new

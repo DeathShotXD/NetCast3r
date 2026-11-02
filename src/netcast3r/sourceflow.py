@@ -512,16 +512,22 @@ def analyze_text(text: str, filename: str = "<string>") -> dict:
 def scan(root: str | Path, max_files: int = MAX_FILES) -> dict:
     """Walk a source tree and return conservative source-to-sink leads."""
     base = Path(root)
-    if not base.exists() or not base.is_dir():
-        raise ValueError(f"source directory not found: {root}")
-    files = _files(base)[:max(1, min(int(max_files or MAX_FILES), MAX_FILES))]
+    if not base.exists():
+        raise ValueError(f"source path not found: {root}")
+    if base.is_file():
+        base_dir = base.parent
+        files = [base] if base.suffix.lower() == ".py" else []
+    else:
+        base_dir = base
+        files = _files(base)
+    files = files[:max(1, min(int(max_files or MAX_FILES), MAX_FILES))]
     all_leads: list[dict] = []
     errors: list[dict] = []
     for path in files:
         text = _read(path)
         if not text:
             continue
-        rel = str(path.relative_to(base))
+        rel = str(path.relative_to(base_dir))
         result = analyze_text(text, rel)
         if result.get("error"):
             errors.append({"file": rel, "error": result["error"]})
