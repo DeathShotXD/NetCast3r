@@ -6,22 +6,37 @@ Notable changes to NetCast3r, newest first.
 
 ### Added
 
+- **Leads and evidence**: a new **Leads** tab on the Mission detail page shows
+  every hypothesis with its status, proof criterion, related tool calls,
+  observations, runs, graph nodes, and finding link. `hypothesis_evidence`
+  returns the same record over MCP. "Open" is labelled as untested or
+  unresolved, never as a finding. The tab defaults to actionable leads and can
+  show archived history. **Download brief** exports the exact case file as
+  Markdown (`GET /api/v1/hypotheses/{id}/evidence.md`).
+- **Observation-to-lead sync**: recorded positive observations can become
+  visible hypotheses (`leads_sync`), with the source note id in the rationale,
+  duplicate detection, and no promotion. The director runs the same sync when
+  a run matures, so a real observation no longer disappears into the log.
+- **Note-window fix**: mission notes now return the newest N records in
+  chronological order. The previous query returned the oldest N, which hid
+  recent observations from the brain, graph, and UI once a mission exceeded the
+  cap.
 - **Regression bench**: an offline deterministic corpus runs the real scope,
   source-audit, secret, checklist, and source-to-sink engines and reports
   precision, recall, F1, per-case diffs, and a release gate. It never touches a
   target and never changes the submission ledger. `GET /api/v1/bench` and MCP
-  `bench_run` (219 tools). See [docs/BENCH.md](docs/BENCH.md).
+  `bench_run` (222 tools). See [docs/BENCH.md](docs/BENCH.md).
 - **Python source-to-sink call chains**: `sourceflow_scan` starts at a Flask or
   FastAPI route, follows the `request` object through assignments, branches,
   arguments, and returns, and reports the actual chain into eval/exec, shell,
   string-built SQL, SSRF, template, deserialisation, file, or redirect sinks.
   Only route-reachable functions are analysed; safe parameterised SQL and safe
   YAML loaders are not reported. `GET /api/v1/sourceflow` and MCP
-  `sourceflow_scan` (218 tools), and the same chains appear as `source-flow`
+  `sourceflow_scan` (222 tools), and the same chains appear as `source-flow`
   observations in the Reverse Lab.
 - **Program brief history**: every applied brief is persisted with its parsed
   assets, rules, diff, filename, actor, and time. `GET
-  /api/v1/missions/{id}/program/imports`, MCP `program_imports` (220 tools),
+  /api/v1/missions/{id}/program/imports`, MCP `program_imports` (222 tools),
   and an **Applied briefs** list in the Program tab.
 - **Program brief ingestion**: `program_preview` and `program_import` parse a
   HackerOne, Bugcrowd, Intigriti, YesWeHack, or Immunefi CSV/JSON export, or a

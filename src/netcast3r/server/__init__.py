@@ -751,6 +751,29 @@ class Server:
             hypothesis = self.index.get_hypothesis(ctx.params["id"])
             return _json(hypothesis) if hypothesis else _problem(404, "hypothesis not found")
 
+        @add("GET", r"/api/v1/hypotheses/(?P<id>[A-Za-z0-9_]+)/evidence")
+        def hypothesis_evidence(ctx):
+            from .. import investigations as investigations_module
+
+            try:
+                return _json(investigations_module.evidence(
+                    self.index, ctx.params["id"], limit=ctx.limit))
+            except ValueError as exc:
+                return _problem(404, str(exc))
+
+        @add("GET", r"/api/v1/hypotheses/(?P<id>[A-Za-z0-9_]+)/evidence.md")
+        def hypothesis_evidence_markdown(ctx):
+            from .. import investigations as investigations_module
+
+            try:
+                record = investigations_module.evidence(
+                    self.index, ctx.params["id"], limit=ctx.limit)
+                text = investigations_module.render_markdown(record)
+            except ValueError as exc:
+                return _problem(404, str(exc))
+            return Response(body=text.encode("utf-8"),
+                            content_type="text/markdown; charset=utf-8")
+
         @add("PATCH", r"/api/v1/hypotheses/(?P<id>[A-Za-z0-9_]+)")
         def patch_hypothesis(ctx):
             body = ctx.json()
@@ -1117,6 +1140,19 @@ class Server:
             return _json(discovery_module.extract_parameters(
                 self.index, ctx.params["id"],
                 limit=int(body.get("limit", 200) or 200)))
+
+        @add("POST", r"/api/v1/missions/(?P<id>[A-Za-z0-9_]+)/leads/sync")
+        def sync_leads(ctx):
+            from .. import investigations as investigations_module
+
+            body = ctx.json()
+            body = body if isinstance(body, dict) else {}
+            try:
+                return _json(investigations_module.sync_from_notes(
+                    self.index, ctx.params["id"],
+                    limit=int(body.get("limit") or 3)))
+            except ValueError as exc:
+                return _problem(404, str(exc))
 
         @add("GET", r"/api/v1/missions/(?P<id>[A-Za-z0-9_]+)/candidates")
         def candidates_list(ctx):

@@ -279,6 +279,19 @@ class DirectorTests(unittest.TestCase):
         self.assertIsNotNone(self.server.index.get_campaign(mission["id"]))
         self.assertTrue(self.server.index.list_graph_nodes(mission["id"]))
 
+    def test_maturing_a_run_surfaces_positive_observations_as_leads(self):
+        mission = self.mission("observation")
+        self.server.index.add_agent_note(
+            mission["id"], "swarm.observation", "Open redirect on callback",
+            "GET https://example.com/api/callback?next=https://example.com/x "
+            "returned a redirect to the external host.")
+        out = self.director._mature(mission["id"])
+        self.assertGreaterEqual(out.get("leads_synced", 0), 1)
+        leads, total = self.server.index.list_hypotheses(
+            mission_id=mission["id"], limit=20)
+        self.assertGreaterEqual(total, 1)
+        self.assertTrue(any("Open redirect" in lead["title"] for lead in leads))
+
     def test_a_queued_direction_becomes_the_run_goal(self):
         mission = self.mission("directed")
         prior = self.server.index.create_run("http://127.0.0.1:9/", {"mode": "hunt"})

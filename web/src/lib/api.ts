@@ -1,5 +1,5 @@
 import type {
-  BenchResult, BrainReply, Campaign, Candidate, ConnectInfo, Approval, CoverageSummary, Direction, DirectorLogEntry, DirectorStatus, ExploitPlan, Finding, HostShellResult, Inventory, KeyEntry, McpInfo, Meta, Mission, MissionAgent, MissionGraph, Paged, ProgramImport, ProgramPreview, Provider, ProviderHealth, RevengKinds, RevengResult, Run, RunEvent, Submission, SubmissionSummary, ToolCall, Totals, TrendPoint, BrainTurn, BrainLoopStatus } from './types';
+  BenchResult, BrainReply, Campaign, Candidate, ConnectInfo, Approval, CoverageSummary, Direction, DirectorLogEntry, DirectorStatus, ExploitPlan, Finding, HostShellResult, Hypothesis, HypothesisEvidence, Inventory, KeyEntry, McpInfo, Meta, Mission, MissionAgent, MissionGraph, Paged, ProgramImport, ProgramPreview, Provider, ProviderHealth, RevengKinds, RevengResult, Run, RunEvent, Submission, SubmissionSummary, ToolCall, Totals, TrendPoint, BrainTurn, BrainLoopStatus } from './types';
 
 const BASE = '/api/v1';
 
@@ -160,6 +160,13 @@ export const api = {
   markCoverage: (id: string, body: Record<string, unknown>) =>
     request<Record<string, unknown>>('POST', `/missions/${id}/coverage`, body),
   bench: () => request<BenchResult>('GET', '/bench?gate=1'),
+  hypotheses: (missionId: string) =>
+    request<Paged<Hypothesis>>('GET', `/hypotheses?mission_id=${missionId}&size=100`),
+  hypothesisEvidence: (id: string) =>
+    request<HypothesisEvidence>('GET', `/hypotheses/${id}/evidence`),
+  syncLeads: (id: string, limit = 3) =>
+    request<{ counts: { created: number; skipped: number } }>(
+      'POST', `/missions/${id}/leads/sync`, { limit }),
   programPreview: (id: string, body: Record<string, unknown>) =>
     request<ProgramPreview>('POST', `/missions/${id}/program/preview`, body),
   programImport: (id: string, body: Record<string, unknown>) =>

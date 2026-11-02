@@ -61,6 +61,16 @@ class MissionIndexTests(unittest.TestCase):
         self.assertEqual(updated["last_run_id"], "run_1")
         self.assertEqual(updated["runs"][0]["id"], "run_1")
 
+    def test_agent_notes_return_the_newest_window_in_order(self):
+        mission = self.index.create_mission("Operation Test", "example.com")
+        for index in range(6):
+            self.index.add_agent_note(
+                mission["id"], "observation", f"note {index}",
+                f"body {index}")
+        notes = self.index.list_agent_notes(mission["id"], limit=3)
+        self.assertEqual([note["title"] for note in notes],
+                         ["note 3", "note 4", "note 5"])
+
     def test_approval_decision_cannot_be_replayed(self):
         mission = self.index.create_mission("Operation Test", "example.com")
         approval = self.index.create_approval(

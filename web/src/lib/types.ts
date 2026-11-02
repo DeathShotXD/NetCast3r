@@ -526,6 +526,52 @@ export interface CoverageSummary {
 }
 
 
+export interface Hypothesis {
+  id: string;
+  mission_id: string;
+  target: string;
+  title: string;
+  technique: string;
+  rationale: string;
+  expected: string;
+  status: string;
+  finding_id: string | null;
+  created_at: string;
+  updated_at: string;
+  test: string | null;
+  result: string | null;
+}
+
+export interface HypothesisNote {
+  id: string;
+  kind: string;
+  title: string;
+  body: string;
+  run_id: string;
+  created_at: string;
+  matched_terms: string[];
+}
+
+export interface HypothesisEvidence {
+  hypothesis: Hypothesis;
+  progress: string;
+  terms: string[];
+  counts: {
+    notes: number;
+    tool_calls: number;
+    runs: number;
+    graph_nodes: number;
+    graph_edges: number;
+  };
+  notes: HypothesisNote[];
+  tool_calls: ToolCall[];
+  runs: Array<Record<string, unknown>>;
+  graph_nodes: GraphNode[];
+  graph_edges: Array<Record<string, unknown>>;
+  finding: Finding | null;
+  note: string;
+}
+
 export interface BenchCaseResult {
   id: string;
   kind: string;
@@ -782,6 +828,7 @@ export interface ToolCall {
   error: string;
   duration_ms: number;
   created_at: string;
+  matched_terms?: string[];
 }
 
 export type SubmissionPlatform =

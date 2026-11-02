@@ -3,7 +3,7 @@
   import { api } from '../api';
   import { store } from '../state.svelte';
   import { ago, sevColor, statusLabel } from '../format';
-  import type { AgentStatus, Approval, Autonomy, Campaign, Candidate, CoverageSummary, Direction, ExploitPlan, GraphNode, GraphPath, Mission, MissionAgent, MissionGraph, MissionStatus, ProgramImport, ProgramPreview, ToolCall } from '../types';
+  import type { AgentStatus, Approval, Autonomy, Campaign, Candidate, CoverageSummary, Direction, ExploitPlan, GraphNode, GraphPath, Hypothesis, HypothesisEvidence, Mission, MissionAgent, MissionGraph, MissionStatus, ProgramImport, ProgramPreview, ToolCall } from '../types';
   import Icon from '../ui/Icon.svelte';
   import Sparkline from '../ui/Sparkline.svelte';
 
@@ -45,9 +45,19 @@
   let loading = $state(true);
   let error = $state('');
   let filter = $state<Filter>('all');
-  let detailTab = $state<'overview' | 'runs' | 'approvals' | 'graph' | 'exploits' | 'candidates' | 'coverage' | 'program' | 'console' | 'tools' | 'agent'>('overview');
+  let detailTab = $state<'overview' | 'runs' | 'approvals' | 'graph' | 'leads' | 'exploits' | 'candidates' | 'coverage' | 'program' | 'console' | 'tools' | 'agent'>('overview');
   let graph = $state<MissionGraph | null>(null);
   let graphBusy = $state('');
+  let hypotheses = $state<Hypothesis[]>([]);
+  let hypothesisEvidence = $state<HypothesisEvidence | null>(null);
+  let selectedHypothesis = $state('');
+  let leadsBusy = $state('');
+  let showArchivedLeads = $state(false);
+  const visibleHypotheses = $derived(
+    showArchivedLeads
+      ? hypotheses
+      : hypotheses.filter((item) => item.status !== 'archived' && item.technique !== 'observation')
+  );
   let coverage = $state<CoverageSummary | null>(null);
   let coverageBusy = $state('');
   let programBrief = $state('');
@@ -154,6 +164,9 @@
         programPreview = null;
         programBrief = '';
         coverage = null;
+        hypotheses = [];
+        hypothesisEvidence = null;
+        selectedHypothesis = '';
       }
       agent = null;
       graph = null;
@@ -321,6 +334,7 @@
     if (key === loadedKey) return;
     loadedKey = key;
     if (detailTab === 'graph') void loadGraph();
+    else if (detailTab === 'leads') void loadLeads();
     else if (detailTab === 'exploits') void loadExploits();
     else if (detailTab === 'candidates') void loadCandidates();
     else if (detailTab === 'coverage') void loadCoverage();
@@ -496,6 +510,67 @@
       platform: programPlatform,
       allow_expand: programAllowExpand
     };
+  }
+
+  async function loadLeads() {
+    if (!selected) return;
+    leadsBusy = 'load';
+    try {
+      hypotheses = (await api.hypotheses(selected.id)).items;
+      const visible = hypotheses.filter((item) => item.status !== 'archived'
+        && item.technique !== 'observation');
+      const current = hypotheses.find((item) => item.id === selectedHypothesis);
+      const first = current ?? visible.find((item) => item.status === 'open') ?? visible[0] ?? hypotheses[0];
+      selectedHypothesis = first?.id ?? '';
+      hypothesisEvidence = first ? await api.hypothesisEvidence(first.id) : null;
+    } catch {
+      hypotheses = [];
+      hypothesisEvidence = null;
+      selectedHypothesis = '';
+    } finally {
+      leadsBusy = '';
+    }
+  }
+
+  async function syncLeads() {
+    if (!selected) return;
+    leadsBusy = 'sync';
+    try {
+      const result = await api.syncLeads(selected.id, 3);
+      store.toast('ok', `${result.counts.created} new lead(s) from recorded observations`);
+      await loadLeads();
+    } catch (exc) {
+      void store.fail(exc instanceof Error ? exc.message : 'could not sync leads');
+    } finally {
+      leadsBusy = '';
+    }
+  }
+
+  async function openHypothesis(id: string) {
+    selectedHypothesis = id;
+    leadsBusy = id;
+    try {
+      hypothesisEvidence = await api.hypothesisEvidence(id);
+    } catch {
+      hypothesisEvidence = null;
+    } finally {
+      leadsBusy = '';
+    }
+  }
+
+  function callDetail(call: ToolCall): string {
+    const result = call.result as Record<string, unknown> | null;
+    const status = result && typeof result === 'object' ? result.status : '';
+    const target = String(call.args?.target || call.error || '');
+    const method = String(call.args?.method || 'GET');
+    return `${method} ${target}${status !== '' && status !== undefined ? ` -> HTTP ${status}` : ''}`;
+  }
+
+  function leadStatusColor(status: string): string {
+    if (status === 'supported' || status === 'promoted') return 'var(--obs-acid)';
+    if (status === 'refuted') return 'var(--obs-red)';
+    if (status === 'inconclusive') return 'var(--obs-orange)';
+    return 'var(--obs-violet-3)';
   }
 
   async function previewProgram() {
@@ -975,6 +1050,7 @@
               ['runs', `Runs ${selected.run_count}`],
               ['approvals', `Approvals ${selected.pending_approvals}`],
               ['graph', 'Graph'],
+              ['leads', 'Leads'],
               ['exploits', 'Exploits'],
               ['candidates', 'Candidates'],
               ['coverage', 'Coverage'],
@@ -1140,6 +1216,148 @@
                   <p class="obs-detail-note">
                     No candidate path yet. Record a falsifiable lead with hypothesis_create, then rebuild the graph.
                   </p>
+                {/if}
+              </section>
+            {:else if detailTab === 'leads'}
+              <section class="obs-detail-section">
+                <div class="obs-graph-head">
+                  <div>
+                    <h3>Leads and hypotheses</h3>
+                    <p class="obs-graph-copy">
+                      A lead is a falsifiable question, not a finding. Open means the proof has not been recorded, even when an agent has already reasoned about it. This view collects the exact notes, tool calls, runs, and graph nodes that mention the lead.
+                    </p>
+                  </div>
+                  <div class="flex flex-wrap items-center gap-2">
+                    <button class="obs-btn obs-btn-ghost" type="button" onclick={() => (showArchivedLeads = !showArchivedLeads)}>
+                      {showArchivedLeads ? 'Hide archived' : 'Show archived'}
+                    </button>
+                    <button class="obs-btn obs-btn-ghost" type="button" disabled={leadsBusy !== ''} onclick={() => void syncLeads()}>
+                      {leadsBusy === 'sync' ? 'Syncing...' : 'Sync observations'}
+                    </button>
+                    <button class="obs-btn obs-btn-ghost" type="button" onclick={() => void loadLeads()}>
+                      Refresh
+                    </button>
+                  </div>
+                </div>
+                {#if visibleHypotheses.length}
+                  <div class="obs-leads-layout">
+                    <div class="obs-leads-list">
+                      {#each visibleHypotheses as item (item.id)}
+                        <button
+                          type="button"
+                          class="obs-lead-card"
+                          class:active={selectedHypothesis === item.id}
+                          onclick={() => void openHypothesis(item.id)}
+                        >
+                          <span class="obs-lead-card-top">
+                            <span class="obs-chip" style="color:{leadStatusColor(item.status)}">{item.status}</span>
+                            {#if item.technique}<span class="obs-chip">{item.technique}</span>{/if}
+                          </span>
+                          <strong>{item.title}</strong>
+                          <small>{item.target || 'no endpoint'} - {ago(item.created_at)}</small>
+                          {#if item.rationale}<p>{item.rationale}</p>{/if}
+                        </button>
+                      {/each}
+                    </div>
+                    <div class="obs-lead-detail">
+                      {#if hypothesisEvidence}
+                        <div class="obs-lead-detail-head">
+                          <div>
+                            <span class="obs-eyebrow"><span class="tick"></span> Lead detail</span>
+                            <h4>{hypothesisEvidence.hypothesis.title}</h4>
+                          </div>
+                          <span class="obs-chip" style="color:{leadStatusColor(hypothesisEvidence.hypothesis.status)}">{hypothesisEvidence.hypothesis.status}</span>
+                        </div>
+                        <p class="obs-lead-progress">{hypothesisEvidence.progress}</p>
+                        <div class="obs-lead-counts">
+                          <span class="obs-chip">{hypothesisEvidence.counts.notes} note(s)</span>
+                          <span class="obs-chip">{hypothesisEvidence.counts.tool_calls} call(s)</span>
+                          <span class="obs-chip">{hypothesisEvidence.counts.runs} run(s)</span>
+                          <span class="obs-chip">{hypothesisEvidence.counts.graph_nodes} node(s)</span>
+                        </div>
+                        <div class="obs-lead-section">
+                          <h5>What would prove it</h5>
+                          <p>{hypothesisEvidence.hypothesis.expected || 'No proof criterion recorded.'}</p>
+                        </div>
+                        {#if hypothesisEvidence.hypothesis.test || hypothesisEvidence.hypothesis.result}
+                          <div class="obs-lead-section">
+                            <h5>Recorded test</h5>
+                            {#if hypothesisEvidence.hypothesis.test}<p>{hypothesisEvidence.hypothesis.test}</p>{/if}
+                            {#if hypothesisEvidence.hypothesis.result}<p class="mono">{hypothesisEvidence.hypothesis.result}</p>{/if}
+                          </div>
+                        {/if}
+                        {#if hypothesisEvidence.finding}
+                          <div class="obs-lead-section">
+                            <h5>Promoted finding</h5>
+                            <p><span class="obs-chip" style="color:var(--obs-acid)">{hypothesisEvidence.finding.id}</span> {hypothesisEvidence.finding.title}</p>
+                          </div>
+                        {/if}
+                        <div class="obs-lead-section">
+                          <h5>Relevant tool calls</h5>
+                          {#if hypothesisEvidence.tool_calls.length}
+                            <ul class="obs-lead-evidence">
+                              {#each hypothesisEvidence.tool_calls.slice(0, 12) as call (call.id)}
+                                <li>
+                                  <span class="obs-chip" style="color:{call.status === 'ok' ? 'var(--obs-acid)' : 'var(--obs-red)'}">{call.status}</span>
+                                  <strong>{call.tool}</strong>
+                                  <span class="mono">{callDetail(call)}</span>
+                                  {#if call.matched_terms?.length}<span class="obs-chip">{call.matched_terms.join(', ')}</span>{/if}
+                                  <small>{ago(call.created_at)}</small>
+                                </li>
+                              {/each}
+                            </ul>
+                          {:else}
+                            <p class="obs-detail-note">No matching tool call is recorded for this lead.</p>
+                          {/if}
+                        </div>
+                        <div class="obs-lead-section">
+                          <h5>Recorded observations</h5>
+                          {#if hypothesisEvidence.notes.length}
+                            <ul class="obs-lead-evidence">
+                              {#each hypothesisEvidence.notes.slice(-8).reverse() as note (note.id)}
+                                <li>
+                                  <span class="obs-chip">{note.kind}</span>
+                                  <strong>{note.title}</strong>
+                                  <p>{note.body}</p>
+                                  <small>{ago(note.created_at)}</small>
+                                </li>
+                              {/each}
+                            </ul>
+                          {:else}
+                            <p class="obs-detail-note">No observation is linked to this lead yet.</p>
+                          {/if}
+                        </div>
+                        <div class="obs-lead-actions">
+                          <a
+                            class="obs-btn obs-btn-ghost"
+                            href={`/api/v1/hypotheses/${hypothesisEvidence.hypothesis.id}/evidence.md`}
+                            download={`${hypothesisEvidence.hypothesis.id}-evidence.md`}
+                          >
+                            <Icon name="download" size={12} />
+                            Download brief
+                          </a>
+                          <button class="obs-btn obs-btn-ghost" type="button" onclick={() => selectTab('graph')}>
+                            <Icon name="graph" size={12} />
+                            Open graph
+                          </button>
+                          {#if hypothesisEvidence.hypothesis.finding_id}
+                            <button class="obs-btn obs-btn-ghost" type="button" onclick={() => store.go('findings')}>
+                              <Icon name="target" size={12} />
+                              Open findings
+                            </button>
+                          {/if}
+                        </div>
+                      {:else if leadsBusy}
+                        <p class="obs-detail-note">Reading the lead evidence...</p>
+                      {:else}
+                        <p class="obs-detail-note">Select a lead to see its evidence.</p>
+                      {/if}
+                    </div>
+                  </div>
+                {:else if leadsBusy}
+                  <p class="obs-detail-note">Reading leads...</p>
+                {:else}
+                  <p class="obs-detail-note">No hypothesis has been recorded for this mission. A lead is created from a real observation, never to fill the screen.</p>
                 {/if}
               </section>
             {:else if detailTab === 'exploits'}

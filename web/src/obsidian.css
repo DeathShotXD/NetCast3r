@@ -7042,6 +7042,187 @@ html.nc-native .nc-tag {
   color: var(--obs-faint);
 }
 
+/* Leads and hypothesis evidence */
+.obs-leads-layout {
+  display: grid;
+  grid-template-columns: minmax(250px, 0.72fr) minmax(0, 1.28fr);
+  gap: 14px;
+  margin-top: 14px;
+}
+
+.obs-leads-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+.obs-lead-card {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  width: 100%;
+  border: 1px solid var(--obs-line);
+  border-radius: 9px;
+  background: var(--obs-panel-2);
+  color: var(--obs-text-2);
+  padding: 11px 12px;
+  text-align: left;
+  transition: border-color 130ms var(--ease), background 130ms var(--ease);
+}
+
+.obs-lead-card:hover,
+.obs-lead-card.active {
+  border-color: var(--obs-line-acid);
+  background: var(--obs-panel-3);
+}
+
+.obs-lead-card-top {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.obs-lead-card strong {
+  color: var(--obs-text);
+  font-size: 11.5px;
+  font-weight: 550;
+  line-height: 1.35;
+}
+
+.obs-lead-card small {
+  color: var(--obs-faint);
+  font-family: var(--mono);
+  font-size: 8.5px;
+  overflow-wrap: anywhere;
+}
+
+.obs-lead-card p {
+  margin: 0;
+  color: var(--obs-muted);
+  font-size: 10px;
+  line-height: 1.45;
+}
+
+.obs-lead-detail {
+  min-width: 0;
+  border: 1px solid var(--obs-line);
+  border-radius: 9px;
+  background: var(--obs-panel-2);
+  padding: 14px;
+}
+
+.obs-lead-detail-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.obs-lead-detail-head h4 {
+  margin: 4px 0 0;
+  color: var(--obs-text);
+  font-size: 16px;
+  font-weight: 550;
+  letter-spacing: -0.02em;
+}
+
+.obs-lead-progress {
+  margin: 9px 0 0;
+  color: var(--obs-text-2);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.obs-lead-counts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-top: 10px;
+}
+
+.obs-lead-section {
+  margin-top: 14px;
+  border-top: 1px solid var(--obs-line);
+  padding-top: 11px;
+}
+
+.obs-lead-section h5 {
+  margin: 0 0 5px;
+  font-family: var(--mono);
+  font-size: 8px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--obs-faint);
+}
+
+.obs-lead-section p {
+  margin: 0;
+  color: var(--obs-text-2);
+  font-size: 10.5px;
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+}
+
+.obs-lead-evidence {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.obs-lead-evidence li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px;
+  border-left: 2px solid var(--obs-line-strong);
+  padding-left: 8px;
+  color: var(--obs-text-2);
+  font-size: 10.5px;
+}
+
+.obs-lead-evidence strong {
+  color: var(--obs-text);
+  font-family: var(--mono);
+  font-size: 9.5px;
+  font-weight: 550;
+}
+
+.obs-lead-evidence .mono {
+  color: var(--obs-muted);
+  font-size: 9px;
+  overflow-wrap: anywhere;
+}
+
+.obs-lead-evidence p {
+  flex-basis: 100%;
+  color: var(--obs-muted);
+  font-size: 10px;
+}
+
+.obs-lead-evidence small {
+  margin-left: auto;
+  color: var(--obs-faint);
+  font-family: var(--mono);
+  font-size: 8px;
+}
+
+.obs-lead-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin-top: 14px;
+}
+
+@media (max-width: 980px) {
+  .obs-leads-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
 /* Regression bench */
 .obs-bench {
   margin-bottom: 12px;

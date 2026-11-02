@@ -1343,11 +1343,19 @@ class Index:
 
     def list_agent_notes(self, mission_id: str, limit: int = 100) -> list[dict]:
         limit = max(1, min(int(limit or 100), 500))
+        # Select the newest N, then return them oldest-first so a reader still
+        # sees a chronological transcript. Ordering the whole table ascending
+        # returned the *oldest* N once a mission had more notes than the cap,
+        # which hid every recent observation from the brain, graph, and UI.
         with self._lock:
             rows = self.conn.execute(
                 "SELECT id, mission_id, run_id, step, kind, title, body, created_at "
-                "FROM agent_notes WHERE mission_id = ? ORDER BY created_at ASC, step ASC "
-                "LIMIT ?", (mission_id, limit)).fetchall()
+                "FROM (SELECT rowid AS _rid, id, mission_id, run_id, step, kind, "
+                "             title, body, created_at "
+                "      FROM agent_notes WHERE mission_id = ? "
+                "      ORDER BY created_at DESC, step DESC, rowid DESC LIMIT ?) "
+                "ORDER BY created_at ASC, step ASC, _rid ASC",
+                (mission_id, limit)).fetchall()
         return [dict(row) for row in rows]
 
     def clear_agent_notes(self, mission_id: str) -> int:

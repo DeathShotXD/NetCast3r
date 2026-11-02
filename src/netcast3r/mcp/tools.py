@@ -1247,6 +1247,19 @@ def hypothesis_get(ctx: ToolContext, args: dict) -> dict:
     return _call(ctx, "GET", f"/api/v1/hypotheses/{args['hypothesis_id']}")
 
 
+def hypothesis_evidence(ctx: ToolContext, args: dict) -> dict:
+    query = {"limit": args.get("limit", 200)}
+    return _call(ctx, "GET",
+                 f"/api/v1/hypotheses/{args['hypothesis_id']}/evidence",
+                 query=query)
+
+
+def leads_sync(ctx: ToolContext, args: dict) -> dict:
+    return _call(ctx, "POST",
+                 f"/api/v1/missions/{args['mission_id']}/leads/sync",
+                 body={"limit": args.get("limit", 3)})
+
+
 def hypothesis_test(ctx: ToolContext, args: dict) -> dict:
     """Run a hypothesis as an assertion-based test case and record the verdict."""
     hypothesis = _call(ctx, "GET", f"/api/v1/hypotheses/{args['hypothesis_id']}")
@@ -3130,6 +3143,8 @@ _HANDLERS.update({
     "hypothesis_create": hypothesis_create,
     "hypothesis_list": hypothesis_list,
     "hypothesis_get": hypothesis_get,
+    "hypothesis_evidence": hypothesis_evidence,
+    "leads_sync": leads_sync,
     "hypothesis_test": hypothesis_test,
     "hypothesis_promote": hypothesis_promote,
     "lab_recipes": lab_recipes,
@@ -4149,6 +4164,25 @@ TOOLS: tuple[Tool, ...] = (
                   "fail_fast": _boolean("stop at the first failed assertion", True),
                   "steps": _array("ordered steps", {"type": "object"})},
                  ["steps"]), "test_case_run", open_world=True),
+    Tool("hypothesis_evidence", "Read everything recorded for a lead",
+         "Collect the hypothesis record, its notes, tool calls, runs, graph "
+         "nodes, and finding link so a human can see exactly what happened. "
+         "The progress label distinguishes untested from supported, refuted, "
+         "inconclusive, and promoted. A lead is not a finding.",
+         "low", "missions",
+         _schema({"hypothesis_id": _string("hypothesis id"),
+                  "limit": _integer("evidence entries", 1, 1000, 200)},
+                 ["hypothesis_id"]), "hypothesis_evidence", read_only=True),
+    Tool("leads_sync", "Turn recorded observations into visible leads",
+         "Read the mission's positive swarm observations and create a "
+         "hypothesis for each one that names a concrete technique or target. "
+         "It never invents a lead: the note id is stored in the rationale, "
+         "duplicates are skipped, and the result is still a hypothesis, not a "
+         "finding.",
+         "medium", "missions",
+         _schema({"mission_id": _string("mission id"),
+                  "limit": _integer("maximum new leads", 1, 20, 3)},
+                 ["mission_id"]), "leads_sync"),
     Tool("hypothesis_create", "Record a falsifiable hypothesis",
          "Write down one precise question about one in-scope target: the technique, "
          "why it should work here, and the observation that would support it. A "

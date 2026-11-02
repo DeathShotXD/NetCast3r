@@ -518,6 +518,11 @@ class Director:
 
             out["expertise"] = evolve_module.mature_outcomes(self.server.index,
                                                              mission_id)
+            from .. import investigations as investigations_module
+
+            synced = investigations_module.sync_from_notes(
+                self.server.index, mission_id, limit=2)
+            out["leads_synced"] = synced["counts"]["created"]
             stage = campaign_module.advance(self.server.index, mission_id)
             out["stage"] = stage["stage"]
             # In the hypotheses stage there are no open leads: turn the exploit
@@ -533,7 +538,8 @@ class Director:
                 mission_id=mission_id,
                 data={"stage": stage["stage"], "learned": out["learned"],
                       "verified_paths": stage["verified_paths"],
-                      "open_leads": stage["open_leads"]})
+                      "open_leads": stage["open_leads"],
+                      "leads_synced": out.get("leads_synced", 0)})
         except Exception as exc:  # noqa: BLE001 - maturing must not stop the loop
             try:
                 self.server.index.add_director_log(
