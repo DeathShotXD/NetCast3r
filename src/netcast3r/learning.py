@@ -28,16 +28,35 @@ from . import research, selfmodel
 SCOPE_HINTS = ("scope", "out of scope", "scope_denied", "target is outside")
 APPROVAL_HINTS = ("approval", "confirm", "policy_denied", "readonly")
 TIMEOUT_HINTS = ("timeout", "timed out", "rate limit", "429", "too many requests")
+CONNECT_HINTS = (
+    "connecterror", "connecttimeout", "readtimeout", "remoteprotocolerror",
+    "remotedisconnected", "connection refused", "connection reset",
+    "network is unreachable", "host is unreachable", "unreachable",
+    "name or service not known", "nodename nor servname", "temporary failure in name resolution",
+    "no address associated with hostname", "probe failed", "request failed",
+)
+TLS_HINTS = (
+    "ssl", "tls", "certificate", "cert", "handshake",
+    "certificate_verify_failed", "unable to get local issuer",
+)
+DEAD_LESSON_HINTS = CONNECT_HINTS + TLS_HINTS + (
+    "timeout", "timed out", "dead", "down", "offline", "dns",
+    "http_probe", "http_request", "reliability",
+)
 AUTH_HINTS = ("401", "403", "unauthorized", "forbidden", "insufficient_scope")
 NOTFOUND_HINTS = ("404", "not found", "not_found")
 INPUT_HINTS = ("invalid", "required", "must be", "unknown argument", "validation")
+_ERROR_CLASS_RE = re.compile(r"\b([A-Z][A-Za-z0-9_]*(?:Error|Exception|Timeout))\b")
 
 
 def _host(value: str) -> str:
+    raw = str(value or "").strip()
+    if not raw:
+        return ""
     try:
-        if "://" in value:
-            return urlsplit(value).hostname or ""
-        return value.split("/", 1)[0]
+        if "://" in raw:
+            return (urlsplit(raw).hostname or "").lower().rstrip(".")
+        return raw.split("/", 1)[0].split(":", 1)[0].lower().rstrip(".")
     except ValueError:
         return ""
 
@@ -48,6 +67,44 @@ def _target(args: dict) -> str:
         if isinstance(value, str) and value.strip():
             return _host(value.strip())
     return ""
+
+
+def classify_error(error: str, status: str = "") -> str:
+    """Return a stable error_class token for failure lessons."""
+    raw = str(error or "").strip()
+    text = raw.lower()
+    if "connecterror" in text:
+        return "ConnectError"
+    if any(hint in text for hint in TLS_HINTS):
+        return "TLSError"
+    if any(hint in text for hint in ("connecttimeout", "readtimeout", "timeout", "timed out")):
+        return "TimeoutError"
+    if any(hint in text for hint in CONNECT_HINTS):
+        return "ConnectError"
+    match = _ERROR_CLASS_RE.search(raw)
+    if match:
+        return match.group(1)
+    if status in {"denied"}:
+        return "policy_denied"
+    if status in {"approval_required", "confirm_required"}:
+        return status
+    if any(hint in text for hint in SCOPE_HINTS):
+        return "scope_denied"
+    if any(hint in text for hint in APPROVAL_HINTS):
+        return "policy_denied"
+    if any(hint in text for hint in AUTH_HINTS):
+        return "auth_error"
+    if any(hint in text for hint in NOTFOUND_HINTS):
+        return "not_found"
+    if any(hint in text for hint in INPUT_HINTS):
+        return "input_error"
+    return "tool_error"
+
+
+def is_host_unreachable_text(text: str) -> bool:
+    """True when text describes a connectivity, TLS, timeout, or host-dead failure."""
+    low = str(text or "").lower()
+    return any(hint in low for hint in DEAD_LESSON_HINTS)
 
 
 def _classify(error: str, status: str) -> tuple[str, str, str]:
@@ -63,7 +120,10 @@ def _classify(error: str, status: str) -> tuple[str, str, str]:
     if any(hint in text for hint in APPROVAL_HINTS):
         return ("blocked", "policy",
                 "Use an allowed tool or request a single-use approval.")
-    if any(hint in text for hint in TIMEOUT_HINTS):
+    if any(hint in text for hint in TLS_HINTS) or "connecterror" in text:
+        return ("failure", "reliability",
+                "Retry with TLS fallback (verify_tls=false) or alternate path before parking the host.")
+    if any(hint in text for hint in TIMEOUT_HINTS) or any(hint in text for hint in CONNECT_HINTS):
         return ("failure", "reliability",
                 "Reduce the request, lower concurrency, and add a backoff before retrying.")
     if any(hint in text for hint in AUTH_HINTS):
@@ -86,7 +146,9 @@ def reflect_tool_call(record: dict) -> dict:
     error = str(record.get("error") or "")
     args = record.get("args") if isinstance(record.get("args"), dict) else {}
     result = record.get("result") if isinstance(record.get("result"), dict) else {}
-    target = _target(args)
+    target = _target(args) or _host(str(record.get("target") or record.get("context") or ""))
+    error_class = ""
+    provisional = False
     if status == "ok":
         outcome, technique, next_step = "success", tool, "Repeat the same shape on the next in-scope object."
         lesson = f"{tool} succeeded" + (f" against {target}" if target else "") + "."
@@ -95,12 +157,20 @@ def reflect_tool_call(record: dict) -> dict:
         tags = ["success", tool]
     else:
         outcome, category, next_step = _classify(error, status)
+        error_class = classify_error(error, status)
+        provisional = True
         technique = tool
         lesson = f"{tool} returned {status or 'an error'}" + (f": {error[:240]}" if error else ".")
-        tags = [outcome, category, tool]
+        tags = [outcome, category, tool, error_class, f"error_class:{error_class}", "provisional=true"]
+        if any(hint in error.lower() for hint in TLS_HINTS):
+            tags.append("tls")
     if target:
         tags.append(target)
-    return {
+        if status != "ok":
+            tags.append(f"host:{target}")
+    # Only keys accepted by Index.add_lesson — host/error_class/provisional
+    # live in tags (host:, error_class:, provisional=true) so **draft is safe.
+    draft = {
         "title": f"{tool}: {outcome}",
         "lesson": lesson,
         "technique": technique,
@@ -113,6 +183,12 @@ def reflect_tool_call(record: dict) -> dict:
         "mission_id": str(record.get("mission_id") or ""),
         "run_id": str(record.get("run_id") or ""),
     }
+    if error_class:
+        draft["lesson"] = (
+            f"{draft['lesson']} error_class={error_class}"
+            + (" provisional=true" if provisional else "")
+        ).strip()
+    return draft
 
 
 def reflect_run(index, run_id: str, limit: int = 200) -> dict:

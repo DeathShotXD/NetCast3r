@@ -61,6 +61,58 @@ class HuntRunnerTests(unittest.TestCase):
             mission_id=mission["id"])
         self.assertGreaterEqual(total, 1)
 
+    def test_hunt_emits_map_note_and_specific_hypotheses(self):
+        # The local handler answers every GET, so the seed exposes live
+        # auth/api/object surfaces and the hunt should emit a rich map note
+        # plus falsifiable, object-specific critical-chain hypotheses.
+        mission = self.server.index.create_mission(
+            "Mapping hunt", self.target, status="active",
+            scope=["127.0.0.1"])
+        run = self.server._hunts().start(mission["id"])
+        deadline = time.time() + 20
+        while time.time() < deadline:
+            state = self.server.index.get_run(run["id"])
+            if state["status"] in {"done", "failed", "stopped", "interrupted"}:
+                break
+            time.sleep(0.05)
+        self.assertEqual(state["status"], "done", state.get("error"))
+
+        notes = self.server.index.list_agent_notes(mission["id"])
+        kinds = {note["kind"] for note in notes}
+        self.assertIn("hunt.map", kinds)
+        map_note = next(n for n in notes if n["kind"] == "hunt.map")
+        self.assertIn("suggested_chains", map_note["body"])
+        self.assertIn("path_map", map_note["body"])
+
+        hypotheses, _ = self.server.index.list_hypotheses(
+            mission_id=mission["id"])
+        titles = [str(h.get("title") or "") for h in hypotheses]
+        host = "127.0.0.1"
+        # At least one falsifiable, object-specific chain lead exists.
+        self.assertTrue(
+            any(t.startswith("BOLA on ") and host in t for t in titles),
+            titles)
+        # Every lead names a concrete host so it is testable as written.
+        self.assertTrue(all(host in t for t in titles), titles)
+
+
+class HuntHelperTests(unittest.TestCase):
+    def test_classify_path_buckets(self):
+        from netcast3r.server.hunt_runner import _classify_path
+        self.assertEqual(_classify_path("/login"), "auth")
+        self.assertEqual(_classify_path("/oauth/callback"), "auth")
+        self.assertEqual(_classify_path("/api/v1/users"), "api")
+        self.assertEqual(_classify_path("/admit"), "object")
+        self.assertEqual(_classify_path("/result"), "object")
+        self.assertEqual(_classify_path("/robots.txt"), "other")
+
+    def test_is_live_accepts_auth_walled_surfaces(self):
+        from netcast3r.server.hunt_runner import _is_live
+        for status in (200, 301, 302, 401, 403):
+            self.assertTrue(_is_live(status), status)
+        for status in (0, 404, 500, None, "x"):
+            self.assertFalse(_is_live(status), status)
+
 
 if __name__ == "__main__":
     unittest.main()

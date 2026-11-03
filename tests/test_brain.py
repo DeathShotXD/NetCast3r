@@ -497,7 +497,8 @@ class BrainLoopTests(unittest.TestCase):
         self.assertEqual(loop.status()["turns"], 1)
         self.assertIn("admin API", loop.status()["last_focus"])
         log = self.index.list_brain_log(limit=5, mission_id=self.mission["id"])
-        self.assertEqual(log[0]["role"], "auto")
+        # A steward hail may journal a newer helix row; the cognition turn is auto.
+        self.assertTrue(any(row.get("role") == "auto" for row in log))
 
     def test_a_turn_with_no_model_answer_is_retried_not_journaled(self):
         loop = brain.BrainLoop(
