@@ -1618,6 +1618,19 @@ class Server:
                 "loop": self._brain_loop().status(),
             })
 
+        @add("GET", r"/api/v1/brain/live")
+        def brain_live(ctx):
+            """Helix console: journal + director logs + mesh model chats."""
+            from .. import brain as brain_module
+
+            limit = int(ctx.query.get("limit", "80") or 80)
+            mission_id = str(ctx.query.get("mission_id", "") or "")
+            payload = brain_module.live_feed(
+                self.index, self._director(),
+                mission_id=mission_id, limit=limit)
+            payload["loop"] = self._brain_loop().status()
+            return _json(payload)
+
         @add("GET", r"/api/v1/brain/loop")
         def brain_loop_status(ctx):
             return _json(self._brain_loop().status())

@@ -3,6 +3,7 @@
   import { api } from '../api';
   import { ago, statusColor, statusLabel } from '../format';
   import { store } from '../state.svelte';
+  import Buffering from '../ui/Buffering.svelte';
   import Chip from '../ui/Chip.svelte';
   import Confirm from '../ui/Confirm.svelte';
   import EmptyState from '../ui/EmptyState.svelte';
@@ -319,7 +320,14 @@
   </section>
 
   {#if loading && runs.length === 0}
-    <section class="panel px-5 py-8 text-sm text-ash">loading casts...</section>
+    <section class="obs-card obs-empty" style="min-height:280px; gap:14px">
+      <Buffering
+        variant="block"
+        tone="quiet"
+        label="Loading casts"
+        detail="Reading operation history from the control plane."
+      />
+    </section>
   {:else if runs.length === 0}
     <section class="panel">
       <EmptyState

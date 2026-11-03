@@ -4,6 +4,7 @@
   import { store } from '../state.svelte';
   import { ago, sevColor, statusLabel } from '../format';
   import type { AgentStatus, Approval, Autonomy, Campaign, Candidate, CoverageSummary, Direction, ExploitPlan, GraphNode, GraphPath, Hypothesis, HypothesisEvidence, Mission, MissionAgent, MissionGraph, MissionStatus, ProgramImport, ProgramPreview, ToolCall } from '../types';
+  import Buffering from '../ui/Buffering.svelte';
   import Icon from '../ui/Icon.svelte';
   import Sparkline from '../ui/Sparkline.svelte';
 
@@ -888,10 +889,13 @@
   </div>
 
   {#if loading && missions.length === 0}
-    <div class="obs-card obs-empty" style="min-height:360px">
-      <span class="obs-empty-icon"><Icon name="crosshair" size={18} /></span>
-      <div class="obs-empty-title">Loading the portfolio</div>
-      <p class="obs-empty-copy">Reading missions and their approval state from the control plane.</p>
+    <div class="obs-card obs-empty" style="min-height:360px; gap:14px">
+      <Buffering
+        variant="block"
+        tone="quiet"
+        label="Loading portfolio"
+        detail="Reading missions and approval state from the control plane."
+      />
     </div>
   {:else if error}
     <div class="obs-card obs-empty" style="min-height:320px">
@@ -1005,25 +1009,60 @@
                     {agentBusy === 'lab' ? 'Starting...' : 'Run next lab'}
                   </button>
                 {:else}
-                  <button class="obs-btn obs-btn-primary" type="button" disabled={busy === 'hunt'} onclick={() => void runHunt()}>
-                    <Icon name="crosshair" size={13} />
-                    {busy === 'hunt' ? 'Hunting...' : 'Hunt now'}
+                  <button
+                    class="obs-btn obs-btn-primary"
+                    class:is-busy={busy === 'hunt'}
+                    type="button"
+                    disabled={busy === 'hunt'}
+                    aria-busy={busy === 'hunt'}
+                    onclick={() => void runHunt()}
+                  >
+                    {#if busy !== 'hunt'}<Icon name="crosshair" size={13} />{/if}
+                    {busy === 'hunt' ? 'Hunting' : 'Hunt now'}
                   </button>
-                  <button class="obs-btn obs-btn-autopilot" type="button" disabled={busy === 'autopilot'} onclick={() => void runAutopilot()}>
-                    <Icon name="bot" size={13} />
-                    {busy === 'autopilot' ? 'Thinking...' : 'Autopilot'}
+                  <button
+                    class="obs-btn obs-btn-autopilot"
+                    class:is-busy={busy === 'autopilot'}
+                    type="button"
+                    disabled={busy === 'autopilot'}
+                    aria-busy={busy === 'autopilot'}
+                    onclick={() => void runAutopilot()}
+                  >
+                    {#if busy !== 'autopilot'}<Icon name="bot" size={13} />{/if}
+                    {busy === 'autopilot' ? 'Thinking' : 'Autopilot'}
                   </button>
-                  <button class="obs-btn obs-btn-swarm" type="button" disabled={busy === 'swarm'} onclick={() => void runSwarm()}>
-                    <Icon name="activity" size={13} />
-                    {busy === 'swarm' ? 'Convening...' : 'Swarm'}
+                  <button
+                    class="obs-btn obs-btn-swarm"
+                    class:is-busy={busy === 'swarm'}
+                    type="button"
+                    disabled={busy === 'swarm'}
+                    aria-busy={busy === 'swarm'}
+                    onclick={() => void runSwarm()}
+                  >
+                    {#if busy !== 'swarm'}<Icon name="activity" size={13} />{/if}
+                    {busy === 'swarm' ? 'Convening' : 'Swarm'}
                   </button>
-                  <button class="obs-btn" type="button" disabled={busy === 'solve'} onclick={() => void runSolve()}>
-                    <Icon name="bot" size={13} />
-                    {busy === 'solve' ? 'Solving...' : 'Model loop'}
+                  <button
+                    class="obs-btn"
+                    class:is-busy={busy === 'solve'}
+                    type="button"
+                    disabled={busy === 'solve'}
+                    aria-busy={busy === 'solve'}
+                    onclick={() => void runSolve()}
+                  >
+                    {#if busy !== 'solve'}<Icon name="bot" size={13} />{/if}
+                    {busy === 'solve' ? 'Solving' : 'Model loop'}
                   </button>
-                  <button class="obs-btn" type="button" disabled={busy === 'launch'} onclick={() => void launch()}>
-                    <Icon name="activity" size={13} />
-                    {busy === 'launch' ? 'Starting...' : 'Launch cast'}
+                  <button
+                    class="obs-btn"
+                    class:is-busy={busy === 'launch'}
+                    type="button"
+                    disabled={busy === 'launch'}
+                    aria-busy={busy === 'launch'}
+                    onclick={() => void launch()}
+                  >
+                    {#if busy !== 'launch'}<Icon name="activity" size={13} />{/if}
+                    {busy === 'launch' ? 'Starting' : 'Launch cast'}
                   </button>
                 {/if}
               {/if}
@@ -1663,9 +1702,16 @@
                   placeholder="e.g. focus the order API and test IDOR on /api/orders/7"
                 ></textarea>
                 <div class="obs-console-actions">
-                  <button class="obs-btn obs-btn-primary" type="button" disabled={!directionText.trim() || busy === 'direction'} onclick={() => void queueDirection()}>
-                    <Icon name="arrow-right" size={12} />
-                    {busy === 'direction' ? 'Queueing...' : 'Queue direction'}
+                  <button
+                    class="obs-btn obs-btn-primary"
+                    class:is-busy={busy === 'direction'}
+                    type="button"
+                    disabled={!directionText.trim() || busy === 'direction'}
+                    aria-busy={busy === 'direction'}
+                    onclick={() => void queueDirection()}
+                  >
+                    {#if busy !== 'direction'}<Icon name="arrow-right" size={12} />{/if}
+                    {busy === 'direction' ? 'Queueing' : 'Queue direction'}
                   </button>
                   <button class="obs-btn obs-btn-ghost" type="button" disabled={busy === 'direction'} onclick={() => void loadDirections()}>
                     Refresh
@@ -1981,9 +2027,16 @@
       <footer class="obs-modal-foot">
         <span class="obs-modal-note">The mission agent enforces scope, task count, wall clock, and model-call caps. The USD figure is a recorded ceiling, not a spend estimate.</span>
         <button class="obs-btn obs-btn-ghost" type="button" onclick={() => (composer = false)}>Cancel</button>
-        <button class="obs-btn obs-btn-primary" type="button" disabled={busy === 'create'} onclick={() => void createMission()}>
-          <Icon name="plus" size={13} />
-          {busy === 'create' ? 'Saving...' : 'Save mission'}
+        <button
+          class="obs-btn obs-btn-primary"
+          class:is-busy={busy === 'create'}
+          type="button"
+          disabled={busy === 'create'}
+          aria-busy={busy === 'create'}
+          onclick={() => void createMission()}
+        >
+          {#if busy !== 'create'}<Icon name="plus" size={13} />{/if}
+          {busy === 'create' ? 'Saving' : 'Save mission'}
         </button>
       </footer>
     </div>

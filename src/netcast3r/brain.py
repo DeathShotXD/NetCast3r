@@ -136,10 +136,14 @@ who wants maximum impact. Prefer new angles over cloning open hypotheses.
 
 Read the snapshot: missions and their campaign stage, the director, recent runs
 and their stop reasons, live traffic (recent tool calls with target and
-arguments), the log feed, open leads, candidates, the shared knowledge base,
-technique_corpus (critical/high web exploit patterns shared across every
-model), the evidence graph, the host capabilities, the MCP connections, the
-coverage checklist for the focus mission, and the post-exploitation plan.
+arguments), the log feed, mesh_chat (recent replies between hunt models and
+agent lanes), model_traffic (who called which provider), helix_journal (your
+own prior turns and operator steers), open leads, candidates, the shared
+knowledge base, technique_corpus (critical/high web exploit patterns shared
+across every model), the evidence graph, the host capabilities, the MCP
+connections, the coverage checklist for the focus mission, and the
+post-exploitation plan. Always re-read logs + mesh_chat + helix_journal on
+every tick — do not rely on memory of an earlier snapshot.
 Prefer technique_corpus and knowledge entries that match observed signals.
 
 Training is part of the job. The snapshot carries the unsolved lab plan. When
@@ -245,6 +249,186 @@ def _log_view(entry: dict) -> dict:
             "message": str(entry.get("message") or "")[:300]}
 
 
+def _recent_run_thoughts(index, director=None, mission_id: str = "",
+                         limit: int = 24) -> list[dict]:
+    """Pull recent model reasoning frames from live / focus runs."""
+    run_ids: list[str] = []
+    seen: set[str] = set()
+    if mission_id:
+        mission = index.get_mission(mission_id) or {}
+        for row in (mission.get("runs") or [])[:4]:
+            rid = str((row or {}).get("id") or "")
+            if rid and rid not in seen:
+                seen.add(rid)
+                run_ids.append(rid)
+    if director is not None:
+        try:
+            status = director.status() or {}
+        except Exception:  # noqa: BLE001
+            status = {}
+        for rid in status.get("live_job_ids") or []:
+            rid = str(rid or "")
+            if rid and rid not in seen:
+                seen.add(rid)
+                run_ids.append(rid)
+        for entry in status.get("in_flight") or []:
+            rid = str((entry or {}).get("run_id") or "")
+            if rid and rid not in seen:
+                seen.add(rid)
+                run_ids.append(rid)
+    if not run_ids:
+        runs, _ = index.list_runs(limit=6)
+        for row in runs:
+            rid = str(row.get("id") or "")
+            if rid and rid not in seen:
+                seen.add(rid)
+                run_ids.append(rid)
+    out: list[dict] = []
+    for rid in run_ids[:6]:
+        try:
+            events = index.list_events(rid, limit=80)
+        except Exception:  # noqa: BLE001
+            continue
+        for event in reversed(events):
+            etype = str(event.get("type") or "")
+            payload = event.get("payload") or {}
+            text = ""
+            kind = etype
+            if etype == "reasoning":
+                text = str(payload.get("text") or "").strip()
+                kind = "thought"
+            elif etype == "model" and payload.get("kind") == "done":
+                text = (
+                    f"{payload.get('provider') or '?'}/"
+                    f"{payload.get('model') or '?'} "
+                    f"{'ok' if payload.get('ok') else 'fail'}"
+                    f"{(' · ' + str(payload.get('error'))) if payload.get('error') else ''}"
+                ).strip()
+                kind = "model"
+            elif etype in {"log", "error"}:
+                text = str(payload.get("message") or payload.get("text")
+                           or payload.get("error") or "").strip()
+            if not text:
+                continue
+            out.append({
+                "id": f"{rid}:{event.get('seq')}",
+                "run_id": rid,
+                "kind": kind,
+                "agent": str(event.get("agent") or "run")[:48],
+                "stage": str(event.get("stage") or "")[:48],
+                "text": text[:2000],
+                "ts": event.get("ts"),
+                "seq": event.get("seq"),
+            })
+            if len(out) >= limit:
+                return out
+    return out
+
+
+def live_feed(index, director=None, mission_id: str = "",
+              limit: int = 80) -> dict:
+    """Unified Helix console payload: journal, logs, mesh chats, run thoughts."""
+    limit = max(20, min(int(limit or 80), 200))
+    journal = index.list_brain_log(limit=limit, mission_id=mission_id)
+    logs = index.list_director_log(limit=min(limit, 80))
+    mesh = index.list_recent_mesh_advisories(
+        limit=min(limit, 60), mission_id=mission_id)
+    calls = index.list_recent_agent_model_calls(
+        limit=min(limit, 60), mission_id=mission_id)
+    thoughts = _recent_run_thoughts(
+        index, director, mission_id=mission_id, limit=min(limit, 40))
+    timeline: list[dict] = []
+    for row in journal:
+        timeline.append({
+            "id": f"journal:{row.get('id')}",
+            "channel": "journal",
+            "role": row.get("role") or "brain",
+            "agent": row.get("role") or "brain",
+            "text": str(row.get("text") or ""),
+            "focus": row.get("focus") or "",
+            "provider": row.get("provider") or "",
+            "model": row.get("model") or "",
+            "source": row.get("source") or "",
+            "actions": row.get("actions") or [],
+            "mission_id": row.get("mission_id") or "",
+            "ts": row.get("ts") or "",
+            "raw": row,
+        })
+    for row in mesh:
+        timeline.append({
+            "id": f"mesh:{row.get('id')}",
+            "channel": "mesh",
+            "role": "mesh",
+            "agent": row.get("agent") or row.get("kind") or "mesh",
+            "text": str(row.get("text") or ""),
+            "focus": row.get("title") or row.get("kind") or "",
+            "provider": row.get("provider") or "",
+            "model": row.get("model") or "",
+            "source": row.get("tool") or "",
+            "actions": [],
+            "mission_id": row.get("mission_id") or "",
+            "ts": row.get("ts") or "",
+            "raw": row,
+        })
+    for row in thoughts:
+        timeline.append({
+            "id": f"run:{row.get('id')}",
+            "channel": "run",
+            "role": row.get("kind") or "thought",
+            "agent": row.get("agent") or "run",
+            "text": str(row.get("text") or ""),
+            "focus": row.get("stage") or "",
+            "provider": "",
+            "model": "",
+            "source": row.get("run_id") or "",
+            "actions": [],
+            "mission_id": mission_id or "",
+            "ts": row.get("ts") or "",
+            "raw": row,
+        })
+    for row in logs:
+        timeline.append({
+            "id": f"log:{row.get('id')}",
+            "channel": "log",
+            "role": "log",
+            "agent": row.get("kind") or "plane",
+            "text": str(row.get("message") or ""),
+            "focus": row.get("kind") or "",
+            "provider": "",
+            "model": "",
+            "source": row.get("run_id") or "",
+            "actions": [],
+            "mission_id": row.get("mission_id") or "",
+            "ts": row.get("ts") or "",
+            "raw": row,
+        })
+
+    def _ts_key(item: dict) -> str:
+        ts = item.get("ts")
+        if isinstance(ts, (int, float)):
+            return f"{float(ts):020.3f}"
+        return str(ts or "")
+
+    timeline.sort(key=_ts_key)
+    loop = {}
+    if director is not None:
+        try:
+            server = getattr(director, "server", None)
+            if server is not None and hasattr(server, "_brain_loop"):
+                loop = server._brain_loop().status()
+        except Exception:  # noqa: BLE001
+            loop = {}
+    return {
+        "items": journal,
+        "logs": logs,
+        "mesh": mesh,
+        "model_calls": calls,
+        "thoughts": thoughts,
+        "timeline": timeline[-limit:],
+        "loop": loop,
+    }
+
+
 def context(index, director=None, mission_id: str = "", limit: int = 8) -> dict:
     """A compact, real snapshot of the whole control plane."""
     from . import kb as kb_module
@@ -269,7 +453,11 @@ def context(index, director=None, mission_id: str = "", limit: int = 8) -> dict:
     calls, _ = index.list_tool_calls(limit=limit)
     leads, _ = index.list_hypotheses(status="open", limit=limit)
     candidates = index.list_candidates(status="candidate", limit=limit)
-    director_log = index.list_director_log(limit=12)
+    director_log = index.list_director_log(limit=28)
+    mesh_chat = index.list_recent_mesh_advisories(limit=16, mission_id=mission_id)
+    model_traffic = index.list_recent_agent_model_calls(
+        limit=16, mission_id=mission_id)
+    helix_journal = index.list_brain_log(limit=18, mission_id=mission_id)
     director_status = director.status() if director is not None else {}
     run_rows = []
     live_ids = set(director_status.get("live_job_ids") or [])
@@ -311,6 +499,30 @@ def context(index, director=None, mission_id: str = "", limit: int = 8) -> dict:
                        for c in calls],
         "traffic": [_traffic_view(c) for c in calls],
         "logs": [_log_view(entry) for entry in director_log],
+        "mesh_chat": [
+            {"id": row.get("id"), "agent": row.get("agent"),
+             "kind": row.get("kind"), "title": row.get("title"),
+             "provider": row.get("provider"), "model": row.get("model"),
+             "text": str(row.get("text") or "")[:900],
+             "mission_id": row.get("mission_id"), "ts": row.get("ts")}
+            for row in mesh_chat
+        ],
+        "model_traffic": [
+            {"id": row.get("id"), "agent": row.get("agent"),
+             "provider": row.get("provider"), "model": row.get("model"),
+             "status": row.get("status"), "ms": row.get("duration_ms"),
+             "error": str(row.get("error") or "")[:160],
+             "mission_id": row.get("mission_id"), "ts": row.get("created_at")}
+            for row in model_traffic
+        ],
+        "helix_journal": [
+            {"id": row.get("id"), "role": row.get("role"),
+             "text": str(row.get("text") or "")[:700],
+             "focus": row.get("focus"), "provider": row.get("provider"),
+             "model": row.get("model"), "source": row.get("source"),
+             "ts": row.get("ts")}
+            for row in helix_journal
+        ],
         "knowledge": kb_module.digest(index, mission_id, limit=20),
         "technique_corpus": kb_module.corpus_digest(limit=28, impact="critical"),
         "open_leads": [{"id": h.get("id"), "title": h.get("title"),

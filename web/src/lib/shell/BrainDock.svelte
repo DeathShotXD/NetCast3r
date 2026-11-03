@@ -3,8 +3,19 @@
   import { onDestroy, onMount } from 'svelte';
   import { api } from '../api';
   import { store } from '../state.svelte';
-  import type { BrainLoopStatus, BrainTurn } from '../types';
+  import type { BrainLiveEntry, BrainLoopStatus, BrainTurn } from '../types';
+  import Buffering from '../ui/Buffering.svelte';
   import Icon from '../ui/Icon.svelte';
+
+  const BUFFER_PHASES = [
+    'Reading the plane',
+    'Reading mesh chats',
+    'Reasoning',
+    'Selecting actions',
+    'Steering the hunt'
+  ] as const;
+
+  type FeedChannel = 'all' | 'journal' | 'mesh' | 'run' | 'log';
 
   const COMPANION = 'Helix';
   const LAYOUT_KEY = 'netcast3r.helix.layout.v1';
@@ -19,13 +30,16 @@
   };
 
   let feed = $state<BrainTurn[]>([]);
+  let timeline = $state<BrainLiveEntry[]>([]);
   let loop = $state<BrainLoopStatus | null>(null);
   let ticker = $state<{ kind: string; note: string }[]>([]);
+  let channel = $state<FeedChannel>('all');
   let input = $state('');
   let busy = $state(false);
   let acting = $state('');
   let target = $state<'brain' | 'both' | 'director'>('both');
   let timer: number | undefined;
+  let phaseTimer: number | undefined;
   let feedEl = $state<HTMLUListElement>();
   let inputEl = $state<HTMLInputElement>();
   let panelEl = $state<HTMLElement>();
@@ -39,9 +53,24 @@
   let seenHail = $state('');
   /** Only auto-scroll when the operator is already near the bottom. */
   let stickToBottom = $state(true);
+  let pendingText = $state('');
+  let bufferPhase = $state<(typeof BUFFER_PHASES)[number]>(BUFFER_PHASES[0]);
 
   const open = $derived(store.brainDock);
   const latest = $derived(feed.length ? feed[feed.length - 1] : null);
+  const visible = $derived.by(() => {
+    if (channel === 'all') return timeline;
+    return timeline.filter((row) => row.channel === channel);
+  });
+  const channelCounts = $derived.by(() => {
+    const counts = { all: timeline.length, journal: 0, mesh: 0, run: 0, log: 0 };
+    for (const row of timeline) {
+      if (row.channel in counts) {
+        counts[row.channel as keyof typeof counts] += 1;
+      }
+    }
+    return counts;
+  });
   const meshRoles = [
     { id: 'osint', label: 'OSINT' },
     { id: 'scout', label: 'Scout' },
@@ -59,8 +88,10 @@
     loop ? (loop.paused ? 'paused' : loop.running ? 'live' : 'idle') : 'idle'
   );
   const activeRoles = $derived.by(() => {
-    const blob = ticker
-      .map((row) => `${row.kind} ${row.note}`)
+    const blob = [
+      ...ticker.map((row) => `${row.kind} ${row.note}`),
+      ...timeline.slice(-24).map((row) => `${row.agent} ${row.focus} ${row.text}`)
+    ]
       .join(' ')
       .toLowerCase();
     const hits = new Set<string>();
@@ -69,7 +100,9 @@
     }
     if (blob.includes('train') || blob.includes('lab')) hits.add('exegete');
     if (blob.includes('swarm') || blob.includes('hunt')) hits.add('attacker');
-    if (blob.includes('brain') || blob.includes('think')) hits.add('scout');
+    if (blob.includes('brain') || blob.includes('think') || blob.includes('helix')) hits.add('scout');
+    if (blob.includes('auth') || blob.includes('oauth') || blob.includes('session')) hits.add('auth');
+    if (blob.includes('osint') || blob.includes('recon')) hits.add('osint');
     return hits;
   });
 
@@ -205,25 +238,58 @@
   }
 
   $effect(() => {
-    if (open && feedEl && feed.length && stickToBottom) {
+    if (open && feedEl && visible.length && stickToBottom) {
       feedEl.scrollTop = feedEl.scrollHeight;
     }
   });
 
   $effect(() => {
     if (open) {
-      armPoll(2500);
+      armPoll(1500);
       queueMicrotask(() => inputEl?.focus());
     } else {
-      armPoll(8000);
+      armPoll(4000);
     }
   });
 
+  function roleLabel(entry: BrainLiveEntry): string {
+    if (entry.channel === 'mesh') {
+      const model = entry.model ? ` · ${entry.model}` : '';
+      return `${entry.agent || 'mesh'}${model}`;
+    }
+    if (entry.channel === 'run') {
+      return `${entry.agent || 'run'} · ${entry.role || 'thought'}`;
+    }
+    if (entry.channel === 'log') {
+      return `Plane · ${entry.agent || 'log'}`;
+    }
+    if (entry.role === 'operator') {
+      return entry.source && entry.source !== 'ui' ? `You · ${entry.source}` : 'You';
+    }
+    if (entry.role === 'helix') return `${COMPANION} · hail`;
+    if (entry.role === 'auto') {
+      return entry.model ? `${COMPANION} · ${entry.model}` : `${COMPANION} · thinking`;
+    }
+    if (entry.model) return `${COMPANION} · ${entry.model}`;
+    return COMPANION;
+  }
+
   async function load() {
     try {
-      const result = await api.brainJournal(40);
-      feed = [...result.items].reverse();
-      loop = result.loop;
+      const missionId = (loop?.mission_id || '').trim();
+      const result = await api.brainLive(100, missionId);
+      feed = [...(result.items || [])].reverse();
+      timeline = result.timeline || [];
+      if (result.loop && Object.keys(result.loop).length) {
+        loop = result.loop;
+      }
+      ticker = (result.logs || [])
+        .slice(0, 14)
+        .map((row) => ({
+          kind: String(row.kind || 'event'),
+          note: String(row.message || '').slice(0, 180)
+        }))
+        .filter((row) => row.note);
       const hail = [...feed].reverse().find((turn) => turn.role === 'helix');
       if (hail && String(hail.id) !== seenHail && hail.text) {
         seenHail = String(hail.id);
@@ -232,19 +298,40 @@
         }
       }
     } catch {
-      /* optional */
-    }
-    try {
-      const log = await api.directorLog(24);
-      ticker = (log.items || [])
-        .slice(0, 10)
-        .map((row) => ({
-          kind: String(row.kind || 'event'),
-          note: String(row.message || '').slice(0, 160)
-        }))
-        .filter((row) => row.note);
-    } catch {
-      /* advisory */
+      /* fall back to journal-only so the dock still works */
+      try {
+        const result = await api.brainJournal(60);
+        feed = [...result.items].reverse();
+        loop = result.loop;
+        timeline = feed.map((turn) => ({
+          id: `journal:${turn.id}`,
+          channel: 'journal',
+          role: turn.role,
+          agent: turn.role,
+          text: turn.text,
+          focus: turn.focus,
+          provider: turn.provider,
+          model: turn.model,
+          source: turn.source,
+          actions: turn.actions,
+          mission_id: turn.mission_id,
+          ts: turn.ts
+        }));
+      } catch {
+        /* optional */
+      }
+      try {
+        const log = await api.directorLog(32);
+        ticker = (log.items || [])
+          .slice(0, 14)
+          .map((row) => ({
+            kind: String(row.kind || 'event'),
+            note: String(row.message || '').slice(0, 180)
+          }))
+          .filter((row) => row.note);
+      } catch {
+        /* advisory */
+      }
     }
   }
 
@@ -253,12 +340,30 @@
     timer = window.setInterval(() => void load(), ms);
   }
 
+  function armBufferPhases() {
+    let i = 0;
+    bufferPhase = BUFFER_PHASES[0];
+    if (phaseTimer) window.clearInterval(phaseTimer);
+    phaseTimer = window.setInterval(() => {
+      i = (i + 1) % BUFFER_PHASES.length;
+      bufferPhase = BUFFER_PHASES[i];
+    }, 1600);
+  }
+
+  function clearBufferPhases() {
+    if (phaseTimer) window.clearInterval(phaseTimer);
+    phaseTimer = undefined;
+    bufferPhase = BUFFER_PHASES[0];
+  }
+
   async function send() {
     const message = input.trim();
     if (!message || busy) return;
     busy = true;
+    pendingText = message;
     input = '';
     stickToBottom = true;
+    armBufferPhases();
     try {
       const missionId = (loop?.mission_id || '').trim();
       const body: Record<string, unknown> = { target, act: true };
@@ -266,6 +371,8 @@
       else if (target !== 'brain') {
         store.toast('error', 'pick an active mission before directing the hunt');
         busy = false;
+        pendingText = '';
+        clearBufferPhases();
         input = message;
         return;
       }
@@ -275,6 +382,8 @@
       store.toast('error', exc instanceof Error ? exc.message : 'instruction failed');
     } finally {
       busy = false;
+      pendingText = '';
+      clearBufferPhases();
     }
   }
 
@@ -297,13 +406,22 @@
       source.onmessage = (ev) => {
         try {
           const data = JSON.parse(ev.data);
+          const type = String(data?.type || '');
           if (
-            data?.type === 'brain.turn' ||
-            data?.type === 'instruct' ||
-            data?.type === 'director' ||
-            data?.type === 'tool' ||
-            data?.type === 'finding' ||
-            data?.type === 'candidate'
+            type === 'brain.turn' ||
+            type === 'instruct' ||
+            type.startsWith('director') ||
+            type === 'tool' ||
+            type === 'finding' ||
+            type === 'finding.created' ||
+            type === 'candidate' ||
+            type === 'reasoning' ||
+            type === 'model' ||
+            type === 'log' ||
+            type === 'error' ||
+            type === 'agent' ||
+            type.includes('swarm') ||
+            type.includes('mission')
           ) {
             void load();
           }
@@ -337,6 +455,7 @@
 
   onDestroy(() => {
     if (timer) window.clearInterval(timer);
+    clearBufferPhases();
     source?.close();
     window.removeEventListener('keydown', onKey);
   });
@@ -349,11 +468,18 @@
     class:resizing
     class:fullscreen={layout.fullscreen}
     class:live={stateTone === 'live'}
+    class:awaiting={busy}
     bind:this={panelEl}
     style={panelStyle}
     aria-label="{COMPANION} hunt steward"
+    aria-busy={busy}
   >
     <div class="nc-brain-sheen" aria-hidden="true"></div>
+    {#if busy}
+      <div class="nc-brain-await-bar" aria-hidden="true">
+        <Buffering variant="bar" label="{COMPANION} responding" />
+      </div>
+    {/if}
 
     <header
       class="nc-brain-head"
@@ -450,10 +576,10 @@
     </nav>
 
     {#if ticker.length}
-      <section class="nc-brain-ops" aria-label="live agent activity">
-        <div class="nc-brain-ops-label">Plane</div>
+      <section class="nc-brain-ops" aria-label="live plane logs">
+        <div class="nc-brain-ops-label">Plane logs</div>
         <ul class="nc-brain-ticker">
-          {#each ticker.slice(0, 5) as row, i (i + row.kind + row.note.slice(0, 24))}
+          {#each ticker.slice(0, 8) as row, i (i + row.kind + row.note.slice(0, 24))}
             <li>
               <span class="nc-brain-tick-kind">{row.kind}</span>
               <span class="nc-brain-tick-note">{row.note}</span>
@@ -464,50 +590,87 @@
     {/if}
 
     <section class="nc-brain-cognition">
-      <div class="nc-brain-ops-label">Conversation</div>
+      <div class="nc-brain-feed-head">
+        <div class="nc-brain-ops-label">Live feed</div>
+        <div class="nc-brain-channels" role="tablist" aria-label="Helix feed channels">
+          {#each [
+            ['all', 'All'],
+            ['journal', 'Helix'],
+            ['mesh', 'Mesh'],
+            ['run', 'Models'],
+            ['log', 'Logs']
+          ] as [id, label] (id)}
+            <button
+              class="nc-brain-channel"
+              class:active={channel === id}
+              type="button"
+              role="tab"
+              aria-selected={channel === id}
+              onclick={() => {
+                channel = id as FeedChannel;
+                stickToBottom = true;
+              }}
+            >
+              {label}
+              <b>{channelCounts[id as FeedChannel] ?? 0}</b>
+            </button>
+          {/each}
+        </div>
+      </div>
       <ul class="nc-brain-feed" bind:this={feedEl} onscroll={onFeedScroll}>
-        {#each feed as turn (turn.id)}
+        {#each visible as entry (entry.id)}
           <li
-            class:operator={turn.role === 'operator'}
-            class:auto={turn.role === 'auto'}
-            class:helix={turn.role === 'helix'}
+            class:operator={entry.role === 'operator'}
+            class:auto={entry.role === 'auto' || entry.channel === 'mesh'}
+            class:helix={entry.role === 'helix'}
+            class:mesh={entry.channel === 'mesh'}
+            class:run={entry.channel === 'run'}
+            class:logrow={entry.channel === 'log'}
           >
             <header class="nc-brain-turn-head">
-              <span class="nc-brain-role">
-                {turn.role === 'operator'
-                  ? turn.source && turn.source !== 'ui'
-                    ? `You · ${turn.source}`
-                    : 'You'
-                  : turn.role === 'helix'
-                    ? `${COMPANION} · hail`
-                    : turn.role === 'auto'
-                      ? `${COMPANION} · thinking`
-                      : COMPANION}
-              </span>
-              {#if turn.focus}
-                <span class="nc-brain-focus">{turn.focus}</span>
+              <span class="nc-brain-role">{roleLabel(entry)}</span>
+              {#if entry.focus}
+                <span class="nc-brain-focus">{entry.focus}</span>
+              {:else if entry.provider || entry.model}
+                <span class="nc-brain-focus">{[entry.provider, entry.model].filter(Boolean).join(' / ')}</span>
               {/if}
             </header>
-            <p class="nc-brain-text">{turn.text}</p>
-            {#if turn.actions && turn.actions.length}
+            <p class="nc-brain-text">{entry.text}</p>
+            {#if entry.actions && entry.actions.length}
               <div class="nc-brain-actions">
-                {#each turn.actions as action}
+                {#each entry.actions as action}
                   <span class:refused={!action.applied}>{action.kind}</span>
                 {/each}
               </div>
             {/if}
           </li>
         {/each}
-        {#if feed.length === 0}
+        {#if pendingText}
+          <li class="operator pending">
+            <header class="nc-brain-turn-head">
+              <span class="nc-brain-role">You</span>
+              <span class="nc-brain-focus">sending</span>
+            </header>
+            <p class="nc-brain-text">{pendingText}</p>
+          </li>
+          <li class="buffering" aria-live="polite">
+            <Buffering
+              variant="block"
+              tone="acid"
+              label={bufferPhase}
+              detail="{COMPANION} is reading logs and mesh chats, then composing a steer…"
+            />
+          </li>
+        {:else if visible.length === 0}
           <li class="nc-brain-empty">
-            Engage a target and {COMPANION} stewards the hunt — and will hail you when something needs your eyes.
+            {COMPANION} will stream journal turns, mesh model chats, run thoughts, and plane logs here continuously.
           </li>
         {/if}
       </ul>
     </section>
 
-    <footer class="nc-brain-composer">
-      <select class="nc-brain-target" bind:value={target} aria-label="instruction target">
+    <footer class="nc-brain-composer" class:locked={busy}>
+      <select class="nc-brain-target" bind:value={target} aria-label="instruction target" disabled={busy}>
         <option value="both">{COMPANION} + hunt</option>
         <option value="brain">{COMPANION} only</option>
         <option value="director">Hunt queue</option>
@@ -516,14 +679,26 @@
         class="nc-brain-input"
         bind:this={inputEl}
         bind:value={input}
-        placeholder="Steer mid-hunt — pivot auth, skip CDN, deepen IDOR…"
+        placeholder={busy ? `${COMPANION} is responding…` : 'Steer mid-hunt — pivot auth, skip CDN, deepen IDOR…'}
         aria-label="instruct {COMPANION} or hunt mid-engagement"
+        disabled={busy}
         onkeydown={(event) => {
           if (event.key === 'Enter') void send();
         }}
       />
-      <button class="nc-brain-send" type="button" disabled={busy || !input.trim()} onclick={() => void send()}>
-        {busy ? '…' : 'Instruct'}
+      <button
+        class="nc-brain-send"
+        class:is-busy={busy}
+        type="button"
+        disabled={busy || !input.trim()}
+        onclick={() => void send()}
+      >
+        {#if busy}
+          <span class="nc-brain-send-spin" aria-hidden="true"></span>
+          Wait
+        {:else}
+          Instruct
+        {/if}
       </button>
     </footer>
 
@@ -540,11 +715,28 @@
   </section>
 {/if}
 
-<button class="nc-brain-pill" type="button" aria-expanded={open} onclick={() => toggleOpen()}>
-  <span class="nc-brain-dot" class:paused={loop?.paused} class:off={!loop?.running}></span>
+<button
+  class="nc-brain-pill"
+  class:awaiting={busy && !open}
+  type="button"
+  aria-expanded={open}
+  onclick={() => toggleOpen()}
+>
+  <span
+    class="nc-brain-dot"
+    class:paused={loop?.paused}
+    class:off={!loop?.running}
+    class:busy={busy && !open}
+  ></span>
   <span class="nc-brain-pill-label">{COMPANION}</span>
   <span class="nc-brain-pill-meta">
-    {loop ? (loop.paused ? 'paused' : `${loop.turns} turns`) : 'standby'}
+    {busy && !open
+      ? 'replying…'
+      : loop
+        ? loop.paused
+          ? 'paused'
+          : `${loop.turns} turns`
+        : 'standby'}
   </span>
   {#if latest && !open}
     <span class="nc-brain-pill-focus">
@@ -581,6 +773,39 @@
       0 0 0 1px rgba(200, 248, 26, 0.08),
       0 28px 80px rgba(0, 0, 0, 0.55),
       0 0 40px -18px rgba(200, 248, 26, 0.28);
+  }
+
+  .nc-brain-panel.awaiting {
+    border-color: rgba(200, 248, 26, 0.28);
+    box-shadow:
+      0 0 0 1px rgba(200, 248, 26, 0.1),
+      0 28px 80px rgba(0, 0, 0, 0.55),
+      0 0 48px -16px rgba(200, 248, 26, 0.32);
+    animation: nc-brain-await-glow 2.4s var(--ease, ease) infinite;
+  }
+
+  .nc-brain-await-bar {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    z-index: 3;
+  }
+
+  @keyframes nc-brain-await-glow {
+    0%,
+    100% {
+      box-shadow:
+        0 0 0 1px rgba(200, 248, 26, 0.08),
+        0 28px 80px rgba(0, 0, 0, 0.55),
+        0 0 36px -18px rgba(200, 248, 26, 0.22);
+    }
+    50% {
+      box-shadow:
+        0 0 0 1px rgba(200, 248, 26, 0.16),
+        0 28px 80px rgba(0, 0, 0, 0.55),
+        0 0 56px -14px rgba(200, 248, 26, 0.4);
+    }
   }
 
   .nc-brain-panel.fullscreen {
@@ -921,6 +1146,90 @@
     color: var(--obs-acid);
   }
 
+  .nc-brain-feed-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    margin-bottom: 8px;
+  }
+
+  .nc-brain-channels {
+    display: inline-flex;
+    flex-wrap: wrap;
+    gap: 4px;
+  }
+
+  .nc-brain-channel {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    height: 22px;
+    border: 1px solid rgba(245, 233, 220, 0.1);
+    border-radius: 999px;
+    padding: 0 8px;
+    background: rgba(0, 0, 0, 0.22);
+    color: var(--obs-faint);
+    font-family: var(--mono);
+    font-size: 8.5px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    cursor: pointer;
+  }
+
+  .nc-brain-channel b {
+    font-weight: 560;
+    color: var(--obs-text-2);
+  }
+
+  .nc-brain-channel.active {
+    border-color: rgba(200, 248, 26, 0.28);
+    background: rgba(200, 248, 26, 0.08);
+    color: var(--obs-acid);
+  }
+
+  .nc-brain-channel.active b {
+    color: var(--obs-acid);
+  }
+
+  .nc-brain-feed li.pending {
+    opacity: 0.88;
+    animation: nc-brain-enter 220ms var(--ease, ease) both;
+  }
+
+  .nc-brain-feed li.buffering {
+    border: none;
+    background: transparent;
+    padding: 0;
+    animation: nc-brain-enter 280ms var(--ease, ease) both;
+  }
+
+  .nc-brain-feed li.mesh {
+    border-color: rgba(159, 35, 221, 0.22);
+    background:
+      linear-gradient(135deg, rgba(159, 35, 221, 0.1), transparent 55%),
+      rgba(0, 0, 0, 0.2);
+  }
+
+  .nc-brain-feed li.run {
+    border-color: rgba(245, 233, 220, 0.1);
+    background: rgba(0, 0, 0, 0.18);
+  }
+
+  .nc-brain-feed li.logrow {
+    border-style: dashed;
+    border-color: rgba(245, 233, 220, 0.1);
+    background: transparent;
+    opacity: 0.92;
+  }
+
+  .nc-brain-feed li.logrow .nc-brain-text {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--obs-muted);
+  }
+
   .nc-brain-turn-head {
     display: flex;
     align-items: baseline;
@@ -993,6 +1302,16 @@
     border-top: 1px solid rgba(245, 233, 220, 0.07);
     padding: 12px 14px 16px;
     background: linear-gradient(180deg, transparent, rgba(0, 0, 0, 0.28));
+    transition: opacity 160ms ease;
+  }
+
+  .nc-brain-composer.locked {
+    opacity: 0.78;
+  }
+
+  .nc-brain-composer.locked .nc-brain-input,
+  .nc-brain-composer.locked .nc-brain-target {
+    cursor: wait;
   }
 
   .nc-brain-target,
@@ -1023,10 +1342,28 @@
   }
 
   .nc-brain-send {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 7px;
+    min-width: 78px;
     padding-inline: 14px;
     border-color: rgba(200, 248, 26, 0.32);
     background: rgba(200, 248, 26, 0.12);
     color: var(--obs-acid);
+  }
+
+  .nc-brain-send.is-busy {
+    cursor: wait;
+  }
+
+  .nc-brain-send-spin {
+    width: 11px;
+    height: 11px;
+    border: 1.5px solid rgba(200, 248, 26, 0.25);
+    border-top-color: var(--obs-acid);
+    border-radius: 50%;
+    animation: nc-brain-spin 0.7s linear infinite;
   }
 
   .nc-brain-resize {
@@ -1066,6 +1403,18 @@
   .nc-brain-pill:hover {
     border-color: rgba(200, 248, 26, 0.28);
     transform: translateX(-50%) translateY(-1px);
+  }
+
+  .nc-brain-pill.awaiting {
+    border-color: rgba(200, 248, 26, 0.34);
+    box-shadow:
+      0 14px 40px rgba(0, 0, 0, 0.45),
+      0 0 24px -10px rgba(200, 248, 26, 0.35);
+  }
+
+  .nc-brain-dot.busy {
+    background: var(--obs-acid);
+    animation: nc-brain-breathe 1s ease-in-out infinite;
   }
 
   .nc-brain-pill-label {
@@ -1111,6 +1460,23 @@
     }
   }
 
+  @keyframes nc-brain-spin {
+    to {
+      transform: rotate(360deg);
+    }
+  }
+
+  @keyframes nc-brain-enter {
+    from {
+      opacity: 0;
+      transform: translateY(6px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
   @media (max-width: 720px) {
     .nc-brain-panel {
       left: 8px !important;
@@ -1142,7 +1508,13 @@
   }
 
   @media (prefers-reduced-motion: reduce) {
-    .nc-brain-dot {
+    .nc-brain-dot,
+    .nc-brain-send-spin,
+    .nc-brain-feed li.pending,
+    .nc-brain-feed li.buffering,
+    .nc-brain-panel.awaiting,
+    .nc-brain-pill.awaiting,
+    .nc-brain-dot.busy {
       animation: none;
     }
   }

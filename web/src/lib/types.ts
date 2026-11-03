@@ -483,6 +483,54 @@ export interface BrainLoopStatus {
   mission_id: string;
 }
 
+export interface BrainLiveEntry {
+  id: string;
+  channel: 'journal' | 'mesh' | 'run' | 'log' | string;
+  role: string;
+  agent: string;
+  text: string;
+  focus?: string;
+  provider?: string;
+  model?: string;
+  source?: string;
+  actions?: BrainAction[];
+  mission_id?: string;
+  ts?: string | number;
+}
+
+export interface BrainMeshAdvisory {
+  id: string;
+  mission_id: string;
+  kind: string;
+  title: string;
+  tool: string;
+  status: string;
+  agent: string;
+  provider: string;
+  model: string;
+  text: string;
+  ts: string;
+}
+
+export interface BrainLiveFeed {
+  items: BrainTurn[];
+  logs: DirectorLogEntry[];
+  mesh: BrainMeshAdvisory[];
+  model_calls: AgentModelCall[];
+  thoughts: Array<{
+    id: string;
+    run_id: string;
+    kind: string;
+    agent: string;
+    stage?: string;
+    text: string;
+    ts?: string | number;
+    seq?: number;
+  }>;
+  timeline: BrainLiveEntry[];
+  loop: BrainLoopStatus;
+}
+
 export interface CoverageCounts {
   untested: number;
   in_progress: number;

@@ -2,6 +2,7 @@
   import { api } from '../api';
   import { store } from '../state.svelte';
   import { spotlight } from '../actions';
+  import Buffering from '../ui/Buffering.svelte';
   import Icon from '../ui/Icon.svelte';
 
   const mesh = [
@@ -134,15 +135,22 @@
             <p class="obs-alert" role="alert">{error}</p>
           {/if}
           {#if phase && busy}
-            <p class="obs-engage-phase" role="status">
-              <span class="obs-pulse" aria-hidden="true"></span>
-              {phase}
-            </p>
+            <div class="obs-engage-phase" role="status">
+              <Buffering variant="block" tone="acid" label="Engaging" detail={phase} />
+            </div>
           {/if}
 
           <div class="obs-engage-actions">
-            <button class="obs-btn obs-btn-primary obs-engage-cta" type="submit" disabled={!ready}>
-              <Icon name="crosshair" size={14} />
+            <button
+              class="obs-btn obs-btn-primary obs-engage-cta"
+              class:is-busy={busy}
+              type="submit"
+              disabled={!ready}
+              aria-busy={busy}
+            >
+              {#if !busy}
+                <Icon name="crosshair" size={14} />
+              {/if}
               {busy ? 'engaging…' : 'engage hunt'}
             </button>
             <button class="obs-btn obs-btn-ghost" type="button" onclick={() => store.go('home')}>

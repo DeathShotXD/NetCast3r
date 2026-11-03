@@ -2270,6 +2270,61 @@ class Index:
             ).fetchall()
         return [dict(row) for row in rows]
 
+    def list_recent_agent_model_calls(self, limit: int = 40,
+                                      mission_id: str = "") -> list[dict]:
+        """Cross-mission model traffic for Helix's live mesh feed."""
+        limit = max(1, min(int(limit or 40), 200))
+        if mission_id:
+            return self.list_agent_model_calls(mission_id, limit=limit)
+        with self._lock:
+            rows = self.conn.execute(
+                "SELECT * FROM agent_model_calls "
+                "ORDER BY created_at DESC LIMIT ?", (limit,)
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+    def list_recent_mesh_advisories(self, limit: int = 40,
+                                    mission_id: str = "") -> list[dict]:
+        """Recent agent-task model replies (the inter-model chat body)."""
+        limit = max(1, min(int(limit or 40), 200))
+        sql = (
+            "SELECT id, mission_id, kind, title, tool, status, result_json, "
+            "updated_at, created_at FROM agent_tasks "
+        )
+        args: list = []
+        if mission_id:
+            sql += "WHERE mission_id = ? "
+            args.append(mission_id)
+        sql += "ORDER BY COALESCE(updated_at, created_at) DESC LIMIT ?"
+        args.append(max(limit * 4, 80))
+        with self._lock:
+            rows = self.conn.execute(sql, tuple(args)).fetchall()
+        out: list[dict] = []
+        for row in rows:
+            result = _loads(row["result_json"], {})
+            if not isinstance(result, dict):
+                continue
+            text = str(result.get("advisory") or result.get("thought")
+                       or result.get("summary") or result.get("reply") or "").strip()
+            if not text:
+                continue
+            out.append({
+                "id": row["id"],
+                "mission_id": row["mission_id"],
+                "kind": row["kind"],
+                "title": row["title"],
+                "tool": row["tool"],
+                "status": row["status"],
+                "agent": str(result.get("agent") or row["kind"] or "mesh")[:48],
+                "provider": str(result.get("provider") or "")[:80],
+                "model": str(result.get("model") or "")[:120],
+                "text": text[:4000],
+                "ts": row["updated_at"] or row["created_at"],
+            })
+            if len(out) >= limit:
+                break
+        return out
+
     def agent_model_usage(self, mission_id: str) -> dict:
         """Report only what providers actually returned.
 

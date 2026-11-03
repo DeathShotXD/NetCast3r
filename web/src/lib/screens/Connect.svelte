@@ -2,6 +2,7 @@
   import { onMount } from 'svelte';
   import { api } from '../api';
   import { store } from '../state.svelte';
+  import Buffering from '../ui/Buffering.svelte';
   import Icon from '../ui/Icon.svelte';
   import type { ConnectInfo } from '../types';
 
@@ -82,7 +83,14 @@
   {#if error}
     <section class="panel px-5 py-4 text-sm" style="color:var(--obs-red)">{error}</section>
   {:else if loading || !info}
-    <section class="panel px-5 py-8 text-sm text-ash">reading the control plane...</section>
+    <section class="obs-card obs-empty" style="min-height:220px; gap:14px">
+      <Buffering
+        variant="block"
+        tone="quiet"
+        label="Reading plane"
+        detail="Enumerating harness endpoints, tools, and auth policy."
+      />
+    </section>
   {:else}
     <section class="grid grid-cols-2 gap-3 lg:grid-cols-4" aria-label="connection summary">
       <div class="obs-hist-kpi">

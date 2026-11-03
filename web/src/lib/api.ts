@@ -1,5 +1,5 @@
 import type {
-  BenchResult, BrainReply, Campaign, Candidate, ConnectInfo, Approval, CoverageSummary, Direction, DirectorLogEntry, DirectorStatus, ExploitPlan, Finding, HarnessDiagnose, HarnessLearn, HarnessRecall, HarnessStatus, HarnessTick, HostShellResult, Hypothesis, HypothesisEvidence, Inventory, KeyEntry, McpInfo, Meta, Mission, MissionAgent, MissionGraph, Paged, ProgramImport, ProgramPreview, Provider, ProviderHealth, RevengKinds, RevengResult, Run, RunEvent, Submission, SubmissionSummary, ToolCall, Totals, TrendPoint, BrainTurn, BrainLoopStatus } from './types';
+  BenchResult, BrainLiveFeed, BrainReply, Campaign, Candidate, ConnectInfo, Approval, CoverageSummary, Direction, DirectorLogEntry, DirectorStatus, ExploitPlan, Finding, HarnessDiagnose, HarnessLearn, HarnessRecall, HarnessStatus, HarnessTick, HostShellResult, Hypothesis, HypothesisEvidence, Inventory, KeyEntry, McpInfo, Meta, Mission, MissionAgent, MissionGraph, Paged, ProgramImport, ProgramPreview, Provider, ProviderHealth, RevengKinds, RevengResult, Run, RunEvent, Submission, SubmissionSummary, ToolCall, Totals, TrendPoint, BrainTurn, BrainLoopStatus } from './types';
 
 const BASE = '/api/v1';
 
@@ -156,6 +156,10 @@ export const api = {
     request<{ items: BrainTurn[]; loop: BrainLoopStatus }>(
       'GET',
       `/brain/journal?limit=${limit}${missionId ? `&mission_id=${missionId}` : ''}`),
+  brainLive: (limit = 80, missionId = '') =>
+    request<BrainLiveFeed>(
+      'GET',
+      `/brain/live?limit=${limit}${missionId ? `&mission_id=${missionId}` : ''}`),
   brainLoop: (action = 'status', interval = 0) =>
     request<BrainLoopStatus>('POST', '/brain/loop',
       interval ? { action, interval } : { action }),

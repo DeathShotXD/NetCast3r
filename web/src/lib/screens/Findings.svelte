@@ -286,14 +286,18 @@
         <div style="margin-top:8px;display:flex;flex-wrap:wrap;gap:8px">
           <button
             class="obs-btn obs-btn-swarm"
+            class:is-busy={busy}
             type="button"
             disabled={busy}
+            aria-busy={busy}
             onclick={() => patch({ status: 'confirmed' }, 'marked as confirmed')}
           >confirm</button>
           <button
             class="obs-btn"
+            class:is-busy={busy}
             type="button"
             disabled={busy}
+            aria-busy={busy}
             onclick={() => patch({ status: 'escalated' }, 'marked escalate-ready')}
           >escalate</button>
           <button
@@ -312,8 +316,16 @@
             placeholder="why it matters, where it came from, what you did"
           ></textarea>
         </label>
-        <button class="obs-btn" type="button" style="margin-top:8px" disabled={busy} onclick={() => patch({ notes }, 'notes saved')}>
-          save notes
+        <button
+          class="obs-btn"
+          class:is-busy={busy}
+          type="button"
+          style="margin-top:8px"
+          disabled={busy}
+          aria-busy={busy}
+          onclick={() => patch({ notes }, 'notes saved')}
+        >
+          {busy ? 'Saving' : 'save notes'}
         </button>
       </div>
     </div>

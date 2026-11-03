@@ -33,13 +33,39 @@ class BrainContextTests(unittest.TestCase):
                                  mission_id=self.mission["id"])
         for key in ("missions", "runs", "tool_calls", "knowledge", "open_leads",
                     "candidates", "director", "host", "mcp", "focus_mission",
-                    "plane"):
+                    "plane", "mesh_chat", "model_traffic", "helix_journal",
+                    "logs"):
             self.assertIn(key, snapshot)
         self.assertEqual(snapshot["focus_mission"]["id"], self.mission["id"])
         self.assertIn("recent_events", snapshot["focus_mission"])
         self.assertIn("tools", snapshot["host"])
         self.assertEqual(snapshot["plane"]["actually_running"], 0)
         self.assertIn("running_ids", snapshot["plane"])
+
+    def test_live_feed_merges_channels(self):
+        self.index.add_brain_turn("auto", "watching the plane",
+                                  mission_id=self.mission["id"],
+                                  provider="fake", model="free")
+        self.index.add_director_log("control", "engaged",
+                                    mission_id=self.mission["id"])
+        task = self.index.create_agent_task(
+            self.mission["id"], seq=1, kind="analysis", title="probe auth",
+            tool="model")
+        self.index.patch_agent_task(
+            task["id"], status="verified",
+            result={"advisory": "session cookie looks forgeable",
+                    "provider": "fake", "model": "free", "agent": "auth"})
+        feed = brain.live_feed(self.index, self.server._director(),
+                               mission_id=self.mission["id"], limit=40)
+        for key in ("items", "logs", "mesh", "model_calls", "thoughts",
+                    "timeline", "loop"):
+            self.assertIn(key, feed)
+        channels = {row["channel"] for row in feed["timeline"]}
+        self.assertIn("journal", channels)
+        self.assertIn("log", channels)
+        self.assertIn("mesh", channels)
+        self.assertTrue(any("forgeable" in (row.get("text") or "")
+                            for row in feed["mesh"]))
 
 
 class BrainChatTests(unittest.TestCase):

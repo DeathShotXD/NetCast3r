@@ -10,6 +10,7 @@
     SubmissionStatus,
     SubmissionSummary
   } from '../types';
+  import Buffering from '../ui/Buffering.svelte';
   import Icon from '../ui/Icon.svelte';
 
   type Filter = 'all' | 'open' | 'review' | 'accepted' | 'closed';
@@ -373,10 +374,13 @@
   </div>
 
   {#if loading && submissions.length === 0}
-    <div class="obs-card obs-empty" style="min-height:360px">
-      <span class="obs-empty-icon"><Icon name="file" size={18} /></span>
-      <div class="obs-empty-title">Reading the ledger</div>
-      <p class="obs-empty-copy">Loading submissions, outcomes, and recorded payouts from the control plane.</p>
+    <div class="obs-card obs-empty" style="min-height:360px; gap:14px">
+      <Buffering
+        variant="block"
+        tone="quiet"
+        label="Reading the ledger"
+        detail="Loading submissions, outcomes, and recorded payouts from the control plane."
+      />
     </div>
   {:else if filtered.length === 0}
     <div class="obs-card obs-empty" style="min-height:340px">
@@ -579,12 +583,14 @@
         <button class="obs-btn obs-btn-ghost" type="button" onclick={() => (composer = false)}>Cancel</button>
         <button
           class="obs-btn obs-btn-primary"
+          class:is-busy={busy === 'create'}
           type="button"
           disabled={busy === 'create'}
+          aria-busy={busy === 'create'}
           onclick={() => void createSubmission()}
         >
-          <Icon name="plus" size={13} />
-          {busy === 'create' ? 'Saving...' : 'Save submission'}
+          {#if busy !== 'create'}<Icon name="plus" size={13} />{/if}
+          {busy === 'create' ? 'Saving' : 'Save submission'}
         </button>
       </footer>
     </div>
@@ -686,21 +692,25 @@
       <footer class="obs-modal-foot">
         <button
           class="obs-btn obs-sub-delete"
+          class:is-busy={busy === 'delete'}
           type="button"
           disabled={busy === 'delete'}
+          aria-busy={busy === 'delete'}
           onclick={() => void deleteEdit()}
         >
-          Delete from ledger
+          {busy === 'delete' ? 'Deleting' : 'Delete from ledger'}
         </button>
         <span class="obs-modal-note">Deleting a row does not delete the report file.</span>
         <button class="obs-btn obs-btn-ghost" type="button" onclick={() => (editing = null)}>Cancel</button>
         <button
           class="obs-btn obs-btn-primary"
+          class:is-busy={busy === 'save'}
           type="button"
           disabled={busy === 'save'}
+          aria-busy={busy === 'save'}
           onclick={() => void saveEdit()}
         >
-          {busy === 'save' ? 'Saving...' : 'Save changes'}
+          {busy === 'save' ? 'Saving' : 'Save changes'}
         </button>
       </footer>
     </div>
