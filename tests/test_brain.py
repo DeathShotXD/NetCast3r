@@ -250,6 +250,9 @@ class CampaignStartTests(unittest.TestCase):
             mission["id"], status="queued")
         self.assertEqual(len(queued), 1)
         self.assertIn("staging auth", queued[0]["body"])
+        self.assertEqual(payload["priority"]["mission_id"], mission["id"])
+        self.assertIs(
+            self.server.index.get_setting("training_paused_for_priority"), True)
 
     def test_instruct_requires_mission_for_director(self):
         headers = {"host": "127.0.0.1:7857",
@@ -392,6 +395,26 @@ class CognitionTests(unittest.TestCase):
             self.assertIn("tokenharbor", brain._excluded_providers())
         finally:
             brain._PROVIDER_FAILS.clear()
+
+    def test_brain_system_locks_priority_and_stale_unreachable_lessons(self):
+        text = brain.BRAIN_SYSTEM
+        self.assertIn("operator_priority.mission_id", text)
+        self.assertIn("exclusive", text)
+        self.assertIn("unreachable", text)
+        self.assertIn("Contradict that lesson", text)
+
+    def test_priority_lock_pauses_training_until_cleared(self):
+        locked = brain.set_operator_priority(
+            self.index, self.mission["id"], reason="operator lock")
+        self.assertEqual(locked["mission_id"], self.mission["id"])
+        self.assertIs(self.index.get_setting("training_paused_for_priority"), True)
+        self.assertTrue(brain.training_paused_for_priority(self.index))
+        applied = brain._apply(
+            self.index, None, {"kind": "clear_priority"}, self.mission["id"])
+        self.assertTrue(applied["applied"])
+        self.assertIs(self.index.get_setting("training_paused_for_priority"), False)
+        self.assertFalse(brain.training_paused_for_priority(self.index))
+        self.assertEqual(brain.operator_priority(self.index), {})
 
     def test_focus_prefers_an_autonomous_mission(self):
         self.index.create_mission("Supervised", "https://a.example.com/",

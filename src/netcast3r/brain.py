@@ -118,6 +118,11 @@ Rules:
   self_upgrade code for specific exploit scenarios.
 - If the operator asks a question, answer it from the snapshot. If they give
   guidance, turn it into a directive or a plane action.
+- If snapshot.operator_priority.mission_id is set, that lock is exclusive
+  focus. Do not start_hunt, start_swarm, run_lab, or steer any other mission.
+  Lab training stays paused until the operator clears the lock.
+- A lesson that says a host is unreachable is stale once a live probe in the
+  snapshot succeeds. Contradict that lesson and follow the live signal.
 - When your guidance names a specific lead or finding, write @lead:<id> or
   @finding:<id> so the director hands it to the right run.
 """
@@ -147,12 +152,15 @@ every tick - do not rely on memory of an earlier snapshot.
 If snapshot.operator_priority.mission_id is set, that mission is the only
 focus: do not start_swarm/start_hunt on other missions, and stop competing
 live runs when they steal capacity. Prefer technique_corpus and knowledge
-entries that match observed signals.
+entries that match observed signals. Lab training stays paused while priority
+is locked. If snapshot.contradicted_lessons is non-empty, ignore those stale
+"host unreachable" memories - a live probe already proved the host is up.
 
-Training is part of the job. The snapshot carries the unsolved lab plan. When
-the real portfolio is blocked or the hunt has no high-value move, run a lab
-(`run_lab`), and write the lesson you actually learned (`record_lesson`) so the
-mesh inherits it. Never write a lesson for something you did not do.
+Training is part of the job only when no operator_priority is locked. The
+snapshot carries the unsolved lab plan. When the real portfolio is blocked or
+the hunt has no high-value move and priority is clear, run a lab (`run_lab`),
+and write the lesson you actually learned (`record_lesson`) so the mesh
+inherits it. Never write a lesson for something you did not do.
 
 Decide what moves the hunt furthest right now. Prefer, in order: proving a
 bounty-eligible critical (ATO via email-rebind / second-step IDOR / OAuth code
@@ -425,6 +433,12 @@ def live_feed(index, director=None, mission_id: str = "",
         return str(ts or "")
 
     timeline.sort(key=_ts_key)
+    contradicted_unreachable = 0
+    try:
+        _, contradicted_unreachable = index.list_lessons(
+            tag="contradicted", mission_id=mission_id, limit=1)
+    except (TypeError, ValueError, AttributeError):
+        contradicted_unreachable = 0
     loop = {}
     if director is not None:
         try:
@@ -441,6 +455,7 @@ def live_feed(index, director=None, mission_id: str = "",
         "thoughts": thoughts,
         "timeline": timeline[-limit:],
         "loop": loop,
+        "learning": {"contradicted_unreachable": contradicted_unreachable},
     }
 
 
@@ -549,6 +564,18 @@ def context(index, director=None, mission_id: str = "", limit: int = 8) -> dict:
                        for c in candidates],
         "director": director_status,
     }
+    try:
+        contradicted_items, contradicted_total = index.list_lessons(
+            tag="contradicted", mission_id=mission_id, limit=6)
+        snapshot["learning"] = {"contradicted_unreachable": contradicted_total}
+        snapshot["contradicted_lessons"] = [
+            {"id": item.get("id"), "title": item.get("title"),
+             "context": item.get("context")}
+            for item in contradicted_items
+        ]
+    except (TypeError, ValueError, AttributeError):
+        snapshot["learning"] = {"contradicted_unreachable": 0}
+        snapshot["contradicted_lessons"] = []
     try:
         from . import evolve as evolve_module
         snapshot["maturity"] = evolve_module.maturity(index)
@@ -891,6 +918,11 @@ def set_operator_priority(index, mission_id: str, reason: str = "") -> dict:
         "title": mission.get("title") or "",
     }
     index.set_setting("operator_priority", payload)
+    # Freeze lab training so learn-lanes stop stealing capacity.
+    try:
+        index.set_setting("training_paused_for_priority", True)
+    except Exception:  # noqa: BLE001
+        pass
     try:
         index.add_director_log(
             "priority", f"operator locked focus on {mission.get('title') or mission_id}",
@@ -905,6 +937,25 @@ def clear_operator_priority(index) -> None:
         index.set_setting("operator_priority", {})
     except Exception:  # noqa: BLE001
         pass
+    try:
+        index.set_setting("training_paused_for_priority", False)
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def training_paused_for_priority(index) -> bool:
+    """True when lab training must yield to an operator-locked hunt.
+
+    The index flag is the gate. A live operator_priority.mission_id pauses
+    training even if the flag was not written.
+    """
+    try:
+        flag = index.get_setting("training_paused_for_priority")
+    except Exception:  # noqa: BLE001
+        flag = None
+    if flag is True or (isinstance(flag, dict) and flag.get("paused")):
+        return True
+    return bool(operator_priority(index).get("mission_id"))
 
 
 def focus_mission_id(index) -> str:

@@ -406,11 +406,9 @@ class Director:
             self._touch(active, state)
             return {"action": "wait", "reason": f"{busy} run(s) in flight"}
         eligible = {mission["id"] for mission in self._eligible(state)}
-        if not eligible:
-            self._touch(active, state)
-            return {"action": "idle", "reason": "no eligible mission"}
         # Operator priority hard-locks the director onto one mission until
-        # cleared or that mission leaves active.
+        # cleared or that mission leaves active. Not eligible means wait:
+        # never fill the slot with a different mission.
         priority_id = ""
         try:
             from .. import brain as brain_module
@@ -418,7 +416,11 @@ class Director:
                                or {}).get("mission_id") or "")
         except Exception:  # noqa: BLE001
             priority_id = ""
-        if priority_id and priority_id in eligible:
+        if priority_id:
+            if priority_id not in eligible:
+                self._touch(active, state)
+                return {"action": "wait",
+                        "reason": f"operator priority {priority_id} not eligible"}
             if self._busy(priority_id, active):
                 self._touch(active, state)
                 return {"action": "wait",
@@ -432,6 +434,9 @@ class Director:
                 "objective": {"goal": "operator priority hunt"},
             }
             return self._start(chosen, active, state)
+        if not eligible:
+            self._touch(active, state)
+            return {"action": "idle", "reason": "no eligible mission"}
         decision = self.prime.decide(limit=50)
         chosen = None
         for row in decision["ranked"]:

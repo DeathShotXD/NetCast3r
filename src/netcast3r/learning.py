@@ -231,6 +231,8 @@ def suggest_next(index, mission_id: str, limit: int = 8) -> dict:
             "hypothesis_test",
             {"hypothesis_id": hypothesis["id"], "steps": []}, "medium")
     for lesson in lessons[:3]:
+        if not lesson_is_active(lesson):
+            continue
         if lesson.get("next_step"):
             add(lesson["next_step"], f"lesson: {lesson.get('title')}",
                 "lessons_get", {"lesson_id": lesson["id"]}, "low")
@@ -429,6 +431,207 @@ def bundled_skill_packs() -> list[dict]:
             "body": body,
         })
     return items
+
+
+_UNREACHABLE_RE = re.compile(
+    r"unreachable|connect\s*error|connecterror|probe[_\s-]?failed|"
+    r"connection refused|name or service not known|network unreachable|"
+    r"certificate verify failed|ssl:|\btls\b.*(?:fail|error|dead)|"
+    r"no valid http",
+    re.I)
+_DEAD_NOTE_RE = re.compile(r"dead[\s-]?end|host.*dead|dead host", re.I)
+_SUPERSEDED_TAGS = frozenset({"superseded", "contradicted"})
+
+
+def lesson_is_active(lesson: dict) -> bool:
+    """False when a lesson was superseded by later evidence."""
+    tags = {str(tag).lower() for tag in (lesson.get("tags") or [])}
+    if tags & _SUPERSEDED_TAGS:
+        return False
+    text = str(lesson.get("lesson") or "")
+    return "[superseded:" not in text.lower()
+
+
+def _mentions_unreachable(text: str) -> bool:
+    return bool(_UNREACHABLE_RE.search(text or ""))
+
+
+def _host_matches(host: str, lesson: dict) -> bool:
+    host = host.strip().lower()
+    if not host:
+        return False
+    blob = " ".join(
+        str(lesson.get(key) or "")
+        for key in ("title", "lesson", "context", "next_step", "technique")
+    ).lower()
+    tags = {str(tag).lower() for tag in (lesson.get("tags") or [])}
+    slug = host.split(".")[0]
+    return host in blob or host in tags or (slug and slug in tags)
+
+
+def _note_matches_unreachable(host: str, note: dict) -> bool:
+    if not _host_matches(host, {"title": note.get("title"), "lesson": note.get("body"),
+                                "context": "", "next_step": "", "technique": "",
+                                "tags": []}):
+        return False
+    blob = f"{note.get('title') or ''} {note.get('body') or ''}"
+    kind = str(note.get("kind") or "").lower()
+    if "[superseded:" in blob.lower():
+        return False
+    return (_mentions_unreachable(blob) or "dead" in kind
+            or bool(_DEAD_NOTE_RE.search(blob)))
+
+
+def contradict_host_unreachable_lessons(index, host: str, mission_id: str = "",
+                                      evidence: str = "") -> dict:
+    """Mark stale unreachable lessons/notes contradicted after HTTP success."""
+    host = (_host(host) or str(host or "").strip()).lower()
+    stamp = (evidence or "HTTP success on this host").strip()[:240]
+    out = {"host": host, "mission_id": mission_id, "lessons": 0, "notes": 0,
+           "kb": 0, "total": 0, "evidence": stamp}
+
+    if not host:
+        return out
+
+    candidates: list[dict] = []
+    seen: set[str] = set()
+    for query in {host, host.split(".")[0]}:
+        if not query:
+            continue
+        rows, _ = index.list_lessons(q=query, limit=80)
+        for row in rows:
+            if row["id"] not in seen:
+                seen.add(row["id"])
+                candidates.append(row)
+    if mission_id:
+        rows, _ = index.list_lessons(mission_id=mission_id, limit=120)
+        for row in rows:
+            if row["id"] not in seen:
+                seen.add(row["id"])
+                candidates.append(row)
+
+    for lesson in candidates:
+        if not lesson_is_active(lesson) or not _host_matches(host, lesson):
+            continue
+        blob = " ".join(
+            str(lesson.get(key) or "")
+            for key in ("title", "lesson", "context", "next_step")
+        )
+        if not _mentions_unreachable(blob):
+            continue
+        suffix = f" [superseded: {stamp}]"
+        body = str(lesson.get("lesson") or "")
+        if suffix.lower() not in body.lower():
+            body = (body + suffix).strip()[:4000]
+        tags = sorted(set(lesson.get("tags") or []) | {"superseded", "contradicted", host})
+        try:
+            index.patch_lesson(
+                lesson["id"],
+                lesson=body,
+                outcome="observation",
+                next_step="Host answered over HTTP; retry active probes on this host.",
+                tags=tags,
+                confidence=min(float(lesson.get("confidence") or 0.5), 0.35),
+            )
+        except ValueError:
+            continue
+        out["lessons"] += 1
+
+    if mission_id:
+        for note in index.list_agent_notes(mission_id, limit=120):
+            if not _note_matches_unreachable(host, note):
+                continue
+            body = str(note.get("body") or "")
+            suffix = f" [superseded: {stamp}]"
+            if suffix.lower() not in body.lower():
+                body = (body + suffix).strip()[:4000]
+            title = str(note.get("title") or "")
+            if title.lower().startswith("superseded:"):
+                patched_title = title
+            else:
+                patched_title = f"superseded: {title}"[:500]
+            try:
+                index.patch_agent_note(
+                    note["id"],
+                    kind="observation",
+                    title=patched_title,
+                    body=body,
+                )
+            except (TypeError, ValueError, AttributeError):
+                continue
+            out["notes"] += 1
+
+    from . import kb as kb_module
+
+    scopes = ["global"]
+    if mission_id:
+        scopes.append(mission_id)
+    for scope in scopes:
+        for row in index.list_kb_entries(scope=scope, kind="dead-end", q=host, limit=40):
+            body = str(row.get("body") or "")
+            if "[superseded:" in body.lower():
+                continue
+            if host not in body.lower() and host not in str(row.get("key") or "").lower():
+                continue
+            if not (_mentions_unreachable(body) or "refuted" in body.lower()):
+                continue
+            patched = (body + f" [superseded: {stamp}]").strip()[:4000]
+            try:
+                kb_module.record(
+                    index, scope, "dead-end", str(row.get("key") or host),
+                    title=str(row.get("title") or host),
+                    body=patched,
+                    confidence="hypothesis",
+                    source={"superseded_by": stamp, "host": host},
+                    data=row.get("data") or {},
+                )
+            except ValueError:
+                continue
+            out["kb"] += 1
+
+    out["total"] = out["lessons"] + out["notes"] + out["kb"]
+    out["contradicted"] = out["total"]
+    if out["lessons"]:
+        try:
+            index.add_director_log(
+                "lesson.contradict",
+                f"superseded {out['lessons']} unreachable lesson(s) for {host}",
+                mission_id=mission_id or None,
+                data={"host": host, "lessons": out["lessons"], "notes": out["notes"],
+                      "kb": out["kb"], "evidence": stamp})
+        except Exception:  # noqa: BLE001
+            pass
+    return out
+
+
+def note_host_reachable(index, target: str, status: int, mission_id: str = "",
+                        tls_insecure: bool = False) -> dict:
+    """Hook for successful HTTP tools: clear poisoned dead-host memory."""
+    if int(status or 0) <= 0 or index is None:
+        return {"host": "", "contradicted": 0, "total": 0}
+    host = _host(target) or ""
+    evidence = f"HTTP {int(status)}" + (" (tls_insecure)" if tls_insecure else "")
+    return contradict_host_unreachable_lessons(
+        index, host, mission_id=mission_id, evidence=evidence)
+
+
+def on_http_tool_success(index, call: dict) -> dict | None:
+    """Learning hook after a stored http_probe/http_request success."""
+    if str(call.get("tool") or "") not in {"http_probe", "http_request"}:
+        return None
+    if str(call.get("status") or "") != "ok":
+        return None
+    result = call.get("result") if isinstance(call.get("result"), dict) else {}
+    status = result.get("status")
+    if not isinstance(status, int) or status <= 0:
+        return None
+    args = call.get("args") if isinstance(call.get("args"), dict) else {}
+    host = _target(args) or _host(str(result.get("url") or ""))
+    if not host:
+        return None
+    evidence = f"HTTP {status} via {call.get('tool')}"
+    return contradict_host_unreachable_lessons(
+        index, host, mission_id=str(call.get("mission_id") or ""), evidence=evidence)
 
 
 def seed_builtin_skills(index) -> int:

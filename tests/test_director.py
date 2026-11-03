@@ -352,6 +352,76 @@ class DirectorTests(unittest.TestCase):
         self.assertEqual(len(self.server.index.list_directions(
             mission["id"], status="consumed")), 1)
 
+    def test_locked_priority_waits_instead_of_scheduling_another_mission(self):
+        from netcast3r import brain as brain_module
+
+        other = self.mission("other", autonomy="autonomous")
+        locked = self.mission("locked", autonomy="supervised")
+        brain_module.set_operator_priority(
+            self.server.index, locked["id"], reason="operator lock")
+        decision = self.director._tick(force=True)
+        self.assertEqual(decision["action"], "wait")
+        self.assertIn(locked["id"], decision["reason"])
+        self.assertNotIn(other["id"], decision["reason"])
+        self.assertEqual(self.hunts.started, [])
+        self.assertEqual(self.solvers.started, [])
+
+    def test_locked_ineligible_priority_waits_with_no_other_mission(self):
+        from netcast3r import brain as brain_module
+
+        locked = self.mission("manual-lock", autonomy="manual")
+        brain_module.set_operator_priority(self.server.index, locked["id"])
+        decision = self.director._tick(force=True)
+        self.assertEqual(decision["action"], "wait")
+        self.assertIn("not eligible", decision["reason"])
+        self.assertEqual(self.hunts.started, [])
+        self.assertEqual(self.solvers.started, [])
+
+    def test_locked_priority_starts_only_that_mission(self):
+        from netcast3r import brain as brain_module
+
+        other = self.mission("other")
+        locked = self.mission("locked")
+        brain_module.set_operator_priority(self.server.index, locked["id"])
+        decision = self.director._tick(force=True)
+        self.assertEqual(decision["action"], "start")
+        self.assertEqual(decision["mission_id"], locked["id"])
+        self.assertNotEqual(decision["mission_id"], other["id"])
+        started = self.hunts.started + self.solvers.started
+        self.assertEqual(len(started), 1)
+
+    def test_training_tick_skips_while_the_priority_gate_is_set(self):
+        import threading
+
+        from netcast3r import brain as brain_module
+        from netcast3r.server.training_director import TrainingDirector
+
+        mission = self.mission("focus")
+        trainer = TrainingDirector(self.server)
+        brain_module.set_operator_priority(self.server.index, mission["id"])
+        self.assertIs(
+            self.server.index.get_setting("training_paused_for_priority"), True)
+        # Flag cleared, but the live mission lock still owns capacity.
+        self.server.index.set_setting("training_paused_for_priority", False)
+        trainer._tick()
+        self.assertEqual(trainer._cycles, 0)
+        self.assertEqual(trainer._inflight, 0)
+
+        brain_module.clear_operator_priority(self.server.index)
+        self.assertIs(
+            self.server.index.get_setting("training_paused_for_priority"), False)
+        self.assertEqual(brain_module.operator_priority(self.server.index), {})
+        self.server.index.set_setting("training_paused_for_priority", True)
+        trainer._tick()
+        self.assertEqual(trainer._cycles, 0)
+
+        self.server.index.set_setting("training_paused_for_priority", False)
+        done = threading.Event()
+        trainer._solve_one = lambda: done.set()
+        trainer._tick()
+        self.assertTrue(done.wait(2.0))
+        self.assertEqual(trainer._cycles, 1)
+
 
 class DirectorSurfaceTests(unittest.TestCase):
     def setUp(self):
@@ -404,6 +474,51 @@ class DirectorSurfaceTests(unittest.TestCase):
                      "prime_portfolio"):
             self.assertIn(name, _TOOL_MAP)
             self.assertIn(name, names)
+
+
+class OperatorPriorityLockTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp())
+        self.server = build_server(results_dir=str(self.tmp / "results"),
+                                   base=self.tmp, recover=False)
+        self.hunts = FakeHunts(self.server)
+        self.solvers = FakeSolvers(self.server)
+        self.server._hunts = lambda: self.hunts
+        self.server._solvers = lambda: self.solvers
+        self.director = Director(self.server)
+        self.director.tick_seconds = 5
+
+    def tearDown(self):
+        self.director.shutdown()
+        self.server.jobs.shutdown(wait=False)
+        self.server.index.close()
+
+    def test_priority_hard_locks_other_missions(self):
+        from netcast3r import brain
+
+        primary = self.server.index.create_mission(
+            "Primary", "http://127.0.0.1:9/", status="active",
+            autonomy="autonomous", scope=["127.0.0.1"])
+        other = self.server.index.create_mission(
+            "Other", "http://127.0.0.1:9/other", status="active",
+            autonomy="autonomous", scope=["127.0.0.1"])
+        brain.set_operator_priority(self.server.index, primary["id"],
+                                    reason="unit lock")
+        self.assertTrue(brain.training_paused_for_priority(self.server.index))
+        state = self.server.index.ensure_director_state()
+        active = state.get("active") or {}
+        for entry in (active.get("missions") or {}).values():
+            entry["last_started"] = 0
+        self.server.index.patch_director_state(active=active, paused=False,
+                                               engaged=True)
+        first = self.director._tick(force=True)
+        self.assertEqual(first.get("mission_id"), primary["id"])
+        # While primary is in flight, tick waits instead of scheduling other.
+        second = self.director._tick(force=True)
+        self.assertEqual(second.get("action"), "wait")
+        self.assertNotIn(other["id"], self.solvers.started + self.hunts.started)
+        brain.clear_operator_priority(self.server.index)
+        self.assertFalse(brain.training_paused_for_priority(self.server.index))
 
 
 if __name__ == "__main__":

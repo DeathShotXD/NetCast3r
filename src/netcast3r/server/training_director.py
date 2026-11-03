@@ -105,6 +105,12 @@ class TrainingDirector:
             self._stop.wait(wait)
 
     def _tick(self) -> None:
+        # Yield lab capacity while operator priority owns the plane.
+        # Skip when training_paused_for_priority is true, or when
+        # operator_priority.mission_id is set.
+        if self._paused_for_operator_priority():
+            self._last_error = "paused: operator priority hunt owns capacity"
+            return
         with self._lock:
             if self._inflight >= self.max_inflight:
                 return
@@ -113,6 +119,23 @@ class TrainingDirector:
         worker = threading.Thread(
             target=self._solve_one, name="netcast3r-lab-solve-tick", daemon=True)
         worker.start()
+
+    def _paused_for_operator_priority(self) -> bool:
+        index = getattr(self.server, "index", None)
+        if index is None:
+            return False
+        try:
+            flag = index.get_setting("training_paused_for_priority")
+        except Exception:  # noqa: BLE001
+            flag = None
+        if flag is True or (isinstance(flag, dict) and flag.get("paused")):
+            return True
+        try:
+            from .. import brain as brain_module
+            locked = brain_module.operator_priority(index) or {}
+        except Exception:  # noqa: BLE001
+            return False
+        return bool(locked.get("mission_id"))
 
     def _next_source(self) -> str:
         with self._lock:

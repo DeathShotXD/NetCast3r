@@ -37,10 +37,10 @@ ACTIVE = {"planning", "running", "stopping"}
 REQUIRED_KINDS = {"scope", "probe", "inventory"}
 ROLES = ("recon", "auth", "api", "validator", "reporter", "training")
 ROLE_FOCUS = {
-    "recon": "map the reachable surface and name what is worth probing next",
-    "auth": "focus on authentication, session boundaries, and account state",
-    "api": "focus on API authorization, object ownership, and input handling",
-    "validator": "attack the evidence: say why each claimed issue is or is not proven",
+    "recon": "fingerprint once, then rank high-impact auth and authorization chains",
+    "auth": "prioritize ATO, auth bypass, OAuth, reset, and session chains",
+    "api": "prioritize multi-account BOLA/IDOR, privilege, and mass assignment",
+    "validator": "reject claims without raw HTTP PoC and exact reproduction steps",
     "reporter": "state what can be written up today and what evidence is still missing",
 }
 
@@ -843,6 +843,9 @@ class AgentRuntime:
                 "inside it. Do not invent endpoints, vulnerabilities, or findings. "
                 "Reachability is not a vulnerability. Say plainly when the evidence "
                 f"is insufficient. Your role focus: {ROLE_FOCUS.get(role, ROLE_FOCUS['recon'])}. "
+                "Rank by bounty impact; state hypothesis, expected observation, and "
+                "next falsifier. Downgrade claims lacking status, headers, body evidence, "
+                "and reproduction steps. "
                 "Answer in at most 180 words as prose.")},
             {"role": "user", "content": payload},
         ]

@@ -1449,6 +1449,25 @@ class Index:
             self.conn.commit()
         return int(cur.rowcount or 0)
 
+    def patch_agent_note(self, note_id: str, **fields) -> dict | None:
+        with self._lock:
+            row = self.conn.execute(
+                "SELECT * FROM agent_notes WHERE id = ?", (note_id,)).fetchone()
+            if not row:
+                return None
+            item = dict(row)
+            kind = str(fields.get("kind", item.get("kind") or "note"))[:48]
+            title = str(fields.get("title", item.get("title") or ""))[:500]
+            body = str(fields.get("body", item.get("body") or ""))[:4000]
+            self.conn.execute(
+                "UPDATE agent_notes SET kind = ?, title = ?, body = ? WHERE id = ?",
+                (kind, title, body, note_id),
+            )
+            self.conn.commit()
+            row = self.conn.execute(
+                "SELECT * FROM agent_notes WHERE id = ?", (note_id,)).fetchone()
+        return dict(row) if row else None
+
     # -- program scope imports --------------------------------------------
     def add_program_import(self, mission_id: str, parsed: dict, diff: dict,
                            filename: str = "", actor: str = "") -> dict:
@@ -1678,6 +1697,33 @@ class Index:
             cur = self.conn.execute("DELETE FROM lessons WHERE id = ?", (lesson_id,))
             self.conn.commit()
         return cur.rowcount > 0
+
+    def patch_lesson(self, lesson_id: str, *, lesson: str | None = None,
+                     next_step: str | None = None, tags: list | None = None,
+                     confidence: float | None = None,
+                     outcome: str | None = None) -> dict | None:
+        """Update fields on an existing lesson (used to supersede stale memory)."""
+        current = self.get_lesson(lesson_id)
+        if not current:
+            return None
+        new_lesson = current["lesson"] if lesson is None else str(lesson)
+        new_next = current["next_step"] if next_step is None else str(next_step)
+        new_tags = current["tags"] if tags is None else [str(t) for t in tags if str(t).strip()]
+        new_conf = current["confidence"] if confidence is None else float(confidence)
+        new_outcome = current["outcome"] if outcome is None else str(outcome).strip().lower()
+        if new_outcome not in LESSON_OUTCOMES:
+            raise ValueError(f"unknown outcome: {new_outcome}")
+        if not 0.0 <= new_conf <= 1.0:
+            raise ValueError("confidence must be between 0 and 1")
+        now = _now()
+        with self._lock:
+            self.conn.execute(
+                "UPDATE lessons SET lesson = ?, next_step = ?, tags_json = ?, "
+                "confidence = ?, outcome = ?, updated_at = ? WHERE id = ?",
+                (new_lesson, new_next, json.dumps(new_tags), new_conf,
+                 new_outcome, now, lesson_id))
+            self.conn.commit()
+        return self.get_lesson(lesson_id)
 
     @staticmethod
     def _lesson_row(row: sqlite3.Row) -> dict:
@@ -3220,7 +3266,14 @@ class Index:
                  args_json, result_json, error, int(duration_ms), _now()),
             )
             self.conn.commit()
-        return self.get_tool_call(call_id) or {}
+        call = self.get_tool_call(call_id) or {}
+        if status == "ok" and tool in {"http_probe", "http_request"}:
+            try:
+                from .. import learning as learning_module
+                learning_module.on_http_tool_success(self, call)
+            except Exception:  # noqa: BLE001 - learning must not break audit
+                pass
+        return call
 
     def list_tool_calls(self, tool: str = "", status: str = "", mission_id: str = "",
                         run_id: str = "", limit: int = 50,

@@ -11,6 +11,7 @@ an expected observation; it still has to be tested.
 
 from __future__ import annotations
 
+import json
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -21,7 +22,7 @@ from .events import Event
 
 
 class HuntRunner:
-    def __init__(self, server, workers: int = 2):
+    def __init__(self, server, workers: int = 4):
         self.server = server
         self.pool = ThreadPoolExecutor(max_workers=max(1, workers),
                                        thread_name_prefix="netcast3r-hunt")
@@ -168,16 +169,24 @@ class HuntRunner:
         signals = [s for s in signals
                    if not (s in seen_sig or seen_sig.add(s))]
 
-        safe_paths = ["/robots.txt", "/.well-known/security.txt", "/sitemap.xml"]
+        safe_paths = [
+            "/robots.txt", "/.well-known/security.txt", "/sitemap.xml",
+            "/login", "/signin", "/register", "/signup", "/auth", "/oauth",
+            "/api", "/api/", "/admit", "/result", "/results", "/dashboard",
+            "/apply", "/account", "/profile", "/admin",
+        ]
         # Rotate a few graph endpoints into the safe surface pass.
         for path in graph_paths:
             if path.startswith("http"):
                 continue
             if not path.startswith("/"):
                 path = "/" + path
-            if path not in safe_paths and len(safe_paths) < 8:
+            if path not in safe_paths and len(safe_paths) < 18:
                 safe_paths.append(path.split("?", 1)[0][:120])
         surface = []
+        # surface_map holds the live auth/api/object anchors (host + path +
+        # bucket) that notes and falsifiable hypotheses are built from.
+        surface_map: list[dict] = []
         for path in safe_paths:
             if cancel.is_set():
                 raise RuntimeError("cancelled")
@@ -189,11 +198,60 @@ class HuntRunner:
                     "follow_redirects": False})
             except RuntimeError:
                 continue
-            surface.append({"path": path, "status": response.get("status"),
-                            "bytes": response.get("bytes")})
+            status = response.get("status")
+            surface.append({"path": path, "status": status,
+                            "bytes": response.get("bytes"),
+                            "tls_insecure": bool(response.get("tls_insecure"))})
             emit(Event(type="fetch", agent="hunt", stage="surface", payload={
                 "url": target.rstrip("/") + path,
-                "status": response.get("status")}))
+                "status": status}))
+            # Live auth/API surfaces should bias technique ranking immediately.
+            kind = _classify_path(path)
+            if kind == "auth":
+                signals.extend(["oauth", "auth", "session", "ato"])
+            elif kind in ("api", "object"):
+                signals.extend(["api", "idor", "bola"])
+            if _is_live(status) and kind in ("auth", "api", "object"):
+                surface_map.append({"host": host, "path": path,
+                                    "status": int(status or 0), "kind": kind})
+
+        # Also fingerprint sibling in-scope hosts so one hunt does basic recon
+        # across the live subdomain set, not only the seed URL.
+        sibling_hits = self._probe_scope_hosts(
+            registry, mission_id, target, emit, cancel)
+        for hit in sibling_hits:
+            for token in (hit.get("signals") or []):
+                signals.append(str(token).lower())
+            sib_host = str(hit.get("host") or "")
+            for entry in (hit.get("paths") or []):
+                p = str(entry.get("path") or "")
+                k = _classify_path(p)
+                if k in ("auth", "api", "object"):
+                    surface_map.append({"host": sib_host, "path": p,
+                                        "status": int(entry.get("status") or 0),
+                                        "kind": k})
+
+        try:
+            note_body = {
+                "seed": target,
+                "probe_status": probe.get("status"),
+                "title": title,
+                "server": headers.get("server"),
+                "tls_insecure": bool(probe.get("tls_insecure")),
+                "surface": surface[:24],
+                "siblings": sibling_hits[:12],
+            }
+            self.server.index.add_agent_note(
+                mission_id, "hunt.recon",
+                f"Recon: {host} status={probe.get('status')}",
+                json.dumps(note_body, default=str)[:4000],
+                run_id=run_id)
+        except Exception:  # noqa: BLE001
+            pass
+
+        # De-dupe signals after surface enrichment.
+        seen_sig = set()
+        signals = [s for s in signals if not (s in seen_sig or seen_sig.add(s))]
 
         emit(Event(type="log", agent="hunt", stage="surface",
                    payload={"text": "comparing path encodings" }))
@@ -210,7 +268,52 @@ class HuntRunner:
         techniques = self._call(registry, "technique_plan", {
             "target": target, "signals": signals, "limit": 8})
         chains = self._call(registry, "chain_plan", {
-            "target": target, "signals": signals, "limit": 3})
+            "target": target, "signals": signals, "limit": 4})
+
+        # Rich map note the swarm can resume from: portal path map, auth and
+        # object/api surfaces, a sibling host table, and the critical chains
+        # worth running. This is the hand-off artefact, not a raw dump.
+        try:
+            auth_rows = [f"{r['host']}{r['path']} ({r['status']})"
+                         for r in surface_map if r["kind"] == "auth"]
+            object_rows = [f"{r['host']}{r['path']} ({r['status']})"
+                           for r in surface_map if r["kind"] in ("object", "api")]
+            sibling_table = [{
+                "host": sib.get("host"), "status": sib.get("status"),
+                "server": sib.get("server"),
+                "tls_insecure": bool(sib.get("tls_insecure")),
+                "paths": [f"{p['path']}:{p['status']}"
+                          for p in (sib.get("paths") or [])],
+            } for sib in sibling_hits]
+            suggested_chains = [{
+                "id": c.get("id"), "title": c.get("title"),
+                "impact": c.get("impact"),
+                "why": (c.get("why") or [])[:4],
+                "first_steps": (c.get("steps") or [])[:3],
+            } for c in (chains.get("items") or [])[:4]]
+            map_body = {
+                "seed_host": host,
+                "path_map": [f"{r['host']}{r['path']} [{r['kind']}] {r['status']}"
+                             for r in surface_map],
+                "auth_surfaces": auth_rows,
+                "object_api_surfaces": object_rows,
+                "siblings": sibling_table,
+                "suggested_chains": suggested_chains,
+                "critical_chains_to_run": [
+                    "BOLA on admit/result object (swap the applicant/roll id)",
+                    "Dual-account IDOR on an API object by id (two sessions)",
+                    "OAuth redirect_uri / state abuse -> code or token theft",
+                ],
+            }
+            self.server.index.add_agent_note(
+                mission_id, "hunt.map",
+                (f"Surface map: {host} "
+                 f"({len(surface_map)} auth/api/object anchors, "
+                 f"{len(sibling_hits)} siblings)"),
+                json.dumps(map_body, default=str)[:8000],
+                run_id=run_id)
+        except Exception:  # noqa: BLE001 - the map note is best effort
+            pass
 
         # Rotate which ranked techniques become leads across continuous runs.
         run_count = 0
@@ -238,26 +341,25 @@ class HuntRunner:
             pass
 
         hypotheses = []
-        for item in ranked:
-            if cancel.is_set() or len(hypotheses) >= 2:
-                break
-            title = f"Test {item['title']} on {host}"
-            tech_id = str(item.get("id") or "")
+
+        def _open_lead(title: str, tech_id: str, rationale: str, expected: str,
+                       lead_target: str = "") -> None:
+            if cancel.is_set() or len(hypotheses) >= 5:
+                return
             if title.casefold() in open_titles:
-                continue
-            if tech_id.casefold() in open_techs:
-                continue
+                return
+            if tech_id and tech_id.casefold() in open_techs:
+                return
             try:
                 hypothesis = self._call(registry, "hypothesis_create", {
                     "title": title,
-                    "target": target, "mission_id": mission_id,
+                    "target": lead_target or target, "mission_id": mission_id,
                     "technique": tech_id,
-                    "rationale": ", ".join(item.get("why") or []) or item.get("class", ""),
-                    "expected": item.get("proof") or "a reproducible effect",
+                    "rationale": rationale,
+                    "expected": expected,
                 })
             except RuntimeError:
-                continue
-            # create_hypothesis may return an existing open lead; only count new.
+                return
             if hypothesis.get("id") and title.casefold() not in open_titles:
                 hypotheses.append(hypothesis)
                 open_titles.add(title.casefold())
@@ -265,6 +367,87 @@ class HuntRunner:
                     open_techs.add(tech_id.casefold())
                 emit(Event(type="log", agent="hunt", stage="hypotheses", payload={
                     "text": f"hypothesis: {hypothesis.get('title')}"}))
+
+        # Portal-shaped surfaces get falsifiable critical-chain leads first.
+        # Each lead names a concrete (host, path) anchor plus the object to
+        # swap and the proof, so the swarm can act without re-deriving scope.
+        auth_surfaces = [r for r in surface_map if r["kind"] == "auth"]
+        api_surfaces = [r for r in surface_map if r["kind"] == "api"]
+        object_surfaces = [r for r in surface_map if r["kind"] == "object"]
+
+        def _anchor(rows, *tokens):
+            for row in rows:
+                low = str(row.get("path") or "").lower()
+                if any(token in low for token in tokens):
+                    return row
+            return None
+
+        # 1) BOLA on the admit/result object (the classic exam-portal chain).
+        obj = _anchor(object_surfaces, "admit", "result")
+        if obj:
+            loc = f"{obj['host']}{obj['path']}"
+            _open_lead(
+                (f"BOLA on {loc}: swapping the applicant/roll id returns "
+                 f"another candidate's record"),
+                "bola",
+                (f"{obj['path']} answered {obj['status']} on {obj['host']}; "
+                 f"object id looks guessable/sequential"),
+                (f"two sessions where account A reads account B's record via "
+                 f"{obj['path']} with only the id changed"),
+                f"https://{obj['host']}/")
+
+        # 2) Dual-account IDOR on the API (or profile/account) object by id.
+        api = (api_surfaces[0] if api_surfaces else
+               _anchor(object_surfaces, "profile", "account", "dashboard"))
+        if api:
+            loc = f"{api['host']}{api['path']}"
+            _open_lead(
+                (f"Dual-account IDOR on {loc}: account A reads account B's "
+                 f"object by id"),
+                "idor",
+                (f"{api['path']} answered {api['status']} on {api['host']}; "
+                 f"enumerate object id across two authenticated accounts"),
+                (f"raw req/res where account A retrieves account B's record via "
+                 f"{api['path']} without authorization"),
+                f"https://{api['host']}/")
+
+        # 3) OAuth redirect_uri abuse when an oauth/sso surface answers;
+        #    otherwise a login/register surface gets a session/reset ATO lead.
+        oauth = _anchor(auth_surfaces, "oauth", "callback", "sso", "consent",
+                        "oidc")
+        login = _anchor(auth_surfaces, "login", "signin", "register", "signup")
+        if oauth:
+            loc = f"{oauth['host']}{oauth['path']}"
+            _open_lead(
+                (f"OAuth redirect_uri abuse on {loc}: loose redirect/state "
+                 f"allows code or token theft"),
+                "oauth",
+                (f"{oauth['path']} answered {oauth['status']} on "
+                 f"{oauth['host']}; test redirect_uri allowlist and state"),
+                (f"a crafted authorize request on {oauth['path']} that leaks "
+                 f"the code/token to an attacker-controlled redirect"),
+                f"https://{oauth['host']}/")
+        elif login:
+            loc = f"{login['host']}{login['path']}"
+            _open_lead(
+                (f"Session/reset ATO on {loc}: password-reset host header or "
+                 f"session fixation enables account takeover"),
+                "auth-ato",
+                (f"{login['path']} answered {login['status']} on "
+                 f"{login['host']}; test reset-token host, session fixation"),
+                (f"raw req/res taking over an account via {login['path']} "
+                 f"without the owner's proof"),
+                f"https://{login['host']}/")
+
+        for item in ranked:
+            if cancel.is_set() or len(hypotheses) >= 5:
+                break
+            title = f"Test {item['title']} on {host}"
+            tech_id = str(item.get("id") or "")
+            _open_lead(
+                title, tech_id,
+                ", ".join(item.get("why") or []) or item.get("class", ""),
+                item.get("proof") or "a reproducible effect")
 
         summary = {
             "mode": "hunt", "target": target, "title": title,
@@ -279,6 +462,122 @@ class HuntRunner:
                      f"{len(techniques.get('items') or [])} techniques, "
                      f"0 findings")}))
         return summary
+
+
+    def _probe_scope_hosts(self, registry, mission_id: str, seed: str, emit,
+                           cancel) -> list[dict]:
+        """Hit other in-scope hostnames so recon is not seed-blind.
+
+        Each returned hit carries a small path map (path -> status) for the
+        auth and object surfaces that actually answer on the sibling, so the
+        caller can fold live portals into notes and falsifiable hypotheses.
+        """
+        mission = self.server.index.get_mission(mission_id) or {}
+        seed_host = (urlsplit(seed if "://" in seed else "https://" + seed)
+                     .hostname or "").lower()
+        hosts: list[str] = []
+        for entry in (mission.get("scope") or []):
+            text = str(entry or "").strip().lower()
+            if not text or text == seed_host:
+                continue
+            if "://" in text:
+                host = urlsplit(text).hostname or ""
+            else:
+                host = text.split("/")[0]
+            if host and host != seed_host and host not in hosts:
+                hosts.append(host)
+        # Prefer applicant portals over apex marketing sites.
+        portal_prefixes = ("apply.", "online.", "cp.", "portal.", "www.")
+        preferred = [h for h in hosts if h.startswith(portal_prefixes)]
+        ordered = preferred + [h for h in hosts if h not in preferred]
+        hits: list[dict] = []
+        for host in ordered[:6]:
+            if cancel.is_set():
+                break
+            url = f"https://{host}/"
+            try:
+                probe = self._call(registry, "http_probe", {
+                    "target": url, "mission_id": mission_id,
+                    "method": "GET", "max_bytes": 32768, "timeout": 12})
+            except RuntimeError:
+                continue
+            status = int(probe.get("status") or 0)
+            if status <= 0:
+                continue
+            sigs = []
+            if host.startswith(("apply.", "online.", "cp.", "portal.")):
+                sigs.extend(["auth", "ato", "idor", "bola"])
+            paths: list[dict] = []
+            # Map the applicant-portal auth/object surface on the richest
+            # siblings, not just the apex, so cross-host IDOR/BOLA has anchors.
+            if host.startswith(("apply.", "online.", "cp.", "portal.")) or "login" in host:
+                for path in ("/login", "/register", "/admit", "/result",
+                             "/results", "/api", "/account", "/profile",
+                             "/dashboard"):
+                    if cancel.is_set():
+                        break
+                    try:
+                        response = self._call(registry, "http_request", {
+                            "target": f"https://{host}{path}",
+                            "mission_id": mission_id, "method": "GET",
+                            "max_bytes": 16384, "timeout": 10,
+                            "follow_redirects": False})
+                    except RuntimeError:
+                        continue
+                    pstatus = int(response.get("status") or 0)
+                    emit(Event(type="fetch", agent="hunt", stage="sibling",
+                               payload={"url": f"https://{host}{path}",
+                                        "status": pstatus}))
+                    if _is_live(pstatus):
+                        paths.append({"path": path, "status": pstatus})
+                        kind = _classify_path(path)
+                        if kind == "auth":
+                            sigs.extend(["oauth", "auth", "session", "ato"])
+                        elif kind in ("object", "api"):
+                            sigs.extend(["api", "idor", "bola"])
+            hit = {
+                "host": host,
+                "url": probe.get("url") or url,
+                "status": status,
+                "tls_insecure": bool(probe.get("tls_insecure")),
+                "server": (probe.get("headers") or {}).get("server"),
+                "signals": sigs,
+                "paths": paths,
+            }
+            hits.append(hit)
+            emit(Event(type="fetch", agent="hunt", stage="sibling", payload={
+                "url": hit["url"], "status": status,
+                "text": f"sibling host {host} -> {status}"}))
+        return hits
+
+
+_AUTH_TOKENS = ("login", "signin", "sign-in", "register", "signup", "sign-up",
+                "auth", "oauth", "oidc", "sso", "callback", "consent", "token",
+                "session")
+_OBJECT_TOKENS = ("admit", "result", "profile", "account", "dashboard",
+                  "apply", "candidate", "application", "card", "hall-ticket")
+_API_TOKENS = ("/api", "graphql", "/v1", "/v2", "/rest")
+
+
+def _is_live(status) -> bool:
+    """A surface is worth noting when it exists, even behind auth."""
+    try:
+        code = int(status or 0)
+    except (TypeError, ValueError):
+        return False
+    return code in (200, 201, 202, 204, 301, 302, 303, 307, 308, 401, 403)
+
+
+def _classify_path(path: str) -> str:
+    """Bucket a path into auth / api / object / other for notes + hypotheses."""
+    low = str(path or "").lower()
+    if any(token in low for token in _API_TOKENS):
+        return "api"
+    if any(token in low for token in _AUTH_TOKENS):
+        return "auth"
+    if any(token in low for token in _OBJECT_TOKENS):
+        return "object"
+    return "other"
 
 
 def _now() -> str:

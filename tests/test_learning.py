@@ -128,6 +128,27 @@ class StoreTests(unittest.TestCase):
         self.assertIn("Test the tagged surface", titles)
         self.assertIn("Try the mission-only step", titles)
 
+    def test_successful_probe_contradicts_unreachable_lesson(self):
+        stale = self.index.add_lesson(
+            "http_probe: failure",
+            "http_probe returned error: ConnectError on stale.example.com",
+            technique="http_probe",
+            context="stale.example.com",
+            outcome="failure",
+            tags=["failure", "http_probe", "stale.example.com"],
+            mission_id=self.mission["id"],
+        )
+        self.index.add_tool_call(
+            "http_probe", status="ok", mission_id=self.mission["id"],
+            args={"target": "https://stale.example.com/"},
+            result={"status": 200, "url": "https://stale.example.com/"},
+        )
+        updated = self.index.get_lesson(stale["id"])
+        self.assertIn("contradicted", updated["tags"])
+        self.assertIn("superseded", updated["tags"])
+        self.assertEqual(updated["outcome"], "observation")
+        self.assertTrue(learning.lesson_is_active(updated) is False)
+
 
 if __name__ == "__main__":
     unittest.main()

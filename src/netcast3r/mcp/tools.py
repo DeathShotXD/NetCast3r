@@ -2045,6 +2045,40 @@ def scope_check(ctx: ToolContext, args: dict) -> dict:
             "classification": manager.classify(args["target"]), "rules": entries}
 
 
+def _index_from_ctx(ctx: ToolContext):
+    plane = getattr(ctx, "plane", None)
+    index = getattr(plane, "index", None)
+    if index is not None:
+        return index
+    server = getattr(plane, "server", None)
+    return getattr(server, "index", None)
+
+
+def _maybe_clear_dead_host_lesson(ctx: ToolContext, result: dict,
+                                  mission_id: str = "") -> None:
+    """Successful HTTP clears poisoned unreachable lessons for that host."""
+    try:
+        status = int((result or {}).get("status") or 0)
+    except (TypeError, ValueError):
+        return
+    if status <= 0:
+        return
+    index = _index_from_ctx(ctx)
+    if index is None:
+        return
+    try:
+        from .. import learning as learning_module
+        learning_module.note_host_reachable(
+            index,
+            str((result or {}).get("url") or (result or {}).get("target") or ""),
+            status,
+            mission_id=str(mission_id or ctx.mission_id or ""),
+            tls_insecure=bool((result or {}).get("tls_insecure")),
+        )
+    except Exception:  # noqa: BLE001 - never break the probe path
+        pass
+
+
 def http_probe(ctx: ToolContext, args: dict) -> dict:
     target = args["target"].strip()
     url = target if "://" in target else "https://" + target
@@ -2093,7 +2127,7 @@ def http_probe(ctx: ToolContext, args: dict) -> dict:
                 }
 
     try:
-        return _once(verify_tls)
+        result = _once(verify_tls)
     except httpx.HTTPError as first:
         # Broken intermediate chains (common on gov TLS) surface as ConnectError
         # under httpx verify=True. One insecure retry keeps the hunt moving.
@@ -2104,14 +2138,16 @@ def http_probe(ctx: ToolContext, args: dict) -> dict:
             try:
                 result = _once(False)
                 result["tls_fallback"] = type(first).__name__
-                return result
             except httpx.HTTPError as second:
                 raise ToolError(
                     "probe_failed",
                     f"probe failed: {type(second).__name__}",
                     str(second)) from second
-        raise ToolError("probe_failed", f"probe failed: {type(first).__name__}",
-                        str(first)) from first
+        else:
+            raise ToolError("probe_failed", f"probe failed: {type(first).__name__}",
+                            str(first)) from first
+    _maybe_clear_dead_host_lesson(ctx, result, args.get("mission_id", ""))
+    return result
 
 
 def http_request(ctx: ToolContext, args: dict) -> dict:
@@ -2303,7 +2339,7 @@ def http_request(ctx: ToolContext, args: dict) -> dict:
                 "request_failed", f"request failed: {type(first).__name__}",
                 str(first)) from first
 
-    return {
+    result = {
         "target": target,
         "url": current,
         "method": current_method,
@@ -2320,6 +2356,8 @@ def http_request(ctx: ToolContext, args: dict) -> dict:
         "tls_fallback": tls_fallback,
         "elapsed_ms": int((time.monotonic() - started) * 1000),
     }
+    _maybe_clear_dead_host_lesson(ctx, result, mission_id)
+    return result
 
 
 def http_upload(ctx: ToolContext, args: dict) -> dict:

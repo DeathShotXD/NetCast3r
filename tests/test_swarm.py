@@ -143,11 +143,12 @@ class SwarmLoopTests(unittest.TestCase):
         self.assertNotIn("findings_create", self.registry.names())
 
     def test_a_specialist_cannot_choose_another_roles_action(self):
+        # Attackers may probe; they may not steal scout-only recon helpers.
         model = MeshModel({
             "strategist": lambda m, e, n: (
                 objectives(("attacker", "test the lead"))
                 if n == 1 else objectives(done=True)),
-            "attacker": always({"action": "http_probe",
+            "attacker": always({"action": "scope_check",
                                 "args": {"target": "http://127.0.0.1:9/"},
                                 "why": "not mine to call"}),
             "validator": validator(),
@@ -157,7 +158,7 @@ class SwarmLoopTests(unittest.TestCase):
         result = mesh.run()
         self.assertEqual([item["action"] for item in result["steps"]],
                          ["chain_plan"])
-        self.assertNotIn("http_probe", self.registry.names())
+        self.assertNotIn("scope_check", self.registry.names())
         self.assertEqual(result["findings"], 0)
 
     def test_a_specialist_cannot_smuggle_a_finding_or_a_delete(self):
@@ -299,15 +300,17 @@ class SwarmLoopTests(unittest.TestCase):
     def test_a_supported_verdict_is_cross_checked_with_a_second_provider(self):
         model = MeshModel({
             "strategist": lambda m, e, n: (
-                objectives(("scout", "probe the root"))
+                objectives(("attacker", "test the root"))
                 if n == 1 else objectives(done=True)),
-            "scout": always({"action": "http_probe",
-                             "args": {"target": "http://127.0.0.1:9/"},
-                             "why": "baseline"}),
+            "attacker": always({"action": "http_request",
+                                "args": {"target": "http://127.0.0.1:9/"},
+                                "why": "capture raw evidence"}),
             "validator": validator("supports", second="supports"),
             "scribe": scribe(),
         })
-        mesh = self.make(model)
+        registry = FakeRegistry(payload={
+            "headers": {"content-type": "text/plain"}, "body": "owned object"})
+        mesh = self.make(model, registry=registry)
         result = mesh.run()
         self.assertEqual(result["corroborated"], 1)
         self.assertEqual(result["contested"], 0)
@@ -320,15 +323,17 @@ class SwarmLoopTests(unittest.TestCase):
     def test_a_second_provider_can_contest_a_supported_verdict(self):
         model = MeshModel({
             "strategist": lambda m, e, n: (
-                objectives(("scout", "probe the root"))
+                objectives(("attacker", "test the root"))
                 if n == 1 else objectives(done=True)),
-            "scout": always({"action": "http_probe",
-                             "args": {"target": "http://127.0.0.1:9/"},
-                             "why": "baseline"}),
+            "attacker": always({"action": "http_request",
+                                "args": {"target": "http://127.0.0.1:9/"},
+                                "why": "capture raw evidence"}),
             "validator": validator("supports", second="refutes"),
             "scribe": scribe(),
         })
-        mesh = self.make(model)
+        registry = FakeRegistry(payload={
+            "headers": {"content-type": "text/plain"}, "body": "owned object"})
+        mesh = self.make(model, registry=registry)
         result = mesh.run()
         self.assertEqual(result["contested"], 1)
         self.assertEqual(result["corroborated"], 0)
@@ -356,6 +361,21 @@ class SwarmLoopTests(unittest.TestCase):
                 self.assertEqual(actor, "agent:swarm")
                 self.assertEqual(args.get("mission_id"), "msn_test")
         self.assertEqual(result["findings"], 0)
+
+    def test_support_without_raw_http_poc_is_downgraded(self):
+        model = MeshModel({
+            "strategist": lambda m, e, n: (
+                objectives(("scout", "probe the root"))
+                if n == 1 else objectives(done=True)),
+            "scout": always({"action": "http_probe",
+                             "args": {"target": "http://127.0.0.1:9/"}}),
+            "validator": validator("supports"),
+            "scribe": scribe(),
+        })
+        result = self.make(model).run()
+        self.assertEqual(result["verdicts"]["supports"], 0)
+        self.assertEqual(result["verdicts"]["inconclusive"], 1)
+        self.assertIn("raw status", result["steps"][0]["verdict"]["reason"])
 
 
 class _LabHandler(BaseHTTPRequestHandler):
@@ -395,8 +415,8 @@ class SwarmRunnerTests(unittest.TestCase):
         run_mission = self.server.index.create_mission(
             "Mesh live", target, status="active", scope=["127.0.0.1"])
         queue = [
-            objectives(("scout", "probe the root")),
-            move("http_probe", {"target": target}),
+            objectives(("attacker", "request the root")),
+            move("http_request", {"target": target}),
             reply({"verdict": "supports", "reason": "a real baseline",
                    "next": "compare a variant"}),
             reply({"verdict": "supports", "reason": "agreed",
@@ -442,7 +462,9 @@ class SwarmRunnerTests(unittest.TestCase):
             self.assertIn(stage, stages)
         agents = {str((item.get("payload") or {}).get("agent") or "")
                   for item in events}
-        self.assertIn("scout", agents)
+        # Critical-chain doctrine may assign attacker-only objectives; scout is
+        # optional when the strategist skips generic recon.
+        self.assertTrue({"attacker", "validator", "scribe"} & agents)
         self.assertIn("validator", agents)
         self.assertIn("scribe", agents)
 
