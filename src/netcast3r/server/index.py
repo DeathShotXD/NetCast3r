@@ -610,7 +610,8 @@ SUBMISSION_STATUSES = {"draft", "ready", "submitted", "triaged", "accepted",
                        "informative", "duplicate", "rejected", "paid", "withdrawn"}
 SUBMISSION_SEVERITIES = {"critical", "high", "medium", "low", "info"}
 OUTCOME_STATUSES = {"accepted", "informative", "duplicate", "rejected", "paid"}
-LESSON_OUTCOMES = {"success", "failure", "partial", "blocked", "observation"}
+LESSON_OUTCOMES = {"success", "failure", "partial", "blocked", "observation",
+                   "contradicted", "superseded"}
 TECH_TAGS = {
     "wordpress", "php", "graphql", "oauth", "oidc", "saml", "jwt", "aws", "gcp",
     "azure", "kubernetes", "docker", "apache", "nginx", "nodejs", "nextjs", "nuxt",
@@ -1220,7 +1221,14 @@ class Index:
                 self.conn.execute(
                     f"UPDATE hypotheses SET {', '.join(sets)} WHERE id = ?", values)
                 self.conn.commit()
-        return self.get_hypothesis(hypothesis_id)
+        updated = self.get_hypothesis(hypothesis_id)
+        if updated and str(updated.get("status") or "") == "supported":
+            from .. import learning as learning_module
+            try:
+                learning_module.compound_supported_hypothesis(self, hypothesis_id)
+            except Exception:  # noqa: BLE001 - compounding must not block updates
+                pass
+        return updated
 
     def promote_hypothesis(self, hypothesis_id: str, title: str, severity: str,
                            impact: str, evidence: str = "", tags: list | None = None,
@@ -1528,7 +1536,9 @@ class Index:
     def add_lesson(self, title: str, lesson: str, technique: str = "",
                    context: str = "", outcome: str = "success", next_step: str = "",
                    tags: list | None = None, mission_id: str = "", run_id: str = "",
-                   task_id: str = "", source: str = "", confidence: float = 0.5) -> dict:
+                   task_id: str = "", source: str = "", confidence: float = 0.5,
+                   host: str = "", error_class: str = "",
+                   provisional: bool | None = None, **_) -> dict:
         title = (title or "").strip()
         lesson = (lesson or "").strip()
         if not title:
@@ -1547,6 +1557,29 @@ class Index:
         if not 0.0 <= confidence <= 1.0:
             raise ValueError("confidence must be between 0 and 1")
         tags = [str(tag) for tag in (tags or []) if str(tag).strip()]
+        if provisional is None and outcome in {"failure", "blocked"}:
+            provisional = True
+        if outcome in {"failure", "blocked"} or provisional:
+            from .. import learning as learning_module
+            norm_host = (learning_module._host(host or context) or "").lower()
+            if not norm_host and mission_id:
+                mission = self.get_mission(mission_id) or {}
+                norm_host = (learning_module._host(str(mission.get("target") or "")) or "").lower()
+            err_cls = str(error_class or "").strip() or learning_module.classify_error(
+                f"{title} {lesson}", outcome)
+            low_existing = {t.lower() for t in tags}
+            if norm_host:
+                if norm_host not in low_existing:
+                    tags.append(norm_host)
+                if f"host:{norm_host}" not in low_existing:
+                    tags.append(f"host:{norm_host}")
+            if err_cls:
+                if err_cls.lower() not in low_existing:
+                    tags.append(err_cls)
+                if f"error_class:{err_cls.lower()}" not in low_existing:
+                    tags.append(f"error_class:{err_cls}")
+            if provisional and "provisional=true" not in low_existing and "provisional=false" not in low_existing:
+                tags.append("provisional=true")
         lesson_id = _new_id("lsn")
         now = _now()
         with self._lock:
@@ -1725,15 +1758,44 @@ class Index:
             self.conn.commit()
         return self.get_lesson(lesson_id)
 
+    def supersede_host_lesson(self, host: str = "", mission_id: str = "",
+                              evidence: str = "", **kwargs) -> dict:
+        from .. import learning as learning_module
+        return learning_module.supersede_host_lesson(
+            self, host, mission_id=mission_id, evidence=evidence, **kwargs)
+
+    contradict_lesson = supersede_host_lesson
+
     @staticmethod
     def _lesson_row(row: sqlite3.Row) -> dict:
+        tags = _loads(row["tags_json"], [])
+        low_tags = [str(t).strip() for t in tags]
+        host = ""
+        error_class = ""
+        for tag in low_tags:
+            if tag.lower().startswith("host:") and not host:
+                host = tag.split(":", 1)[1]
+            elif tag.lower().startswith("error_class:") and not error_class:
+                error_class = tag.split(":", 1)[1]
+        if not host and row["context"]:
+            raw_ctx = str(row["context"] or "").strip()
+            host = (urlsplit(raw_ctx).hostname or "") if "://" in raw_ctx else raw_ctx.split("/", 1)[0]
+        lower_set = {t.lower() for t in low_tags}
+        contradicted = (
+            row["outcome"] in {"contradicted", "superseded"}
+            or bool(lower_set & {"contradicted", "superseded"})
+            or "[superseded:" in str(row["lesson"] or "").lower()
+        )
+        provisional = ("provisional=true" in lower_set or "provisional" in lower_set) and not contradicted
         return {
             "id": row["id"], "mission_id": row["mission_id"], "run_id": row["run_id"],
             "task_id": row["task_id"], "title": row["title"],
             "technique": row["technique"], "context": row["context"],
             "outcome": row["outcome"], "lesson": row["lesson"],
-            "next_step": row["next_step"], "tags": _loads(row["tags_json"], []),
+            "next_step": row["next_step"], "tags": tags,
             "source": row["source"], "confidence": row["confidence"],
+            "host": host, "error_class": error_class,
+            "provisional": provisional, "contradicted": contradicted,
             "created_at": row["created_at"], "updated_at": row["updated_at"],
         }
 
@@ -1771,12 +1833,16 @@ class Index:
             self.conn.commit()
         return self.get_skill(skill_id)
 
-    def list_skills(self, q: str = "", limit: int = 50, status: str = "") -> tuple[list[dict], int]:
+    def list_skills(self, q: str = "", tag: str = "", limit: int = 50,
+                    status: str = "") -> tuple[list[dict], int]:
         where, values = [], []
         if q:
             like = f"%{q}%"
             where.append("(name LIKE ? OR title LIKE ? OR description LIKE ? OR body LIKE ?)")
             values.extend([like] * 4)
+        if tag:
+            where.append("tags_json LIKE ?")
+            values.append(f"%{tag}%")
         if status:
             where.append("status = ?")
             values.append(status)
@@ -3249,8 +3315,10 @@ class Index:
         if status not in TOOL_CALL_STATUSES:
             raise ValueError(f"unknown tool-call status: {status}")
         call_id = _new_id("tcl")
+        from ..autopilot import prepare_tool_call_audit
+
         args_json = json.dumps(args or {}, default=str)
-        result_json = json.dumps(result, default=str)
+        result_json = json.dumps(prepare_tool_call_audit(tool, status, result), default=str)
         # An audit row is not a data warehouse. Keep pathological tool output
         # bounded while preserving the fact that it was truncated.
         if len(args_json) > 65536:

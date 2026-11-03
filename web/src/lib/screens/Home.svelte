@@ -287,9 +287,13 @@
       .map((agent) => {
         const own = events.filter((event) => event.agent === agent.key);
         const last = own.length ? own[own.length - 1] : null;
+        const lastText = last
+          ? String(last.payload?.text ?? last.payload?.url ?? last.payload?.error ?? (last.payload?.model ? `model ${last.payload.model}` : '')).replace(/\s+/g, ' ').trim().slice(0, 140)
+          : '';
         return {
           ...agent,
           events: own.length,
+          lastText,
           lastLabel: last ? clock(last.ts) : 'no events',
           stage: last ? (last.stage || stageForAgent(agent.key)) : '',
           live: live && stageAgent === agent.key
@@ -1307,18 +1311,20 @@
                 </span>
               </div>
               <div class="obs-agent-action">
-                {#if agent.live}
-                  Engaged in the {stageLabel.toLowerCase()} stage.
+                {#if agent.lastText}
+                  {agent.lastText}
+                {:else if agent.live}
+                  Engaged in the {stageLabel.toLowerCase()} stage - waiting for its next observation.
                 {:else if agent.events}
-                  {agent.events} events recorded in this cast.
+                  {agent.events} events recorded, no readable observation on the last frame.
                 {:else}
-                  No events recorded in this cast.
+                  Standing by. No events recorded in this cast yet.
                 {/if}
               </div>
               <div class="obs-agent-foot">
                 <span>{agent.lastLabel}</span>
                 <span class:acid={agent.live} class:violet={agent.events > 0 && !agent.live}>
-                  {agent.events} ev{agent.stage ? ` - ${agent.stage}` : ''}
+                  {agent.live ? 'working now' : agent.events ? 'last seen ' + agent.lastLabel : 'standby'}{agent.stage ? ` - ${agent.stage}` : ''}
                 </span>
               </div>
             </article>

@@ -168,8 +168,6 @@ def reflect_tool_call(record: dict) -> dict:
         tags.append(target)
         if status != "ok":
             tags.append(f"host:{target}")
-    # Only keys accepted by Index.add_lesson - host/error_class/provisional
-    # live in tags (host:, error_class:, provisional=true) so **draft is safe.
     draft = {
         "title": f"{tool}: {outcome}",
         "lesson": lesson,
@@ -182,6 +180,9 @@ def reflect_tool_call(record: dict) -> dict:
         "confidence": 0.8 if outcome in {"success", "failure"} else 0.6,
         "mission_id": str(record.get("mission_id") or ""),
         "run_id": str(record.get("run_id") or ""),
+        "host": target,
+        "error_class": error_class,
+        "provisional": provisional,
     }
     if error_class:
         draft["lesson"] = (
@@ -262,12 +263,46 @@ def suggest_next(index, mission_id: str, limit: int = 8) -> dict:
         lessons.extend(item for item in tagged if item["id"] not in seen)
     calls, _ = index.list_tool_calls(mission_id=mission_id, limit=50)
     expertise = index.list_expertise(limit=10)
+    signal_tokens: set[str] = set()
+    if host:
+        signal_tokens.add(host)
+        if slug:
+            signal_tokens.add(slug)
+    for item in expertise[:5]:
+        signal_tokens.add(str(item.get("tech") or "").lower())
+    for lesson in lessons[:8]:
+        if not lesson_is_active(lesson):
+            continue
+        for tag in (lesson.get("tags") or []):
+            low = str(tag).lower()
+            if low and low not in {"success", "failure", "partial", "blocked", "run"}:
+                signal_tokens.add(low)
+    verified_skills, _ = index.list_skills(tag="verified-ttp", status="active", limit=40)
+    ranked_verified = sorted(
+        verified_skills,
+        key=lambda row: _skill_signal_overlap(row, signal_tokens),
+        reverse=True,
+    )
     actions: list[dict] = []
 
     def add(title: str, why: str, tool: str, args: dict, risk: str = "low") -> None:
         if len(actions) < limit:
             actions.append({"title": title, "why": why, "tool": tool,
                             "args": args, "risk": risk})
+
+    for skill in ranked_verified:
+        overlap = _skill_signal_overlap(skill, signal_tokens)
+        if overlap <= 0:
+            continue
+        add(
+            f"Load verified playbook: {skill.get('title') or skill.get('name')}",
+            f"verified-ttp skill matches {overlap} mission signal(s)",
+            "skills_get",
+            {"name": skill.get("name") or skill.get("id")},
+            "low",
+        )
+        if len(actions) >= min(3, limit):
+            break
 
     if not calls:
         add("Confirm scope and fingerprint the target",
@@ -385,6 +420,104 @@ def suggest_next(index, mission_id: str, limit: int = 8) -> dict:
             "actions": actions[:limit],
             "note": ("Suggestions are deterministic and based on stored records; they are "
                      "not a model's guess. Confirm scope before running one.")}
+
+
+def _slug_token(value: str, limit: int = 64) -> str:
+    token = re.sub(r"[^a-z0-9]+", "-", str(value or "").lower()).strip("-")
+    return (token or "technique")[:limit]
+
+
+def reproduction_checklist(hypothesis: dict) -> str:
+    """Short markdown checklist from a supported lead (no payloads)."""
+    title = str(hypothesis.get("title") or "Supported hypothesis").strip()
+    target = str(hypothesis.get("target") or "").strip()
+    technique = str(hypothesis.get("technique") or "").strip()
+    rationale = str(hypothesis.get("rationale") or "").strip()
+    expected = str(hypothesis.get("expected") or "").strip()
+    hyp_id = str(hypothesis.get("id") or "").strip()
+    lines = [f"# Verified: {title}", ""]
+    if target:
+        lines.extend([f"Target: {target}", ""])
+    if technique:
+        lines.extend([f"Technique: {technique}", ""])
+    if rationale:
+        lines.extend(["## Rationale", rationale, ""])
+    if expected:
+        lines.extend(["## Expected observation", expected, ""])
+    lines.extend([
+        "## Reproduction checklist",
+        "1. Confirm scope and baseline the target origin.",
+        "2. Re-run the same preconditions used when this lead was supported.",
+        "3. Compare the live response to the expected observation above.",
+        "4. Capture raw request/response evidence before promotion.",
+        "5. Revert any state change created during the test.",
+    ])
+    if hyp_id:
+        lines.extend(["", f"Hypothesis: {hyp_id}"])
+    return "\n".join(lines).strip()
+
+
+def upsert_verified_skill(index, hypothesis: dict) -> dict | None:
+    """Turn a supported hypothesis into a reusable verified-ttp skill."""
+    if str(hypothesis.get("status") or "") != "supported":
+        return None
+    result = hypothesis.get("result") if isinstance(hypothesis.get("result"), dict) else {}
+    if result and not result.get("ok"):
+        return None
+    expected = str(hypothesis.get("expected") or "").strip()
+    if not expected and not result.get("ok"):
+        return None
+    technique = str(hypothesis.get("technique") or "").strip().lower()
+    title = str(hypothesis.get("title") or "").strip()
+    rationale = str(hypothesis.get("rationale") or "").strip()
+    slug = _slug_token(technique or title or "lead")
+    name = f"verified-{slug}"[:120]
+    body = reproduction_checklist(hypothesis)
+    tags = ["verified-ttp"]
+    if technique:
+        tags.append(technique)
+    host = _host(str(hypothesis.get("target") or ""))
+    if host:
+        tags.append(host)
+    hyp_id = str(hypothesis.get("id") or "").strip()
+    if hyp_id:
+        tags.append(f"hypothesis:{hyp_id}")
+    try:
+        return index.upsert_skill(
+            name=name,
+            body=body,
+            title=f"Verified: {title or slug.replace('-', ' ').title()}",
+            description=(expected or rationale or title)[:240],
+            tags=sorted(set(tags)),
+            source=f"hypothesis:{hyp_id}" if hyp_id else "netcast3r:verified-ttp",
+        )
+    except ValueError:
+        return None
+
+
+def compound_supported_hypothesis(index, hypothesis_id: str) -> dict | None:
+    """Learning hook after a hypothesis becomes supported."""
+    hypothesis = index.get_hypothesis(hypothesis_id)
+    if not hypothesis:
+        return None
+    return upsert_verified_skill(index, hypothesis)
+
+
+def _skill_signal_overlap(skill: dict, signals: set[str]) -> int:
+    if not signals:
+        return 0
+    blob = " ".join(
+        [str(skill.get("name") or ""), str(skill.get("title") or ""),
+         str(skill.get("description") or ""), str(skill.get("body") or "")]
+        + [str(tag) for tag in (skill.get("tags") or [])]
+    ).lower()
+    score = 0
+    for token in signals:
+        if not token or len(token) < 2:
+            continue
+        if token in blob:
+            score += 2 if token in {str(t).lower() for t in (skill.get("tags") or [])} else 1
+    return score
 
 
 def summarize_skill(body: str, limit: int = 400) -> str:
@@ -511,8 +644,11 @@ def bundled_skill_packs() -> list[dict]:
 
 _UNREACHABLE_RE = re.compile(
     r"unreachable|connect\s*error|connecterror|probe[_\s-]?failed|"
-    r"connection refused|name or service not known|network unreachable|"
-    r"certificate verify failed|ssl:|\btls\b.*(?:fail|error|dead)|"
+    r"request[_\s-]?failed|connecttimeout|readtimeout|timed?\s*out|"
+    r"connection refused|connection reset|name or service not known|"
+    r"network unreachable|certificate verify failed|handshake|"
+    r"ssl:|\btls\b.*(?:fail|error|dead)|host\s+(?:is\s+)?(?:dead|down)|"
+    r"error_class:(?:connecterror|tlserror|timeouterror)|"
     r"no valid http",
     re.I)
 _DEAD_NOTE_RE = re.compile(r"dead[\s-]?end|host.*dead|dead host", re.I)
@@ -521,6 +657,8 @@ _SUPERSEDED_TAGS = frozenset({"superseded", "contradicted"})
 
 def lesson_is_active(lesson: dict) -> bool:
     """False when a lesson was superseded by later evidence."""
+    if str(lesson.get("outcome") or "").lower() == "contradicted":
+        return False
     tags = {str(tag).lower() for tag in (lesson.get("tags") or [])}
     if tags & _SUPERSEDED_TAGS:
         return False
@@ -542,7 +680,8 @@ def _host_matches(host: str, lesson: dict) -> bool:
     ).lower()
     tags = {str(tag).lower() for tag in (lesson.get("tags") or [])}
     slug = host.split(".")[0]
-    return host in blob or host in tags or (slug and slug in tags)
+    return (host in blob or host in tags or f"host:{host}" in tags
+            or (slug and slug in tags))
 
 
 def _note_matches_unreachable(host: str, note: dict) -> bool:
@@ -559,19 +698,37 @@ def _note_matches_unreachable(host: str, note: dict) -> bool:
 
 
 def contradict_host_unreachable_lessons(index, host: str, mission_id: str = "",
-                                      evidence: str = "") -> dict:
+                                      evidence: str = "", *,
+                                      lesson_id: str = "") -> dict:
     """Mark stale unreachable lessons/notes contradicted after HTTP success."""
-    host = (_host(host) or str(host or "").strip()).lower()
+    raw_host = str(host or "").strip()
+    if raw_host.startswith("lsn_") and not lesson_id:
+        lesson_id = raw_host
+        raw_host = ""
+    host = (_host(raw_host) or raw_host).lower()
     stamp = (evidence or "HTTP success on this host").strip()[:240]
     out = {"host": host, "mission_id": mission_id, "lessons": 0, "notes": 0,
-           "kb": 0, "total": 0, "evidence": stamp}
-
-    if not host:
-        return out
+           "kb": 0, "total": 0, "contradicted": 0, "contradicted_ids": [],
+           "items": [], "evidence": stamp}
 
     candidates: list[dict] = []
     seen: set[str] = set()
-    for query in {host, host.split(".")[0]}:
+    if lesson_id:
+        single = index.get_lesson(lesson_id)
+        if single:
+            seen.add(single["id"])
+            candidates.append(single)
+            if not host:
+                host = _host(str(single.get("host") or single.get("context") or "")).lower()
+                out["host"] = host
+            if not mission_id:
+                mission_id = str(single.get("mission_id") or "")
+                out["mission_id"] = mission_id
+
+    if not host and not candidates:
+        return out
+
+    for query in ({host, host.split(".")[0]} if host else set()):
         if not query:
             continue
         rows, _ = index.list_lessons(q=query, limit=80)
@@ -587,21 +744,33 @@ def contradict_host_unreachable_lessons(index, host: str, mission_id: str = "",
                 candidates.append(row)
 
     for lesson in candidates:
-        if not lesson_is_active(lesson) or not _host_matches(host, lesson):
+        if not lesson_is_active(lesson):
             continue
-        blob = " ".join(
-            str(lesson.get(key) or "")
-            for key in ("title", "lesson", "context", "next_step")
-        )
-        if not _mentions_unreachable(blob):
-            continue
+        is_explicit = bool(lesson_id and lesson.get("id") == lesson_id)
+        if not is_explicit:
+            if not _host_matches(host, lesson):
+                continue
+            blob = " ".join(
+                [str(lesson.get(key) or "")
+                 for key in ("title", "lesson", "context", "next_step")]
+                + [str(t) for t in (lesson.get("tags") or [])]
+            )
+            if not _mentions_unreachable(blob):
+                continue
         suffix = f" [superseded: {stamp}]"
         body = str(lesson.get("lesson") or "")
         if suffix.lower() not in body.lower():
             body = (body + suffix).strip()[:4000]
-        tags = sorted(set(lesson.get("tags") or []) | {"superseded", "contradicted", host})
+        base_tags = {
+            str(tag) for tag in (lesson.get("tags") or [])
+            if str(tag).strip() and str(tag).lower() not in {"provisional=true", "provisional"}
+        }
+        add_tags = {"superseded", "contradicted", "provisional=false"}
+        if host:
+            add_tags.update({host, f"host:{host}"})
+        tags = sorted(base_tags | add_tags)
         try:
-            index.patch_lesson(
+            patched_row = index.patch_lesson(
                 lesson["id"],
                 lesson=body,
                 outcome="observation",
@@ -612,8 +781,11 @@ def contradict_host_unreachable_lessons(index, host: str, mission_id: str = "",
         except ValueError:
             continue
         out["lessons"] += 1
+        out["contradicted_ids"].append(lesson["id"])
+        if patched_row:
+            out["items"].append(patched_row)
 
-    if mission_id:
+    if mission_id and host:
         for note in index.list_agent_notes(mission_id, limit=120):
             if not _note_matches_unreachable(host, note):
                 continue
@@ -642,28 +814,29 @@ def contradict_host_unreachable_lessons(index, host: str, mission_id: str = "",
     scopes = ["global"]
     if mission_id:
         scopes.append(mission_id)
-    for scope in scopes:
-        for row in index.list_kb_entries(scope=scope, kind="dead-end", q=host, limit=40):
-            body = str(row.get("body") or "")
-            if "[superseded:" in body.lower():
-                continue
-            if host not in body.lower() and host not in str(row.get("key") or "").lower():
-                continue
-            if not (_mentions_unreachable(body) or "refuted" in body.lower()):
-                continue
-            patched = (body + f" [superseded: {stamp}]").strip()[:4000]
-            try:
-                kb_module.record(
-                    index, scope, "dead-end", str(row.get("key") or host),
-                    title=str(row.get("title") or host),
-                    body=patched,
-                    confidence="hypothesis",
-                    source={"superseded_by": stamp, "host": host},
-                    data=row.get("data") or {},
-                )
-            except ValueError:
-                continue
-            out["kb"] += 1
+    if host:
+        for scope in scopes:
+            for row in index.list_kb_entries(scope=scope, kind="dead-end", q=host, limit=40):
+                body = str(row.get("body") or "")
+                if "[superseded:" in body.lower():
+                    continue
+                if host not in body.lower() and host not in str(row.get("key") or "").lower():
+                    continue
+                if not (_mentions_unreachable(body) or "refuted" in body.lower()):
+                    continue
+                patched = (body + f" [superseded: {stamp}]").strip()[:4000]
+                try:
+                    kb_module.record(
+                        index, scope, "dead-end", str(row.get("key") or host),
+                        title=str(row.get("title") or host),
+                        body=patched,
+                        confidence="hypothesis",
+                        source={"superseded_by": stamp, "host": host},
+                        data=row.get("data") or {},
+                    )
+                except ValueError:
+                    continue
+                out["kb"] += 1
 
     out["total"] = out["lessons"] + out["notes"] + out["kb"]
     out["contradicted"] = out["total"]
@@ -671,13 +844,30 @@ def contradict_host_unreachable_lessons(index, host: str, mission_id: str = "",
         try:
             index.add_director_log(
                 "lesson.contradict",
-                f"superseded {out['lessons']} unreachable lesson(s) for {host}",
+                f"superseded {out['lessons']} unreachable lesson(s) for {host or 'target'}",
                 mission_id=mission_id or None,
                 data={"host": host, "lessons": out["lessons"], "notes": out["notes"],
                       "kb": out["kb"], "evidence": stamp})
         except Exception:  # noqa: BLE001
             pass
     return out
+
+
+def supersede_host_lesson(index, host: str = "", mission_id: str = "",
+                          evidence: str = "", *, lesson_id: str = "",
+                          status_code: int = 200, tool: str = "http_probe",
+                          tls_insecure: bool = False) -> dict:
+    """Alias/wrapper to contradict stale host-dead lessons on probe success."""
+    if not evidence:
+        evidence = f"HTTP {int(status_code or 200)} via {tool}"
+        if tls_insecure:
+            evidence += " (tls_insecure)"
+    return contradict_host_unreachable_lessons(
+        index, host, mission_id=mission_id, evidence=evidence,
+        lesson_id=lesson_id)
+
+
+contradict_lesson = supersede_host_lesson
 
 
 def note_host_reachable(index, target: str, status: int, mission_id: str = "",

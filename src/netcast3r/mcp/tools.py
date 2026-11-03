@@ -559,6 +559,12 @@ def mission_graph(ctx: ToolContext, args: dict) -> dict:
     return _call(ctx, "GET", f"/api/v1/missions/{args['mission_id']}/graph")
 
 
+def threat_map_get(ctx: ToolContext, args: dict) -> dict:
+    return _call(ctx, "GET",
+                 f"/api/v1/missions/{args['mission_id']}/threat-map",
+                 query={"limit": args.get("limit", 80)})
+
+
 def paths_list(ctx: ToolContext, args: dict) -> dict:
     return _call(ctx, "GET", f"/api/v1/missions/{args['mission_id']}/paths")
 
@@ -3248,6 +3254,7 @@ _HANDLERS.update({
     "director_log": director_log,
     "graph_build": graph_build,
     "mission_graph": mission_graph,
+    "threat_map_get": threat_map_get,
     "paths_list": paths_list,
     "path_verify": path_verify,
     "graph_node_add": graph_node_add,
@@ -3643,6 +3650,15 @@ TOOLS: tuple[Tool, ...] = (
          "low", "missions",
          _schema({"mission_id": _string("mission id")}, ["mission_id"]),
          "mission_graph"),
+    Tool("threat_map_get", "Read the scored mission threat map",
+         "Return the evidence-backed threat map for one mission: scored hosts, "
+         "endpoints, auth surfaces, open leads, findings, edges, and candidate "
+         "paths. Prefer this over a flat asset list.",
+         "low", "missions",
+         _schema({"mission_id": _string("mission id"),
+                  "limit": _integer("max nodes", 8, 200, 80)},
+                 ["mission_id"]),
+         "threat_map_get", read_only=True),
     Tool("paths_list", "List a mission's candidate attack paths",
          "Return the candidate paths derived for one mission, each with its steps "
          "and verification state (candidate, verifying, verified, partial, "
@@ -5794,6 +5810,8 @@ class ToolRegistry:
             run_id = str(args.get("run_id") or "")
             result_value = locals().get("payload", {"ok": status == "ok"})
             try:
+                from ..autopilot import prepare_tool_call_audit
+
                 self.ctx.plane.request("POST", "/api/v1/tool-calls", body={
                     "tool": tool.name,
                     "risk": tool.risk,
@@ -5803,7 +5821,7 @@ class ToolRegistry:
                     "run_id": run_id,
                     "approval_id": approval_id,
                     "args": audit_args(tool.name, args),
-                    "result": redact_payload(result_value),
+                    "result": prepare_tool_call_audit(tool.name, status, result_value),
                     "error": "" if status == "ok" else str(
                         result_value.get("error", {}).get("message", "")),
                     "duration_ms": duration,

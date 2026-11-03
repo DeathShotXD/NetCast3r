@@ -94,11 +94,15 @@ class Prime:
                 mission_id=mission_id, status="open", limit=1)
         except Exception:  # noqa: BLE001 - a broken read must not stop planning
             open_hypotheses = 0
+        hunt_critical = False
         try:
-            notes = self.index.list_agent_notes(mission_id, limit=1)
-            last_note_at = notes[0].get("created_at", "") if notes else ""
+            notes = self.index.list_agent_notes(mission_id, limit=40)
+            last_note_at = notes[-1].get("created_at", "") if notes else ""
+            hunt_critical = any(str(note.get("kind") or "") == "hunt.critical"
+                                for note in notes)
         except Exception:  # noqa: BLE001
             last_note_at = ""
+            hunt_critical = False
         try:
             from . import exploits as exploits_module
             critical_leads = exploits_module.critical_leads(self.index, mission_id)
@@ -116,6 +120,7 @@ class Prime:
             "pending_approvals": int(mission.get("pending_approvals") or 0),
             "open_hypotheses": int(open_hypotheses or 0),
             "critical_leads": int(critical_leads or 0),
+            "hunt_critical_note": bool(hunt_critical),
             "last_note_at": last_note_at,
             "idle_minutes": round(
                 _minutes_since(last_note_at or mission.get("updated_at") or ""), 1),
@@ -145,6 +150,8 @@ class Prime:
         # A lead that maps to a high or critical impact module is worth more
         # than a lead that does not: this is the bounty-eligible work.
         score += min(int(signals.get("critical_leads", 0) or 0), 3) * 8
+        if signals.get("hunt_critical_note"):
+            score += 6
         score += min(signals["finding_count"], 3) * 6
         if signals["run_count"] == 0:
             score += 8

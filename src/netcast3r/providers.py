@@ -439,7 +439,9 @@ class ProviderBus:
                         if not collected:
                             if not stream_error:
                                 last_error = f"{provider.name}/{model} returned no content"
-                            self._strike(provider.name, model)
+                            # An empty reply is rotation, not a dead provider.
+                            self._retire(provider.name, model,
+                                         ttl=self.RATE_DEAD_TTL)
                             self._observe({"kind": "done", "agent": agent,
                                            "provider": provider.name, "model": model,
                                            "ok": False, "ms": _ms(attempt),
@@ -529,10 +531,12 @@ class ProviderBus:
                         # walking MoE siblings / other keys. Do not treat it
                         # as a hard provider death that gates the whole hunt.
                         if response.status_code == 429:
+                            # Soft quota: retire this model briefly and keep
+                            # walking siblings. Do not record a hard failure -
+                            # that parked the whole key and froze the mission.
                             self._retire(provider.name, model,
                                          ttl=self.RATE_DEAD_TTL)
                             rate_limited.add(provider.name)
-                            failed.append(provider.name)
                         else:
                             self._strike(provider.name, model, fatal=True)
                             self._penalize(provider.name)
@@ -574,7 +578,9 @@ class ProviderBus:
                     text = str(content or "").strip()
                     if not text:
                         last_error = f"{provider.name}/{model} returned no content"
-                        self._strike(provider.name, model)
+                        # Empty bodies rotate to the next model immediately.
+                        # A short retire keeps the next call off this id too.
+                        self._retire(provider.name, model, ttl=self.RATE_DEAD_TTL)
                         self._observe({"kind": "done", "agent": agent,
                                        "provider": provider.name, "model": model,
                                        "ok": False, "ms": _ms(attempt),

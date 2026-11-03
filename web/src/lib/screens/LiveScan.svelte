@@ -6,6 +6,7 @@
   import { renderMarkdown } from '../markdown';
   import { store } from '../state.svelte';
   import type { Run, RunEvent } from '../types';
+  import Buffering from '../ui/Buffering.svelte';
   import Chip from '../ui/Chip.svelte';
   import Confirm from '../ui/Confirm.svelte';
   import EmptyState from '../ui/EmptyState.svelte';
@@ -104,6 +105,8 @@
   let landed = $state<{ id: number; status: string; secret_type: string; value: string; detail: string }[]>([]);
   let currentStage = $state('');
   let follow = $state(true);
+  let unseen = $state(0);
+  let seenStreamLen = 0;
   let filter = $state('all');
   let tab = $state(store.liveTab || 'feed');
   let stopOpen = $state(false);
@@ -239,11 +242,20 @@
 
   function badgeOf(row: StreamRow): { text: string; color: string } {
     if (row.kind === 'log') return { text: 'log', color: 'var(--nc-ash)' };
-    if (row.kind === 'err') return { text: 'err', color: 'var(--nc-violet)' };
-    if (row.kind === 'think') return { text: 'think', color: (AGENT_COLORS as Record<string, string>)[row.agent] ?? 'var(--nc-bone-dust)' };
-    if (row.kind === 'url') return { text: 'fetch', color: 'var(--nc-acid)' };
-    if (row.kind === 'call') return { text: 'model', color: 'var(--nc-bone-dust)' };
-    return { text: 'found', color: 'var(--nc-violet)' };
+    if (row.kind === 'err') return { text: 'error', color: 'var(--nc-violet)' };
+    if (row.kind === 'think') return { text: 'thinking', color: (AGENT_COLORS as Record<string, string>)[row.agent] ?? 'var(--nc-bone-dust)' };
+    if (row.kind === 'url') return { text: 'tool', color: 'var(--nc-acid)' };
+    if (row.kind === 'call') return { text: 'tool', color: 'var(--nc-bone-dust)' };
+    return { text: 'proof', color: 'var(--nc-gold, #efe4b1)' };
+  }
+
+  // Agent theater status from recency of last activity.
+  function laneStatus(lane: { lastTs: number }): { label: string; color: string } {
+    if (!running) return { label: 'done', color: 'var(--nc-ash)' };
+    const age = nowTick - lane.lastTs * (lane.lastTs < 1e12 ? 1000 : 1);
+    if (age < 12000) return { label: 'working', color: 'var(--nc-acid)' };
+    if (age < 60000) return { label: 'recent', color: 'var(--nc-gold, #efe4b1)' };
+    return { label: 'idle', color: 'var(--nc-ash)' };
   }
 
   function rowColor(row: StreamRow): string {
@@ -357,7 +369,15 @@
 
   function onStreamScroll() {
     if (!streamBox) return;
-    follow = streamBox.scrollTop + streamBox.clientHeight >= streamBox.scrollHeight - 32;
+    follow = streamBox.scrollTop + streamBox.clientHeight >= streamBox.scrollHeight - 48;
+    if (follow) { unseen = 0; seenStreamLen = stream.length; }
+  }
+
+  function jumpToLatest() {
+    follow = true;
+    unseen = 0;
+    seenStreamLen = stream.length;
+    void tick().then(() => { if (streamBox) streamBox.scrollTop = streamBox.scrollHeight; });
   }
 
   function onSpotlightScroll() {
@@ -605,6 +625,12 @@
   });
 
   $effect(() => {
+    const len = stream.length;
+    if (follow) { seenStreamLen = len; if (unseen) unseen = 0; }
+    else if (len > seenStreamLen) unseen = len - seenStreamLen;
+  });
+
+  $effect(() => {
     spotlightRows.length;
     if (spotlightEl && spotlightStick) spotlightEl.scrollTop = spotlightEl.scrollHeight;
   });
@@ -847,8 +873,15 @@
                   });
                 }}
               >
-                {follow ? 'following' : 'jump to latest'}
+                {follow ? 'following live' : unseen ? `${unseen} new` : 'jump to latest'}
               </button>
+            </div>
+            <div class="obs-live-legend" aria-label="stream legend">
+              <span class="lg-think"><i></i>thinking</span>
+              <span class="lg-tool"><i></i>tool call</span>
+              <span class="lg-evidence"><i></i>proof / evidence</span>
+              <span class="lg-log"><i></i>log</span>
+              <span style="margin-left:auto">{stream.length} rows - {reasoningCount} thinking</span>
             </div>
             <div
               class="mono flex-1 overflow-y-auto px-4 pb-3 text-[12px] leading-relaxed"
@@ -858,13 +891,11 @@
               onscroll={onStreamScroll}
             >
               {#if stream.length === 0}
-                <p class="py-2 text-slate">
-                  {running
-                    ? `waiting for the first line from ${run.target}...`
-                    : filter === 'all'
-                      ? 'Nothing was transmitted on this run.'
-                      : `No ${filter} rows on this run.`}
-                </p>
+                {#if running}
+                  <div style="padding:10px 0"><Buffering variant="block" label="Waiting for first line" detail="Agents are waking up on {run.target}. Thinking, tool calls and proof will stream here." /></div>
+                {:else}
+                  <p class="py-2 text-slate">{filter === 'all' ? 'Nothing was transmitted on this run.' : `No ${filter} rows on this run.`}</p>
+                {/if}
               {/if}
               {#each stream as row (row.seq)}
                 {@const badge = badgeOf(row)}
@@ -892,6 +923,9 @@
                   {/if}
                 </p>
               {/each}
+              {#if !follow && unseen > 0}
+                <div class="obs-jump-latest"><button type="button" onclick={jumpToLatest}>{unseen} new - jump to latest</button></div>
+              {/if}
             </div>
           </div>
 
@@ -968,7 +1002,7 @@
 
             <div class="flex-1">
               <div class="flex items-center justify-between px-4 py-2.5">
-                <p class="eyebrow">agents on the wire</p>
+                <p class="eyebrow">agent theater - who is doing what</p>
                 <span class="mono text-xs text-ash">{reasoningCount} reasoning rows</span>
               </div>
               {#if agentList.length === 0}
@@ -979,28 +1013,21 @@
                 <ul class="max-h-[320px] overflow-y-auto" data-agents="1">
                   {#each agentList as lane (lane.agent)}
                     {@const color = (AGENT_COLORS as Record<string, string>)[lane.agent] ?? 'var(--nc-bone-dust)'}
-                    <li class="flex items-center gap-3 border-b border-indigo-deep/60 px-4 py-2 last:border-0">
-                      <span class="lane-led" style="--agent:{color}" aria-hidden="true"></span>
-                      <span class="mono w-[86px] shrink-0 truncate text-xs" style="color:{color}">{lane.agent}</span>
-                      <span class="num shrink-0 text-[11px] text-ash">{lane.lines}</span>
-                      {#if lane.lastCall}
-                        <span
-                          class="mono hidden min-w-0 flex-1 truncate text-[11px] sm:block"
-                          style="color:{lane.lastCallOk === false ? 'var(--nc-violet)' : 'var(--nc-ash)'}"
-                        >
-                          {lane.lastCall}
-                        </span>
-                      {:else}
-                        <span class="min-w-0 flex-1"></span>
+                    {@const status = laneStatus(lane)}
+                    <li class="border-b border-indigo-deep/60 px-4 py-2 last:border-0">
+                      <div class="flex items-center gap-3">
+                        <span class="lane-led" style="--agent:{color}" aria-hidden="true"></span>
+                        <span class="mono w-[86px] shrink-0 truncate text-xs" style="color:{color}">{lane.agent}</span>
+                        <span class="mono shrink-0 text-[9px] uppercase tracking-[0.1em]" style="color:{status.color}">{status.label}</span>
+                        <span class="num shrink-0 text-[11px] text-ash">{lane.lines} lines{lane.calls ? ` - ${lane.calls} calls` : ''}</span>
+                        <span class="mono ml-auto shrink-0 text-[10px] text-slate">{clock(lane.lastTs)}</span>
+                        <button class="shrink-0 text-[10px] tracking-[0.12em] text-acid opacity-70 transition-opacity hover:opacity-100" type="button" onclick={() => openSpotlight(lane.agent)}>WATCH &gt;</button>
+                      </div>
+                      {#if lane.lastText}
+                        <p class="mt-1 truncate pl-[22px] text-[11px] text-bone-dust" title={lane.lastText}>{formatText(lane.lastText, 160)}</p>
+                      {:else if lane.lastCall}
+                        <p class="mt-1 truncate pl-[22px] mono text-[11px]" style="color:{lane.lastCallOk === false ? 'var(--nc-violet)' : 'var(--nc-ash)'}">last model: {lane.lastCall}</p>
                       {/if}
-                      <span class="mono hidden shrink-0 text-[10px] text-slate md:block">{clock(lane.lastTs)}</span>
-                      <button
-                        class="shrink-0 text-[10px] tracking-[0.12em] text-acid opacity-70 transition-opacity hover:opacity-100"
-                        type="button"
-                        onclick={() => openSpotlight(lane.agent)}
-                      >
-                        WATCH &gt;
-                      </button>
                     </li>
                   {/each}
                 </ul>

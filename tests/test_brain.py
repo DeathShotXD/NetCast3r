@@ -396,6 +396,54 @@ class CognitionTests(unittest.TestCase):
         finally:
             brain._PROVIDER_FAILS.clear()
 
+    def test_a_soft_429_does_not_park_the_provider(self):
+        brain._PROVIDER_FAILS.clear()
+        try:
+            text, provider, _model, error = brain._ask(
+                self.server, self.index, [],
+                complete=lambda m: {"text": "", "provider": "th-hunt-1",
+                                    "error": "th-hunt-1 returned 429",
+                                    "failed": ["th-hunt-1", "th-hunt-2"]})
+            self.assertEqual(text, "")
+            self.assertEqual(provider, "th-hunt-1")
+            self.assertIn("429", error)
+            self.assertEqual(brain._excluded_providers(), set())
+        finally:
+            brain._PROVIDER_FAILS.clear()
+
+    def test_priority_lock_refuses_labs_and_steers_critical_ready(self):
+        lead = self.index.create_hypothesis(
+            "ATO via reset host", target="https://lab.example.com/reset",
+            mission_id=self.mission["id"],
+            expected="a reset token minted for another account")
+        self.index.patch_hypothesis(lead["id"], status="supported")
+        brain.set_operator_priority(
+            self.index, self.mission["id"], reason="operator lock")
+
+        def complete(messages):
+            return reply({"reply": "", "actions": [
+                {"kind": "run_lab", "slug": "auto"},
+                {"kind": "solve_lab", "slug": "auto"}]})
+
+        brain._PROVIDER_FAILS.clear()
+        try:
+            result = brain.cognition(
+                self.server, self.index, self.server._director(),
+                mission_id=self.mission["id"], complete=complete)
+        finally:
+            brain._PROVIDER_FAILS.clear()
+        kinds = [row.get("kind") for row in result["actions"]]
+        self.assertIn("run_lab", kinds)
+        self.assertIn("solve_lab", kinds)
+        self.assertTrue(all(not row.get("applied")
+                            for row in result["actions"]
+                            if row.get("kind") in {"run_lab", "solve_lab"}))
+        queued = self.index.list_directions(self.mission["id"], status="queued")
+        self.assertEqual(len(queued), 1)
+        self.assertIn("ATO via reset host", queued[0]["body"])
+        self.assertIn("Critical-ready", queued[0]["body"])
+        self.assertEqual(self.index.totals().get("findings", 0), 0)
+
     def test_brain_system_locks_priority_and_stale_unreachable_lessons(self):
         text = brain.BRAIN_SYSTEM
         self.assertIn("operator_priority.mission_id", text)
@@ -542,6 +590,33 @@ class BrainLoopTests(unittest.TestCase):
         finally:
             server.index.close()
             server.jobs.shutdown(wait=False)
+
+    def test_snapshot_and_live_feed_surface_contradicted_lessons(self):
+        dead = self.index.add_lesson(
+            "http_probe: failure",
+            "http_probe returned error: ConnectError on lab.example.com",
+            technique="http_probe",
+            context="lab.example.com",
+            outcome="failure",
+            mission_id=self.mission["id"],
+        )
+        self.assertTrue(dead["provisional"])
+        self.assertIn("provisional=true", dead["tags"])
+        self.index.add_tool_call(
+            "http_probe", status="ok", mission_id=self.mission["id"],
+            args={"target": "https://lab.example.com/"},
+            result={"status": 200, "url": "https://lab.example.com/"},
+        )
+        snapshot = brain.context(
+            self.index, self.server._director(), mission_id=self.mission["id"])
+        self.assertGreaterEqual(snapshot["learning"]["contradicted_unreachable"], 1)
+        self.assertTrue(any(item["id"] == dead["id"]
+                            for item in snapshot["contradicted_lessons"]))
+        feed = brain.live_feed(
+            self.index, self.server._director(), mission_id=self.mission["id"])
+        self.assertGreaterEqual(feed["learning"]["contradicted_unreachable"], 1)
+        self.assertTrue(any(item["id"] == dead["id"]
+                            for item in feed["contradicted_lessons"]))
 
 
 if __name__ == "__main__":

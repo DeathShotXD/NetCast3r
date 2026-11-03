@@ -5,11 +5,12 @@
     label,
     color,
     shape = 'dot',
-    title = ''
-  }: { label: string; color: string; shape?: Shape; title?: string } = $props();
+    title = '',
+    pulse = false
+  }: { label: string; color: string; shape?: Shape; title?: string; pulse?: boolean } = $props();
 </script>
 
-<span class="chip" style="color:{color}" title={title}>
+<span class="chip" class:chip-pulse={pulse} style="color:{color};--chip-c:{color}" title={title || label} data-shape={shape}>
   {#if shape === 'tri'}
     <svg viewBox="0 0 8 8" class="h-[7px] w-[7px] fill-current" aria-hidden="true">
       <path d="M4 0l4.5 8h-9z" />
@@ -33,3 +34,15 @@
   {/if}
   {label}
 </span>
+
+<style>
+  .chip {
+    background: color-mix(in srgb, var(--chip-c) 10%, transparent);
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--chip-c) 22%, transparent);
+    border-radius: 999px;
+    padding: 1px 7px 1px 6px;
+  }
+  .chip-pulse svg { animation: chip-pulse 1.6s ease-in-out infinite; }
+  @keyframes chip-pulse { 0%, 100% { opacity: 0.45; } 50% { opacity: 1; } }
+  @media (prefers-reduced-motion: reduce) { .chip-pulse svg { animation: none; } }
+</style>

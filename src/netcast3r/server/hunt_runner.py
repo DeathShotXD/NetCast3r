@@ -449,6 +449,43 @@ class HuntRunner:
                 ", ".join(item.get("why") or []) or item.get("class", ""),
                 item.get("proof") or "a reproducible effect")
 
+        try:
+            critical_techs = {"bola", "idor", "oauth", "auth-ato", "ssrf", "ssti",
+                              "sqli", "rce", "auth", "ato"}
+            lead_rows = []
+            for hyp in hypotheses:
+                tech = str(hyp.get("technique") or "").lower()
+                lead_rows.append({
+                    "hypothesis_id": hyp.get("id"),
+                    "title": hyp.get("title"),
+                    "technique": tech,
+                    "target": hyp.get("target"),
+                    "priority": ("critical" if tech in critical_techs
+                                 or any(token in tech for token in critical_techs)
+                                 else "high"),
+                })
+            lead_rows.sort(
+                key=lambda row: (0 if row["priority"] == "critical" else 1,
+                                 str(row.get("title") or "")))
+            if lead_rows:
+                top = lead_rows[:3]
+                self.server.index.add_agent_note(
+                    mission_id, "hunt.critical",
+                    (f"Critical leads: {host} "
+                     f"({len(top)} prioritized for director)"),
+                    json.dumps({
+                        "seed_host": host,
+                        "top_leads": top,
+                        "all_leads": lead_rows[:8],
+                        "director_hint": (
+                            "Run portal BOLA/IDOR/OAuth chains before generic "
+                            "technique rotation on this mission."
+                        ),
+                    }, default=str)[:4000],
+                    run_id=run_id)
+        except Exception:  # noqa: BLE001 - hand-off note is best effort
+            pass
+
         summary = {
             "mode": "hunt", "target": target, "title": title,
             "pages": 1 + len(surface), "signals": len(signals),

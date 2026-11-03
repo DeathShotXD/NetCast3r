@@ -340,6 +340,77 @@ class SwarmLoopTests(unittest.TestCase):
         self.assertEqual(result["steps"][0]["verdict"]["corroboration"],
                          "second provider disagreed")
 
+    def test_critical_support_without_a_second_provider_is_downgraded(self):
+        model = MeshModel({
+            "strategist": lambda m, e, n: (
+                objectives(("attacker", "critical BOLA on the applicant record"))
+                if n == 1 else objectives(done=True)),
+            "attacker": always({"action": "http_request",
+                                "args": {"target": "http://127.0.0.1:9/api/applicant"},
+                                "why": "capture raw evidence"}),
+            "validator": validator("supports", second="refutes"),
+            "scribe": scribe(),
+        })
+        registry = FakeRegistry(payload={
+            "headers": {"content-type": "application/json"},
+            "body": "{\"id\": 2, \"name\": \"other\"}"})
+        mesh = self.make(model, registry=registry)
+        result = mesh.run()
+        self.assertEqual(result["verdicts"]["supports"], 0)
+        self.assertEqual(result["verdicts"]["inconclusive"], 1)
+        self.assertEqual(result["contested"], 1)
+        self.assertIn("second provider", result["steps"][0]["verdict"]["reason"])
+        self.assertEqual(result["findings"], 0)
+
+    def test_empty_strategist_seeds_hypotheses_and_hunt_map(self):
+        class RoutingRegistry(FakeRegistry):
+            def __init__(self, routes):
+                super().__init__()
+                self.routes = routes
+
+            def call(self, name, args, actor=""):
+                self.calls.append((name, dict(args), actor))
+                if name in self.routes:
+                    return self.routes[name], False
+                body = {"ok": True, "url": args.get("target", ""), "status": 200,
+                        "title": "test"}
+                body.update(self.payload)
+                return body, False
+
+        registry = RoutingRegistry({
+            "hypothesis_list": {"items": [{
+                "title": "IDOR on applicant id",
+                "target": "http://127.0.0.1:9/api/applicant",
+                "expected": "another applicant record",
+                "technique": "idor",
+                "status": "open",
+            }]},
+            "agent_notes_list": {"items": [
+                {"kind": "hunt.map", "title": "older",
+                 "body": json.dumps({"suggested_chains": ["ignore this older chain"]})},
+                {"kind": "hunt.map", "title": "Surface map",
+                 "body": json.dumps({"suggested_chains": [
+                     "OAuth redirect_uri abuse",
+                     {"title": "BOLA on admit object", "id": "bola-admit"},
+                 ]})},
+            ]},
+        })
+
+        def timed_out(messages, exclude, call_no):
+            return {"text": "", "error": "ReadTimeout", "provider": ""}
+
+        mesh = self.make(MeshModel({"strategist": timed_out}), registry=registry)
+        objectives_out, note, finished = mesh._strategise({}, [], 1)
+        self.assertFalse(finished)
+        goals = " ".join(item["goal"] for item in objectives_out)
+        self.assertIn("IDOR on applicant id", goals)
+        self.assertIn("OAuth redirect_uri abuse", goals)
+        self.assertIn("BOLA on admit object", goals)
+        self.assertNotIn("ignore this older chain", goals)
+        self.assertIn("seeded", note)
+        self.assertTrue(any(item.get("critical") for item in objectives_out))
+        self.assertEqual(mesh.rounds, 0)
+
     def test_the_scribe_can_only_write_notes(self):
         model = MeshModel({
             "strategist": lambda m, e, n: (

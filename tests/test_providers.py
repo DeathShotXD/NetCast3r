@@ -77,9 +77,13 @@ class ProviderBusTests(unittest.TestCase):
         result = bus.complete("scribe", [{"role": "user", "content": "hi"}],
                               max_candidates=1)
         self.assertEqual(result.text, "")
-        self.assertEqual(result.failed, ["openrouter"])
+        # Soft 429 rotates without hard-failing the provider name, but the
+        # candidate cap still stops the chain after one attempt.
+        self.assertEqual(result.failed, [])
         calls = [row["provider"] for row in seen if row["kind"] == "call"]
         self.assertEqual(calls, ["openrouter"])
+        self.assertTrue(any(row.get("kind") == "done" and not row.get("ok")
+                            for row in seen))
 
     def test_route_model_only_applies_to_the_routed_provider(self):
         base = f"http://127.0.0.1:{self.port}"
@@ -219,6 +223,56 @@ class ProviderBusTests(unittest.TestCase):
         # without every lane pinning the same id first.
         self.assertTrue(first and second)
         self.assertIn(model_family(first[0]), {"mimo", "deepseek", "qwen"})
+
+    def test_empty_reply_rotates_to_the_next_model(self):
+        """An empty body retires that model and still returns the sibling."""
+
+        class EmptyThenOk(BaseHTTPRequestHandler):
+            hits = []
+
+            def do_POST(self):
+                length = int(self.headers.get("Content-Length", 0))
+                raw = self.rfile.read(length)
+                try:
+                    model = json.loads(raw).get("model")
+                except Exception:
+                    model = ""
+                EmptyThenOk.hits.append(model)
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                content = "" if model == "first-model" else "ok"
+                self.wfile.write(json.dumps({
+                    "choices": [{"message": {"content": content}}],
+                }).encode())
+
+            def log_message(self, *args):
+                pass
+
+        server = ThreadingHTTPServer(("127.0.0.1", 0), EmptyThenOk)
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        try:
+            port = server.server_address[1]
+            config = Config(
+                providers=[ProviderConfig(
+                    name="tokenharbor",
+                    base_url=f"http://127.0.0.1:{port}",
+                    api_key="dummy", priority=1,
+                    models=["first-model", "second-model"])],
+                routes=[RouteConfig(agent="prime", provider="tokenharbor",
+                                    model="first-model")],
+            )
+            EmptyThenOk.hits = []
+            bus = ProviderBus(config)
+            result = bus.complete("prime", [{"role": "user", "content": "hi"}])
+            self.assertEqual(result.text, "ok")
+            self.assertEqual(result.model, "second-model")
+            self.assertEqual(result.failed, [])
+            self.assertEqual(EmptyThenOk.hits, ["first-model", "second-model"])
+            self.assertTrue(bus._model_dead("tokenharbor", "first-model"))
+            self.assertFalse(bus._cooling("tokenharbor"))
+        finally:
+            server.shutdown()
 
 
 if __name__ == "__main__":

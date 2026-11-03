@@ -878,10 +878,14 @@ class AgentRuntime:
             agent_lane, messages, timeout=30.0)
         usage = completion.usage or {}
         prompt_chars = sum(len(str(item.get("content", ""))) for item in messages)
+        err = str(completion.error or "")
+        soft = any(token in err.lower() for token in (
+            "429", "rate limit", "rate_limited", "too many requests",
+            "no content", "timeout", "timed out"))
         call = self.index.add_agent_model_call(
             mission_id, task_id=task_id, agent=agent_lane,
             provider=completion.provider, model=completion.model,
-            status="ok" if completion.text else "unavailable",
+            status=("ok" if completion.text else "rotating" if soft else "unavailable"),
             prompt_chars=prompt_chars,
             completion_chars=len(completion.text or ""),
             prompt_tokens=_int_or_none(usage.get("prompt_tokens")),

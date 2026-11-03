@@ -1,5 +1,5 @@
 import type {
-  BenchResult, BrainLiveFeed, BrainReply, Campaign, Candidate, ConnectInfo, Approval, CoverageSummary, Direction, DirectorLogEntry, DirectorStatus, ExploitPlan, Finding, HarnessDiagnose, HarnessLearn, HarnessRecall, HarnessStatus, HarnessTick, HostShellResult, Hypothesis, HypothesisEvidence, Inventory, KeyEntry, McpInfo, Meta, Mission, MissionAgent, MissionGraph, Paged, ProgramImport, ProgramPreview, Provider, ProviderHealth, RevengKinds, RevengResult, Run, RunEvent, Submission, SubmissionSummary, ToolCall, Totals, TrendPoint, BrainTurn, BrainLoopStatus } from './types';
+  BenchResult, BrainLiveFeed, BrainReply, Campaign, Candidate, ConnectInfo, Approval, CoverageSummary, Direction, DirectorLogEntry, DirectorStatus, ExploitPlan, Finding, HarnessDiagnose, HarnessLearn, HarnessRecall, HarnessStatus, HarnessTick, HostShellResult, Hypothesis, HypothesisEvidence, Inventory, KeyEntry, McpInfo, Meta, Mission, MissionAgent, MissionGraph, Paged, ProgramImport, ProgramPreview, Provider, ProviderHealth, RevengKinds, RevengResult, Run, RunEvent, Submission, SubmissionSummary, ThreatMap, ToolCall, Totals, TrendPoint, BrainTurn, BrainLoopStatus } from './types';
 
 const BASE = '/api/v1';
 
@@ -82,6 +82,11 @@ export const api = {
     request<Finding>('POST', '/findings', body),
   patchFinding: (id: string, patch: Partial<Finding>) =>
     request<Finding>('PATCH', `/findings/${id}`, patch),
+  findingQuality: (id: string) =>
+    request<{ finding_id: string; score: number; grade: string; artifacts: number; note: string; checks: { name: string; points: number; ok: boolean; hint: string }[]; missing: string[] }>(
+      'GET', `/findings/${id}/quality`),
+  candidatePocVerify: (candidateId: string) =>
+    request<Record<string, unknown>>('POST', `/candidates/${candidateId}/poc/verify`, {}),
   missions: (q = '') => request<Paged<Mission>>('GET', `/missions${q}`),
   mission: (id: string) => request<Mission>('GET', `/missions/${id}`),
   missionNotes: (id: string) =>
@@ -111,6 +116,8 @@ export const api = {
   directorLog: (limit = 100) =>
     request<{ items: DirectorLogEntry[] }>('GET', `/director/log?limit=${limit}`),
   missionGraph: (id: string) => request<MissionGraph>('GET', `/missions/${id}/graph`),
+  threatMap: (id: string, limit = 80) =>
+    request<ThreatMap>('GET', `/missions/${id}/threat-map?limit=${limit}`),
   buildMissionGraph: (id: string) =>
     request<{ nodes: number; edges: number; paths: number }>('POST', `/missions/${id}/graph/build`, {}),
   verifyPath: (pathId: string, body: Record<string, unknown> = {}) =>

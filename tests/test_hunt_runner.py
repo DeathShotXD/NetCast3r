@@ -80,7 +80,10 @@ class HuntRunnerTests(unittest.TestCase):
         notes = self.server.index.list_agent_notes(mission["id"])
         kinds = {note["kind"] for note in notes}
         self.assertIn("hunt.map", kinds)
+        self.assertIn("hunt.critical", kinds)
         map_note = next(n for n in notes if n["kind"] == "hunt.map")
+        critical_note = next(n for n in notes if n["kind"] == "hunt.critical")
+        self.assertIn("top_leads", critical_note["body"])
         self.assertIn("suggested_chains", map_note["body"])
         self.assertIn("path_map", map_note["body"])
 

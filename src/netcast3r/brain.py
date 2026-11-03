@@ -24,6 +24,11 @@ import threading
 import time
 
 from .graph import host_of
+from .learning import (
+    contradict_host_unreachable_lessons,
+    contradict_lesson,
+    supersede_host_lesson,
+)
 
 COMPANION_NAME = "Helix"
 COMPANION_ROLE = "hunt steward"
@@ -160,7 +165,11 @@ Training is part of the job only when no operator_priority is locked. The
 snapshot carries the unsolved lab plan. When the real portfolio is blocked or
 the hunt has no high-value move and priority is clear, run a lab (`run_lab`),
 and write the lesson you actually learned (`record_lesson`) so the mesh
-inherits it. Never write a lesson for something you did not do.
+inherits it. Never write a lesson for something you did not do. While
+operator_priority.mission_id is set, never emit run_lab or solve_lab. Prefer
+one directive that closes publish_gate.blocked gaps (raw request/response,
+concrete impact, confirmed tag) so a supported lead can become critical_ready.
+Do not invent a finding.
 
 Decide what moves the hunt furthest right now. Prefer, in order: proving a
 bounty-eligible critical (ATO via email-rebind / second-step IDOR / OAuth code
@@ -434,11 +443,25 @@ def live_feed(index, director=None, mission_id: str = "",
 
     timeline.sort(key=_ts_key)
     contradicted_unreachable = 0
+    contradicted_brief: list[dict] = []
     try:
-        _, contradicted_unreachable = index.list_lessons(
-            tag="contradicted", mission_id=mission_id, limit=1)
+        contradicted_items, contradicted_unreachable = index.list_lessons(
+            tag="contradicted", mission_id=mission_id, limit=6)
+        contradicted_brief = [
+            {
+                "id": item.get("id"),
+                "title": item.get("title"),
+                "host": item.get("host") or item.get("context") or "",
+                "context": item.get("context") or "",
+                "error_class": item.get("error_class") or "",
+                "lesson": str(item.get("lesson") or "")[:240],
+                "next_step": str(item.get("next_step") or "")[:240],
+            }
+            for item in contradicted_items
+        ]
     except (TypeError, ValueError, AttributeError):
         contradicted_unreachable = 0
+        contradicted_brief = []
     loop = {}
     if director is not None:
         try:
@@ -456,6 +479,7 @@ def live_feed(index, director=None, mission_id: str = "",
         "timeline": timeline[-limit:],
         "loop": loop,
         "learning": {"contradicted_unreachable": contradicted_unreachable},
+        "contradicted_lessons": contradicted_brief,
     }
 
 
@@ -569,8 +593,15 @@ def context(index, director=None, mission_id: str = "", limit: int = 8) -> dict:
             tag="contradicted", mission_id=mission_id, limit=6)
         snapshot["learning"] = {"contradicted_unreachable": contradicted_total}
         snapshot["contradicted_lessons"] = [
-            {"id": item.get("id"), "title": item.get("title"),
-             "context": item.get("context")}
+            {
+                "id": item.get("id"),
+                "title": item.get("title"),
+                "host": item.get("host") or item.get("context") or "",
+                "context": item.get("context"),
+                "error_class": item.get("error_class") or "",
+                "lesson": str(item.get("lesson") or "")[:240],
+                "next_step": str(item.get("next_step") or "")[:240],
+            }
             for item in contradicted_items
         ]
     except (TypeError, ValueError, AttributeError):
@@ -606,6 +637,11 @@ def context(index, director=None, mission_id: str = "", limit: int = 8) -> dict:
                      "title": (i.get("title") or "")[:80],
                      "critical_ready": i.get("critical_ready")}
                     for i in (portfolio.get("items") or [])[:6]],
+            "blocked": [{"id": i.get("finding_id"),
+                         "title": (i.get("title") or "")[:80],
+                         "severity": i.get("severity"),
+                         "missing": (i.get("missing") or [])[:3]}
+                        for i in (portfolio.get("blocked") or [])[:4]],
         }
     except Exception:  # noqa: BLE001
         snapshot["publish_gate"] = {}
@@ -733,18 +769,27 @@ def _excluded_providers() -> set[str]:
     return set(_PROVIDER_FAILS)
 
 
+def _soft_model_error(error: str) -> bool:
+    """True for quota, empty, and timeout replies. Those rotate; they do not park."""
+    text = str(error or "").lower()
+    return any(token in text for token in (
+        "429", "rate limit", "rate_limited", "too many requests",
+        "no content", "empty", "timeout", "timed out",
+    ))
+
+
 def _remember_provider(provider: str, error: str) -> None:
     """Keep a hard-failed provider out of the brain's next few turns.
 
-    Auth/payment errors get a long rest. Transient free-tier 429s are MoE
-    rotation noise - do not ban the whole key; the bus already soft-retires
-    the one model that tripped the quota.
+    Auth/payment errors get a long rest. Transient free-tier 429s, empty
+    bodies, and timeouts are MoE rotation noise - do not ban the whole key.
+    The bus already soft-retires the one model that failed.
     """
     name = str(provider or "").strip()
     if not name:
         return
     text = str(error or "")
-    if "429" in text or "rate limit" in text.lower():
+    if _soft_model_error(text):
         return
     hard = any(code in text for code in ("401", "402", "403"))
     _PROVIDER_FAILS[name] = time.monotonic() + (
@@ -785,11 +830,13 @@ def _ask(server, index, messages: list, complete=None,
         model = completion.get("model", "") or ""
         error = completion.get("error", "") or ""
         hard_failed = list(completion.get("failed") or [])
-    for name in hard_failed:
-        _remember_provider(name, "402")
+    # A 429 walk used to stamp every soft key as a 402 and park the lock.
+    # Soft errors rotate inside the bus; only a hard error rests a key.
     if text.strip():
         _PROVIDER_FAILS.pop(provider, None)
-    else:
+    elif not _soft_model_error(error):
+        for name in hard_failed:
+            _remember_provider(name, error or "402")
         _remember_provider(provider, error)
     return text, provider, model, error
 
@@ -1024,6 +1071,51 @@ def chat(server, index, director, message: str, history: list | None = None,
             "error": error, "findings": 0}
 
 
+def critical_ready_directive(index, mission_id: str) -> dict | None:
+    """One directive that moves a real lead toward critical_ready.
+
+    Promotion stays human-gated. The steer only names the missing evidence.
+    """
+    mission_id = str(mission_id or "").strip()
+    if not mission_id:
+        return None
+    try:
+        from . import quality as quality_module
+        portfolio = quality_module.critical_portfolio(index, goal=5)
+    except Exception:  # noqa: BLE001
+        portfolio = {}
+    blocked = portfolio.get("blocked") or []
+    if blocked:
+        item = blocked[0] if isinstance(blocked[0], dict) else {}
+        missing = "; ".join(str(part) for part in (item.get("missing") or [])[:3])[:280]
+        title = str(item.get("title") or item.get("finding_id") or "finding")[:120]
+        return {
+            "kind": "directive",
+            "mission_id": mission_id,
+            "body": (
+                f"Critical-ready path: close publish gates on '{title}'. "
+                f"Missing: {missing or 'raw PoC, impact, confirmed tag'}. "
+                "Require a raw request and response before promotion."
+            )[:500],
+        }
+    try:
+        rows, _ = index.list_hypotheses(mission_id, status="supported", limit=3)
+    except Exception:  # noqa: BLE001
+        rows = []
+    if rows:
+        title = str((rows[0] or {}).get("title") or "supported lead")[:120]
+        return {
+            "kind": "directive",
+            "mission_id": mission_id,
+            "body": (
+                f"Critical-ready path: hypothesis '{title}' is supported. "
+                "Collect a second raw request/response, state attacker impact, "
+                "and only then promote. Do not invent a finding."
+            )[:500],
+        }
+    return None
+
+
 def cognition(server, index, director, mission_id: str = "", complete=None,
               timeout: float = 55.0, journal: bool = True,
               previous: dict | None = None) -> dict:
@@ -1054,6 +1146,8 @@ def cognition(server, index, director, mission_id: str = "", complete=None,
     focus = str(data.get("focus") or "")[:400]
     reasoning = str(data.get("reasoning") or "")[:800]
     applied = []
+    locked = operator_priority(index)
+    locked_id = str(locked.get("mission_id") or "")
     for action in (data.get("actions") or [])[:3]:
         kind = str(action.get("kind") or "").lower() if isinstance(action, dict) else ""
         if kind == "run_module" and not autonomous:
@@ -1065,8 +1159,31 @@ def cognition(server, index, director, mission_id: str = "", complete=None,
                             "reason": "the autonomy loop cannot stop the plane; "
                                       "ask the operator"})
             continue
+        if locked_id and kind in {"run_lab", "solve_lab"}:
+            applied.append({"kind": kind, "applied": False,
+                            "reason": "operator priority is locked; lab training stays paused"})
+            continue
         applied.append(_apply(index, director, action, mission_id))
     applied = [a for a in applied if a]
+    # A quiet or rate-limited model must not leave the locked mission idle.
+    # Spend the tick on critical_ready evidence instead of a lab or a park.
+    if locked_id and not any(row.get("applied") for row in applied):
+        steer_id = locked_id
+        steer = critical_ready_directive(index, steer_id) or {
+            "kind": "directive",
+            "mission_id": steer_id,
+            "body": (
+                "Operator priority stays locked on this mission. "
+                "Keep falsifiable tests moving. Do not start labs or park the hunt."
+            ),
+        }
+        applied.append(_apply(index, director, steer, steer_id))
+        applied = [a for a in applied if a]
+        if not reply.strip():
+            reply = ("Models were quiet; steering the locked mission toward "
+                     "critical-ready evidence.")
+        if not focus:
+            focus = "critical_ready on the locked mission"
     result = {"reply": reply, "reasoning": reasoning, "focus": focus,
               "actions": applied, "provider": provider, "model": model,
               "mission_id": mission_id, "error": error}
@@ -1243,6 +1360,9 @@ def _apply(index, director, action, default_mission: str = "") -> dict:
                 source="agent:brain", confidence=0.6)
             return {"kind": kind, "applied": True,
                     "lesson_id": created.get("id")}
+        if kind in {"run_lab", "solve_lab"} and operator_priority(index).get("mission_id"):
+            return {"kind": kind, "applied": False,
+                    "reason": "operator priority is locked; lab training stays paused"}
         if kind == "run_lab":
             slug = str(action.get("slug") or "auto").strip()
             run = director.server._labs().start(slug)

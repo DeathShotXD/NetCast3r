@@ -81,7 +81,10 @@
   </section>
 
   {#if error}
-    <section class="panel px-5 py-4 text-sm" style="color:var(--obs-red)">{error}</section>
+    <section class="panel px-5 py-4 text-sm" style="color:var(--obs-red)" role="alert">
+      Could not read connection info: {error}
+      <button class="obs-btn obs-btn-sm" type="button" style="margin-left:10px" onclick={() => void load()}>Try again</button>
+    </section>
   {:else if loading || !info}
     <section class="obs-card obs-empty" style="min-height:220px; gap:14px">
       <Buffering
@@ -171,7 +174,7 @@
           </div>
         {/each}
         {#if tools.length === 0}
-          <p class="obs-connect-notes">no tool matches that search.</p>
+          <p class="obs-connect-notes">No tool matches "{toolQuery}". Clear the search to see all {info.tools.length} tools.</p>
         {/if}
       </div>
     </section>

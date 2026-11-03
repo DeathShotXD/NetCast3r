@@ -8,6 +8,7 @@
   import Chip from '../ui/Chip.svelte';
   import Confirm from '../ui/Confirm.svelte';
   import EmptyState from '../ui/EmptyState.svelte';
+  import Buffering from '../ui/Buffering.svelte';
   import Icon from '../ui/Icon.svelte';
 
   let items = $state<Finding[]>([]);
@@ -18,6 +19,10 @@
   let selected = $state<Finding | null>(null);
   let notes = $state('');
   let busy = $state(false);
+  let loading = $state(true);
+  let quality = $state<{ score: number; grade: string; artifacts: number; note: string; checks: { name: string; points: number; ok: boolean; hint: string }[] } | null>(null);
+  let qualityBusy = $state(false);
+  let retesting = $state(false);
   let error = $state('');
   let pendingReject = $state<Finding | null>(null);
   let seq = 0;
@@ -34,6 +39,7 @@
 
   async function load() {
     const mine = ++seq;
+    loading = true;
     const params = new URLSearchParams({ size: '100' });
     if (q.trim()) params.set('q', q.trim());
     if (severity) params.set('severity', severity);
@@ -50,6 +56,8 @@
       items = [];
       total = 0;
       error = exc instanceof Error ? exc.message : 'could not load findings';
+    } finally {
+      if (mine === seq) loading = false;
     }
   }
 
@@ -73,7 +81,45 @@
   function open(finding: Finding) {
     selected = finding;
     notes = finding.notes || '';
+    quality = null;
   }
+
+  // Verify = real evidence-quality score from the control plane.
+  async function verifyFinding() {
+    if (!selected || qualityBusy) return;
+    qualityBusy = true;
+    try {
+      quality = await api.findingQuality(selected.id);
+    } catch (exc) {
+      store.fail(exc instanceof Error ? exc.message : 'could not score this finding');
+    } finally { qualityBusy = false; }
+  }
+
+  // Retest = rerun the cast that produced this finding, then spectate it.
+  async function retestFinding() {
+    if (!selected?.run_id || retesting) return;
+    retesting = true;
+    try {
+      const fresh = await api.rerun(selected.run_id);
+      store.runs = [fresh, ...store.runs.filter((r) => r.id !== fresh.id)];
+      store.toast('ok', `retest cast started for ${fresh.target} - spectating live`);
+      store.watch(fresh.id);
+    } catch (exc) {
+      store.fail(exc instanceof Error ? exc.message : 'could not start a retest cast');
+    } finally { retesting = false; }
+  }
+
+  const spine = $derived.by(() => {
+    if (!selected) return [];
+    const f = selected;
+    return [
+      { label: 'Observed', detail: f.source || 'source not recorded', ok: Boolean(f.source) },
+      { label: 'Captured', detail: f.secret_type ? `${f.secret_type} value captured (masked in UI)` : 'value captured', ok: Boolean(f.value) },
+      { label: 'Validated', detail: `${f.status} - ${Math.round((f.confidence ?? 0) * 100)}% confidence`, ok: f.status === 'confirmed' || (f.confidence ?? 0) >= 0.7 },
+      { label: 'Evidence', detail: f.evidence ? `${f.evidence.length} chars of recorded evidence` : 'no evidence text attached yet', ok: Boolean(f.evidence) },
+      { label: 'Triaged', detail: triageLabel(f.triage_status), ok: f.triage_status !== 'new' }
+    ];
+  });
 
   function close() {
     selected = null;
@@ -147,21 +193,23 @@
   </div>
 
   <section class="obs-card" use:pauseOffscreen>
-    {#if error}
-      <p class="obs-alert" style="margin:12px 14px 0">{error}</p>
-    {/if}
-    {#if items.length === 0}
+    {#if loading && items.length === 0}
+      <div style="padding:18px"><Buffering variant="skeleton" label="Loading findings" detail="Reading validated findings from the control plane." /></div>
+    {:else if error && items.length === 0}
+      <EmptyState eyebrow="control plane" tone="error" title="Could not load findings" body={error} action="Try again" onAction={() => void load()} secondaryAction="Engage a target" onSecondaryAction={() => store.go('new')} />
+    {:else if items.length === 0}
       <EmptyState
         eyebrow="empty"
         title={q || severity || triage ? 'No findings match' : 'Nothing caught yet'}
         body={q || severity || triage
-          ? 'No finding satisfies every filter at once. Clear one of the boxes above, or run another scan.'
+          ? 'No finding satisfies every filter at once. Clear one filter, or run another scan.'
           : 'Findings land here the moment a run validates a credential against the provider that issued it.'}
-        action="engage a target"
-        onAction={() => store.go('new')}
+        action={q || severity || triage ? 'Clear filters' : 'Engage a target'}
+        onAction={() => { if (q || severity || triage) { q = ''; severity = ''; triage = ''; void load(); } else store.go('new'); }}
         hint={q || severity || triage ? 'tip: leave a filter blank to include everything' : ''}
       />
     {:else}
+      {#if error}<p class="obs-alert" style="margin:12px 14px 0" role="alert">{error} <button class="obs-link" type="button" onclick={() => void load()}>Retry</button></p>{/if}
       <div class="obs-findings-table-wrap">
         <table class="obs-findings-table">
           <thead>
@@ -271,6 +319,26 @@
           <dd class="obs-mono" style="margin-top:6px;word-break:break-all;font-size:11px;color:var(--obs-muted)">{selected.source || '-'}</dd>
         </div>
       </dl>
+
+      <div style="margin-bottom:16px">
+        <p class="obs-eyebrow">evidence spine</p>
+        <ol class="obs-spine" aria-label="evidence chain">
+          {#each spine as step (step.label)}
+            <li class:ok={step.ok}><i aria-hidden="true"></i><span><strong>{step.label}</strong><small>{step.detail}</small></span></li>
+          {/each}
+        </ol>
+        <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:10px">
+          <button class="obs-btn obs-btn-primary" type="button" disabled={qualityBusy} onclick={() => void verifyFinding()}>{qualityBusy ? 'Scoring...' : 'Verify evidence'}</button>
+          <button class="obs-btn" type="button" disabled={retesting || !selected.run_id} title={selected.run_id ? 'Rerun the cast that produced this finding' : 'No source run recorded'} onclick={() => void retestFinding()}>{retesting ? 'Starting retest...' : 'Retest via rerun'}</button>
+        </div>
+        {#if quality}
+          <div class="obs-quality" role="status">
+            <strong>Evidence score {quality.score}/100 - grade {quality.grade}</strong>
+            <span>{quality.artifacts} artifact(s) attached. {quality.note}</span>
+            <ul>{#each quality.checks as check (check.name)}<li class:ok={check.ok}>{check.ok ? 'pass' : 'gap'} - {check.name}{#if !check.ok && check.hint} - {check.hint}{/if}</li>{/each}</ul>
+          </div>
+        {/if}
+      </div>
 
       {#if selected.evidence}
         <div style="margin-bottom:16px">

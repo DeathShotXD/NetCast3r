@@ -602,7 +602,9 @@ class Server:
 
         @add("GET", r"/api/v1/findings/(?P<id>[A-Za-z0-9_]+)")
         def get_finding(ctx):
-            finding = self.index.get_finding(ctx.params["id"])
+            from .. import investigations as investigations_module
+
+            finding = investigations_module.finding_detail(self.index, ctx.params["id"])
             return _json(finding) if finding else _problem(404, "finding not found")
 
         @add("POST", r"/api/v1/findings")
@@ -791,8 +793,32 @@ class Server:
 
         @add("GET", r"/api/v1/hypotheses/(?P<id>[A-Za-z0-9_]+)")
         def get_hypothesis(ctx):
+            from .. import investigations as investigations_module
+
             hypothesis = self.index.get_hypothesis(ctx.params["id"])
-            return _json(hypothesis) if hypothesis else _problem(404, "hypothesis not found")
+            if not hypothesis:
+                return _problem(404, "hypothesis not found")
+            payload = dict(hypothesis)
+            payload["evidence_chain"] = investigations_module.evidence_chain_for_hypothesis(
+                self.index, ctx.params["id"], limit=ctx.limit)
+            return _json(payload)
+
+        @add("POST", r"/api/v1/hypotheses/(?P<id>[A-Za-z0-9_]+)/verify")
+        @add("POST", r"/api/v1/hypotheses/(?P<id>[A-Za-z0-9_]+)/retest")
+        def hypothesis_verify(ctx):
+            from .. import investigations as investigations_module
+
+            body = ctx.json()
+            body = body if isinstance(body, dict) else {}
+            steps = body.get("steps") if isinstance(body.get("steps"), list) else None
+            try:
+                result = investigations_module.verify_hypothesis(
+                    self, ctx.params["id"], steps=steps,
+                    base_url=str(body.get("base_url") or ""),
+                    scope=body.get("scope"))
+            except ValueError as exc:
+                return _problem(400, str(exc))
+            return _json(result)
 
         @add("GET", r"/api/v1/hypotheses/(?P<id>[A-Za-z0-9_]+)/evidence")
         def hypothesis_evidence(ctx):
@@ -1084,6 +1110,22 @@ class Server:
                 "paths": self.index.list_graph_paths(mission_id),
             })
 
+        @add("GET", r"/api/v1/missions/(?P<id>[A-Za-z0-9_]+)/threat-map")
+        def threat_map_view(ctx):
+            """Scored attack surface map for Live/Missions (Penligent-class)."""
+            from .. import graph as graph_module
+
+            mission_id = ctx.params["id"]
+            try:
+                limit = int(ctx.query.get("limit") or 80)
+            except (TypeError, ValueError):
+                limit = 80
+            try:
+                return _json(graph_module.threat_map(self.index, mission_id,
+                                                     limit=limit))
+            except ValueError as exc:
+                return _problem(404, str(exc))
+
         @add("POST", r"/api/v1/missions/(?P<id>[A-Za-z0-9_]+)/graph/nodes")
         def graph_add_node(ctx):
             mission_id = ctx.params["id"]
@@ -1225,9 +1267,17 @@ class Server:
         def candidates_list(ctx):
             if not self.index.get_mission(ctx.params["id"]):
                 return _problem(404, "mission not found")
-            return _json({"items": self.index.list_candidates(
+            items = self.index.list_candidates(
                 ctx.params["id"], status=str(ctx.query.get("status", "") or ""),
-                limit=int(ctx.query.get("limit", 100) or 100))})
+                limit=int(ctx.query.get("limit", 100) or 100))
+            return _json({"items": items, "total": len(items)})
+
+        @add("GET", r"/api/v1/candidates/(?P<id>[A-Za-z0-9_]+)")
+        def get_candidate(ctx):
+            from .. import investigations as investigations_module
+
+            detail = investigations_module.candidate_detail(self.index, ctx.params["id"])
+            return _json(detail) if detail else _problem(404, "candidate not found")
 
         @add("POST", r"/api/v1/candidates/(?P<id>[A-Za-z0-9_]+)/promote")
         def candidate_promote(ctx):
@@ -2482,6 +2532,9 @@ class Server:
                     task_id=str(body.get("task_id", "")),
                     source=str(body.get("source", "")),
                     confidence=body.get("confidence", 0.5),
+                    host=str(body.get("host", "")),
+                    error_class=str(body.get("error_class", "")),
+                    provisional=body.get("provisional") if "provisional" in body else None,
                 )
             except (TypeError, ValueError) as exc:
                 return _problem(400, str(exc))
@@ -2581,8 +2634,8 @@ class Server:
         def mission_notes(ctx):
             if not self.index.get_mission(ctx.params["id"]):
                 return _problem(404, "mission not found")
-            return _json({"items": self.index.list_agent_notes(
-                ctx.params["id"], ctx.limit)})
+            notes = self.index.list_agent_notes(ctx.params["id"], ctx.limit)
+            return _json({"items": notes, "total": len(notes)})
 
         @add("POST", r"/api/v1/missions/(?P<id>[A-Za-z0-9_]+)/notes")
         def add_mission_note(ctx):
@@ -3318,8 +3371,11 @@ class _Context:
         self.params = params
         self.server = server
         self.page = max(1, _int_or(query.get("page"), 1))
-        self.limit = min(500, max(1, _int_or(query.get("size"), 50)))
-        self.offset = (self.page - 1) * self.limit
+        self.limit = min(500, max(1, _int_or(query.get("size") or query.get("limit"), 50)))
+        if query.get("offset") is not None:
+            self.offset = max(0, _int_or(query.get("offset"), 0))
+        else:
+            self.offset = (self.page - 1) * self.limit
         self.last_event_id = _int_or(query.get("last_event_id") or headers.get("last-event-id"), 0) or None
 
     def json(self) -> dict:

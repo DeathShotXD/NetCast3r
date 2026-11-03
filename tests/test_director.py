@@ -291,6 +291,45 @@ class DirectorTests(unittest.TestCase):
         self.assertTrue(health["available"])
         self.assertGreaterEqual(health.get("soft_failures", 0), 8)
 
+    def test_zero_progress_priority_escalates_without_idling(self):
+        from netcast3r import brain as brain_module
+
+        mission = self.mission("priority-lock")
+        other = self.mission("other-work")
+        brain_module.set_operator_priority(
+            self.server.index, mission["id"], reason="operator lock")
+        for _ in range(12):
+            self.server.index.add_director_log(
+                "brain-wait", "no model answered: th-hunt-1 returned 429")
+
+        first = self.director._tick(force=True)
+        self.assertEqual(first["action"], "start")
+        self.assertEqual(first["mission_id"], mission["id"])
+        self.assertEqual(first["mode"], "hunt")
+        self.assertFalse(first.get("model_gate"))
+        self.assertNotIn(other["id"], self.hunts.started + self.solvers.started)
+
+        self.complete_run(first["run_id"], counts={"actions": 0})
+        second = self.director._tick(force=True)
+        self.assertEqual(second["action"], "start")
+        self.assertEqual(second["mission_id"], mission["id"])
+        self.assertEqual(second["mode"], "swarm")
+        self.assertFalse(second.get("model_gate"))
+
+        self.complete_run(second["run_id"], counts={"actions": 0})
+        third = self.director._tick(force=True)
+        self.assertEqual(third["action"], "start")
+        self.assertEqual(third["mission_id"], mission["id"])
+        self.assertEqual(third["mode"], "hunt")
+        directions = (
+            self.server.index.list_directions(mission["id"], status="queued")
+            + self.server.index.list_directions(mission["id"], status="consumed"))
+        self.assertTrue(any("Deepen continuous hunt" in str(row.get("body") or "")
+                            for row in directions))
+        rows = {row["mission_id"]: row for row in self.director.eligibility()}
+        self.assertFalse(rows[mission["id"]]["parked"])
+        self.assertNotEqual(third["action"], "idle")
+
     def test_a_newer_model_answer_reopens_the_gate(self):
         mission = self.mission("recovered")
         prior = self.server.index.create_run("http://127.0.0.1:9/", {"mode": "hunt"})

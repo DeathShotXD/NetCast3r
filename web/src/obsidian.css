@@ -1,5 +1,5 @@
 /* ============================================================
-   NetCast3r — Obsidian Signal
+   NetCast3r - Obsidian Signal
    Production shell and Command Center v1.
    Unlayered on purpose: these rules land after the legacy theme.
    ============================================================ */
@@ -7466,7 +7466,7 @@ html.nc-native .nc-tag {
 }
 
 /* ============================================================
-   UX v2 — shell clarity, dock clearance, focus, legacy bridge
+   UX v2 - shell clarity, dock clearance, focus, legacy bridge
    ============================================================ */
 
 :root {
@@ -8373,3 +8373,81 @@ html.nc-native .nc-tag {
   background: var(--obs-acid-soft);
   color: var(--obs-acid);
 }
+
+/* ============================================================
+   UX v3 - enterprise polish: universal focus, live hierarchy,
+   jump-to-latest, channel dots, error empty states
+   ============================================================ */
+button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible,
+textarea:focus-visible, [tabindex]:focus-visible, summary:focus-visible {
+  outline: none;
+  box-shadow: var(--obs-focus);
+}
+.obs-field:focus-visible { box-shadow: 0 0 0 1px rgba(200,248,26,.18), var(--obs-focus); }
+.obs-empty-error { border-color: rgba(217,112,168,.35) !important; }
+.obs-empty-error .obs-empty-title { color: var(--obs-red, #d970a8); }
+.obs-empty-error .obs-empty-icon { border-color: rgba(217,112,168,.4); color: var(--obs-red, #d970a8); }
+
+/* Live stream hierarchy: thinking / tool / evidence / log */
+.obs-live-legend { display:flex; flex-wrap:wrap; gap:6px 14px; align-items:center; padding:8px 14px; border-bottom:1px solid var(--obs-line); font-family:var(--mono); font-size:9px; letter-spacing:.1em; text-transform:uppercase; color:var(--obs-faint); }
+.obs-live-legend span { display:inline-flex; align-items:center; gap:6px; }
+.obs-live-legend i { width:7px; height:7px; border-radius:50%; flex:none; }
+.obs-live-legend .lg-think i { background: var(--obs-violet-3, #b47ae0); }
+.obs-live-legend .lg-tool i { background: var(--obs-acid); }
+.obs-live-legend .lg-evidence i { background: var(--obs-gold, #efe4b1); border-radius:2px; }
+.obs-live-legend .lg-log i { background: var(--obs-faint); }
+.obs-jump-latest { position:sticky; bottom:10px; z-index:3; display:flex; justify-content:center; pointer-events:none; padding-top:6px; }
+.obs-jump-latest button { pointer-events:auto; display:inline-flex; align-items:center; gap:7px; border:1px solid rgba(200,248,26,.4); border-radius:999px; padding:6px 12px; background:rgba(10,12,4,.92); color:var(--obs-acid); font-family:var(--mono); font-size:10px; letter-spacing:.06em; cursor:pointer; box-shadow:0 10px 28px rgba(0,0,0,.45); backdrop-filter:blur(10px); animation:obs-jump-in 180ms var(--ease) both; }
+.obs-jump-latest button:hover { background:rgba(200,248,26,.14); }
+@keyframes obs-jump-in { from { opacity:0; transform:translateY(6px);} to { opacity:1; transform:none;} }
+
+/* BrainDock channel dots */
+.nc-brain-channel i { width:6px; height:6px; border-radius:50%; background:var(--obs-faint); flex:none; }
+.nc-brain-channel[data-channel='journal'] i { background: var(--obs-acid); }
+.nc-brain-channel[data-channel='mesh'] i { background: var(--obs-violet-3, #b47ae0); }
+.nc-brain-channel[data-channel='run'] i { background: var(--obs-gold, #efe4b1); }
+.nc-brain-channel[data-channel='log'] i { background: var(--obs-faint); border-radius:2px; }
+.nc-brain-jump { position:absolute; right:14px; bottom:12px; z-index:4; display:inline-flex; align-items:center; gap:6px; border:1px solid rgba(200,248,26,.4); border-radius:999px; padding:6px 11px; background:rgba(10,12,4,.94); color:var(--obs-acid); font-family:var(--mono); font-size:10px; cursor:pointer; box-shadow:0 10px 28px rgba(0,0,0,.5); }
+.nc-brain-jump:hover { background:rgba(200,248,26,.14); }
+.nc-brain-chan-tag { font-family:var(--mono); font-size:8px; letter-spacing:.1em; text-transform:uppercase; border-radius:99px; padding:1px 6px; box-shadow:inset 0 0 0 1px rgba(245,233,220,.12); color:var(--obs-faint); flex:none; }
+
+/* Seed composer readiness */
+.obs-seed-examples { display:flex; flex-wrap:wrap; gap:6px; margin-top:10px; }
+.obs-seed-examples button { border:1px solid var(--obs-line); border-radius:999px; padding:4px 10px; background:transparent; color:var(--obs-faint); font-family:var(--mono); font-size:10px; cursor:pointer; }
+.obs-seed-examples button:hover { border-color:rgba(200,248,26,.35); color:var(--obs-acid); }
+.obs-seed-ready { display:flex; align-items:center; gap:7px; font-family:var(--mono); font-size:10px; letter-spacing:.04em; color:var(--obs-faint); }
+.obs-seed-ready i { width:6px; height:6px; border-radius:50%; background:var(--obs-faint); flex:none; }
+.obs-seed-ready.ready { color:var(--obs-acid); }
+.obs-seed-ready.ready i { background:var(--obs-acid); box-shadow:0 0 8px rgba(200,248,26,.6); }
+
+@media (prefers-reduced-motion: reduce) {
+  .obs-jump-latest button, .nc-brain-jump { animation:none; }
+  * { scroll-behavior:auto !important; }
+}
+html { scroll-behavior:smooth; }
+
+/* Evidence spine (Findings) */
+.obs-spine{list-style:none;margin:10px 0 0;padding:0;display:flex;flex-direction:column}
+.obs-spine li{display:flex;gap:10px;align-items:flex-start;padding:7px 0;border-left:1px solid var(--obs-line);padding-left:14px;position:relative}
+.obs-spine li i{position:absolute;left:-4px;top:12px;width:7px;height:7px;border-radius:50%;background:var(--obs-faint);flex:none}
+.obs-spine li.ok i{background:var(--obs-acid);box-shadow:0 0 8px rgba(200,248,26,.5)}
+.obs-spine strong{display:block;font-size:11.5px;color:var(--obs-text)}
+.obs-spine small{display:block;font-size:11px;color:var(--obs-faint);line-height:1.4;word-break:break-word}
+.obs-quality{margin-top:12px;border:1px solid rgba(200,248,26,.25);border-radius:10px;padding:11px 12px;background:rgba(200,248,26,.05);font-size:11.5px}
+.obs-quality strong{display:block;color:var(--obs-acid)}
+.obs-quality span{color:var(--obs-muted);line-height:1.45}
+.obs-quality ul{margin:8px 0 0;padding-left:16px;color:var(--obs-faint);line-height:1.5}
+.obs-quality li.ok{color:var(--obs-muted)}
+/* Hunt map (Missions overview) */
+.obs-huntmap-strip{display:flex;flex-wrap:wrap;gap:8px 18px;align-items:center;padding:10px 0;border-top:1px solid var(--obs-line);border-bottom:1px solid var(--obs-line);font-family:var(--mono);font-size:10px;letter-spacing:.06em;text-transform:uppercase;color:var(--obs-faint)}
+.obs-huntmap-strip strong{color:var(--obs-text);font-size:14px;margin-right:4px}
+.obs-huntmap-path{display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding:12px 0 4px}
+.obs-huntmap-path-title{font-size:12.5px;font-weight:600;color:var(--obs-text)}
+.obs-huntmap-steps{flex-basis:100%;font-family:var(--mono);font-size:10.5px;color:var(--obs-faint);overflow-wrap:anywhere}
+.obs-huntmap-leads{list-style:none;margin:8px 0 0;padding:0}
+.obs-huntmap-leads li{display:flex;gap:10px;align-items:center;padding:8px 0;border-top:1px solid color-mix(in srgb,var(--obs-line) 65%,transparent)}
+.obs-huntmap-dot{width:7px;height:7px;border-radius:50%;flex:none}
+.obs-huntmap-leads button{flex:1;min-width:0;text-align:left;background:none;border:0;padding:0;cursor:pointer;color:inherit}
+.obs-huntmap-leads strong{display:block;font-size:12px;color:var(--obs-text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.obs-huntmap-leads small{display:block;font-size:10.5px;color:var(--obs-faint);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.obs-huntmap-leads button:hover strong{color:var(--obs-acid)}

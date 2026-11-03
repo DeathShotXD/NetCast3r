@@ -288,3 +288,221 @@ def _as_role(complete):
     except (AttributeError, TypeError):
         pass
     return complete
+
+
+_SEVERITY_SCORE = {
+    "critical": 100, "high": 80, "medium": 55, "low": 30, "info": 10, "": 10,
+}
+
+_AUTH_MARKERS = (
+    "login", "signin", "signup", "register", "auth", "oauth", "oidc", "saml",
+    "sso", "session", "token", "password", "mfa", "2fa", "callback",
+)
+
+
+def _is_auth_surface(node: dict) -> bool:
+    text = f"{node.get('key', '')} {node.get('label', '')}".lower()
+    return str(node.get("kind") or "") in {"endpoint", "parameter"} and any(
+        marker in text for marker in _AUTH_MARKERS)
+
+
+def _score_node(node: dict, open_lead_ids: set[str]) -> int:
+    kind = str(node.get("kind") or "")
+    key = str(node.get("key") or "")
+    text = f"{key} {node.get('label', '')}".lower()
+    severity = str(node.get("severity") or "").lower()
+    score = _SEVERITY_SCORE.get(severity, 10)
+    if kind == "finding":
+        return min(100, score)
+    if kind == "hypothesis" and key in open_lead_ids:
+        score = max(score, 65 if any(
+            token in text for token in
+            ("rce", "takeover", "auth", "idor", "ssrf", "sqli")) else 45)
+    if _is_auth_surface(node):
+        score = max(score, 60)
+    elif kind in {"endpoint", "parameter"}:
+        score = max(score, 45 if any(
+            token in text for token in
+            ("api", "graphql", "admin", "admit", "result")) else 25)
+    if kind in {"host", "ip", "target"}:
+        score = max(score, 20)
+    return min(100, score)
+
+
+def _risk_severity(score: int) -> str:
+    if score >= 90:
+        return "critical"
+    if score >= 70:
+        return "high"
+    if score >= 45:
+        return "medium"
+    if score >= 20:
+        return "low"
+    return "info"
+
+
+def _threat_type(node: dict, open_lead_ids: set[str]) -> str:
+    kind = str(node.get("kind") or "")
+    if kind in {"host", "ip", "target"}:
+        return "host"
+    if kind == "hypothesis" and str(node.get("key") or "") in open_lead_ids:
+        return "open_lead"
+    if kind == "finding":
+        return "finding"
+    if _is_auth_surface(node):
+        return "auth_surface"
+    return "endpoint" if kind in {"endpoint", "parameter"} else kind
+
+
+def threat_map(index, mission_id: str, limit: int = 80) -> dict:
+    """Return an evidence-backed, scored projection of a mission graph."""
+    mission = index.get_mission(mission_id)
+    if not mission:
+        raise ValueError("mission not found")
+    limit = max(8, min(int(limit or 80), 200))
+    nodes = list(index.list_graph_nodes(mission_id) or [])
+    edges = list(index.list_graph_edges(mission_id) or [])
+    paths = list(index.list_graph_paths(mission_id) or [])
+    leads, _ = index.list_hypotheses(
+        mission_id=mission_id, status="open", limit=200)
+    findings = _finding_rows(index, mission)
+    open_lead_ids = {str(item.get("id") or "") for item in leads}
+
+    host_nodes = [node for node in nodes
+                  if node.get("kind") in {"host", "ip", "target"}]
+    if not host_nodes:
+        host = host_of(mission.get("target", ""))
+        host_node = {
+            "id": f"th_host_{mission_id}", "kind": "host", "key": host,
+            "label": host, "severity": "", "confidence": "observed",
+            "data": {"mission_id": mission_id},
+        }
+        nodes.append(host_node)
+        host_nodes.append(host_node)
+    anchor_id = str(host_nodes[0].get("id") or "")
+
+    graph_leads = {str(node.get("key") or "") for node in nodes
+                   if node.get("kind") == "hypothesis"}
+    for lead in leads:
+        lead_id = str(lead.get("id") or "")
+        if lead_id in graph_leads:
+            continue
+        node_id = f"th_lead_{lead_id}"
+        nodes.append({
+            "id": node_id, "kind": "hypothesis", "key": lead_id,
+            "label": lead.get("title") or "open lead", "severity": "",
+            "confidence": "hypothesis",
+            "data": {"status": "open", "technique": lead.get("technique", ""),
+                     "expected": lead.get("expected", "")},
+        })
+        edges.append({
+            "id": f"th_edge_{lead_id}", "src": node_id, "dst": anchor_id,
+            "kind": "tests", "label": "", "confidence": "hypothesis",
+            "evidence": {"hypothesis_id": lead_id},
+        })
+
+    graph_findings = {str(node.get("key") or "") for node in nodes
+                      if node.get("kind") == "finding"}
+    for finding in findings:
+        finding_id = str(finding.get("id") or "")
+        if finding_id in graph_findings:
+            continue
+        node_id = f"th_finding_{finding_id}"
+        nodes.append({
+            "id": node_id, "kind": "finding", "key": finding_id,
+            "label": finding.get("title") or "finding",
+            "severity": (finding.get("severity_override")
+                         or finding.get("severity") or "info"),
+            "confidence": "observed",
+            "data": {"triage": finding.get("triage_status", "")},
+        })
+        edges.append({
+            "id": f"th_edge_{finding_id}", "src": anchor_id, "dst": node_id,
+            "kind": "leads_to", "label": "", "confidence": "observed",
+            "evidence": {"finding_id": finding_id,
+                         "run_id": finding.get("run_id", "")},
+        })
+
+    raw_scores = {
+        str(node.get("id") or ""): _score_node(node, open_lead_ids)
+        for node in nodes
+    }
+    # Asset risk inherits the strongest evidenced child risk, with distance
+    # decay. This ranks a host because of its graph, not because of its name.
+    for _ in range(2):
+        for edge in edges:
+            src, dst = str(edge.get("src") or ""), str(edge.get("dst") or "")
+            if src in raw_scores and dst in raw_scores:
+                raw_scores[src] = max(raw_scores[src],
+                                      max(0, raw_scores[dst] - 10))
+                raw_scores[dst] = max(raw_scores[dst],
+                                      max(0, raw_scores[src] - 10))
+
+    projected = []
+    for node in nodes:
+        node_id = str(node.get("id") or "")
+        node_type = _threat_type(node, open_lead_ids)
+        if str(node.get("kind") or "") == "hypothesis" and node_type != "open_lead":
+            continue
+        risk_score = raw_scores[node_id]
+        projected.append({
+            "id": node.get("id"),
+            "type": node_type,
+            "kind": node.get("kind"),
+            "key": node.get("key"),
+            "label": node.get("label") or node.get("key"),
+            "severity": node.get("severity") or _risk_severity(risk_score),
+            "risk_score": risk_score,
+            "confidence": node.get("confidence") or "",
+            "status": (node.get("data") or {}).get("status", ""),
+            "data": node.get("data") or {},
+        })
+    projected.sort(key=lambda row: (
+        -int(row["risk_score"]), str(row.get("type") or ""),
+        str(row.get("label") or "")))
+    top = projected[:limit]
+    selected = {str(row["id"]) for row in top}
+    map_edges = [{
+        "id": edge.get("id"),
+        "source": edge.get("src"),
+        "target": edge.get("dst"),
+        "type": edge.get("kind"),
+        "label": edge.get("label") or "",
+        "risk_score": max(raw_scores.get(str(edge.get("src") or ""), 0),
+                          raw_scores.get(str(edge.get("dst") or ""), 0)),
+        "confidence": edge.get("confidence") or "",
+        "evidence": edge.get("evidence") or {},
+    } for edge in edges
+        if str(edge.get("src") or "") in selected
+        and str(edge.get("dst") or "") in selected]
+    counts = _counts(top, "type")
+    critical = [row for row in top if int(row["risk_score"]) >= 90][:12]
+
+    return {
+        "schema_version": 1,
+        "mission_id": mission_id,
+        "target": mission.get("target") or "",
+        "summary": {
+            "nodes": len(top),
+            "edges": len(map_edges),
+            "paths": len(paths),
+            "hosts": counts.get("host", 0),
+            "endpoints": counts.get("endpoint", 0),
+            "auth_surfaces": counts.get("auth_surface", 0),
+            "open_leads": counts.get("open_lead", 0),
+            "findings": counts.get("finding", 0),
+            "critical_nodes": len(critical),
+            "max_risk_score": max(
+                (int(row["risk_score"]) for row in top), default=0),
+        },
+        "critical": critical,
+        "nodes": top,
+        "edges": map_edges,
+        "paths": [{
+            "id": path.get("id"), "state": path.get("state"),
+            "title": path.get("title") or path.get("id"),
+            "entry_node": path.get("entry_node") or "",
+            "impact_node": path.get("impact_node") or "",
+        } for path in paths[:20]],
+        "generated_at": _now(),
+    }

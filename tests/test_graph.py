@@ -260,11 +260,11 @@ class GraphSurfaceTests(unittest.TestCase):
         self.server.jobs.shutdown(wait=False)
         self.server.index.close()
 
-    def call(self, method, path, body=None):
+    def call(self, method, path, body=None, query=None):
         headers = {"host": "127.0.0.1:7857",
                    "x-netcast3r-token": self.server.token}
         payload = json.dumps(body).encode() if body is not None else b""
-        return self.server.route(method, path, {}, headers, payload)
+        return self.server.route(method, path, query or {}, headers, payload)
 
     @staticmethod
     def data(response):
@@ -283,11 +283,56 @@ class GraphSurfaceTests(unittest.TestCase):
         paths = self.call("GET", f"/api/v1/missions/{self.mission['id']}/paths")
         self.assertEqual(paths.status, 200)
 
+    def test_threat_map_ranks_attack_surface(self):
+        self.call("POST", f"/api/v1/missions/{self.mission['id']}/graph/build")
+        self.server.index.upsert_graph_node(
+            self.mission["id"], "endpoint", "/login",
+            label="/login", severity="high", confidence="observed")
+        self.server.index.create_hypothesis(
+            "Open auth lead", target=self.mission["target"],
+            mission_id=self.mission["id"], technique="auth-ato",
+            rationale="login answered", expected="session issue")
+        run = self.server.index.create_run(self.mission["target"], {"mode": "hunt"})
+        self.server.index.add_mission_run(self.mission["id"], run["id"])
+        self.server.index.add_findings(run["id"], [{
+            "title": "Critical account takeover", "severity": "critical",
+            "value": f"{self.mission['target']}account", "source": "test",
+        }])
+        response = self.call(
+            "GET", f"/api/v1/missions/{self.mission['id']}/threat-map",
+            query={"limit": "40"})
+        self.assertEqual(response.status, 200, getattr(response, "body", b""))
+        payload = self.data(response)
+        self.assertEqual(payload["schema_version"], 1)
+        self.assertEqual(payload["mission_id"], self.mission["id"])
+        self.assertIn("summary", payload)
+        self.assertIn("critical", payload)
+        self.assertGreaterEqual(int(payload["summary"].get("auth_surfaces") or 0), 1)
+        self.assertGreaterEqual(int(payload["summary"].get("open_leads") or 0), 1)
+        types = {row["type"] for row in payload["nodes"]}
+        self.assertIn("host", types)
+        self.assertIn("auth_surface", types)
+        self.assertIn("open_lead", types)
+        self.assertIn("finding", types)
+        self.assertTrue(payload["critical"])
+        for node in payload["nodes"]:
+            self.assertTrue({"id", "type", "label", "risk_score",
+                             "severity", "confidence"} <= set(node))
+            self.assertGreaterEqual(node["risk_score"], 0)
+            self.assertLessEqual(node["risk_score"], 100)
+        node_ids = {row["id"] for row in payload["nodes"]}
+        for edge in payload["edges"]:
+            self.assertTrue({"id", "source", "target", "type", "risk_score",
+                             "confidence", "evidence"} <= set(edge))
+            self.assertIn(edge["source"], node_ids)
+            self.assertIn(edge["target"], node_ids)
+
     def test_the_graph_tools_are_catalogued(self):
         from netcast3r.mcp.tools import _TOOL_MAP, catalog
 
         names = [tool["name"] for tool in catalog()]
-        for name in ("graph_build", "mission_graph", "paths_list", "path_verify",
+        for name in ("graph_build", "mission_graph", "threat_map_get",
+                     "paths_list", "path_verify",
                      "graph_node_add", "graph_edge_add"):
             self.assertIn(name, _TOOL_MAP)
             self.assertIn(name, names)

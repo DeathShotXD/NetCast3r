@@ -2,6 +2,7 @@
   import { api } from '../api';
   import { store } from '../state.svelte';
   import { spotlight } from '../actions';
+  import { onMount } from 'svelte';
   import Buffering from '../ui/Buffering.svelte';
   import Icon from '../ui/Icon.svelte';
 
@@ -42,8 +43,12 @@
   let busy = $state(false);
   let error = $state('');
   let phase = $state('');
+  let seedEl = $state<HTMLInputElement>();
+  const examples = ['app.example.com', 'https://api.example.com', 'staging.example.io'];
+  onMount(() => seedEl?.focus());
 
   const trimmed = $derived(target.trim());
+  const seedLooksReady = $derived(trimmed.length > 2 && trimmed.includes('.'));
   const ready = $derived(trimmed.length > 2 && !busy);
 
   async function engage() {
@@ -121,13 +126,22 @@
               id="seed"
               class="obs-field obs-engage-input"
               style="margin-top:8px"
-              placeholder="app.example.com  -  https://api.example.com  -  staging.example.io"
+              placeholder="app.example.com"
+              bind:this={seedEl}
               bind:value={target}
               autocomplete="off"
               spellcheck="false"
+              aria-describedby="seed-hint seed-ready"
+              onkeydown={(e) => { if (e.key === 'Enter') { e.preventDefault(); void engage(); } }}
             />
-            <p class="obs-engage-hint">
-              Authorized targets only. One string is enough - no separate "mission" vs "operation".
+            <div class="obs-seed-examples" aria-label="example seeds">
+              {#each examples as ex (ex)}<button type="button" onclick={() => { target = ex; seedEl?.focus(); }}>{ex}</button>{/each}
+            </div>
+            <p class="obs-engage-hint" id="seed-hint">
+              Authorized targets only. One seed starts the full autonomous hunt - no separate mission setup.
+            </p>
+            <p class="obs-seed-ready" class:ready={seedLooksReady} id="seed-ready" role="status">
+              <i aria-hidden="true"></i>{busy ? phase || 'Engaging...' : seedLooksReady ? 'Ready - Enter or Engage hunt starts Helix, mesh and director' : 'Paste a domain or URL to arm the hunt'}
             </p>
           </div>
 
@@ -153,9 +167,8 @@
               {/if}
               {busy ? 'engaging...' : 'engage hunt'}
             </button>
-            <button class="obs-btn obs-btn-ghost" type="button" onclick={() => store.go('home')}>
-              cancel
-            </button>
+            <button class="obs-btn obs-btn-ghost" type="button" onclick={() => store.go('home')}>Back</button>
+            <span style="font-family:var(--mono);font-size:10px;color:var(--obs-faint)">Helix opens on engage - press B anytime to steer</span>
           </div>
         </form>
       </div>

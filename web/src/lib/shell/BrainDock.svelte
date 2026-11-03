@@ -53,6 +53,8 @@
   let seenHail = $state('');
   /** Only auto-scroll when the operator is already near the bottom. */
   let stickToBottom = $state(true);
+  let unread = $state(0);
+  let lastSeenLen = 0;
   let pendingText = $state('');
   let bufferPhase = $state<(typeof BUFFER_PHASES)[number]>(BUFFER_PHASES[0]);
 
@@ -231,15 +233,40 @@
     persistLayout();
   }
 
+  function scrollFeedToBottom() {
+    requestAnimationFrame(() => {
+      if (feedEl) feedEl.scrollTop = feedEl.scrollHeight;
+    });
+  }
+
+  function jumpToLatest() {
+    stickToBottom = true;
+    unread = 0;
+    lastSeenLen = visible.length;
+    scrollFeedToBottom();
+  }
+
   function onFeedScroll() {
     if (!feedEl) return;
     const gap = feedEl.scrollHeight - feedEl.scrollTop - feedEl.clientHeight;
-    stickToBottom = gap < 56;
+    stickToBottom = gap < 72;
+    if (stickToBottom) {
+      unread = 0;
+      lastSeenLen = visible.length;
+    }
   }
 
+  // Stable scroll: only follow when pinned; otherwise count unread so
+  // polling / SSE updates never yank the operator away from history.
   $effect(() => {
-    if (open && feedEl && visible.length && stickToBottom) {
-      feedEl.scrollTop = feedEl.scrollHeight;
+    const len = visible.length;
+    if (!open || !feedEl || !len) return;
+    if (stickToBottom) {
+      lastSeenLen = len;
+      unread = 0;
+      scrollFeedToBottom();
+    } else if (len > lastSeenLen) {
+      unread = len - lastSeenLen;
     }
   });
 
@@ -594,29 +621,45 @@
         <div class="nc-brain-ops-label">Live feed</div>
         <div class="nc-brain-channels" role="tablist" aria-label="Helix feed channels">
           {#each [
-            ['all', 'All'],
-            ['journal', 'Helix'],
-            ['mesh', 'Mesh'],
-            ['run', 'Models'],
-            ['log', 'Logs']
-          ] as [id, label] (id)}
+            ['all', 'All', 'Every channel'],
+            ['journal', 'Helix', 'Helix journal turns'],
+            ['mesh', 'Mesh', 'Agent mesh chats'],
+            ['run', 'Models', 'Model run thoughts'],
+            ['log', 'Logs', 'Control-plane logs']
+          ] as [id, label, hint] (id)}
             <button
               class="nc-brain-channel"
               class:active={channel === id}
+              data-channel={id}
               type="button"
               role="tab"
+              title={hint}
               aria-selected={channel === id}
               onclick={() => {
                 channel = id as FeedChannel;
                 stickToBottom = true;
+                unread = 0;
+                lastSeenLen = 0;
               }}
             >
-              {label}
+              <i aria-hidden="true"></i>{label}
               <b>{channelCounts[id as FeedChannel] ?? 0}</b>
             </button>
           {/each}
         </div>
       </div>
+      {#if !stickToBottom && visible.length > 0}
+        <button
+          class="nc-brain-jump"
+          type="button"
+          onclick={() => {
+            stickToBottom = true;
+            if (feedEl) feedEl.scrollTop = feedEl.scrollHeight;
+          }}
+        >
+          Jump to latest
+        </button>
+      {/if}
       <ul class="nc-brain-feed" bind:this={feedEl} onscroll={onFeedScroll}>
         {#each visible as entry (entry.id)}
           <li
@@ -629,6 +672,7 @@
           >
             <header class="nc-brain-turn-head">
               <span class="nc-brain-role">{roleLabel(entry)}</span>
+              <span class="nc-brain-chan-tag">{entry.channel}</span>
               {#if entry.focus}
                 <span class="nc-brain-focus">{entry.focus}</span>
               {:else if entry.provider || entry.model}
@@ -663,10 +707,25 @@
           </li>
         {:else if visible.length === 0}
           <li class="nc-brain-empty">
-            {COMPANION} will stream journal turns, mesh model chats, run thoughts, and plane logs here continuously.
+            {#if channel === 'all'}
+              No feed yet. Helix journal turns, mesh chats, model thoughts, and plane logs stream here continuously.
+            {:else if channel === 'journal'}
+              No Helix turns yet. Send an instruction below or press Think.
+            {:else if channel === 'mesh'}
+              No mesh chats yet. Specialist agents speak here once a hunt is running.
+            {:else if channel === 'run'}
+              No model thoughts yet. Run reasoning appears here during a cast.
+            {:else}
+              No plane logs yet. Control-plane events appear here.
+            {/if}
           </li>
         {/if}
       </ul>
+      {#if !stickToBottom && visible.length}
+        <button class="nc-brain-jump" type="button" onclick={jumpToLatest} aria-live="polite">
+          Jump to latest{#if unread} - {unread} new{/if}
+        </button>
+      {/if}
     </section>
 
     <footer class="nc-brain-composer" class:locked={busy}>
@@ -1058,6 +1117,7 @@
 
   .nc-brain-cognition {
     flex: 1;
+    position: relative;
   }
 
   .nc-brain-ops-label {
@@ -1102,6 +1162,29 @@
     white-space: nowrap;
     font-size: 11px;
     color: var(--obs-muted);
+  }
+
+  .nc-brain-jump {
+    position: absolute;
+    right: 16px;
+    bottom: 72px;
+    z-index: 3;
+    border: 1px solid rgba(200, 248, 26, 0.35);
+    border-radius: 999px;
+    padding: 6px 12px;
+    background: rgba(12, 14, 12, 0.92);
+    color: var(--obs-acid);
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    cursor: pointer;
+    backdrop-filter: blur(8px);
+  }
+
+  .nc-brain-jump:hover {
+    border-color: rgba(200, 248, 26, 0.6);
+    background: rgba(200, 248, 26, 0.08);
   }
 
   .nc-brain-feed {

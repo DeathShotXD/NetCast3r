@@ -3,7 +3,7 @@
   import { api } from '../api';
   import { store } from '../state.svelte';
   import { ago, sevColor, statusLabel } from '../format';
-  import type { AgentStatus, Approval, Autonomy, Campaign, Candidate, CoverageSummary, Direction, ExploitPlan, GraphNode, GraphPath, Hypothesis, HypothesisEvidence, Mission, MissionAgent, MissionGraph, MissionStatus, ProgramImport, ProgramPreview, ToolCall } from '../types';
+  import type { AgentStatus, Approval, Autonomy, Campaign, Candidate, CoverageSummary, Direction, ExploitPlan, GraphNode, GraphPath, Hypothesis, HypothesisEvidence, Mission, MissionAgent, MissionGraph, MissionStatus, ProgramImport, ProgramPreview, ToolCall , ThreatMap } from '../types';
   import Buffering from '../ui/Buffering.svelte';
   import Icon from '../ui/Icon.svelte';
   import Sparkline from '../ui/Sparkline.svelte';
@@ -48,6 +48,7 @@
   let filter = $state<Filter>('all');
   let detailTab = $state<'overview' | 'runs' | 'approvals' | 'graph' | 'leads' | 'exploits' | 'candidates' | 'coverage' | 'program' | 'console' | 'tools' | 'agent'>('overview');
   let graph = $state<MissionGraph | null>(null);
+  let threatMap = $state<ThreatMap | null>(null);
   let graphBusy = $state('');
   let hypotheses = $state<Hypothesis[]>([]);
   let hypothesisEvidence = $state<HypothesisEvidence | null>(null);
@@ -171,12 +172,16 @@
       }
       agent = null;
       graph = null;
+      threatMap = null;
       directions = [];
       toolCalls = [];
       exploitPlan = null;
       candidates = [];
       detailTab = preserveTab ? tab : 'overview';
       void loadCampaign();
+      void loadGraph();
+      void loadLeads();
+      void loadThreatMap();
       if (scroll && window.innerWidth < 1180) {
         requestAnimationFrame(() => document.querySelector('.obs-mission-detail')?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
       }
@@ -483,6 +488,11 @@
     }
   }
 
+  async function loadThreatMap() {
+    if (!selected) return;
+    try { threatMap = await api.threatMap(selected.id); } catch { threatMap = null; }
+  }
+
   async function loadCoverage() {
     if (!selected) return;
     coverageBusy = 'load';
@@ -566,6 +576,13 @@
     const method = String(call.args?.method || 'GET');
     return `${method} ${target}${status !== '' && status !== undefined ? ` -> HTTP ${status}` : ''}`;
   }
+
+  const openLeads = $derived(
+    hypotheses
+      .filter((h) => h.status === 'open' && h.technique !== 'observation')
+      .slice(0, 4)
+  );
+  const topPath = $derived(graph?.paths?.[0] ?? null);
 
   function leadStatusColor(status: string): string {
     if (status === 'supported' || status === 'promoted') return 'var(--obs-acid)';
@@ -1116,6 +1133,59 @@
 
           <div class="obs-mission-detail-body">
             {#if detailTab === 'overview'}
+              <section class="obs-detail-section obs-huntmap" aria-label="hunt map">
+                <div class="obs-graph-head">
+                  <div>
+                    <h3>Hunt map</h3>
+                    <p class="obs-graph-copy">Threat map from local evidence: surface, candidate attack paths, and the open leads that still need proof.</p>
+                  </div>
+                  <button class="obs-btn obs-btn-ghost" type="button" disabled={graphBusy !== ''} onclick={() => void buildGraph()}>{graphBusy === 'build' ? 'Building...' : 'Rebuild map'}</button>
+                </div>
+                {#if graph && graph.nodes.length}
+                  <div class="obs-huntmap-strip">
+                    <span><strong>{graph.nodes.length}</strong> nodes</span>
+                    <span><strong>{graph.edges.length}</strong> edges</span>
+                    <span><strong>{graph.paths.length}</strong> path{graph.paths.length === 1 ? '' : 's'}</span>
+                    <span><strong>{openLeads.length}</strong> open lead{openLeads.length === 1 ? '' : 's'}</span>
+                    <button class="obs-link" type="button" onclick={() => selectTab('graph')}>Open full graph</button>
+                  </div>
+                  {#if threatMap && threatMap.critical.length}
+                    <ul class="obs-huntmap-leads" aria-label="critical weaknesses and APIs">
+                      {#each threatMap.critical.slice(0, 4) as node (node.id)}
+                        <li>
+                          <span class="obs-huntmap-dot" style="background:var(--obs-red)" aria-hidden="true"></span>
+                          <span style="flex:1;min-width:0"><strong style="display:block;font-size:12px;color:var(--obs-text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{node.label}</strong><small style="font-size:10.5px;color:var(--obs-faint)">{node.kind} - risk {node.risk_score} - {node.confidence}</small></span>
+                          <span class="obs-chip" style="color:var(--obs-red)">{node.severity || 'critical'}</span>
+                        </li>
+                      {/each}
+                    </ul>
+                  {/if}
+                  {#if topPath}
+                    <div class="obs-huntmap-path">
+                      <span class="obs-chip" style="color:{pathStateColor(topPath.state)}">{topPath.state}</span>
+                      <span class="obs-huntmap-path-title">{topPath.title}</span>
+                      <span class="obs-huntmap-steps">{topPath.steps.map((s) => s.goal || s.kind || 'step').join(' -> ')}</span>
+                      <button class="obs-btn obs-btn-primary obs-btn-sm" type="button" disabled={graphBusy !== ''} onclick={() => void verifyPath(topPath)}>{graphBusy === topPath.id ? 'Starting...' : 'Verify path'}</button>
+                    </div>
+                  {/if}
+                  {#if openLeads.length}
+                    <ul class="obs-huntmap-leads">
+                      {#each openLeads as lead (lead.id)}
+                        <li>
+                          <span class="obs-huntmap-dot" style="background:{leadStatusColor(lead.status)}" aria-hidden="true"></span>
+                          <button type="button" onclick={() => { selectTab('leads'); void openHypothesis(lead.id); }}><strong>{lead.title}</strong><small>{lead.technique} - {lead.target}</small></button>
+                          <span class="obs-chip">open lead</span>
+                        </li>
+                      {/each}
+                    </ul>
+                  {:else}
+                    <p class="obs-detail-note">No open critical leads. Sync leads or record a falsifiable hypothesis to extend the map.</p>
+                  {/if}
+                {:else}
+                  <p class="obs-detail-note">No hunt map built yet. Build it to derive weaknesses and critical APIs from recorded evidence - nothing is invented.</p>
+                  <button class="obs-btn" type="button" disabled={graphBusy !== ''} onclick={() => void buildGraph()}>{graphBusy === 'build' ? 'Building...' : 'Build hunt map'}</button>
+                {/if}
+              </section>
               <section class="obs-detail-section">
                 <h3>Scope</h3>
                 {#if selected.scope.length}
@@ -1743,7 +1813,7 @@
                   <ul class="obs-tool-list">
                     {#each toolCalls as call (call.id)}
                       <li>
-                        <span class="obs-chip" style="color:{call.status === 'ok' ? 'var(--obs-acid)' : call.status === 'denied' ? 'var(--obs-red)' : 'var(--obs-muted)'}">{call.tool}</span>
+                        <span class="obs-chip" style="color:{call.status === 'ok' ? 'var(--obs-acid)' : call.status === 'denied' ? 'var(--obs-red)' : 'var(--obs-muted)'}">tool - {call.tool}</span>
                         <span class="obs-tool-status">{call.status}{call.risk !== 'low' ? ` / ${call.risk}` : ''}</span>
                         <span class="obs-tool-target">{String(call.args?.target ?? call.args?.mission_id ?? '')}</span>
                         <span class="obs-tool-ms">{call.duration_ms} ms</span>

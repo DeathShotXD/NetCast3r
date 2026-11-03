@@ -172,6 +172,26 @@ def _compact(payload, limit: int = MAX_RESULT_CHARS) -> dict:
     return keep
 
 
+def audit_http_tool_result(payload: dict) -> dict:
+    """Compact a live http_probe/http_request payload for the audit store."""
+    compact = _compact(payload)
+    for key in ("tls_insecure", "tls_fallback", "truncated", "target",
+                "blocked_redirect", "verify_tls", "tool", "ok"):
+        value = payload.get(key)
+        if value not in (None, "", [], {}):
+            compact.setdefault(key, value)
+    return compact
+
+
+def prepare_tool_call_audit(tool: str, status: str, result) -> object:
+    """Redact and compact tool output before it is persisted."""
+    from .mcp.tools import redact_payload
+
+    if status == "ok" and tool in {"http_probe", "http_request"} and isinstance(result, dict):
+        return redact_payload(audit_http_tool_result(result))
+    return redact_payload(result)
+
+
 def _selection(payload, key: str, limit: int = 5) -> list:
     if not isinstance(payload, dict):
         return []

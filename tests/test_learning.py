@@ -146,8 +146,93 @@ class StoreTests(unittest.TestCase):
         updated = self.index.get_lesson(stale["id"])
         self.assertIn("contradicted", updated["tags"])
         self.assertIn("superseded", updated["tags"])
+        self.assertIn("provisional=false", updated["tags"])
+        self.assertNotIn("provisional=true", updated["tags"])
         self.assertEqual(updated["outcome"], "observation")
+        self.assertFalse(updated["provisional"])
+        self.assertTrue(updated["contradicted"])
         self.assertTrue(learning.lesson_is_active(updated) is False)
+
+    def test_failure_lesson_tags_host_error_class_and_provisional_then_supersedes(self):
+        failed = self.index.add_tool_call(
+            "http_probe", status="error", mission_id=self.mission["id"],
+            args={"target": "https://apply.example.com/login"},
+            error="probe failed: ConnectError: [SSL: CERTIFICATE_VERIFY_FAILED]",
+        )
+        draft = learning.reflect_tool_call(failed)
+        self.assertEqual(draft["host"], "apply.example.com")
+        self.assertEqual(draft["error_class"], "ConnectError")
+        self.assertTrue(draft["provisional"])
+        self.assertIn("host:apply.example.com", draft["tags"])
+        self.assertIn("error_class:ConnectError", draft["tags"])
+        self.assertIn("provisional=true", draft["tags"])
+
+        stored = self.index.add_lesson(**draft)
+        self.assertTrue(stored["provisional"])
+        self.assertFalse(stored["contradicted"])
+        self.assertEqual(stored["host"], "apply.example.com")
+        self.assertEqual(stored["error_class"], "ConnectError")
+
+        res = learning.supersede_host_lesson(
+            self.index, "apply.example.com", mission_id=self.mission["id"],
+            status_code=200, tool="http_probe", tls_insecure=True,
+        )
+        self.assertEqual(res["lessons"], 1)
+        self.assertIn(stored["id"], res["contradicted_ids"])
+        refreshed = self.index.get_lesson(stored["id"])
+        self.assertTrue(refreshed["contradicted"])
+        self.assertFalse(refreshed["provisional"])
+        self.assertIn("provisional=false", refreshed["tags"])
+
+    def test_supported_hypothesis_compounds_verified_skill(self):
+        hyp = self.index.create_hypothesis(
+            "BOLA on apply.example.com/admit",
+            target="https://apply.example.com/admit",
+            mission_id=self.mission["id"],
+            technique="bola",
+            rationale="Object id looks sequential on a live portal path.",
+            expected="Account A reads account B record with only the id changed.",
+        )
+        self.index.patch_hypothesis(
+            hyp["id"],
+            status="supported",
+            result={"ok": True, "passed": 1, "failed": 0, "steps": 1},
+        )
+        skill = self.index.get_skill("verified-bola")
+        self.assertIsNotNone(skill)
+        self.assertIn("verified-ttp", skill["tags"])
+        self.assertIn("bola", skill["tags"])
+        self.assertIn("Expected observation", skill["body"])
+        self.assertNotIn("payload", skill["body"].lower())
+
+    def test_suggest_next_prefers_verified_skill_and_skips_contradicted(self):
+        self.index.upsert_skill(
+            "verified-idor",
+            "# Verified IDOR\n\nChecklist for two-account object reads.",
+            title="Verified IDOR",
+            tags=["verified-ttp", "idor", "example.com"],
+            source="test",
+        )
+        self.index.add_lesson(
+            "Stale host lesson",
+            "Host unreachable [superseded: HTTP 200]",
+            tags=["contradicted", "superseded", "example.com"],
+            outcome="observation",
+            next_step="Ignore this stale step",
+            mission_id=self.mission["id"],
+        )
+        self.index.add_lesson(
+            "Active lesson",
+            "A live note.",
+            tags=["example"],
+            next_step="Follow the active lesson",
+            mission_id=self.mission["id"],
+        )
+        actions = learning.suggest_next(self.index, self.mission["id"])
+        titles = [item["title"] for item in actions["actions"]]
+        self.assertTrue(any(t.startswith("Load verified playbook") for t in titles))
+        self.assertNotIn("Ignore this stale step", titles)
+        self.assertIn("Follow the active lesson", titles)
 
 
 if __name__ == "__main__":

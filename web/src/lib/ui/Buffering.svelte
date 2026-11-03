@@ -1,7 +1,7 @@
 <script lang="ts">
   // Compact wait-state for model replies, engages, and sync - Obsidian Signal.
   type Tone = 'acid' | 'quiet' | 'violet';
-  type Variant = 'inline' | 'block' | 'bar';
+  type Variant = 'inline' | 'block' | 'bar' | 'skeleton';
 
   let {
     label = 'Working',
@@ -18,7 +18,13 @@
   } = $props();
 </script>
 
-{#if variant === 'bar'}
+{#if variant === 'skeleton'}
+  <div class="obs-buffer-skel" role="status" aria-label={label} aria-busy="true">
+    <span class="obs-buffer-skel-label">{label}</span>
+    <i style="width:72%"></i><i style="width:94%"></i><i style="width:58%"></i>
+    {#if detail}<span class="obs-buffer-detail">{detail}</span>{/if}
+  </div>
+{:else if variant === 'bar'}
   <div class="obs-buffer-track" data-tone={tone} role="progressbar" aria-label={label} aria-busy="true">
     <i></i>
   </div>
@@ -250,6 +256,10 @@
     }
   }
 
+  .obs-buffer-skel{display:flex;flex-direction:column;gap:8px;width:100%;padding:4px 0}
+  .obs-buffer-skel-label{font-family:var(--mono);font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--obs-acid)}
+  .obs-buffer-skel i{display:block;height:9px;border-radius:99px;background:linear-gradient(100deg,rgba(245,233,220,.06) 40%,rgba(245,233,220,.13) 50%,rgba(245,233,220,.06) 60%);background-size:220% 100%;animation:obs-buffer-shimmer 1.6s ease infinite}
+  @media (prefers-reduced-motion: reduce) { .obs-buffer-skel i{animation:none} }
   @media (prefers-reduced-motion: reduce) {
     .obs-buffer-dots i,
     .obs-buffer-track i,

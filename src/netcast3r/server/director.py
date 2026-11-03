@@ -20,6 +20,7 @@ submits a report. Its kill switch cancels everything it started.
 from __future__ import annotations
 
 import calendar
+import json
 import threading
 import time
 
@@ -426,9 +427,11 @@ class Director:
                 return {"action": "wait",
                         "reason": f"operator priority {priority_id} already in flight"}
             mission = self.server.index.get_mission(priority_id) or {}
+            # Zero-progress lock escalates hunt -> swarm -> deepen. The next
+            # mode is chosen in _reap; a soft 429 never closes this gate.
             chosen = {
                 "mission_id": priority_id,
-                "mode": "swarm",
+                "mode": self._priority_run_mode(priority_id, active),
                 "score": 999,
                 "autonomy": mission.get("autonomy") or "autonomous",
                 "objective": {"goal": "operator priority hunt"},
@@ -535,6 +538,60 @@ class Director:
                     "knowledge-error", f"{type(exc).__name__}: {exc}")
             except Exception:  # noqa: BLE001
                 pass
+
+    def _operator_priority_id(self) -> str:
+        try:
+            from .. import brain as brain_module
+            return str((brain_module.operator_priority(self.server.index)
+                        or {}).get("mission_id") or "")
+        except Exception:  # noqa: BLE001
+            return ""
+
+    def _priority_run_mode(self, mission_id: str, active: dict) -> str:
+        """Next brain for a locked mission. Never idle, never parked."""
+        entry = (active.get("missions") or {}).get(mission_id) or {}
+        mode = str(entry.get("next_priority_mode") or "hunt")
+        if mode == "deepen":
+            return "swarm"
+        if mode not in {"hunt", "swarm"}:
+            return "hunt"
+        return mode
+
+    def _advance_priority_ladder(self, mission_id: str, mstate: dict,
+                                 entry: dict, run: dict | None,
+                                 before: dict, after: dict) -> None:
+        """On zero progress, escalate hunt -> swarm -> deepen and keep going."""
+        counts = (run or {}).get("counts") or {}
+        try:
+            actions = int(counts.get("actions") or counts.get("steps") or 0)
+        except (TypeError, ValueError):
+            actions = 0
+        flat = bool(before) and all(before.get(key) == after.get(key) for key in after)
+        failed = str((run or {}).get("status") or "") == "failed"
+        zero = failed or actions == 0 or flat
+        mode = str((entry or {}).get("mode") or mstate.get("last_mode") or "hunt")
+        mstate["parked"] = False
+        mstate.pop("parked_at", None)
+        if not zero:
+            mstate["next_priority_mode"] = "swarm"
+            return
+        if mode == "hunt":
+            mstate["next_priority_mode"] = "swarm"
+        else:
+            # Swarm (or anything else) with nothing new: queue a deeper angle
+            # and hand the next slot to the deterministic hunt so the lock
+            # does not spin on an empty model.
+            self._queue_deepen(mission_id, mstate)
+            mstate["next_priority_mode"] = "hunt"
+        try:
+            self.server.index.add_director_log(
+                "priority-escalate",
+                f"{mode} made no progress; next {mstate.get('next_priority_mode')}",
+                mission_id=mission_id,
+                data={"from": mode, "next": mstate.get("next_priority_mode"),
+                      "parked": False, "actions": actions})
+        except Exception:  # noqa: BLE001
+            pass
 
     def _busy(self, mission_id: str, active: dict) -> bool:
         for entry in (active.get("runs") or {}).values():
@@ -723,6 +780,9 @@ class Director:
             # Never park. On a stall, deepen and keep hunting.
             mstate["parked"] = False
             mstate.pop("parked_at", None)
+            if mission_id and mission_id == self._operator_priority_id():
+                self._advance_priority_ladder(
+                    mission_id, mstate, entry, run, before or {}, after)
             if int(mstate.get("no_progress") or 0) >= STALL_DEEPEN_AFTER:
                 self._queue_deepen(mission_id, mstate)
                 mstate["no_progress"] = 0
@@ -893,6 +953,31 @@ class Director:
         policy = "full" if mission.get("autonomy") == "autonomous" else "supervised"
         objective = row.get("objective") or {}
         goal = str(objective.get("goal") or mission.get("objective") or "")
+        try:
+            critical_note = None
+            for note in reversed(
+                    self.server.index.list_agent_notes(mission_id, limit=120)):
+                if str(note.get("kind") or "") == "hunt.critical":
+                    critical_note = note
+                    break
+            if critical_note:
+                try:
+                    payload = json.loads(str(critical_note.get("body") or "{}"))
+                except (TypeError, ValueError):
+                    payload = {}
+                tops = payload.get("top_leads") or []
+                titles = [str(item.get("title") or "")[:120]
+                          for item in tops if isinstance(item, dict)]
+                titles = [t for t in titles if t]
+                if titles:
+                    hint = str(payload.get("director_hint") or "").strip()
+                    lead_text = "; ".join(titles[:3])
+                    prefix = f"Priority leads: {lead_text}"
+                    if hint:
+                        prefix = f"{prefix}. {hint}"
+                    goal = f"{prefix} | {goal}" if goal else prefix
+        except Exception:  # noqa: BLE001 - hunt notes are best effort
+            pass
         # An operator direction outranks the derived goal for this run.
         queued = self.server.index.list_directions(mission_id, status="queued",
                                                    limit=3)

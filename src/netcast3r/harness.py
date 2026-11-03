@@ -221,10 +221,12 @@ def learn_tick(index, mission_id: str = "", limit: int = LEARN_CALL_LIMIT) -> di
     seen_sources = {str(item.get("source") or "") for item in existing}
     created: list[dict] = []
     skipped = 0
-    for call in calls:
+    for call in reversed(calls):
         if call.get("status") == "ok":
-            # Success noise is cheap; only capture medium+ failures and
-            # interesting blocks so the lesson library stays high-signal.
+            try:
+                learning.on_http_tool_success(index, call)
+            except Exception:  # noqa: BLE001
+                pass
             continue
         source = f"tool_call:{call.get('id', '')}"
         if not call.get("id") or source in seen_sources:
@@ -425,6 +427,12 @@ def recall(index, mission_id: str = "", goal: str = "",
             "outcome": item.get("outcome"), "technique": item.get("technique"),
             "next_step": item.get("next_step"), "lesson": item.get("lesson"),
         } for item in lessons[:limit_lessons] if learning.lesson_is_active(item)],
+        "contradicted_lessons": [{
+            "id": item.get("id"), "title": item.get("title"),
+            "host": item.get("host") or item.get("context") or "",
+            "error_class": item.get("error_class") or "",
+            "lesson": item.get("lesson"),
+        } for item in lessons if not learning.lesson_is_active(item)][:4],
         "issues": diagnosis.get("issues") or [],
         "next_actions": actions.get("actions") or [],
         "generated_at": _now(),

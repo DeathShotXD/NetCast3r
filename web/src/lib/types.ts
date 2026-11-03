@@ -357,6 +357,42 @@ export interface MissionGraph {
   paths: GraphPath[];
 }
 
+export interface ThreatMapNode {
+  id: string;
+  type: string;
+  kind: string;
+  key: string;
+  label: string;
+  severity: string;
+  risk_score: number;
+  confidence: string;
+  status: string;
+  data: Record<string, unknown>;
+}
+
+export interface ThreatMapEdge {
+  id: string;
+  source: string;
+  target: string;
+  type: string;
+  label: string;
+  risk_score: number;
+  confidence: string;
+  evidence: Record<string, unknown>;
+}
+
+export interface ThreatMap {
+  schema_version: number;
+  mission_id: string;
+  target: string;
+  summary: Record<string, number>;
+  critical: ThreatMapNode[];
+  nodes: ThreatMapNode[];
+  edges: ThreatMapEdge[];
+  paths: Array<Record<string, unknown>>;
+  generated_at: string;
+}
+
 export interface Direction {
   id: string;
   mission_id: string;

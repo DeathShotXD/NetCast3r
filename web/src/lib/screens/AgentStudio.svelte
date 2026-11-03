@@ -14,6 +14,7 @@
     ToolCallStatus
   } from '../types';
   import Icon from '../ui/Icon.svelte';
+  import Buffering from '../ui/Buffering.svelte';
 
   const statusOrder: ToolCallStatus[] = [
     'ok',
@@ -459,9 +460,7 @@
 
   {#if loading && !info}
     <div class="obs-card obs-empty" style="min-height:360px">
-      <span class="obs-empty-icon"><Icon name="plug" size={18} /></span>
-      <div class="obs-empty-title">Reading the control surface</div>
-      <p class="obs-empty-copy">Fetching the MCP heartbeat, tool catalogue, and audit trail from the local control plane.</p>
+      <Buffering variant="block" tone="quiet" label="Reading control surface" detail="Fetching the MCP heartbeat, tool catalogue, and audit trail from the local control plane." />
     </div>
   {:else if error && !info}
     <div class="obs-card obs-empty" style="min-height:320px">

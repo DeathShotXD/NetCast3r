@@ -77,6 +77,49 @@ class InvestigationTests(unittest.TestCase):
         self.assertIn("What would prove it", text)
         self.assertIn("not a finding", text.lower())
 
+    def test_evidence_chain_shape_on_finding_detail(self):
+        run = self.index.create_run("example.com", {"mode": "swarm"})
+        self.index.add_mission_run(self.mission["id"], run["id"])
+        self.index.add_tool_call(
+            "http_request", risk="medium", status="ok", actor="agent:swarm",
+            mission_id=self.mission["id"], run_id=run["id"],
+            args={"target": "https://example.com/fetch?url=https://oast.test",
+                  "method": "GET"},
+            result={"status": 200, "body": '{"ok":true}', "url": "https://example.com/fetch"},
+        )
+        self.index.patch_hypothesis(self.hypothesis["id"], status="supported",
+                                    test={"steps": [{"path": "/fetch", "method": "GET"}]},
+                                    result={"ok": True, "passed": 1})
+        finding = self.index.create_finding(
+            title="SSRF in fetcher", severity="high", run_id=run["id"],
+            impact="Server-side request to attacker URL enables internal network access.",
+            evidence="Recorded callback from server-side fetch to OAST host during retest.",
+            tags=[self.hypothesis["id"], "confirmed"],
+            hypothesis_id=self.hypothesis["id"])
+        detail = investigations.finding_detail(self.index, finding["id"])
+        self.assertIsNotNone(detail)
+        chain = detail.get("evidence_chain") or []
+        self.assertTrue(chain)
+        kinds = {item["kind"] for item in chain}
+        self.assertIn("tool_call", kinds)
+        tool_items = [item for item in chain if item["kind"] == "tool_call"]
+        self.assertIn("response", tool_items[0])
+        self.assertIn("body_sample", tool_items[0]["response"])
+        self.assertIn("publish_gate", detail)
+
+    def test_candidate_detail_includes_poc_steps_in_chain(self):
+        candidate = self.index.create_candidate(
+            self.mission["id"], "IDOR on invoice API", severity="high",
+            evidence={"steps": [{
+                "target": "https://example.com/api/invoice/1",
+                "observation": {"status": 200, "body": '{"owner":"victim"}'},
+            }]})
+        detail = investigations.candidate_detail(self.index, candidate["id"])
+        self.assertEqual(detail["id"], candidate["id"])
+        steps = [item for item in detail["evidence_chain"] if item["kind"] == "poc_step"]
+        self.assertEqual(len(steps), 1)
+        self.assertEqual(steps[0]["response"]["status"], 200)
+
     def test_a_refuted_lead_says_refuted(self):
         self.index.patch_hypothesis(self.hypothesis["id"], status="refuted",
                                     test="callback never arrived",
@@ -146,6 +189,17 @@ class InvestigationTests(unittest.TestCase):
             {}, headers, json.dumps({"limit": 3}).encode())
         self.assertEqual(response.status, 200)
         self.assertEqual(json.loads(response.body.decode())["counts"]["created"], 1)
+
+    def test_hypothesis_verify_requires_steps(self):
+        headers = {"host": "127.0.0.1:7857",
+                   "x-netcast3r-token": self.server.token,
+                   "content-type": "application/json"}
+        response = self.server.route(
+            "POST", f"/api/v1/hypotheses/{self.hypothesis['id']}/verify",
+            {}, headers, b"{}")
+        self.assertEqual(response.status, 400)
+        detail = json.loads(response.body.decode())
+        self.assertIn("steps", (detail.get("title") or "").lower())
 
 
 if __name__ == "__main__":
