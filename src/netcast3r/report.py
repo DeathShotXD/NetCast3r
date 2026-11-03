@@ -276,13 +276,13 @@ def markdown_to_pdf_bytes(markdown: str, title: str = "NetCast3r report") -> byt
         elif text.startswith("### "):
             lines.append(text[4:].strip())
         elif text.startswith("- "):
-            lines.append("• " + text[2:].strip())
+            lines.append("* " + text[2:].strip())
         elif text.startswith("```"):
             continue
         else:
             lines.append(text)
         if len(lines) >= 900:
-            lines.append("… truncated …")
+            lines.append("... truncated ...")
             break
     if not lines:
         lines = [title, "", "No content."]

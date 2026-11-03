@@ -146,7 +146,7 @@
     type="button"
     class:on={store.brainDock}
     aria-pressed={store.brainDock}
-    title="Helix — hunt steward (B)"
+    title="Helix - hunt steward (B)"
     aria-label="toggle Helix"
     onclick={() => (store.brainDock = !store.brainDock)}
   >
@@ -172,7 +172,7 @@
     <Icon name="terminal" size={13} />
   </button>
 
-  <button class="obs-btn obs-btn-primary" type="button" onclick={() => store.go('new')} title="engage a target — one seed starts the full hunt">
+  <button class="obs-btn obs-btn-primary" type="button" onclick={() => store.go('new')} title="engage a target - one seed starts the full hunt">
     <Icon name="crosshair" size={13} />
     <span class="hidden sm:inline">Engage</span>
   </button>

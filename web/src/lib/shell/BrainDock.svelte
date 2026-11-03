@@ -1,5 +1,5 @@
 <script lang="ts">
-  // Helix — floating, draggable, resizable hunt steward. Layout persists.
+  // Helix - floating, draggable, resizable hunt steward. Layout persists.
   import { onDestroy, onMount } from 'svelte';
   import { api } from '../api';
   import { store } from '../state.svelte';
@@ -254,23 +254,23 @@
 
   function roleLabel(entry: BrainLiveEntry): string {
     if (entry.channel === 'mesh') {
-      const model = entry.model ? ` · ${entry.model}` : '';
+      const model = entry.model ? ` - ${entry.model}` : '';
       return `${entry.agent || 'mesh'}${model}`;
     }
     if (entry.channel === 'run') {
-      return `${entry.agent || 'run'} · ${entry.role || 'thought'}`;
+      return `${entry.agent || 'run'} - ${entry.role || 'thought'}`;
     }
     if (entry.channel === 'log') {
-      return `Plane · ${entry.agent || 'log'}`;
+      return `Plane - ${entry.agent || 'log'}`;
     }
     if (entry.role === 'operator') {
-      return entry.source && entry.source !== 'ui' ? `You · ${entry.source}` : 'You';
+      return entry.source && entry.source !== 'ui' ? `You - ${entry.source}` : 'You';
     }
-    if (entry.role === 'helix') return `${COMPANION} · hail`;
+    if (entry.role === 'helix') return `${COMPANION} - hail`;
     if (entry.role === 'auto') {
-      return entry.model ? `${COMPANION} · ${entry.model}` : `${COMPANION} · thinking`;
+      return entry.model ? `${COMPANION} - ${entry.model}` : `${COMPANION} - thinking`;
     }
-    if (entry.model) return `${COMPANION} · ${entry.model}`;
+    if (entry.model) return `${COMPANION} - ${entry.model}`;
     return COMPANION;
   }
 
@@ -501,7 +501,7 @@
         <div class="nc-brain-meta">
           {#if loop}
             <span>{loop.turns} turns</span>
-            <span class="nc-brain-sep" aria-hidden="true">·</span>
+            <span class="nc-brain-sep" aria-hidden="true">-</span>
           {/if}
           <span title={loop?.last_model || ''}>{loop?.last_model || 'prime route'}</span>
         </div>
@@ -556,7 +556,7 @@
           disabled={acting !== ''}
           onclick={() => void control('tick')}
         >
-          {acting === 'tick' ? 'Thinking…' : 'Think'}
+          {acting === 'tick' ? 'Thinking...' : 'Think'}
         </button>
         <button
           class="nc-brain-icon"
@@ -658,7 +658,7 @@
               variant="block"
               tone="acid"
               label={bufferPhase}
-              detail="{COMPANION} is reading logs and mesh chats, then composing a steer…"
+              detail="{COMPANION} is reading logs and mesh chats, then composing a steer..."
             />
           </li>
         {:else if visible.length === 0}
@@ -679,7 +679,7 @@
         class="nc-brain-input"
         bind:this={inputEl}
         bind:value={input}
-        placeholder={busy ? `${COMPANION} is responding…` : 'Steer mid-hunt — pivot auth, skip CDN, deepen IDOR…'}
+        placeholder={busy ? `${COMPANION} is responding...` : 'Steer mid-hunt - pivot auth, skip CDN, deepen IDOR...'}
         aria-label="instruct {COMPANION} or hunt mid-engagement"
         disabled={busy}
         onkeydown={(event) => {
@@ -731,7 +731,7 @@
   <span class="nc-brain-pill-label">{COMPANION}</span>
   <span class="nc-brain-pill-meta">
     {busy && !open
-      ? 'replying…'
+      ? 'replying...'
       : loop
         ? loop.paused
           ? 'paused'

@@ -73,7 +73,7 @@
       <p class="obs-unlock-copy" style="margin-top:8px">
         Run <code class="obs-mono" style="color:var(--obs-acid)">netcast3r ui</code> in a terminal. The first line it
         prints is <code class="obs-mono" style="color:var(--obs-acid)">NetCast3r API on http://127.0.0.1:7857/?token=...</code>
-        — open that link, or paste the token here. The token changes every time the server restarts.
+        - open that link, or paste the token here. The token changes every time the server restarts.
       </p>
     {/if}
 

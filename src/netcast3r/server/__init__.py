@@ -340,14 +340,21 @@ class Server:
     def _audit_host(self, tool: str, body: dict, result: dict) -> None:
         """Record a host call made straight from the UI, not via the registry."""
         try:
+            stdout = str(result.get("stdout") or "")
+            stderr = str(result.get("stderr") or "")
             self.index.add_tool_call(
                 tool, risk="high" if tool in {"host_shell", "host_write"} else "medium",
                 status="ok" if not result.get("error") else "error",
                 actor="operator:host",
                 args={key: body.get(key) for key in
                       ("command", "path", "cwd", "root") if key in body},
-                result={"exit_code": result.get("exit_code"),
-                        "bytes": result.get("bytes")},
+                result={
+                    "exit_code": result.get("exit_code"),
+                    "bytes": len(stdout.encode("utf-8", "replace")) if stdout else 0,
+                    "truncated": bool(result.get("truncated")),
+                    "stdout": stdout[:4000],
+                    "stderr": stderr[:1500],
+                },
                 duration_ms=int(result.get("elapsed_ms") or 0))
         except Exception:  # noqa: BLE001 - the audit is best effort
             pass
@@ -1573,6 +1580,16 @@ class Server:
             if mission_id and not self.index.get_mission(mission_id):
                 return _problem(404, "mission not found")
             out: dict = {"target": target, "mission_id": mission_id}
+            # Explicit mission_id on an instruct always locks Helix/director
+            # focus so autonomy cannot wander to Ably/Bambu mid-priority hunt.
+            if mission_id:
+                try:
+                    from .. import brain as brain_module
+                    out["priority"] = brain_module.set_operator_priority(
+                        self.index, mission_id,
+                        reason=f"instruct: {message[:160]}")
+                except Exception as exc:  # noqa: BLE001
+                    out["priority_error"] = f"{type(exc).__name__}: {exc}"
             if target in {"director", "both", "swarm", "hunt"}:
                 if not mission_id:
                     return _problem(400, "mission_id required for director/swarm/hunt")

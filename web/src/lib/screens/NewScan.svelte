@@ -50,13 +50,13 @@
     if (!ready) return;
     busy = true;
     error = '';
-    phase = 'seeding mission + engaging brain…';
+    phase = 'seeding mission + engaging brain...';
     try {
       const result = await api.campaignStart(trimmed);
       const mission = result.mission;
       store.toast('ok', `hunt engaged on ${trimmed}`);
       store.brainDock = true;
-      phase = 'bootstrapping OSINT cast + swarm + hunt…';
+      phase = 'bootstrapping OSINT cast + swarm + hunt...';
       try {
         await store.refreshTotals();
       } catch {
@@ -81,7 +81,7 @@
       if (mission?.id) {
         store.toast(
           'ok',
-          `mission ${mission.id.slice(0, 12)} · brain + director autonomous — spectate or instruct`
+          `mission ${mission.id.slice(0, 12)} - brain + director autonomous - spectate or instruct`
         );
       }
     } catch (exc) {
@@ -100,7 +100,7 @@
       <h1>One seed. Full hunt.</h1>
       <p class="obs-page-sub">
         Drop a domain, URL, or public endpoint. Helix maps the surface, spins the agent mesh
-        (OSINT, auth via temp mail, JS reverse, validate, escalate), and will hail you mid-hunt — instruct anytime.
+        (OSINT, auth via temp mail, JS reverse, validate, escalate), and will hail you mid-hunt - instruct anytime.
       </p>
     </div>
   </header>
@@ -121,13 +121,13 @@
               id="seed"
               class="obs-field obs-engage-input"
               style="margin-top:8px"
-              placeholder="app.example.com  ·  https://api.example.com  ·  staging.example.io"
+              placeholder="app.example.com  -  https://api.example.com  -  staging.example.io"
               bind:value={target}
               autocomplete="off"
               spellcheck="false"
             />
             <p class="obs-engage-hint">
-              Authorized targets only. One string is enough — no separate “mission” vs “operation”.
+              Authorized targets only. One string is enough - no separate "mission" vs "operation".
             </p>
           </div>
 
@@ -151,7 +151,7 @@
               {#if !busy}
                 <Icon name="crosshair" size={14} />
               {/if}
-              {busy ? 'engaging…' : 'engage hunt'}
+              {busy ? 'engaging...' : 'engage hunt'}
             </button>
             <button class="obs-btn obs-btn-ghost" type="button" onclick={() => store.go('home')}>
               cancel
@@ -165,7 +165,7 @@
       <div class="obs-card-head">
         <div>
           <div class="obs-card-title">What Helix starts</div>
-          <div class="obs-card-sub">Parallel agent mesh — Helix hails you when it matters</div>
+          <div class="obs-card-sub">Parallel agent mesh - Helix hails you when it matters</div>
         </div>
       </div>
       <div class="obs-card-body">
@@ -181,7 +181,7 @@
           {/each}
         </ol>
         <p class="obs-mesh-foot">
-          Open Helix (B) anytime — fullscreen from the panel. Successful proofs and attempts stream into Live and the conversation feed.
+          Open Helix (B) anytime - fullscreen from the panel. Successful proofs and attempts stream into Live and the conversation feed.
         </p>
       </div>
     </section>

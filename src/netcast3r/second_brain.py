@@ -1,6 +1,6 @@
 """Second-brain peer harness coordination.
 
-When a heavier coding agent (OpenCode, Cursor, Hermes, Claude Code, …) connects
+When a heavier coding agent (OpenCode, Cursor, Hermes, Claude Code, ...) connects
 over MCP, Helix becomes the local steward / second brain: it keeps multi-target
 bounty hunting moving on free MoE lanes while the peer runs deeper reasoning,
 code edits, and scenario-specific upgrades. Both sides compound into the same
@@ -128,7 +128,7 @@ def self_upgrade(index, base: str | Path | None, *, title: str, rationale: str,
     """Record an upgrade and optionally write a scenario module under upgrades/.
 
     Heavy peers may write real code into the upgrades directory for exploit
-    scenarios. Core source is never silently overwritten — proposals stay
+    scenarios. Core source is never silently overwritten - proposals stay
     auditable and skills are activated as drafts the operator can promote.
     """
     title = str(title or "").strip()

@@ -5,7 +5,7 @@ role mesh, the runtime. Each run is short and observable. The director is the
 layer that keeps them moving without an external harness: it wakes on a tick,
 asks Prime to rank the portfolio, picks one mission and one brain, starts a
 run through the same runners the API uses, matures the mission, learns, and
-ticks again. An active mission never parks itself — only the operator pause
+ticks again. An active mission never parks itself - only the operator pause
 (or kill switch) stops the continuous hunt.
 
 It is durable. State lives in the index (``director_state``), so a restart
@@ -28,12 +28,12 @@ from .. import prime as prime_module
 
 MIN_TICK = 5.0
 MAX_TICK = 300.0
-# Parallel mission slots — sized for multi-key TokenHarbor hunt lanes.
+# Parallel mission slots - sized for multi-key TokenHarbor hunt lanes.
 # Match the TokenHarbor hunt-lane pool (21+ free keys) so MoE can fan out.
 MAX_CONCURRENT = 24
 # How long a mission rests after a run before it can be picked again.
 BASE_COOLDOWN = 45.0
-# Backoff ceiling once a mission keeps producing nothing. Never a stop —
+# Backoff ceiling once a mission keeps producing nothing. Never a stop -
 # only a longer breath before the next deeper pass.
 MAX_COOLDOWN = 300.0
 # After this many flat runs, queue a deepen direction and reset the stall
@@ -43,7 +43,7 @@ STALL_DEEPEN_AFTER = 3
 KNOWLEDGE_REFRESH_EVERY = 6 * 3600.0
 # A model-only brain is not worth starting when the brain loop has logged many
 # *hard* failures and no answer inside this window. Transient free-tier 429s
-# across a MoE catalogue are not a gate — sibling keys/models still answer.
+# across a MoE catalogue are not a gate - sibling keys/models still answer.
 MODEL_GATE_WINDOW = 900.0
 MODEL_GATE_FAILURES = 8
 # Per-mode budgets. Deliberately small: the director prefers many short,
@@ -164,7 +164,7 @@ class Director:
                 dropped.append({"run_id": run_id, "status": status or "missing"})
                 continue
             # Still queued/running in the DB with no live handle after a
-            # recover=False path or a crashed worker — treat as interrupted.
+            # recover=False path or a crashed worker - treat as interrupted.
             age = time.time() - float((entry or {}).get("started") or 0.0)
             stale = status in {"queued", "running"} and (
                 reason in {"boot", "recover"} or age > 90.0)
@@ -409,6 +409,29 @@ class Director:
         if not eligible:
             self._touch(active, state)
             return {"action": "idle", "reason": "no eligible mission"}
+        # Operator priority hard-locks the director onto one mission until
+        # cleared or that mission leaves active.
+        priority_id = ""
+        try:
+            from .. import brain as brain_module
+            priority_id = str((brain_module.operator_priority(self.server.index)
+                               or {}).get("mission_id") or "")
+        except Exception:  # noqa: BLE001
+            priority_id = ""
+        if priority_id and priority_id in eligible:
+            if self._busy(priority_id, active):
+                self._touch(active, state)
+                return {"action": "wait",
+                        "reason": f"operator priority {priority_id} already in flight"}
+            mission = self.server.index.get_mission(priority_id) or {}
+            chosen = {
+                "mission_id": priority_id,
+                "mode": "swarm",
+                "score": 999,
+                "autonomy": mission.get("autonomy") or "autonomous",
+                "objective": {"goal": "operator priority hunt"},
+            }
+            return self._start(chosen, active, state)
         decision = self.prime.decide(limit=50)
         chosen = None
         for row in decision["ranked"]:
@@ -528,7 +551,7 @@ class Director:
 
         This is not a provider probe: a probe costs money and can rate-limit
         the key the hunt needs. It is an observation of what the brain loop
-        already experienced. Transient free-tier 429s never close the gate —
+        already experienced. Transient free-tier 429s never close the gate -
         MoE walks sibling models and other TokenHarbor keys. Only repeated
         hard failures with no later success downgrade a model-only brain.
         """
@@ -567,7 +590,7 @@ class Director:
                 if age > wait_at:
                     wait_at = age
                     wait_text = message[:200]
-        # Soft 429s are MoE rotation noise — never close the gate on them alone.
+        # Soft 429s are MoE rotation noise - never close the gate on them alone.
         if hard_failures >= MODEL_GATE_FAILURES and (last_success < 0
                                                      or wait_at < last_success):
             return {"available": False, "failures": hard_failures,

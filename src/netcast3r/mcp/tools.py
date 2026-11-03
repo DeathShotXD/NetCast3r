@@ -2057,10 +2057,12 @@ def http_probe(ctx: ToolContext, args: dict) -> dict:
         raise ToolError("invalid_arguments", "probe supports GET and HEAD only")
     maximum = int(args.get("max_bytes", 65536))
     maximum = max(1024, min(maximum, 262144))
+    verify_tls = bool(args.get("verify_tls", True))
     started = time.monotonic()
-    try:
+
+    def _once(verify: bool) -> dict:
         with httpx.Client(timeout=args.get("timeout", 15), trust_env=False,
-                          follow_redirects=False,
+                          follow_redirects=False, verify=verify,
                           headers={"user-agent": "NetCast3r-MCP/0.1"}) as client:
             with client.stream(method, url) as response:
                 chunks, size = [], 0
@@ -2085,10 +2087,31 @@ def http_probe(ctx: ToolContext, args: dict) -> dict:
                     "body": body.decode("utf-8", "replace"),
                     "bytes": len(body),
                     "truncated": size >= maximum,
+                    "verify_tls": verify,
+                    "tls_insecure": (not verify),
                     "elapsed_ms": int((time.monotonic() - started) * 1000),
                 }
-    except httpx.HTTPError as exc:
-        raise ToolError("probe_failed", f"probe failed: {type(exc).__name__}", str(exc))
+
+    try:
+        return _once(verify_tls)
+    except httpx.HTTPError as first:
+        # Broken intermediate chains (common on gov TLS) surface as ConnectError
+        # under httpx verify=True. One insecure retry keeps the hunt moving.
+        detail = f"{type(first).__name__}: {first}".lower()
+        tlsish = any(token in detail for token in (
+            "ssl", "tls", "certificate", "cert", "handshake", "connecterror"))
+        if verify_tls and tlsish:
+            try:
+                result = _once(False)
+                result["tls_fallback"] = type(first).__name__
+                return result
+            except httpx.HTTPError as second:
+                raise ToolError(
+                    "probe_failed",
+                    f"probe failed: {type(second).__name__}",
+                    str(second)) from second
+        raise ToolError("probe_failed", f"probe failed: {type(first).__name__}",
+                        str(first)) from first
 
 
 def http_request(ctx: ToolContext, args: dict) -> dict:

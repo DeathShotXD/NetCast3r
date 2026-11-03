@@ -1,5 +1,5 @@
 <script lang="ts">
-  // Compact wait-state for model replies, engages, and sync — Obsidian Signal.
+  // Compact wait-state for model replies, engages, and sync - Obsidian Signal.
   type Tone = 'acid' | 'quiet' | 'violet';
   type Variant = 'inline' | 'block' | 'bar';
 

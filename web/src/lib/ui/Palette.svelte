@@ -8,7 +8,7 @@
   const NAV: { id: Screen; label: string; glyph: string; hint: string }[] = [
     { id: 'home', label: 'Command Center', glyph: '#', hint: 'overview, what needs you' },
     { id: 'missions', label: 'Missions', glyph: '@', hint: 'scoped objectives and their runs' },
-    { id: 'new', label: 'Engage target', glyph: '>', hint: 'one seed → full agentic hunt' },
+    { id: 'new', label: 'Engage target', glyph: '>', hint: 'one seed -> full agentic hunt' },
     { id: 'live', label: 'Live runs', glyph: '[*]', hint: 'watch a cast mid-hunt' },
     { id: 'findings', label: 'Findings', glyph: '*', hint: 'triage what came back' },
     { id: 'runs', label: 'Cast history', glyph: '//', hint: 'every cast, rerun, delete' },
@@ -88,7 +88,7 @@
     }
     list.push({
       label: store.brainDock ? 'Close main brain' : 'Open main brain',
-      hint: 'instruct mid-hunt · shortcut B',
+      hint: 'instruct mid-hunt - shortcut B',
       glyph: 'B',
       group: 'Actions',
       run: () => {
@@ -225,10 +225,10 @@
 
         <div class="flex items-center gap-2 border-t border-indigo-deep px-4 py-2">
           <span class="mono text-[10px] tracking-[0.14em] text-ash">move</span>
-          <span class="kbd">↑</span>
-          <span class="kbd">↓</span>
+          <span class="kbd">^</span>
+          <span class="kbd">v</span>
           <span class="mono ml-2 text-[10px] tracking-[0.14em] text-ash">run</span>
-          <span class="kbd">↵</span>
+          <span class="kbd">Enter</span>
           <span class="mono ml-2 text-[10px] tracking-[0.14em] text-ash">brain</span>
           <span class="kbd">B</span>
           <span class="mono ml-auto text-[10px] tracking-[0.24em] text-slate">netcast3r</span>

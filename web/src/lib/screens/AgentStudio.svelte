@@ -717,14 +717,14 @@
                 <div class="obs-agent-policy-row">
                   <strong>memory</strong>
                   <p>
-                    {harness.memory.active_skills} active skills · {harness.memory.lessons_total} lessons ·
+                    {harness.memory.active_skills} active skills - {harness.memory.lessons_total} lessons -
                     {harness.memory.open_proposals} proposals
                   </p>
                 </div>
                 <div class="obs-agent-policy-row">
                   <strong>hunt</strong>
                   <p>
-                    {harness.hunt.open_leads} open leads · {harness.hunt.supported_leads} supported ·
+                    {harness.hunt.open_leads} open leads - {harness.hunt.supported_leads} supported -
                     capability {harness.hunt.capability_overall ?? 0}
                   </p>
                 </div>
@@ -733,7 +733,7 @@
                   <p>
                     {harness.health.recent_tool_failures} recent failures
                     {#if harness.health.top_failing_tools[0]}
-                      · top {harness.health.top_failing_tools[0].tool}
+                      - top {harness.health.top_failing_tools[0].tool}
                       ({harness.health.top_failing_tools[0].count})
                     {/if}
                   </p>
@@ -758,7 +758,7 @@
                 {#each harnessIssues.issues.slice(0, 5) as issue (issue.title + issue.kind)}
                   <li>
                     <strong>{issue.title}</strong>
-                    — {issue.fix}
+                    - {issue.fix}
                   </li>
                 {/each}
               </ul>

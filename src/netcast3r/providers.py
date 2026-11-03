@@ -223,7 +223,7 @@ class ProviderBus:
 
         pool = list(models)
         # The routed provider may name a model that is not yet listed (tests /
-        # single-id routes). Other providers must never inherit that pin —
+        # single-id routes). Other providers must never inherit that pin -
         # that was how every th-hunt key stampeded one free DeepSeek into 429.
         if routed_here and route.model and route.model not in pool:
             pool = [route.model] + pool

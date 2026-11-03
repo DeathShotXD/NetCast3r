@@ -28,7 +28,7 @@ from .graph import host_of
 COMPANION_NAME = "Helix"
 COMPANION_ROLE = "hunt steward"
 
-BRAIN_SYSTEM = """You are Helix, NetCast3r's hunt steward — a Jarvis-class
+BRAIN_SYSTEM = """You are Helix, NetCast3r's hunt steward - a Jarvis-class
 companion for a local-first offensive-security control plane. Address the
 operator briefly and clearly when they speak to you. You do not merely suggest:
 you reason, decide, and steer the hunt. You guide a team of subagents
@@ -110,10 +110,10 @@ Rules:
   stop scans, pause/kill/stop_run. When they ask for host work or to stop
   NetCast3r itself, use host_shell or shutdown_plane. You may not create a
   finding or submit a report.
-- Free models are a Mixture of Experts (deepseek / mimo / qwen / …). A single
-  429 is rotation, not "model health down" — keep hunting on sibling keys.
+- Free models are a Mixture of Experts (deepseek / mimo / qwen / ...). A single
+  429 is rotation, not "model health down" - keep hunting on sibling keys.
 - When snapshot.second_brain.helix_role is "second", a heavy MCP harness
-  (OpenCode / Cursor / Hermes / …) is connected: coordinate multi-target
+  (OpenCode / Cursor / Hermes / ...) is connected: coordinate multi-target
   bounty hunts, sync learning with peer_sync, and let the peer drive
   self_upgrade code for specific exploit scenarios.
 - If the operator asks a question, answer it from the snapshot. If they give
@@ -143,8 +143,11 @@ knowledge base, technique_corpus (critical/high web exploit patterns shared
 across every model), the evidence graph, the host capabilities, the MCP
 connections, the coverage checklist for the focus mission, and the
 post-exploitation plan. Always re-read logs + mesh_chat + helix_journal on
-every tick — do not rely on memory of an earlier snapshot.
-Prefer technique_corpus and knowledge entries that match observed signals.
+every tick - do not rely on memory of an earlier snapshot.
+If snapshot.operator_priority.mission_id is set, that mission is the only
+focus: do not start_swarm/start_hunt on other missions, and stop competing
+live runs when they steal capacity. Prefer technique_corpus and knowledge
+entries that match observed signals.
 
 Training is part of the job. The snapshot carries the unsolved lab plan. When
 the real portfolio is blocked or the hunt has no high-value move, run a lab
@@ -159,13 +162,13 @@ an endpoint already seen (never clone open titles); escalating a partial
 primitive to its maximum impact chain; planning post-exploitation; and engaging
 the director so continuous hunting never stops. Watch publish_gate: ship needs
 five non-lab critical_ready findings. Trust director.live_job_ids /
-in_flight.live over prior chat — interrupted means not running.
+in_flight.live over prior chat - interrupted means not running.
 
 Do not repeat the last thing you queued if it produced nothing - try a different
 angle. Do not invent evidence. Do not create a finding or submit a report.
 Do not shutdown_plane or kill the harness on an autonomy tick unless the
 snapshot itself shows a hard operator stop. Ignore soft MoE 429 noise in
-moe.soft_failures — keep hunting. When second_brain.helix_role is second,
+moe.soft_failures - keep hunting. When second_brain.helix_role is second,
 co-hunt with the peer: peer_sync lessons and prefer self_upgrade only for
 concrete exploit scenarios the snapshot justifies.
 
@@ -201,6 +204,7 @@ _ACTION_KINDS = {
     "start_campaign", "start_hunt", "start_swarm", "stop_run", "kill",
     "run_module", "mark_coverage", "record_lesson", "run_lab", "solve_lab",
     "host_shell", "host_read", "host_write", "host_list",
+    "prioritize_mission", "clear_priority",
     "peer_sync", "self_upgrade", "shutdown_plane",
 }
 
@@ -238,6 +242,17 @@ def _traffic_view(call: dict) -> dict:
             view["exit_code"] = result.get("exit_code")
         if isinstance(result.get("parsed"), dict):
             view["parsed_count"] = result["parsed"].get("count")
+        stdout = str(result.get("stdout") or "").strip()
+        if stdout:
+            view["stdout"] = stdout[:900]
+        if result.get("status") is not None:
+            view["http_status"] = result.get("status")
+        if result.get("tls_insecure") or result.get("tls_fallback"):
+            view["tls_note"] = "insecure-fallback" if result.get("tls_insecure") \
+                else str(result.get("tls_fallback") or "")
+        preview = str(result.get("preview") or result.get("body") or "").strip()
+        if preview and "stdout" not in view:
+            view["preview"] = preview[:500]
     if call.get("error"):
         view["error"] = str(call["error"])[:200]
     return view
@@ -302,7 +317,7 @@ def _recent_run_thoughts(index, director=None, mission_id: str = "",
                     f"{payload.get('provider') or '?'}/"
                     f"{payload.get('model') or '?'} "
                     f"{'ok' if payload.get('ok') else 'fail'}"
-                    f"{(' · ' + str(payload.get('error'))) if payload.get('error') else ''}"
+                    f"{(' - ' + str(payload.get('error'))) if payload.get('error') else ''}"
                 ).strip()
                 kind = "model"
             elif etype in {"log", "error"}:
@@ -499,6 +514,7 @@ def context(index, director=None, mission_id: str = "", limit: int = 8) -> dict:
                        for c in calls],
         "traffic": [_traffic_view(c) for c in calls],
         "logs": [_log_view(entry) for entry in director_log],
+        "operator_priority": operator_priority(index),
         "mesh_chat": [
             {"id": row.get("id"), "agent": row.get("agent"),
              "kind": row.get("kind"), "title": row.get("title"),
@@ -694,7 +710,7 @@ def _remember_provider(provider: str, error: str) -> None:
     """Keep a hard-failed provider out of the brain's next few turns.
 
     Auth/payment errors get a long rest. Transient free-tier 429s are MoE
-    rotation noise — do not ban the whole key; the bus already soft-retires
+    rotation noise - do not ban the whole key; the bus already soft-retires
     the one model that tripped the quota.
     """
     name = str(provider or "").strip()
@@ -766,7 +782,7 @@ def _is_local_target(target) -> bool:
 
 def maybe_hail(index, mission_id: str, result: dict, *, force: bool = False,
                turns: int = 0) -> dict | None:
-    """Occasionally speak to the operator unprompted — Jarvis-style steward.
+    """Occasionally speak to the operator unprompted - Jarvis-style steward.
 
     Uses the latest cognition outcome; no extra model call, so free-lane
     quota stays on the hunt itself.
@@ -811,7 +827,7 @@ def maybe_hail(index, mission_id: str, result: dict, *, force: bool = False,
         except Exception:  # noqa: BLE001
             pass
     lines = [
-        f"Operator — Helix here. Still on {host}.",
+        f"Operator - Helix here. Still on {host}.",
         f"Focus: {focus}.",
     ]
     if critical:
@@ -823,7 +839,7 @@ def maybe_hail(index, mission_id: str, result: dict, *, force: bool = False,
     if snippet:
         lines.append(f"Latest move: {snippet}")
     else:
-        lines.append("Standing by for your steer — or I'll keep deepening.")
+        lines.append("Standing by for your steer - or I'll keep deepening.")
     lines.append("Instruct me anytime if you want a pivot.")
     text = " ".join(lines)[:900]
     try:
@@ -836,9 +852,70 @@ def maybe_hail(index, mission_id: str, result: dict, *, force: bool = False,
     return {"role": "helix", "text": text, "focus": focus, "row": row}
 
 
+def operator_priority(index) -> dict:
+    """Operator-locked focus mission, if any and still active."""
+    try:
+        raw = index.get_setting("operator_priority") or {}
+    except Exception:  # noqa: BLE001
+        return {}
+    if not isinstance(raw, dict):
+        return {}
+    mission_id = str(raw.get("mission_id") or "").strip()
+    if not mission_id:
+        return {}
+    try:
+        mission = index.get_mission(mission_id)
+    except Exception:  # noqa: BLE001
+        mission = None
+    if not mission or str(mission.get("status") or "") != "active":
+        return {}
+    return {
+        "mission_id": mission_id,
+        "reason": str(raw.get("reason") or "")[:300],
+        "set_at": str(raw.get("set_at") or ""),
+        "target": mission.get("target") or "",
+        "title": mission.get("title") or "",
+    }
+
+
+def set_operator_priority(index, mission_id: str, reason: str = "") -> dict:
+    mission_id = str(mission_id or "").strip()
+    mission = index.get_mission(mission_id) if mission_id else None
+    if not mission:
+        return {}
+    payload = {
+        "mission_id": mission_id,
+        "reason": str(reason or "operator priority")[:400],
+        "set_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        "target": mission.get("target") or "",
+        "title": mission.get("title") or "",
+    }
+    index.set_setting("operator_priority", payload)
+    try:
+        index.add_director_log(
+            "priority", f"operator locked focus on {mission.get('title') or mission_id}",
+            mission_id=mission_id, data=payload)
+    except Exception:  # noqa: BLE001
+        pass
+    return payload
+
+
+def clear_operator_priority(index) -> None:
+    try:
+        index.set_setting("operator_priority", {})
+    except Exception:  # noqa: BLE001
+        pass
+
+
 def focus_mission_id(index) -> str:
-    """Pick the mission the brain should think about: a real target first, then
-    an autonomous one, then the most recently touched."""
+    """Pick the mission the brain should think about.
+
+    Operator priority always wins while that mission stays active. Otherwise
+    prefer a real (non-lab) target, then autonomous, then most recently touched.
+    """
+    locked = operator_priority(index)
+    if locked.get("mission_id"):
+        return str(locked["mission_id"])
     try:
         missions, _ = index.list_missions(status="active", limit=50)
     except Exception:  # noqa: BLE001
@@ -1008,6 +1085,19 @@ def _apply(index, director, action, default_mission: str = "") -> dict:
             return {"kind": kind, "applied": True,
                     "mission_id": (result.get("mission") or {}).get("id"),
                     "target": target}
+        if kind == "prioritize_mission":
+            mission_id = str(action.get("mission_id") or default_mission or "").strip()
+            if not mission_id:
+                return {"kind": kind, "applied": False,
+                        "reason": "prioritize_mission needs mission_id"}
+            locked = set_operator_priority(
+                index, mission_id,
+                reason=str(action.get("reason") or "helix prioritize")[:400])
+            return {"kind": kind, "applied": bool(locked),
+                    "mission_id": mission_id, "priority": locked}
+        if kind == "clear_priority":
+            clear_operator_priority(index)
+            return {"kind": kind, "applied": True}
         if kind == "start_hunt":
             if server is None:
                 return {"kind": kind, "applied": False, "reason": "no server"}
@@ -1015,6 +1105,10 @@ def _apply(index, director, action, default_mission: str = "") -> dict:
             if not mission_id:
                 return {"kind": kind, "applied": False,
                         "reason": "start_hunt needs mission_id"}
+            locked = operator_priority(index)
+            if locked.get("mission_id") and locked["mission_id"] != mission_id:
+                return {"kind": kind, "applied": False,
+                        "reason": f"operator priority locked on {locked['mission_id']}"}
             run = server._hunts().start(mission_id)
             return {"kind": kind, "applied": True, "run_id": run.get("id"),
                     "mission_id": mission_id}
@@ -1025,6 +1119,10 @@ def _apply(index, director, action, default_mission: str = "") -> dict:
             if not mission_id:
                 return {"kind": kind, "applied": False,
                         "reason": "start_swarm needs mission_id"}
+            locked = operator_priority(index)
+            if locked.get("mission_id") and locked["mission_id"] != mission_id:
+                return {"kind": kind, "applied": False,
+                        "reason": f"operator priority locked on {locked['mission_id']}"}
             run = server._solvers().start(mission_id, {
                 "mode": "swarm",
                 "max_steps": int(action.get("max_steps") or 12),
@@ -1312,7 +1410,7 @@ CAMPAIGN_PLAYBOOK = (
 
 def start_campaign(server, index, target: str, title: str = "",
                    objective: str = "") -> dict:
-    """One seed (domain/URL/app endpoint) → autonomous multi-agent hunt.
+    """One seed (domain/URL/app endpoint) -> autonomous multi-agent hunt.
 
     Creates the mission, engages director + brain, queues the campaign
     playbook, and bootstraps OSINT cast + web2root + swarm in the background.
