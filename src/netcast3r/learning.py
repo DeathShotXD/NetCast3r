@@ -168,7 +168,7 @@ def reflect_tool_call(record: dict) -> dict:
         tags.append(target)
         if status != "ok":
             tags.append(f"host:{target}")
-    # Only keys accepted by Index.add_lesson — host/error_class/provisional
+    # Only keys accepted by Index.add_lesson - host/error_class/provisional
     # live in tags (host:, error_class:, provisional=true) so **draft is safe.
     draft = {
         "title": f"{tool}: {outcome}",
