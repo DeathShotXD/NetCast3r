@@ -2204,63 +2204,104 @@ def http_request(ctx: ToolContext, args: dict) -> dict:
     size = 0
     truncated = False
 
-    try:
+    def _drive(verify: bool):
+        local_current = url
+        local_method = method
+        local_content = content
+        local_headers = dict(headers)
+        local_redirects: list[dict] = []
+        local_blocked = ""
+        local_status = 0
+        local_response_headers: dict[str, str] = {}
+        local_set_cookie: list[str] = []
+        local_text = ""
+        local_size = 0
+        local_truncated = False
         with httpx.Client(timeout=timeout, trust_env=False, follow_redirects=False,
-                          verify=verify_tls) as client:
+                          verify=verify) as client:
             for hop in range(max_hops + 1):
-                with client.stream(current_method, current, headers=headers,
-                                   content=current_content) as response:
+                with client.stream(local_method, local_current, headers=local_headers,
+                                   content=local_content) as response:
                     chunks, read = [], 0
+                    local_truncated = False
                     for chunk in response.iter_bytes():
                         if read + len(chunk) > maximum:
                             chunks.append(chunk[: maximum - read])
                             read = maximum
-                            truncated = True
+                            local_truncated = True
                             break
                         chunks.append(chunk)
                         read += len(chunk)
                     raw = b"".join(chunks)
-                    status = response.status_code
-                    response_headers = {}
+                    local_status = response.status_code
+                    local_response_headers = {}
+                    local_set_cookie = []
                     for key, value in response.headers.multi_items():
                         lower = key.lower()
                         if lower == "set-cookie":
-                            set_cookie.append(value)
-                        elif lower in response_headers:
-                            response_headers[lower] += ", " + value
+                            local_set_cookie.append(value)
+                        elif lower in local_response_headers:
+                            local_response_headers[lower] += ", " + value
                         else:
-                            response_headers[lower] = value
-                    text = raw.decode("utf-8", "replace")
-                    size = len(raw)
+                            local_response_headers[lower] = value
+                    local_text = raw.decode("utf-8", "replace")
+                    local_size = len(raw)
                     location = response.headers.get("location", "")
-                if not (follow and status in {301, 302, 303, 307, 308} and location):
+                if not (follow and local_status in {301, 302, 303, 307, 308} and location):
                     break
                 if hop >= max_hops:
                     break
-                next_url = urljoin(current, location)
+                next_url = urljoin(local_current, location)
                 next_parts = urlsplit(next_url)
                 if next_parts.scheme not in {"http", "https"}:
-                    blocked = f"redirect scheme is not http(s): {next_parts.scheme}"
+                    local_blocked = f"redirect scheme is not http(s): {next_parts.scheme}"
                     break
                 try:
                     _require_scope(ctx, next_url, mission_id, scope, probe=True)
                 except ToolError as exc:
-                    blocked = exc.message
+                    local_blocked = exc.message
                     break
-                redirects.append({"status": status, "from": current, "to": next_url})
-                if urlsplit(current).hostname != next_parts.hostname:
-                    # never carry a session across a host boundary
-                    for key in list(headers):
+                local_redirects.append({
+                    "status": local_status, "from": local_current, "to": next_url})
+                if urlsplit(local_current).hostname != next_parts.hostname:
+                    for key in list(local_headers):
                         if key.lower() in {"cookie", "authorization"}:
-                            headers.pop(key, None)
-                if status in {301, 302, 303} and current_method not in {"GET", "HEAD"}:
-                    current_method = "GET"
-                    current_content = None
-                    headers.pop("content-type", None)
-                    headers.pop("Content-Type", None)
-                current = next_url
-    except httpx.HTTPError as exc:
-        raise ToolError("request_failed", f"request failed: {type(exc).__name__}", str(exc))
+                            local_headers.pop(key, None)
+                if local_status in {301, 302, 303} and local_method not in {"GET", "HEAD"}:
+                    local_method = "GET"
+                    local_content = None
+                    local_headers.pop("content-type", None)
+                    local_headers.pop("Content-Type", None)
+                local_current = next_url
+        return (local_current, local_method, local_status, local_response_headers,
+                local_set_cookie, local_text, local_size, local_truncated, local_blocked,
+                local_redirects)
+
+    tls_insecure = not verify_tls
+    tls_fallback = ""
+    try:
+        (current, current_method, status, response_headers, set_cookie, text, size,
+         truncated, blocked, redirects) = _drive(verify_tls)
+    except httpx.HTTPError as first:
+        detail = f"{type(first).__name__}: {first}".lower()
+        tlsish = any(token in detail for token in (
+            "ssl", "tls", "certificate", "cert", "handshake", "connecterror",
+            "certificate_verify_failed", "unable to get local issuer"))
+        if verify_tls and tlsish:
+            try:
+                (current, current_method, status, response_headers, set_cookie, text,
+                 size, truncated, blocked, redirects) = _drive(False)
+                tls_insecure = True
+                tls_fallback = type(first).__name__
+            except httpx.HTTPError as second:
+                raise ToolError(
+                    "request_failed",
+                    f"request failed: {type(second).__name__}",
+                    str(second)) from second
+        else:
+            raise ToolError(
+                "request_failed", f"request failed: {type(first).__name__}",
+                str(first)) from first
 
     return {
         "target": target,
@@ -2274,6 +2315,9 @@ def http_request(ctx: ToolContext, args: dict) -> dict:
         "truncated": truncated,
         "redirects": redirects,
         "blocked_redirect": blocked,
+        "verify_tls": not tls_insecure,
+        "tls_insecure": tls_insecure,
+        "tls_fallback": tls_fallback,
         "elapsed_ms": int((time.monotonic() - started) * 1000),
     }
 
@@ -2834,6 +2878,8 @@ def http_path_diff(ctx: ToolContext, args: dict) -> dict:
         "max_bytes": args.get("max_bytes", 32768),
         "timeout": args.get("timeout", 15),
         "follow_redirects": bool(args.get("follow_redirects", False)),
+        # Prefer insecure fallback for broken intermediate chains; http_request
+        # still retries if the first verified attempt fails.
         "verify_tls": bool(args.get("verify_tls", True)),
     }
     rows: list[dict] = []

@@ -91,14 +91,25 @@ class Session:
         elif self.delay and self.delay > 0:
             time.sleep(self.delay)
 
-    def _client_for(self, proxy: str | None) -> httpx.Client:
-        key = proxy or ""
+    def _client_for(self, proxy: str | None, verify: bool = True) -> httpx.Client:
+        # OffSec targets often ship broken intermediate chains; keep a
+        # verified client and an insecure fallback keyed separately.
+        key = f"{proxy or ''}|v={1 if verify else 0}"
         with self._lock:
             client = self._clients.get(key)
             if client is None:
-                client = httpx.Client(timeout=self.timeout, follow_redirects=True, proxy=proxy)
+                client = httpx.Client(
+                    timeout=self.timeout, follow_redirects=True, proxy=proxy,
+                    verify=verify, trust_env=False)
                 self._clients[key] = client
             return client
+
+    @staticmethod
+    def _tls_failure(exc: BaseException) -> bool:
+        detail = f"{type(exc).__name__}: {exc}".lower()
+        return any(token in detail for token in (
+            "ssl", "tls", "certificate", "cert", "handshake",
+            "certificate_verify_failed", "unable to get local issuer"))
 
     def close(self) -> None:
         with self._lock:
@@ -120,6 +131,7 @@ class Session:
     def request(self, method: str, url: str, headers: dict | None = None,
                 follow_redirects: bool | None = None, **kw) -> Response | None:
         attempt = 0
+        verify = True
         while True:
             attempt += 1
             self._throttle()
@@ -127,7 +139,7 @@ class Session:
             merged = {"User-Agent": self._agent()}
             if headers:
                 merged.update(headers)
-            client = self._client or self._client_for(proxy)
+            client = self._client or self._client_for(proxy, verify=verify)
             if follow_redirects is not None:
                 kw = {**kw, "follow_redirects": follow_redirects}
             try:
@@ -153,9 +165,13 @@ class Session:
                     continue
                 self._stop_check()
                 return None
-            except Exception:
+            except Exception as exc:
                 with self._lock:
                     self.stats.errors += 1
+                if verify and self._tls_failure(exc):
+                    # Broken gov/CDN intermediate chains: one insecure retry.
+                    verify = False
+                    continue
                 if attempt <= self.retries:
                     time.sleep(0.4 * attempt)
                     continue
