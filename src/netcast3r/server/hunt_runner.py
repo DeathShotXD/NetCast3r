@@ -146,10 +146,13 @@ class HuntRunner:
                            interesting, key))
         ranked.sort()
         if ranked:
-            # Rotate the seed across runs so a wildcard programme is not
-            # hammered through the same first host every time.
-            offset = int(mission.get("run_count") or 0) % len(ranked)
-            return (ranked[offset:] + ranked[:offset])[0][2]
+            # Rotate only inside the best tier so a wildcard programme is not
+            # hammered through the same host, and static pages never outrank a
+            # login or admin surface.
+            best = (ranked[0][0], ranked[0][1])
+            top = [row for row in ranked if (row[0], row[1]) == best]
+            offset = int(mission.get("run_count") or 0) % len(top)
+            return (top[offset:] + top[:offset])[0][2]
         try:
             hosts = self.server.index.list_graph_nodes(mission_id, kind="host")
         except Exception:  # noqa: BLE001

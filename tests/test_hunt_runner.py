@@ -42,6 +42,25 @@ class HuntRunnerTests(unittest.TestCase):
         self.server.jobs.shutdown(wait=False)
         self.server.index.close()
 
+    def test_rotation_stays_inside_the_application_tier(self):
+        mission = self.server.index.create_mission(
+            "Wildcard tier", "http://127.0.0.1:9/", status="active",
+            scope=["127.0.0.1"])
+        for path in ("/portal/one", "/portal/two", "/static"):
+            self.server.index.upsert_graph_node(
+                mission["id"], "endpoint", f"http://127.0.0.1{path}",
+                label=path, data={"status": 200})
+        runner = self.server._hunts()
+        seen = set()
+        for _ in range(2):
+            seen.add(runner._fallback_target(mission["id"]))
+            run = self.server.index.create_run(
+                "http://127.0.0.1:9/",
+                {"mode": "hunt", "mission_id": mission["id"]})
+            self.server.index.add_mission_run(mission["id"], run["id"])
+        self.assertEqual(len(seen), 2)
+        self.assertTrue(all("/portal/" in url for url in seen))
+
     def test_fallback_prefers_an_application_surface(self):
         mission = self.server.index.create_mission(
             "Wildcard priority", "http://127.0.0.1:9/", status="active",
