@@ -5,6 +5,7 @@ import time
 import unittest
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from urllib.parse import parse_qs, urlsplit
 
 os.environ.setdefault("NETCAST3R_NO_KEYRING", "1")
 
@@ -306,6 +307,74 @@ class HuntHelperTests(unittest.TestCase):
         big = [{"path": f"/{i}", "status": 200, "bytes": 40000}
                for i in range(5)]
         self.assertFalse(_detect_spa_shell(big)[0])
+
+
+class LfiHandler(BaseHTTPRequestHandler):
+    """A page with a download link that accepts a traversable file parameter."""
+
+    def do_GET(self):
+        parsed = urlsplit(self.path)
+        if parsed.path == "/download":
+            value = parse_qs(parsed.query).get("file", [""])[0]
+            if value in ("../web.config", "..%2fweb.config", "..%5cweb.config"):
+                body = (b"<configuration><connectionStrings>"
+                        b"<add name=\"db\" connectionString=\"Data Source=x;"
+                        b"Password=secretvalue\" /></connectionStrings></configuration>")
+                self._send(200, body, "application/octet-stream")
+                return
+            if value == "../index.asp":
+                self._send(200, b"<html>home</html>", "application/octet-stream")
+                return
+            self._send(200, b"Error: File not found.", "text/html")
+            return
+        self._send(200, b"<html><body><a href=\"/download?file=pakpost.apk\">app</a>"
+                        b"</body></html>", "text/html")
+
+    def _send(self, status, body, content_type):
+        self.send_response(status)
+        self.send_header("Content-Type", content_type)
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def log_message(self, *args):
+        pass
+
+
+class LfiHuntTests(unittest.TestCase):
+    def setUp(self):
+        self.httpd = ThreadingHTTPServer(("127.0.0.1", 0), LfiHandler)
+        threading.Thread(target=self.httpd.serve_forever, daemon=True).start()
+        self.target = f"http://127.0.0.1:{self.httpd.server_port}/"
+        self.tmp = Path(tempfile.mkdtemp())
+        self.server = build_server(results_dir=str(self.tmp / "results"),
+                                   base=self.tmp, recover=False)
+
+    def tearDown(self):
+        if self.server.hunt_runner is not None:
+            self.server.hunt_runner.shutdown(wait=True)
+        self.httpd.shutdown()
+        self.httpd.server_close()
+        self.server.jobs.shutdown(wait=False)
+        self.server.index.close()
+
+    def test_the_hunt_discovers_the_file_parameter_and_runs_the_chain(self):
+        mission = self.server.index.create_mission(
+            "lfi hunt", self.target, status="active", scope=["127.0.0.1"])
+        run = self.server._hunts().start(mission["id"])
+        deadline = time.time() + 25
+        while time.time() < deadline:
+            state = self.server.index.get_run(run["id"])
+            if state["status"] in {"done", "failed", "stopped", "interrupted"}:
+                break
+            time.sleep(0.05)
+        self.assertEqual(state["status"], "done", state.get("error"))
+        hypotheses, _ = self.server.index.list_hypotheses(
+            mission_id=mission["id"], limit=50)
+        self.assertTrue(any(h.get("technique") == "path-traversal"
+                            for h in hypotheses))
+        notes = self.server.index.list_agent_notes(mission["id"])
+        self.assertTrue(any(n.get("kind") == "chain.plan" for n in notes))
 
 
 if __name__ == "__main__":

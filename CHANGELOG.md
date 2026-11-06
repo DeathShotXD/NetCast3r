@@ -34,6 +34,10 @@ Notable changes to NetCast3r, newest first.
   depth, source and config disclosure, masked secret and sink extraction, and a
   cookie auth-bypass check. Upload and OS-command candidates are returned for
   approval and never fired. See [docs/CHAINS.md](docs/CHAINS.md).
+- **Automatic LFI discovery**: when a hunt's surface inventory exposes a
+  file-like parameter (`file`, `path`, `download`, `page`, `template`, ...),
+  the hunt runs `chain_run`, writes a `chain.plan` note, and creates a
+  `path-traversal` lead only if a source or config body was actually read.
 - **Cookie reuse in test cases**: a `test_case_run` step can set
   `use_previous_cookies: true` to carry the session cookies returned by an
   earlier step, so an auth bypass is proved end to end without copying a token.

