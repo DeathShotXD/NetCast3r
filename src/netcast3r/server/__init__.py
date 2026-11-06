@@ -2026,6 +2026,27 @@ class Server:
             except Exception as exc:  # noqa: BLE001
                 return _problem(502, f"web2root error: {type(exc).__name__}: {exc}")
 
+        @add("POST", r"/api/v1/missions/(?P<id>[A-Za-z0-9_]+)/surface/seed")
+        def surface_seed(ctx):
+            from .. import web2root as web2root_module
+
+            if not self.index.get_mission(ctx.params["id"]):
+                return _problem(404, "mission not found")
+            body = ctx.json()
+            body = body if isinstance(body, dict) else {}
+            hosts = body.get("hosts")
+            if not isinstance(hosts, list) or not hosts:
+                return _problem(400, "hosts must be a non-empty list")
+            try:
+                return _json(web2root_module.seed_surface(
+                    self.index, ctx.params["id"], hosts,
+                    probe=bool(body.get("probe", True)),
+                    limit=int(body.get("limit") or 200)))
+            except ValueError as exc:
+                return _problem(400, str(exc))
+            except Exception as exc:  # noqa: BLE001
+                return _problem(502, f"surface seed error: {type(exc).__name__}: {exc}")
+
         @add("GET", r"/api/v1/missions/(?P<id>[A-Za-z0-9_]+)/schedules")
         def schedules_list(ctx):
             from .. import schedule as schedule_module

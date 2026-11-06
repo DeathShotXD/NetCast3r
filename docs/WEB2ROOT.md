@@ -10,6 +10,7 @@ foothold appears — under scope, risk, and approval gates the whole way.
 seed URL or host
   -> mission (scope locked) + providers connected
   -> web2root_map (CT, passive DNS, resolve, HTTP/TLS, graph)
+  -> surface_seed (operator host list, scope-checked, graph)
   -> coverage checklist + hunt / swarm
   -> candidate PoC verify -> promote
   -> on critical / internal pivot: post-ex plan (lateral, cloud, identity)
@@ -20,6 +21,8 @@ seed URL or host
 ## Guarantees
 
 - Scope is law. Autonomy never widens it.
+- If a wildcard apex does not answer, the hunt pivots to a live in-scope
+  endpoint from the graph and re-checks scope before every probe.
 - Hosts from the surface map are leads, not findings.
 - A finding needs reproducible evidence (and a replayable PoC to promote).
 - The brain and director steer; they never submit a report for you.
@@ -40,6 +43,7 @@ seed URL or host
 | Step | API / tool |
 | --- | --- |
 | Surface map | `web2root_map` |
+| Operator host list | `surface_seed` |
 | Coverage | mission Coverage tab / `coverage_*` |
 | Hunt / swarm | director engage + mission autonomy |
 | PoC | `candidate_poc`, `candidate_poc_verify` |

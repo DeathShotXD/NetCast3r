@@ -21,7 +21,10 @@ class _Session:
 
     def get(self, url, **kwargs):
         self.requested.append(url)
-        return self.routes.get(url)
+        value = self.routes.get(url)
+        if isinstance(value, list):
+            return value.pop(0) if value else None
+        return value
 
 
 def _always_false(host):
@@ -100,6 +103,16 @@ class SubdomainFinderTests(unittest.TestCase):
         finder.limit = 2
         found = finder.find(["example.com"])
         self.assertEqual(len(found), 2)
+
+    def test_crt_retries_a_transient_gateway_error(self):
+        crt = json.dumps([{"name_value": "recovered.example.com"}])
+        routes = {"https://crt.sh/?q=%25.example.com&output=json":
+                  [_Response("bad gateway", status=502), _Response(crt)]}
+        finder, session = self._finder(routes)
+        found = finder.find(["example.com"])
+        self.assertIn("recovered.example.com", found)
+        crt_calls = [u for u in session.requested if "crt.sh" in u]
+        self.assertEqual(len(crt_calls), 2)
 
     def test_a_broken_source_does_not_raise(self):
         finder, _ = self._finder(routes={"https://crt.sh/?q=%25.example.com&output=json":

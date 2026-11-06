@@ -42,6 +42,40 @@ class HuntRunnerTests(unittest.TestCase):
         self.server.jobs.shutdown(wait=False)
         self.server.index.close()
 
+    def test_fallback_never_picks_an_out_of_scope_endpoint(self):
+        mission = self.server.index.create_mission(
+            "Wildcard skip", "http://127.0.0.1:9/", status="active",
+            scope=["127.0.0.1"])
+        self.server.index.upsert_graph_node(
+            mission["id"], "endpoint", "http://203.0.113.9/portal",
+            label="outside", data={"status": 200})
+        self.server.index.upsert_graph_node(
+            mission["id"], "endpoint", self.target, label="live",
+            data={"status": 200})
+        runner = self.server._hunts()
+        self.assertEqual(runner._fallback_target(mission["id"]), self.target)
+
+    def test_hunt_pivots_when_the_seed_host_does_not_answer(self):
+        # A wildcard programme often has an apex that does not serve HTTP while
+        # its child hosts do. The hunt must pivot to an in-scope graph host
+        # instead of failing on the first request.
+        mission = self.server.index.create_mission(
+            "Wildcard programme", "http://127.0.0.1:9/", status="active",
+            scope=["127.0.0.1"])
+        self.server.index.upsert_graph_node(
+            mission["id"], "endpoint", self.target, label="live child",
+            confidence="observed", data={"status": 200})
+        run = self.server._hunts().start(mission["id"])
+        deadline = time.time() + 20
+        while time.time() < deadline:
+            state = self.server.index.get_run(run["id"])
+            if state["status"] in {"done", "failed", "stopped", "interrupted"}:
+                break
+            time.sleep(0.05)
+        self.assertEqual(state["status"], "done", state.get("error"))
+        notes = self.server.index.list_agent_notes(mission["id"])
+        self.assertIn("hunt.map", {note["kind"] for note in notes})
+
     def test_hunt_runs_without_an_external_agent(self):
         mission = self.server.index.create_mission(
             "Standalone hunt", self.target, status="active",

@@ -387,3 +387,117 @@ def map_surface(index, mission_id: str, *, config=None, depth: str = "standard",
         except Exception:  # noqa: BLE001
             pass
     return summary
+
+
+def seed_surface(index, mission_id: str, hosts, *, probe: bool = True,
+                 limit: int = 200, session: Session | None = None) -> dict:
+    """Add an operator-supplied host list to the mission's attack surface.
+
+    Certificate-transparency pulls are often blocked or rate limited, and a
+    wildcard programme like ``*.gov.pk`` cannot wait for one passive source.
+    This takes names the operator already holds, enforces the mission scope,
+    resolves and (optionally) probes each one, and writes only observed hosts
+    and endpoints into the evidence graph.
+    """
+    mission = index.get_mission(mission_id)
+    if not mission:
+        raise ValueError("mission not found")
+    if not isinstance(hosts, list):
+        raise ValueError("hosts must be a list")
+    scope = _mission_scope(mission)
+    limit = max(1, min(int(limit or 200), 500))
+    accepted: list[str] = []
+    rejected: list[str] = []
+    for raw in hosts:
+        host = _host_of(str(raw or ""))
+        if not host:
+            continue
+        if not scope.is_in_scope("https://" + host):
+            if host not in rejected:
+                rejected.append(host)
+            continue
+        if host not in accepted:
+            accepted.append(host)
+    accepted = accepted[:limit]
+
+    config = load_config()
+    own_session = session is None
+    session = session or Session(config)
+
+    def work(name: str) -> dict:
+        ips = _resolve(name)
+        row = {"host": name, "ips": ips, "http": None}
+        if ips and probe:
+            row["http"] = _http_probe(session, name)
+        return row
+
+    rows: list[dict] = []
+    try:
+        with ThreadPoolExecutor(max_workers=8) as pool:
+            for row in pool.map(work, accepted):
+                rows.append(row)
+    finally:
+        if own_session:
+            try:
+                session.close()
+            except Exception:  # noqa: BLE001
+                pass
+
+    live: list[dict] = []
+    unresolved: list[str] = []
+    for row in rows:
+        name = row["host"]
+        http = row.get("http") or {}
+        if not row.get("ips"):
+            unresolved.append(name)
+            continue
+        live.append({
+            "host": name,
+            "ips": row.get("ips") or [],
+            "status": http.get("status"),
+            "url": http.get("url"),
+            "title": http.get("title"),
+            "server": http.get("server"),
+        })
+        try:
+            host_node = index.upsert_graph_node(
+                mission_id, "host", name, label=name, confidence="observed",
+                data={"source": "surface_seed", "ips": (row.get("ips") or [])[:8]})
+            for ip in (row.get("ips") or [])[:4]:
+                ip_node = index.upsert_graph_node(
+                    mission_id, "ip", ip, label=ip, confidence="observed",
+                    data={"host": name, "source": "surface_seed"})
+                try:
+                    index.upsert_graph_edge(
+                        mission_id, host_node["id"], ip_node["id"], "resolves",
+                        confidence="observed", evidence={"source": "surface_seed"})
+                except Exception:  # noqa: BLE001
+                    pass
+            if http:
+                index.upsert_graph_node(
+                    mission_id, "endpoint", http.get("url") or f"https://{name}/",
+                    label=http.get("title") or name, confidence="observed",
+                    data={"status": http.get("status"), "server": http.get("server"),
+                          "source": "surface_seed"})
+        except Exception:  # noqa: BLE001 - one bad host must not stop the seed
+            pass
+
+    index.add_agent_note(
+        mission_id, "surface.seed",
+        f"Surface seed: {len(live)} live / {len(accepted)} in-scope hosts",
+        json.dumps({"live": live[:60], "unresolved": unresolved[:30],
+                    "rejected": rejected[:30]}, default=str)[:8000])
+    return {
+        "mission_id": mission_id,
+        "requested": len(hosts),
+        "accepted": len(accepted),
+        "live": live[:80],
+        "hosts_live": len(live),
+        "unresolved": unresolved[:80],
+        "hosts_unresolved": len(unresolved),
+        "rejected": rejected[:40],
+        "hosts_rejected": len(rejected),
+        "note": ("Seeded from an operator list. Only in-scope names were "
+                 "probed and only observed hosts reached the graph. Hosts are "
+                 "leads, not findings."),
+    }

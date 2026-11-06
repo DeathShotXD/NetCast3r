@@ -100,6 +100,61 @@ class HuntRunner:
             raise RuntimeError(f"{name}: {error.get('message') or 'refused'}")
         return payload
 
+    def _fallback_target(self, mission_id: str, skip=None) -> str:
+        """Pick a reachable in-scope seed when the mission apex does not answer.
+
+        A wildcard programme like ``*.gov.pk`` often has an apex that does not
+        resolve or serve HTTP while dozens of child hosts do. Without this the
+        deterministic hunt fails on its first request every time.
+        """
+        from ..scope import ScopeManager
+
+        try:
+            mission = self.server.index.get_mission(mission_id) or {}
+        except Exception:  # noqa: BLE001
+            mission = {}
+        entries = [str(mission.get("target") or "").strip()]
+        entries.extend(str(item) for item in (mission.get("scope") or []))
+        scope = ScopeManager(in_scope=[entry for entry in entries if entry])
+        skip = set(skip or ())
+
+        def in_scope(url: str) -> bool:
+            return bool(url) and url not in skip and scope.is_in_scope(url)
+
+        try:
+            endpoints = self.server.index.list_graph_nodes(
+                mission_id, kind="endpoint")
+        except Exception:  # noqa: BLE001
+            endpoints = []
+        ranked: list[tuple[int, str]] = []
+        for node in endpoints:
+            key = str(node.get("key") or "")
+            if not key.startswith("http") or not in_scope(key):
+                continue
+            data = node.get("data")
+            if isinstance(data, str):
+                try:
+                    data = json.loads(data)
+                except ValueError:
+                    data = {}
+            status = (data or {}).get("status") if isinstance(data, dict) else None
+            ranked.append((0 if status in (200, 301, 302, 401, 403) else 1, key))
+        ranked.sort()
+        if ranked:
+            return ranked[0][1]
+        try:
+            hosts = self.server.index.list_graph_nodes(mission_id, kind="host")
+        except Exception:  # noqa: BLE001
+            hosts = []
+        for node in hosts:
+            key = str(node.get("key") or "").strip()
+            if not key:
+                continue
+            url = key if "://" in key else f"https://{key}"
+            if in_scope(url):
+                return url
+        return ""
+
     def _execute(self, run_id: str, mission_id: str, target: str, emit,
                  cancel) -> dict:
         from ..mcp.tools import ToolContext, ToolRegistry
@@ -121,9 +176,38 @@ class HuntRunner:
 
         emit(Event(type="log", agent="hunt", stage="fingerprint",
                    payload={"text": f"fingerprinting {target}"}))
-        probe = self._call(registry, "http_probe", {
-            "target": target, "mission_id": mission_id,
-            "method": "GET", "max_bytes": 65536, "timeout": 15})
+        try:
+            probe = self._call(registry, "http_probe", {
+                "target": target, "mission_id": mission_id,
+                "method": "GET", "max_bytes": 65536, "timeout": 15})
+        except RuntimeError as exc:
+            probe = None
+            tried = {target}
+            last_error: RuntimeError = exc
+            for _ in range(4):
+                fallback = self._fallback_target(mission_id, skip=tried)
+                if not fallback:
+                    break
+                tried.add(fallback)
+                scope = self._call(registry, "scope_check",
+                                   {"target": fallback, "mission_id": mission_id})
+                if not scope.get("in_scope"):
+                    continue
+                emit(Event(type="log", agent="hunt", stage="fingerprint",
+                           payload={"text": (f"{target} unreachable ({last_error}); "
+                                             f"pivoting to in-scope seed {fallback}")}))
+                try:
+                    probe = self._call(registry, "http_probe", {
+                        "target": fallback, "mission_id": mission_id,
+                        "method": "GET", "max_bytes": 65536, "timeout": 15})
+                except RuntimeError as inner:
+                    last_error = inner
+                    continue
+                target = fallback
+                host = (urlsplit(target).hostname or host)
+                break
+            if probe is None:
+                raise last_error
         body = str(probe.get("body") or "")
         headers = probe.get("headers") or {}
         title = ""

@@ -196,5 +196,8 @@ class Session:
             return result
 
     def get(self, url: str, headers: dict | None = None,
-            follow_redirects: bool | None = None) -> Response | None:
-        return self.request("GET", url, headers=headers, follow_redirects=follow_redirects)
+            follow_redirects: bool | None = None,
+            timeout: float | None = None) -> Response | None:
+        extra = {"timeout": timeout} if timeout else {}
+        return self.request("GET", url, headers=headers,
+                            follow_redirects=follow_redirects, **extra)

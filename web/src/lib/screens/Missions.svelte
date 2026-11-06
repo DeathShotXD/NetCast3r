@@ -69,6 +69,9 @@
   let programPreview = $state<ProgramPreview | null>(null);
   let programHistory = $state<ProgramImport[]>([]);
   let programBusy = $state('');
+  let seedHosts = $state('');
+  let seedBusy = $state(false);
+  let seedResult = $state<{ accepted: number; hosts_live: number; hosts_unresolved: number; hosts_rejected: number; rejected: string[] } | null>(null);
   let campaign = $state<Campaign | null>(null);
   let directions = $state<Direction[]>([]);
   let toolCalls = $state<ToolCall[]>([]);
@@ -637,6 +640,29 @@
       void store.fail(exc instanceof Error ? exc.message : 'could not apply the brief');
     } finally {
       programBusy = '';
+    }
+  }
+
+  async function seedSurface() {
+    if (!selected) return;
+    const hosts = Array.from(new Set(
+      seedHosts.split(/[\s,;]+/).map((item) => item.trim()).filter(Boolean)
+    )).slice(0, 500);
+    if (!hosts.length) {
+      store.toast('warn', 'paste at least one host from the programme or a CT export');
+      return;
+    }
+    seedBusy = true;
+    try {
+      const result = await api.surfaceSeed(selected.id, hosts);
+      seedResult = result;
+      selected = await api.mission(selected.id);
+      await Promise.all([loadGraph(), loadLeads()]);
+      store.toast('ok', `${result.hosts_live} live of ${result.accepted} in scope${result.hosts_rejected ? `, ${result.hosts_rejected} out of scope` : ''}`);
+    } catch (exc) {
+      void store.fail(exc instanceof Error ? exc.message : 'could not seed the surface');
+    } finally {
+      seedBusy = false;
     }
   }
 
@@ -1780,6 +1806,50 @@
                     </ul>
                   </div>
                 {/if}
+              </section>
+              <section class="obs-detail-section">
+                <div class="obs-graph-head">
+                  <div>
+                    <h3>Surface seed</h3>
+                    <p class="obs-graph-copy">
+                      Paste hosts you already hold - a certificate-transparency export, a programme asset list, or the names in a wildcard scope. Every name is checked against mission scope; only in-scope names are resolved and probed. Observed hosts and endpoints reach the evidence graph, never the findings ledger.
+                    </p>
+                  </div>
+                  {#if seedResult}
+                    <span class="obs-chip" style="color:var(--obs-acid)">{seedResult.hosts_live} live / {seedResult.accepted} in scope</span>
+                  {/if}
+                </div>
+                <div class="obs-program-grid">
+                  <div class="obs-program-form">
+                    <label class="obs-field">
+                      <span>Hosts</span>
+                      <textarea rows="7" bind:value={seedHosts} placeholder="api.example.gov.pk&#10;admin.example.gov.pk&#10;portal.example.gov.pk"></textarea>
+                    </label>
+                    <div class="obs-program-actions">
+                      <button class="obs-btn obs-btn-primary" type="button" disabled={seedBusy} onclick={() => void seedSurface()}>
+                        {seedBusy ? 'Probing...' : 'Seed and probe'}
+                      </button>
+                    </div>
+                  </div>
+                  <div class="obs-program-result">
+                    {#if seedResult}
+                      <div class="obs-program-counts">
+                        <span class="obs-chip" style="color:var(--obs-acid)">{seedResult.hosts_live} live</span>
+                        <span class="obs-chip">{seedResult.hosts_unresolved} unresolved</span>
+                        <span class="obs-chip" style="color:var(--obs-red)">{seedResult.hosts_rejected} out of scope</span>
+                      </div>
+                      {#if seedResult.rejected.length}
+                        <p class="obs-program-line mono">{seedResult.rejected.slice(0, 8).join(', ')}</p>
+                      {/if}
+                      <p class="obs-detail-note">The director can now plan against these hosts. Scope is unchanged.</p>
+                    {:else}
+                      <div class="obs-program-empty">
+                        <span class="obs-eyebrow"><span class="tick"></span> Operator seed</span>
+                        <p>Use this when passive sources are slow or blocked. Hosts are leads, not findings.</p>
+                      </div>
+                    {/if}
+                  </div>
+                </div>
               </section>
             {:else if detailTab === 'console'}
               <section class="obs-detail-section">

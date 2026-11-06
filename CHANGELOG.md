@@ -23,6 +23,12 @@ Notable changes to NetCast3r, newest first.
   `injection_differential_probe`, `upload_policy_probe`, `retest_request`, and
   `evidence_pack`. The tool surface is now 253 typed tools. Each returns
   fingerprints and candidate names as leads, never findings.
+- **Surface seed**: `surface_seed` / `POST
+  /api/v1/missions/{id}/surface/seed` takes a host list the operator already
+  holds (a certificate-transparency export, a programme asset list), enforces
+  mission scope, resolves and optionally probes each name, and writes only
+  observed hosts and endpoints into the evidence graph. The tool surface is
+  now 254 typed tools.
 
 ### Fixed
 
@@ -36,6 +42,13 @@ Notable changes to NetCast3r, newest first.
 - **Verdict-aware deepen**: a stall no longer re-queues an endpoint whose
   recorded probes were `edge-blocked` or `blocked`; the direction names the
   skipped angle and keeps the remaining hints.
+- **Wildcard apex fallback**: a deterministic hunt whose mission target does
+  not resolve now pivots to the highest-value in-scope endpoint from the
+  evidence graph instead of failing on its first request. Every candidate is
+  re-checked against mission scope; an out-of-scope redirect target is skipped.
+- **Certificate-transparency retry**: a transient `crt.sh` gateway error no
+  longer reports an empty surface. The lookup uses a browser-shaped request,
+  a longer timeout, and a second attempt.
 - **Cursor reticle on focus shifts**: the custom cursor hid on window blur,
   leaving `cursor: none` with no reticle after a native select or dialog. It
   now parks only when the tab is actually hidden.

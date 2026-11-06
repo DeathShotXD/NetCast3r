@@ -18,7 +18,7 @@ NEW_TOOLS = {
     "session_cookie_audit", "security_headers_audit", "cors_policy_audit",
     "access_control_compare", "idor_sequence_probe", "input_reflection_probe",
     "injection_differential_probe", "upload_policy_probe", "retest_request",
-    "evidence_pack",
+    "evidence_pack", "surface_seed",
 }
 
 

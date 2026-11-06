@@ -61,6 +61,28 @@ class Web2RootTests(unittest.TestCase):
     def data(response):
         return json.loads(response.body.decode()) if response.body else None
 
+    def test_surface_seed_records_only_in_scope_hosts(self):
+        response = self.call(
+            "POST", f"/api/v1/missions/{self.mission['id']}/surface/seed",
+            {"hosts": ["127.0.0.1", "outside.example.com"], "probe": True,
+             "limit": 10})
+        self.assertEqual(response.status, 200)
+        payload = self.data(response)
+        self.assertEqual(payload["accepted"], 1)
+        self.assertEqual(payload["hosts_rejected"], 1)
+        self.assertGreaterEqual(payload["hosts_live"], 1)
+        hosts = self.server.index.list_graph_nodes(self.mission["id"], kind="host")
+        self.assertTrue(any(node.get("key") == "127.0.0.1" for node in hosts))
+        endpoints = self.server.index.list_graph_nodes(
+            self.mission["id"], kind="endpoint")
+        self.assertTrue(endpoints)
+
+    def test_surface_seed_rejects_an_empty_list(self):
+        response = self.call(
+            "POST", f"/api/v1/missions/{self.mission['id']}/surface/seed",
+            {"hosts": []})
+        self.assertEqual(response.status, 400)
+
     def test_map_surface_records_live_host(self):
         # Passive depth still resolves; standard probes HTTP against the lab.
         result = web2root.map_surface(

@@ -15,6 +15,7 @@ import json
 import random
 import socket
 import string
+import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from urllib.parse import urlsplit
@@ -24,6 +25,13 @@ OTX_URL = ("https://otx.alienvault.com/api/v1/indicators/domain/"
            "{domain}/passive_dns")
 BRUTE_WORKERS = 16
 PROBE_LEN = 20
+# crt.sh sits behind a gateway that sometimes rejects non-browser clients and
+# returns 502 under load. A browser-shaped request with two tries recovers the
+# window instead of silently reporting an empty surface.
+CRT_UA = ("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
+          "(KHTML, like Gecko) Chrome/124.0 Safari/537.36")
+CRT_TIMEOUT = 40.0
+CRT_ATTEMPTS = 2
 
 BUILTIN_WORDS = (
     "www", "api", "app", "apps", "app2", "portal", "dashboard", "console",
@@ -96,28 +104,35 @@ class SubdomainFinder:
     def _crt(self, domain: str) -> set[str]:
         if self.session is None:
             return set()
-        response = self.session.get(CRT_URL.format(domain=domain))
-        if response is None or response.status_code != 200 or not response.text:
-            return set()
-        try:
-            rows = json.loads(response.text)
-        except ValueError:
-            return set()
-        if not isinstance(rows, list):
-            return set()
-        names: set[str] = set()
-        for row in rows:
-            if not isinstance(row, dict):
+        url = CRT_URL.format(domain=domain)
+        for attempt in range(1, CRT_ATTEMPTS + 1):
+            response = self.session.get(
+                url, headers={"User-Agent": CRT_UA, "Accept": "application/json"},
+                timeout=CRT_TIMEOUT)
+            if response is None or response.status_code != 200 or not response.text:
+                if attempt < CRT_ATTEMPTS:
+                    time.sleep(1.5 * attempt)
                 continue
-            for field in ("name_value", "common_name"):
-                for name in str(row.get(field) or "").splitlines():
-                    name = name.strip().lower()
-                    if name.startswith("*."):
-                        name = name[2:]
-                    name = name.rstrip(".")
-                    if name == domain or name.endswith("." + domain):
-                        names.add(name)
-        return names
+            try:
+                rows = json.loads(response.text)
+            except ValueError:
+                return set()
+            if not isinstance(rows, list):
+                return set()
+            names: set[str] = set()
+            for row in rows:
+                if not isinstance(row, dict):
+                    continue
+                for field in ("name_value", "common_name"):
+                    for name in str(row.get(field) or "").splitlines():
+                        name = name.strip().lower()
+                        if name.startswith("*."):
+                            name = name[2:]
+                        name = name.rstrip(".")
+                        if name == domain or name.endswith("." + domain):
+                            names.add(name)
+            return names
+        return set()
 
     def _otx(self, domain: str) -> set[str]:
         if self.session is None:

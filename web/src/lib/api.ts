@@ -208,6 +208,16 @@ export const api = {
     request<ProgramPreview>('POST', `/missions/${id}/program`, body),
   programImports: (id: string) =>
     request<{ items: ProgramImport[] }>('GET', `/missions/${id}/program/imports`),
+  surfaceSeed: (id: string, hosts: string[], probe = true) =>
+    request<{
+      accepted: number;
+      hosts_live: number;
+      hosts_unresolved: number;
+      hosts_rejected: number;
+      live: Array<{ host: string; status: number | null; title: string; url: string }>;
+      rejected: string[];
+      note: string;
+    }>('POST', `/missions/${id}/surface/seed`, { hosts, probe }),
   hostCapabilities: () =>
     request<{ host: string; user: string; tools: Record<string, boolean> }>(
       'GET', '/host/capabilities'),

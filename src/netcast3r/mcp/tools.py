@@ -664,6 +664,15 @@ def web2root_map(ctx: ToolContext, args: dict) -> dict:
                  body=body)
 
 
+def surface_seed(ctx: ToolContext, args: dict) -> dict:
+    body = {"hosts": args.get("hosts") or [],
+            "probe": args.get("probe", True),
+            "limit": args.get("limit", 200)}
+    return _call(ctx, "POST",
+                 f"/api/v1/missions/{args['mission_id']}/surface/seed",
+                 body=body)
+
+
 def schedules_list(ctx: ToolContext, args: dict) -> dict:
     query = {key: args[key] for key in ("status", "limit") if key in args}
     return _call(ctx, "GET", f"/api/v1/missions/{args['mission_id']}/schedules",
@@ -3735,6 +3744,7 @@ _HANDLERS.update({
     "kb_learn": kb_learn,
     "target_profile": target_profile,
     "web2root_map": web2root_map,
+    "surface_seed": surface_seed,
     "schedules_list": schedules_list,
     "schedule_create": schedule_create,
     "schedule_fire": schedule_fire,
@@ -4259,6 +4269,19 @@ TOOLS: tuple[Tool, ...] = (
                             "default": "standard"},
                   "probe_limit": _integer("hosts to probe", 5, 120, 40)},
                  ["mission_id"]), "web2root_map", open_world=True),
+    Tool("surface_seed", "Seed the surface from an operator host list",
+         "Take names the operator already holds (a certificate-transparency "
+         "export, a programme asset list), enforce mission scope, resolve and "
+         "optionally HTTP-probe each one, and write only observed hosts and "
+         "endpoints into the evidence graph. Hosts are leads, never findings.",
+         "medium", "recon",
+         _schema({"mission_id": _string("mission id"),
+                  "hosts": {"type": "array", "items": {"type": "string"},
+                            "minItems": 1, "maxItems": 500,
+                            "description": "hostnames or URLs to seed"},
+                  "probe": _boolean("HTTP-probe each resolved host", True),
+                  "limit": _integer("hosts to accept", 1, 500, 200)},
+                 ["mission_id", "hosts"]), "surface_seed", open_world=True),
     Tool("schedules_list", "List mission schedules",
          "List Once/Weekly/verify-again schedules for a mission.",
          "low", "missions",
