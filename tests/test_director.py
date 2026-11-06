@@ -162,6 +162,30 @@ class DirectorTests(unittest.TestCase):
         self.assertEqual(nxt["action"], "start")
         self.assertEqual(nxt["mission_id"], mission["id"])
 
+    def test_deepen_direction_forces_raw_capture(self):
+        mission = self.mission("deepen-raw")
+        self.director._queue_deepen(mission["id"], {})
+        queued = self.server.index.list_directions(mission["id"], status="queued")
+        body = next(str(d.get("body") or "") for d in queued
+                    if "Deepen continuous hunt" in str(d.get("body") or ""))
+        self.assertIn("raw request", body.lower())
+
+    def test_spa_shell_signal_steers_deepen_to_the_js_bundle(self):
+        mission = self.mission("deepen-spa")
+        self.server.index.add_agent_note(
+            mission["id"], "hunt.map", "Surface map",
+            json.dumps({"seed_host": "apply.example.gov", "spa_shell": True,
+                        "shell_bytes": 531}))
+        detected, size = self.director._spa_shell_signal(mission["id"])
+        self.assertTrue(detected)
+        self.assertEqual(size, 531)
+        self.director._queue_deepen(mission["id"], {})
+        queued = self.server.index.list_directions(mission["id"], status="queued")
+        body = next(str(d.get("body") or "") for d in queued
+                    if "Deepen continuous hunt" in str(d.get("body") or ""))
+        self.assertIn("JS bundle", body)
+        self.assertIn("531", body)
+
     def test_legacy_parks_are_cleared_on_tick(self):
         mission = self.mission("was-parked")
         state = self.server.index.ensure_director_state()
@@ -274,6 +298,27 @@ class DirectorTests(unittest.TestCase):
         self.assertEqual(decision["requested_mode"], "autopilot")
         self.assertEqual(decision["mode"], "hunt")
         self.assertIn("model gate", decision["model_gate"])
+
+    def test_the_gate_uses_the_newest_failure_regardless_of_log_order(self):
+        # A success between two failure bursts must not keep the gate open.
+        now = time.time()
+
+        def at(ago: int) -> str:
+            return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(now - ago))
+
+        rows = [{"ts": at(500), "kind": "brain-wait", "data": {},
+                 "message": "no model answered: ConnectError", "run_id": "",
+                 "mission_id": ""},
+                {"ts": at(300), "kind": "brain", "data": {"model": "m"},
+                 "message": "", "run_id": "", "mission_id": ""}]
+        rows.extend({"ts": at(200 - index), "kind": "brain-wait", "data": {},
+                     "message": "no model answered: ConnectError", "run_id": "",
+                     "mission_id": ""} for index in range(8))
+        # Ascending in time, which the previous max() selection mishandled.
+        self.server.index.list_director_log = lambda limit=250: list(rows)
+        health = self.director._model_health()
+        self.assertFalse(health["available"])
+        self.assertGreaterEqual(health["hard_failures"], 8)
 
     def test_free_tier_429s_do_not_close_the_moe_gate(self):
         mission = self.mission("soft")

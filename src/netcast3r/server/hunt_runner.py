@@ -14,6 +14,7 @@ from __future__ import annotations
 import json
 import threading
 import time
+from collections import Counter
 from concurrent.futures import ThreadPoolExecutor
 from urllib.parse import urlsplit
 
@@ -137,6 +138,22 @@ class HuntRunner:
                    (headers.get("server"), headers.get("x-powered-by"),
                     headers.get("via"), title) if value]
         signals = [value for value in signals if value]
+        workflow_inventory: dict = {}
+        try:
+            workflow_inventory = self._call(registry, "web_surface_inventory", {
+                "target": target, "mission_id": mission_id,
+                "max_bytes": 131072, "timeout": 12})
+            if workflow_inventory.get("object_candidates"):
+                signals.extend(["api", "idor", "bola"])
+            if workflow_inventory.get("ssrf_candidates"):
+                signals.append("ssrf")
+            for form in workflow_inventory.get("forms") or []:
+                action = str(form.get("action") or "").lower()
+                if any(token in action for token in (
+                        "login", "signin", "reset", "forgot", "oauth", "register")):
+                    signals.extend(["auth", "ato", "session"])
+        except RuntimeError:
+            workflow_inventory = {}
         # Enrich signals from the evidence graph so continuous hunts rotate
         # through auth, API, and tech-specific angles instead of two staples.
         graph_paths: list[str] = []
@@ -174,6 +191,7 @@ class HuntRunner:
             "/login", "/signin", "/register", "/signup", "/auth", "/oauth",
             "/api", "/api/", "/admit", "/result", "/results", "/dashboard",
             "/apply", "/account", "/profile", "/admin",
+            "/forgot-password", "/reset-password", "/upload",
         ]
         # Rotate a few graph endpoints into the safe surface pass.
         for path in graph_paths:
@@ -238,6 +256,14 @@ class HuntRunner:
                 "title": title,
                 "server": headers.get("server"),
                 "tls_insecure": bool(probe.get("tls_insecure")),
+                "workflow_inventory": {
+                    "counts": workflow_inventory.get("counts") or {},
+                    "parameters": (workflow_inventory.get("parameters") or [])[:40],
+                    "object_candidates": (
+                        workflow_inventory.get("object_candidates") or [])[:20],
+                    "ssrf_candidates": (
+                        workflow_inventory.get("ssrf_candidates") or [])[:20],
+                },
                 "surface": surface[:24],
                 "siblings": sibling_hits[:12],
             }
@@ -252,6 +278,12 @@ class HuntRunner:
         # De-dupe signals after surface enrichment.
         seen_sig = set()
         signals = [s for s in signals if not (s in seen_sig or seen_sig.add(s))]
+
+        # A single-page app answers every route with one small static shell, so
+        # a 200 on /admit or /login is reachability of the SPA, not a live
+        # object or auth endpoint. Detect it so leads push the real applicant
+        # API (referenced in the JS bundle) instead of guessing shell routes.
+        spa_shell, shell_bytes = _detect_spa_shell(surface)
 
         emit(Event(type="log", agent="hunt", stage="surface",
                    payload={"text": "comparing path encodings" }))
@@ -291,6 +323,19 @@ class HuntRunner:
                 "why": (c.get("why") or [])[:4],
                 "first_steps": (c.get("steps") or [])[:3],
             } for c in (chains.get("items") or [])[:4]]
+            if spa_shell:
+                critical_chains_to_run = [
+                    (f"SPA shell: every route returns a {shell_bytes}-byte shell "
+                     "- parse the JS bundle for the real applicant API base"),
+                    "BOLA/IDOR on the real /api object endpoint (swap the id)",
+                    "OAuth redirect_uri / state abuse -> code or token theft",
+                ]
+            else:
+                critical_chains_to_run = [
+                    "BOLA on admit/result object (swap the applicant/roll id)",
+                    "Dual-account IDOR on an API object by id (two sessions)",
+                    "OAuth redirect_uri / state abuse -> code or token theft",
+                ]
             map_body = {
                 "seed_host": host,
                 "path_map": [f"{r['host']}{r['path']} [{r['kind']}] {r['status']}"
@@ -299,11 +344,9 @@ class HuntRunner:
                 "object_api_surfaces": object_rows,
                 "siblings": sibling_table,
                 "suggested_chains": suggested_chains,
-                "critical_chains_to_run": [
-                    "BOLA on admit/result object (swap the applicant/roll id)",
-                    "Dual-account IDOR on an API object by id (two sessions)",
-                    "OAuth redirect_uri / state abuse -> code or token theft",
-                ],
+                "spa_shell": bool(spa_shell),
+                "shell_bytes": int(shell_bytes),
+                "critical_chains_to_run": critical_chains_to_run,
             }
             self.server.index.add_agent_note(
                 mission_id, "hunt.map",
@@ -439,6 +482,68 @@ class HuntRunner:
                  f"without the owner's proof"),
                 f"https://{login['host']}/")
 
+        # 4) Password-reset token abuse: a distinct ATO angle from session
+        #    fixation, seeded whenever a reset/forgot or login surface answers.
+        reset = _anchor(auth_surfaces, "reset", "forgot", "recover",
+                        "password") or login
+        if reset:
+            loc = f"{reset['host']}{reset['path']}"
+            _open_lead(
+                (f"Password-reset token abuse on {loc}: Host-header or "
+                 f"predictable token leaks the reset link to an attacker"),
+                "auth-reset-token",
+                (f"{reset['path']} answered {reset['status']} on "
+                 f"{reset['host']}; test Host/X-Forwarded-Host in the reset "
+                 f"mail link and token entropy/reuse"),
+                (f"raw req/res where a reset for account B is driven to an "
+                 f"attacker-controlled link or a guessed token, taking over B"),
+                f"https://{reset['host']}/")
+
+        # 5) SQLi authentication bypass on a login surface (raw differential).
+        if login:
+            loc = f"{login['host']}{login['path']}"
+            _open_lead(
+                (f"SQLi auth bypass on {loc}: an injection in the login "
+                 f"parameter bypasses authentication or errors the database"),
+                "auth-sqli-login-bypass",
+                (f"{login['path']} answered {login['status']} on "
+                 f"{login['host']}; send a baseline vs injection differential "
+                 f"on the username/password field"),
+                (f"raw req/res where an injection payload on {login['path']} "
+                 f"bypasses auth or returns a SQL error the baseline does not"),
+                f"https://{login['host']}/")
+
+        # 6) Upload policy abuse when an upload surface answers.
+        upload = _anchor(object_surfaces + api_surfaces,
+                         *_UPLOAD_TOKENS)
+        if upload:
+            loc = f"{upload['host']}{upload['path']}"
+            _open_lead(
+                (f"Unrestricted upload on {loc}: extension/MIME handling lets "
+                 f"an inert canary be stored and served dangerously"),
+                "upload-policy",
+                (f"{upload['path']} answered {upload['status']} on "
+                 f"{upload['host']}; probe extension and content-type handling "
+                 f"with inert canaries"),
+                (f"raw upload-policy response showing a canary stored and "
+                 f"served with an executable or dangerous content-type"),
+                f"https://{upload['host']}/")
+
+        # 7) SPA shell: path-guessing is settled, so force the real applicant
+        #    API out of the JS bundle before any further object probing.
+        if spa_shell:
+            _open_lead(
+                (f"Applicant API discovery on {host}: the SPA shell hides the "
+                 f"real object endpoints behind a JS bundle"),
+                "spa-api-extract",
+                (f"{host} returns an identical {shell_bytes}-byte shell for "
+                 f"every route and /api/* 404s; the real applicant API base is "
+                 f"referenced inside the JS bundle, not at guessed paths"),
+                (f"raw req/res against a real /api object endpoint parsed from "
+                 f"the bundle that returns applicant data and enables a "
+                 f"BOLA/IDOR test"),
+                f"https://{host}/")
+
         for item in ranked:
             if cancel.is_set() or len(hypotheses) >= 5:
                 break
@@ -490,6 +595,7 @@ class HuntRunner:
             "mode": "hunt", "target": target, "title": title,
             "pages": 1 + len(surface), "signals": len(signals),
             "endpoints": len(variants), "leads": len(hypotheses),
+            "parameters": len(workflow_inventory.get("parameters") or []),
             "techniques": len(techniques.get("items") or []),
             "chains": len(chains.get("items") or []),
             "findings": 0,
@@ -590,10 +696,40 @@ class HuntRunner:
 
 _AUTH_TOKENS = ("login", "signin", "sign-in", "register", "signup", "sign-up",
                 "auth", "oauth", "oidc", "sso", "callback", "consent", "token",
-                "session")
+                "session", "reset", "forgot", "recover", "password")
 _OBJECT_TOKENS = ("admit", "result", "profile", "account", "dashboard",
                   "apply", "candidate", "application", "card", "hall-ticket")
 _API_TOKENS = ("/api", "graphql", "/v1", "/v2", "/rest")
+_UPLOAD_TOKENS = ("upload", "import", "attachment", "document", "/file")
+_RESET_TOKENS = ("reset", "forgot", "recover", "password")
+
+
+def _detect_spa_shell(surface: list) -> tuple[bool, int]:
+    """Spot a single-page-app catch-all shell in the surface pass.
+
+    Returns ``(True, shell_bytes)`` when at least four distinct routes answer
+    200 with the same small body size, which means path-guessing is settled and
+    the real object/auth API lives behind the JS bundle, not these routes.
+    """
+    sizes = [int(row.get("bytes") or 0) for row in (surface or [])
+             if row.get("status") == 200 and isinstance(row.get("bytes"), int)]
+    sizes = [size for size in sizes if size > 0]
+    if len(sizes) < 4:
+        return False, 0
+    size, freq = Counter(sizes).most_common(1)[0]
+    if freq >= 4 and size <= 8192:
+        return True, int(size)
+    return False, 0
+
+
+def _is_upload_path(path: str) -> bool:
+    low = str(path or "").lower()
+    return any(token in low for token in _UPLOAD_TOKENS)
+
+
+def _is_reset_path(path: str) -> bool:
+    low = str(path or "").lower()
+    return any(token in low for token in _RESET_TOKENS)
 
 
 def _is_live(status) -> bool:

@@ -245,7 +245,11 @@ class ServerTests(unittest.TestCase):
 
     def test_finding_artifacts_round_trip(self):
         finding = self.data(self.call("POST", "/api/v1/findings", body={
-            "title": "artifact test", "severity": "medium"}))
+            "title": "artifact test", "severity": "medium",
+            "evidence": ("GET /api/orders/7 returned another tenant's order JSON; "
+                         "Authorization and cookie replayed from account A.")}))
+        self.assertIsInstance(finding, dict)
+        self.assertIn("id", finding)
         response = self.call("POST", f"/api/v1/findings/{finding['id']}/artifacts",
                              body={"name": "../../poc.log", "content": "line one\nline two\n",
                                    "content_type": "text/plain"})

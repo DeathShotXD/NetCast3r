@@ -211,7 +211,7 @@ netcast3r mcp --print-config    # optional: paste into opencode.jsonc
 opencode mcp list
 ```
 
-The server has 234 typed tools with risk tiers, scope enforcement, single-use
+The server has 253 typed tools with risk tiers, scope enforcement, single-use
 approvals, rate limits, and a full tool-call audit, plus disposable inboxes,
 OAST callbacks, named auth profiles, a scoped authenticated `http_request`, a
 path-variant differential, run-to-run surface diffing, local reverse-engineering
@@ -307,6 +307,7 @@ required before a candidate is marked corroborated.
 - [Web2root](docs/WEB2ROOT.md) - single-seed surface map through foothold and report
 - [Brain](docs/BRAIN.md) - main brain loop, spectate, and mid-hunt instruct
 - [Leads and evidence](docs/LEADS.md) - how to inspect a hypothesis, its tool calls, and its verdict
+- [Evidence verdicts](docs/VERDICTS.md) - supported, proven, redirect-only, and edge-blocked, and what each proves
 - [Regression bench](docs/BENCH.md) - the offline corpus, precision/recall, and the release gate
 - [Host](docs/HOST.md) - the shell and filesystem, and the rules that gate them
 - [Main brain](docs/BRAIN.md) - the top-level reasoner and how to steer it

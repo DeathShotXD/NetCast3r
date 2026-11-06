@@ -832,6 +832,59 @@ body {
   mix-blend-mode: screen;
 }
 
+/* When the net overlay is paused, the native pointer MUST come back.
+   Hiding .nc-canvas while html.nc-live still forces cursor:none leaves the
+   operator with no cursor at all (the click/drop glitch). Helix stays out of
+   this list on purpose: its panel is raised above the canvas; suppressing the
+   whole net while Helix is open stranded the reticle. */
+html.nc-live:is(
+    .nc-form-open,
+    :has(select:focus),
+    :has(select:open),
+    :has(.obs-drawer),
+    :has(.obs-modal-veil),
+    :has(.palette-veil),
+    :has(dialog.obs-confirm:open)
+  ),
+html.nc-live:is(
+    .nc-form-open,
+    :has(select:focus),
+    :has(select:open),
+    :has(.obs-drawer),
+    :has(.obs-modal-veil),
+    :has(.palette-veil),
+    :has(dialog.obs-confirm:open)
+  ) * {
+  cursor: auto !important;
+}
+
+html.nc-live:is(
+    .nc-form-open,
+    :has(select:focus),
+    :has(select:open),
+    :has(.obs-drawer),
+    :has(.obs-modal-veil),
+    :has(.palette-veil),
+    :has(dialog.obs-confirm:open)
+  )
+  .nc-canvas {
+  opacity: 0 !important;
+  visibility: hidden !important;
+}
+
+html.nc-live:is(
+    .nc-form-open,
+    :has(select:focus),
+    :has(select:open),
+    :has(.obs-drawer),
+    :has(.obs-modal-veil),
+    :has(.palette-veil),
+    :has(dialog.obs-confirm:open)
+  )
+  .nc-tag {
+  display: none !important;
+}
+
 .obs-net-toggle {
   display: inline-flex;
   height: 28px;
@@ -2379,14 +2432,16 @@ html.nc-native .nc-tag {
 }
 
 .obs-finding-title {
-  max-width: 340px;
+  max-width: min(340px, 36vw);
+  display: -webkit-box;
   overflow: hidden;
   color: var(--obs-text);
-  font-size: 9.5px;
+  font-size: 11px;
   font-weight: 500;
   line-height: 1.35;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow-wrap: anywhere;
 }
 
 .obs-finding-sub {
@@ -3130,26 +3185,34 @@ html.nc-native .nc-tag {
 }
 
 .obs-filter-bar {
+  position: relative;
+  z-index: 1002;
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   flex-wrap: wrap;
-  margin-bottom: 12px;
+  margin-bottom: 14px;
+  padding: 10px 12px;
+  isolation: isolate;
+  border: 1px solid var(--obs-line);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--obs-panel) 96%, #000 4%);
+  box-shadow: 0 10px 28px -22px rgba(0, 0, 0, 0.85);
 }
 
 .obs-filter {
   display: inline-flex;
-  height: 27px;
+  min-height: 30px;
   align-items: center;
   gap: 7px;
-  padding: 0 10px;
+  padding: 0 11px;
   border: 1px solid var(--obs-line);
   border-radius: 7px;
-  background: var(--obs-panel);
+  background: var(--obs-panel-2);
   color: var(--obs-muted);
   font-family: var(--mono);
-  font-size: 8.5px;
-  letter-spacing: 0.03em;
+  font-size: 9px;
+  letter-spacing: 0.04em;
   transition: background 130ms var(--ease), border-color 130ms var(--ease), color 130ms var(--ease);
 }
 
@@ -3332,12 +3395,16 @@ html.nc-native .nc-tag {
 }
 
 .obs-mission-title {
+  display: -webkit-box;
   margin: 12px 0 0;
+  overflow: hidden;
   color: var(--obs-text);
   font-size: 15px;
   font-weight: 600;
   letter-spacing: -0.025em;
-  line-height: 1.2;
+  line-height: 1.25;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
 }
 
 .obs-mission-target {
@@ -3451,19 +3518,28 @@ html.nc-native .nc-tag {
 }
 
 .obs-mission-detail-title {
+  display: -webkit-box;
   margin: 10px 0 0;
+  overflow: hidden;
   color: var(--obs-text);
   font-size: 19px;
   font-weight: 600;
   letter-spacing: -0.03em;
-  line-height: 1.15;
+  line-height: 1.2;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow-wrap: anywhere;
 }
 
 .obs-mission-detail-objective {
+  display: -webkit-box;
   margin: 9px 0 0;
+  overflow: hidden;
   color: var(--obs-muted);
   font-size: 9.5px;
   line-height: 1.6;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 4;
 }
 
 .obs-mission-detail-actions {
@@ -3616,7 +3692,8 @@ html.nc-native .nc-tag {
 .obs-modal-veil {
   position: fixed;
   inset: 0;
-  z-index: 60;
+  /* Above .nc-canvas (1000): forms and confirms must stay readable. */
+  z-index: 1120;
   display: grid;
   place-items: center;
   padding: 20px;
@@ -3762,6 +3839,11 @@ html.nc-native .nc-tag {
 
 .obs-autonomy-option:hover {
   border-color: var(--obs-line-strong);
+}
+
+.obs-autonomy-option:focus-visible {
+  outline: none;
+  box-shadow: var(--obs-focus);
 }
 
 .obs-autonomy-option.active {
@@ -7178,6 +7260,58 @@ html.nc-native .nc-tag {
   line-height: 1.5;
 }
 
+.obs-lead-verdict {
+  margin-top: 10px;
+  border: 1px solid var(--obs-line);
+  border-left: 3px solid var(--obs-violet-3);
+  border-radius: 8px;
+  background: var(--obs-panel-3);
+  padding: 10px 12px;
+}
+
+.obs-lead-verdict[data-verdict="supported"],
+.obs-lead-verdict[data-verdict="proven"] {
+  border-left-color: var(--obs-acid);
+}
+
+.obs-lead-verdict[data-verdict="edge-blocked"],
+.obs-lead-verdict[data-verdict="blocked"] {
+  border-left-color: var(--obs-orange);
+}
+
+.obs-lead-verdict[data-verdict="redirect-only"],
+.obs-lead-verdict[data-verdict="callback-seen"] {
+  border-left-color: #19d3da;
+}
+
+.obs-lead-verdict-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-bottom: 6px;
+}
+
+.obs-lead-verdict p {
+  margin: 0;
+  color: var(--obs-text-2);
+  font-size: 10.5px;
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+}
+
+.obs-lead-verdict-next {
+  margin-top: 6px !important;
+  color: var(--obs-muted) !important;
+}
+
+.obs-lead-verdict-next strong {
+  color: var(--obs-text);
+  font-family: var(--mono);
+  font-size: 8.5px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
 .obs-lead-counts {
   display: flex;
   flex-wrap: wrap;
@@ -7474,6 +7608,8 @@ html.nc-native .nc-tag {
   --obs-elev-2: 0 1px 0 rgba(255, 255, 255, 0.04), 0 18px 50px rgba(0, 0, 0, 0.42);
   --obs-elev-3: 0 24px 80px rgba(0, 0, 0, 0.58), 0 0 0 1px rgba(255, 255, 255, 0.03) inset;
   --obs-focus: 0 0 0 2px var(--obs-bg), 0 0 0 4px rgba(200, 248, 26, 0.55);
+  --obs-z-canvas: 1000;
+  --obs-z-overlay: 1120;
   --obs-dock-clearance: 92px;
   --obs-glass: color-mix(in srgb, var(--obs-panel) 88%, transparent);
   --obs-glass-2: color-mix(in srgb, var(--obs-panel-2) 92%, transparent);
@@ -7921,7 +8057,7 @@ html.nc-native .nc-tag {
   position: fixed;
   right: 18px;
   bottom: calc(18px + var(--obs-dock-clearance));
-  z-index: 55;
+  z-index: 1130;
   display: flex;
   width: min(360px, calc(100vw - 28px));
   flex-direction: column;
@@ -8016,6 +8152,7 @@ html.nc-native .nc-tag {
 
 /* palette sections */
 .palette-veil {
+  z-index: var(--obs-z-overlay);
   animation: obs-veil-in 160ms var(--ease) both;
 }
 
@@ -8058,10 +8195,19 @@ html.nc-native .nc-tag {
 
 /* findings / new op obs pages */
 .obs-findings-tools {
+  position: relative;
+  z-index: 1002;
   display: flex;
   flex-wrap: wrap;
   align-items: flex-end;
-  gap: 10px;
+  gap: 12px;
+  margin-bottom: 14px;
+  padding: 12px 14px;
+  isolation: isolate;
+  border: 1px solid var(--obs-line);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--obs-panel) 96%, #000 4%);
+  box-shadow: 0 10px 28px -22px rgba(0, 0, 0, 0.85);
 }
 
 .obs-findings-tools label {
@@ -8071,6 +8217,93 @@ html.nc-native .nc-tag {
 
 .obs-findings-tools .obs-eyebrow {
   margin: 0;
+}
+
+.obs-findings-tools .obs-field {
+  min-height: 34px;
+  padding: 8px 10px;
+  background: var(--obs-panel-2);
+  color: var(--obs-text);
+  accent-color: var(--obs-acid);
+}
+
+.obs-findings-tools input.obs-field {
+  width: min(260px, 70vw);
+}
+
+.obs-findings-tools select.obs-field {
+  width: 170px;
+  cursor: pointer;
+}
+
+.obs-findings-tools select.obs-field:focus {
+  border-color: var(--obs-line-acid);
+  box-shadow: 0 0 0 1px rgba(200, 248, 26, 0.22);
+  outline: none;
+}
+
+.obs-findings-tools select.obs-field option {
+  background: #0c0e08;
+  color: var(--obs-text);
+}
+
+.obs-findings-tools select.obs-field option:checked,
+.obs-findings-tools select.obs-field option:hover {
+  background: color-mix(in srgb, var(--obs-acid) 22%, #0c0e08);
+  color: var(--obs-acid);
+}
+
+/* Native select menus (modal composer, Helix target, etc.) */
+select.obs-field,
+.nc-brain-target {
+  accent-color: var(--obs-acid);
+  color: var(--obs-text);
+}
+
+select.obs-field option,
+.nc-brain-target option {
+  background: #0c0e08;
+  color: var(--obs-text);
+}
+
+select.obs-field option:checked,
+.nc-brain-target option:checked {
+  background: color-mix(in srgb, var(--obs-acid) 22%, #0c0e08);
+  color: var(--obs-acid);
+}
+
+.obs-findings-title {
+  max-width: min(420px, 36vw);
+}
+
+.obs-findings-title-text {
+  display: -webkit-box;
+  overflow: hidden;
+  color: var(--obs-text);
+  font-size: 12.5px;
+  line-height: 1.35;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  white-space: normal;
+}
+
+.obs-findings-type {
+  display: block;
+  overflow: hidden;
+  margin-top: 3px;
+  color: var(--obs-muted);
+  font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.obs-findings-value {
+  max-width: 220px;
+  overflow: hidden;
+  color: var(--obs-muted);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .obs-findings-table-wrap {
@@ -8125,7 +8358,7 @@ html.nc-native .nc-tag {
 .obs-drawer-veil {
   position: fixed;
   inset: 0;
-  z-index: 42;
+  z-index: 1100;
   border: 0;
   background: rgba(0, 0, 0, 0.58);
   backdrop-filter: blur(3px);
@@ -8135,7 +8368,7 @@ html.nc-native .nc-tag {
 .obs-drawer {
   position: fixed;
   inset: 0 0 0 auto;
-  z-index: 46;
+  z-index: 1110;
   display: flex;
   width: min(460px, 100vw);
   flex-direction: column;
@@ -8389,6 +8622,12 @@ textarea:focus-visible, [tabindex]:focus-visible, summary:focus-visible {
 .obs-empty-error .obs-empty-icon { border-color: rgba(217,112,168,.4); color: var(--obs-red, #d970a8); }
 
 /* Live stream hierarchy: thinking / tool / evidence / log */
+.obs-live-filter-bar {
+  position: relative;
+  z-index: 2;
+  border-bottom: 1px solid var(--obs-line);
+  background: color-mix(in srgb, var(--obs-panel) 94%, #000 6%);
+}
 .obs-live-legend { display:flex; flex-wrap:wrap; gap:6px 14px; align-items:center; padding:8px 14px; border-bottom:1px solid var(--obs-line); font-family:var(--mono); font-size:9px; letter-spacing:.1em; text-transform:uppercase; color:var(--obs-faint); }
 .obs-live-legend span { display:inline-flex; align-items:center; gap:6px; }
 .obs-live-legend i { width:7px; height:7px; border-radius:50%; flex:none; }

@@ -636,6 +636,28 @@ export interface HypothesisNote {
   matched_terms: string[];
 }
 
+export interface EvidenceProbe {
+  at: string;
+  tool: string;
+  target: string;
+  status: number;
+  outcome: string;
+  detail: string;
+}
+
+export interface EvidenceVerdict {
+  technique: string;
+  verdict: string;
+  proves_technique: boolean;
+  summary: string;
+  counts: Record<string, number>;
+  probes: EvidenceProbe[];
+  next_step: string;
+  reportability?: string;
+  related_technique?: string;
+  note?: string;
+}
+
 export interface HypothesisEvidence {
   hypothesis: Hypothesis;
   progress: string;
@@ -653,6 +675,7 @@ export interface HypothesisEvidence {
   graph_nodes: GraphNode[];
   graph_edges: Array<Record<string, unknown>>;
   finding: Finding | null;
+  verdict: EvidenceVerdict | null;
   note: string;
 }
 

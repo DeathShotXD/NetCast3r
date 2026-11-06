@@ -649,7 +649,11 @@ class Director:
                     soft_failures += 1
                 else:
                     hard_failures += 1
-                if age > wait_at:
+                # ``age`` grows with time, so the *newest* failure has the
+                # smallest age. Pick it explicitly instead of relying on the
+                # row order: a success between two failure bursts used to keep
+                # the gate open forever because the oldest failure won.
+                if wait_at < 0 or age < wait_at:
                     wait_at = age
                     wait_text = message[:200]
         # Soft 429s are MoE rotation noise - never close the gate on them alone.
@@ -716,6 +720,36 @@ class Director:
                 "graph_nodes": graph_nodes, "graph_edges": graph_edges,
                 "covered": covered}
 
+    def _spa_shell_signal(self, mission_id: str) -> tuple[bool, int]:
+        """Read the latest hunt.map note for an SPA-shell signal.
+
+        When set, path-guessing is settled and the deepen direction should
+        steer to the JS bundle instead of more route guessing.
+        """
+        try:
+            notes = self.server.index.list_agent_notes(mission_id, limit=50)
+        except Exception:  # noqa: BLE001
+            return False, 0
+        # list_agent_notes returns oldest-first, so the last match is newest.
+        latest = None
+        for note in notes:
+            if str(note.get("kind") or "") == "hunt.map":
+                latest = note
+        if not isinstance(latest, dict):
+            return False, 0
+        body = latest.get("body")
+        if isinstance(body, str) and body.strip():
+            try:
+                body = json.loads(body)
+            except (json.JSONDecodeError, ValueError):
+                return False, 0
+        if not isinstance(body, dict) or not body.get("spa_shell"):
+            return False, 0
+        try:
+            return True, int(body.get("shell_bytes") or 0)
+        except (TypeError, ValueError):
+            return True, 0
+
     def _queue_deepen(self, mission_id: str, mstate: dict) -> None:
         """When a mission stalls, push a deeper angle instead of stopping."""
         hints: list[str] = []
@@ -731,12 +765,27 @@ class Director:
         if not hints:
             hints = ["auth surfaces", "API object IDs", "OAuth callbacks",
                      "cloud metadata SSRF only after URL sinks are mapped"]
-        body = (
-            "Deepen continuous hunt (stall pivot): probe distinct angles on "
-            + "; ".join(hints[:5])
-            + ". Do not recreate existing open hypotheses. Prefer coverage "
-            "gaps, auth/IDOR/OAuth, and PoC-gated promotion. Never stop."
-        )
+        spa_shell, shell_bytes = self._spa_shell_signal(mission_id)
+        if spa_shell:
+            # Path-guessing is settled: the stall is the SPA catch-all, so the
+            # deeper angle is the real applicant API, not more shell routes.
+            body = (
+                "Deepen continuous hunt (stall pivot): path-guessing is "
+                f"exhausted - every route returns the {shell_bytes}-byte SPA "
+                "shell. Parse the JS bundle for the real applicant API base, "
+                "then run BOLA/IDOR on a real /api object endpoint and capture "
+                "the raw request AND response before claiming any support. Do "
+                "not recreate existing open hypotheses. Never stop."
+            )
+        else:
+            body = (
+                "Deepen continuous hunt (stall pivot): probe distinct angles on "
+                + "; ".join(hints[:5])
+                + ". Capture the raw request AND response for every supported "
+                "lead before promotion. Do not recreate existing open "
+                "hypotheses. Prefer coverage gaps, auth/IDOR/OAuth, and "
+                "PoC-gated promotion. Never stop."
+            )
         try:
             existing = self.server.index.list_directions(
                 mission_id, status="queued", limit=20)

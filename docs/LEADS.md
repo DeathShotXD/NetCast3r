@@ -27,11 +27,27 @@ The same record is available at:
 - `GET /api/v1/hypotheses/{id}`
 - `GET /api/v1/hypotheses/{id}/evidence`
 - `GET /api/v1/hypotheses/{id}/evidence.md` - a Markdown case file with the
-  exact tool calls, observations, graph nodes, and proof criterion
+  exact tool calls, observations, graph nodes, proof criterion, and verdict
 - MCP `hypothesis_get`, `hypothesis_evidence`
 
 The Leads detail panel has **Download brief**, which saves that Markdown file
 for review or attachment to a report draft.
+
+## The verdict
+
+Every lead detail carries a verdict read from the recorded responses, not from
+a model's prose. The block sits above the evidence counts:
+
+- `supported` / `proven` - the body or `Location` header itself is the proof;
+- `redirect-only` - the target redirected a client, which is an open redirect,
+  not server-side fetching;
+- `edge-blocked` - a WAF or CDN stopped every probe; the application never saw
+  the payload;
+- `inconclusive` - responses exist but none decides the question;
+- `untested` - no probe is recorded.
+
+A verdict never changes the lead status and never promotes anything. See
+[docs/VERDICTS.md](VERDICTS.md) for the full rules and the per-probe labels.
 
 ## What "open" means
 

@@ -510,6 +510,9 @@
 
     <header
       class="nc-brain-head"
+      role="toolbar"
+      tabindex="-1"
+      aria-label="Brain dock controls and drag handle"
       onpointerdown={onDragStart}
       onpointermove={onDragMove}
       onpointerup={onDragEnd}
@@ -798,7 +801,10 @@
         : 'standby'}
   </span>
   {#if latest && !open}
-    <span class="nc-brain-pill-focus">
+    <span
+      class="nc-brain-pill-focus"
+      title={latest.role === 'helix' ? latest.focus || 'hail' : latest.focus || 'reasoning'}
+    >
       {latest.role === 'helix' ? latest.focus || 'hail' : latest.focus || 'reasoning'}
     </span>
   {/if}
@@ -808,7 +814,8 @@
 <style>
   .nc-brain-panel {
     position: fixed;
-    z-index: 46;
+    /* Above .nc-canvas (1000) so Helix chat stays readable under the net. */
+    z-index: 1050;
     display: flex;
     flex-direction: column;
     min-width: 380px;
@@ -868,7 +875,7 @@
   }
 
   .nc-brain-panel.fullscreen {
-    z-index: 60;
+    z-index: 1140;
     border-radius: 14px;
   }
 
@@ -1418,10 +1425,11 @@
     font-size: 12.5px;
   }
 
-  .nc-brain-input:focus,
-  .nc-brain-target:focus {
+  .nc-brain-input:focus-visible,
+  .nc-brain-target:focus-visible {
+    outline: none;
     border-color: rgba(200, 248, 26, 0.35);
-    box-shadow: 0 0 0 3px rgba(200, 248, 26, 0.08);
+    box-shadow: var(--obs-focus);
   }
 
   .nc-brain-send {
@@ -1467,7 +1475,7 @@
     position: fixed;
     left: 50%;
     bottom: 18px;
-    z-index: 45;
+    z-index: 1050;
     display: inline-flex;
     align-items: center;
     gap: 9px;

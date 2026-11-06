@@ -224,7 +224,13 @@ export class Netcaster {
 
   private onPointerMove = (event: PointerEvent) => this.pointerMove(event);
   private onPointerDown = (event: PointerEvent) => this.pointerDown(event);
-  private onPointerLeave = () => this.hide();
+  private onPointerLeave = (event: PointerEvent) => this.pointerLeave(event);
+  private onVisibility = () => {
+    // Park only when the tab is actually hidden. Window blur used to call
+    // hide() and kill nc-live on ordinary focus shifts (native selects,
+    // dialogs), which left cursor:none with no reticle until the next move.
+    if (document.hidden) this.hide();
+  };
   private onScroll = () => this.queueScan();
   private onKeyDown = () => {
     this.keyboard = true;
@@ -308,22 +314,42 @@ export class Netcaster {
   private bind(): void {
     window.addEventListener('pointermove', this.onPointerMove, { passive: true });
     window.addEventListener('pointerdown', this.onPointerDown, { passive: true });
-    window.addEventListener('pointerleave', this.onPointerLeave, { passive: true });
-    window.addEventListener('blur', this.onPointerLeave);
+    // Leave on the documentElement: window blur/leave was too eager and
+    // dropped the custom cursor mid-click.
+    document.documentElement.addEventListener('pointerleave', this.onPointerLeave, {
+      passive: true
+    });
+    document.addEventListener('visibilitychange', this.onVisibility);
     window.addEventListener('scroll', this.onScroll, { passive: true, capture: true });
     window.addEventListener('resize', this.onResize, { passive: true });
     window.addEventListener('keydown', this.onKeyDown, { passive: true, capture: true });
     document.addEventListener('focusin', this.onFocusIn, true);
     document.addEventListener('focusout', this.onFocusOut, true);
-    this.observer = new MutationObserver(() => this.queueScan());
+    this.observer = new MutationObserver((mutations) => {
+      // Ignore our own catch outline / tag toggles so a grab does not thrash.
+      for (const mutation of mutations) {
+        if (mutation.type !== 'childList') continue;
+        const nodes = [...mutation.addedNodes, ...mutation.removedNodes];
+        const onlySelf = nodes.length > 0 && nodes.every(
+          (node) =>
+            node instanceof Element &&
+            (node.classList.contains('nc-tag') ||
+              node.classList.contains('nc-skip') ||
+              node === this.canvas)
+        );
+        if (onlySelf) continue;
+        this.queueScan();
+        return;
+      }
+    });
     this.observer.observe(document.body, { childList: true, subtree: true });
   }
 
   private unbind(): void {
     window.removeEventListener('pointermove', this.onPointerMove);
     window.removeEventListener('pointerdown', this.onPointerDown);
-    window.removeEventListener('pointerleave', this.onPointerLeave);
-    window.removeEventListener('blur', this.onPointerLeave);
+    document.documentElement.removeEventListener('pointerleave', this.onPointerLeave);
+    document.removeEventListener('visibilitychange', this.onVisibility);
     window.removeEventListener('scroll', this.onScroll, { capture: true });
     window.removeEventListener('resize', this.onResize);
     window.removeEventListener('keydown', this.onKeyDown, { capture: true });
@@ -355,10 +381,32 @@ export class Netcaster {
 
   private pointerDown(event: PointerEvent): void {
     if (event.pointerType === 'touch') return;
+    // Keep the leash on the press point. A click without a fresh move used to
+    // burst at the pointer while the reticle lagged, which read as a glitch.
+    this.x = event.clientX;
+    this.y = event.clientY;
+    this.lastMove = performance.now();
+    if (!this.seen) {
+      this.seen = true;
+      this.rx = this.x;
+      this.ry = this.y;
+      this.lastNow = 0;
+      document.documentElement.classList.add('nc-live');
+    }
     // A press is a pointer gesture: it retires the keyboard focus web.
     this.keyboard = false;
-    this.bursts.push({ x: event.clientX, y: event.clientY, start: performance.now() });
+    this.bursts.push({ x: event.clientX, y: event.clientY, start: this.lastMove });
     if (this.bursts.length > 4) this.bursts.shift();
+  }
+
+  private pointerLeave(event: PointerEvent): void {
+    if (event.pointerType === 'touch') return;
+    // Still inside the document (moving onto a child / overlay): stay live.
+    const related = event.relatedTarget;
+    if (related instanceof Node && document.documentElement.contains(related)) {
+      return;
+    }
+    this.hide();
   }
 
   private focusIn(event: Event): void {

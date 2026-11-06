@@ -365,6 +365,22 @@ class AgentRuntime:
         if role_inventory:
             tasks.append({"kind": role_inventory[0], "title": role_inventory[1],
                           "tool": "", "risk": "low", "args": {}})
+        workflow = {
+            "recon": ("surface_workflow", "Inventory forms, parameters, and high-value inputs",
+                      "web_surface_inventory"),
+            "auth": ("auth_workflow", "Inventory auth, reset, session, and cookie surfaces",
+                     "auth_flow_inventory"),
+            "api": ("api_workflow", "Inventory API inputs and object identifiers",
+                    "web_surface_inventory"),
+            "validator": ("retest_workflow", "Retest the target response for consistency",
+                          "retest_request"),
+        }.get(role)
+        if workflow:
+            tasks.append({
+                "kind": workflow[0], "title": workflow[1], "tool": workflow[2],
+                "risk": "medium",
+                "args": {"target": target, "mission_id": mission["id"]},
+            })
         if role == "training" or bool(mission.get("training")):
             tasks.extend([
                 {"kind": "training_plan",
@@ -507,6 +523,10 @@ class AgentRuntime:
             elif task["kind"] in {"auth_inventory", "api_inventory",
                                   "findings_inventory", "reports_inventory"}:
                 status, result, evidence, verification, notes = self._role_inventory(
+                    mission_id, task)
+            elif task["kind"] in {"surface_workflow", "auth_workflow",
+                                  "api_workflow", "retest_workflow"}:
+                status, result, evidence, verification, notes = self._workflow(
                     mission_id, task)
             elif task["kind"] == "analysis":
                 status, result, evidence, verification, notes = self._analysis(
@@ -813,6 +833,20 @@ class AgentRuntime:
                       "submissions": page.get("items") or []}
             evidence = {"submission_count": len(result["submissions"])}
             note = "read-only submission ledger; no payout or outcome was invented"
+        return ("verified", result, evidence, "verified", note)
+
+    def _workflow(self, mission_id: str, task: dict) -> tuple:
+        """Run one bounded operator workflow selected for the agent role."""
+        registry = self._registry(mission_id)
+        tool = str(task.get("tool") or "")
+        result = self._tool(registry, tool, task.get("args") or {})
+        evidence = {"tool": tool}
+        for key in ("url", "status", "counts", "parameters", "object_candidates",
+                    "ssrf_candidates", "auth_links", "auth_forms", "consistent",
+                    "distinct_responses"):
+            if key in result:
+                evidence[key] = result[key]
+        note = f"{tool} completed; its candidates are leads, not findings"
         return ("verified", result, evidence, "verified", note)
 
     def _analysis(self, mission_id: str, task: dict) -> tuple:

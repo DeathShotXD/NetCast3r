@@ -591,6 +591,15 @@
     return 'var(--obs-violet-3)';
   }
 
+  function verdictColor(verdict: string): string {
+    if (verdict === 'supported' || verdict === 'proven') return 'var(--obs-acid)';
+    if (verdict === 'edge-blocked' || verdict === 'blocked') return 'var(--obs-orange)';
+    if (verdict === 'redirect-only' || verdict === 'callback-seen') return 'var(--obs-cyan, #19d3da)';
+    if (verdict === 'untested') return 'var(--obs-faint)';
+    if (verdict === 'unavailable') return 'var(--obs-red)';
+    return 'var(--obs-violet-3)';
+  }
+
   async function previewProgram() {
     if (!selected) return;
     if (!programBrief.trim()) {
@@ -957,12 +966,15 @@
               {/if}
             </div>
 
-            <h3 class="obs-mission-title">{mission.title}</h3>
+            <h3 class="obs-mission-title" title={mission.title}>{mission.title}</h3>
             <div class="obs-mission-target">
               <Icon name="globe" size={11} />
-              <span>{mission.target}</span>
+              <span title={mission.target}>{mission.target}</span>
             </div>
-            <p class="obs-mission-objective">
+            <p
+              class="obs-mission-objective"
+              title={mission.objective || undefined}
+            >
               {mission.objective || 'No objective written yet. Open the mission to add the reason this target matters.'}
             </p>
 
@@ -1006,12 +1018,12 @@
                 <Icon name="x" size={13} />
               </button>
             </div>
-            <h2 class="obs-mission-detail-title">{selected.title}</h2>
+            <h2 class="obs-mission-detail-title" title={selected.title}>{selected.title}</h2>
             <div class="obs-mission-target">
               <Icon name="target" size={11} />
-              <span>{selected.target}</span>
+              <span title={selected.target}>{selected.target}</span>
             </div>
-            <p class="obs-mission-detail-objective">
+            <p class="obs-mission-detail-objective" title={selected.objective || undefined}>
               {selected.objective || 'No objective written yet. Edit the mission to describe what proof would count as success.'}
             </p>
             <div class="obs-mission-detail-actions">
@@ -1381,6 +1393,25 @@
                           <span class="obs-chip" style="color:{leadStatusColor(hypothesisEvidence.hypothesis.status)}">{hypothesisEvidence.hypothesis.status}</span>
                         </div>
                         <p class="obs-lead-progress">{hypothesisEvidence.progress}</p>
+                        {#if hypothesisEvidence.verdict}
+                          <div class="obs-lead-verdict" data-verdict={hypothesisEvidence.verdict.verdict}>
+                            <div class="obs-lead-verdict-head">
+                              <span class="obs-chip" style="color:{verdictColor(hypothesisEvidence.verdict.verdict)}">
+                                {hypothesisEvidence.verdict.verdict}
+                              </span>
+                              <span class="obs-chip">
+                                {hypothesisEvidence.verdict.proves_technique ? 'proof recorded' : 'not proof'}
+                              </span>
+                              {#if hypothesisEvidence.verdict.related_technique}
+                                <span class="obs-chip">{hypothesisEvidence.verdict.related_technique}</span>
+                              {/if}
+                            </div>
+                            <p>{hypothesisEvidence.verdict.summary}</p>
+                            <p class="obs-lead-verdict-next">
+                              <strong>Next:</strong> {hypothesisEvidence.verdict.next_step}
+                            </p>
+                          </div>
+                        {/if}
                         <div class="obs-lead-counts">
                           <span class="obs-chip">{hypothesisEvidence.counts.notes} note(s)</span>
                           <span class="obs-chip">{hypothesisEvidence.counts.tool_calls} call(s)</span>

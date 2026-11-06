@@ -291,6 +291,15 @@ def render_markdown(record: dict) -> str:
         "## Tool calls",
         "",
     ]
+    from .verdicts import render_lines as _verdict_lines
+
+    verdict_block = _verdict_lines(record.get("verdict") or {})
+    if verdict_block:
+        try:
+            at = lines.index("## Tool calls")
+        except ValueError:
+            at = len(lines)
+        lines[at:at] = verdict_block
     calls = record.get("tool_calls") or []
     if calls:
         lines.extend(["| time | tool | status | target |", "| --- | --- | --- | --- |"])
@@ -387,6 +396,25 @@ def evidence(index, hypothesis_id: str, limit: int = MAX_EVIDENCE) -> dict:
     # list_tool_calls returns newest first; keep the newest evidence.
     calls = calls[:limit]
 
+    verdict = None
+    try:
+        from . import verdicts as verdicts_module
+
+        verdict = verdicts_module.classify(hypothesis, calls)
+    except Exception as exc:  # noqa: BLE001 - a verdict is best effort, never fatal
+        # None means "no classifier for this technique". A failure must be
+        # visible, otherwise a classifier regression looks like an xss lead.
+        verdict = {
+            "technique": str(hypothesis.get("technique") or ""),
+            "verdict": "unavailable",
+            "proves_technique": False,
+            "summary": f"The classifier could not read the recorded probes: {exc}",
+            "counts": {},
+            "probes": [],
+            "next_step": "Record the raw response again; the stored shape was unexpected.",
+            "note": "This is a harness error, not a target result.",
+        }
+
     graph_nodes = []
     graph_edges = []
     try:
@@ -441,6 +469,7 @@ def evidence(index, hypothesis_id: str, limit: int = MAX_EVIDENCE) -> dict:
         "runs": sorted(runs.values(), key=lambda item: item.get("created_at") or ""),
         "graph_nodes": graph_nodes[:limit],
         "graph_edges": graph_edges[:limit],
+        "verdict": verdict,
         "note": ("A hypothesis is a lead, not a finding. 'Open' means the "
                  "proof has not been recorded, even when an agent has already "
                  "reasoned about it. A verdict is not a finding unless a human "

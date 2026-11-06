@@ -56,6 +56,20 @@ class BrowserUnitTests(unittest.TestCase):
         other = audit_args("http_request", {"target": "https://example.com"})
         self.assertEqual(other["target"], "https://example.com")
 
+    def test_any_credential_shaped_name_is_redacted_from_the_audit(self):
+        # A caller chooses header names, so a fixed allow-list cannot cover
+        # them. X-CSRF used to reach the audit table verbatim.
+        clean = audit_args("auth_profile_set", {
+            "name": "s", "cookies": {"sid": "top-secret-cookie"},
+            "headers": {"X-CSRF": "csrf-value", "X-Amz-Security-Token": "aws",
+                        "X-Goog-Signature": "sig", "Accept": "text/html"}})
+        self.assertEqual(clean["cookies"], "[redacted]")
+        self.assertEqual(clean["headers"]["X-CSRF"], "[redacted]")
+        self.assertEqual(clean["headers"]["X-Amz-Security-Token"], "[redacted]")
+        self.assertEqual(clean["headers"]["X-Goog-Signature"], "[redacted]")
+        self.assertEqual(clean["headers"]["Accept"], "text/html")
+        self.assertEqual(clean["name"], "s")
+
     def test_catalogue_exposes_the_browser_surface(self):
         names = {tool.name for tool in TOOLS}
         self.assertIn("browser_open", names)

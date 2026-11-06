@@ -44,6 +44,22 @@ class ToolCallAuditTests(unittest.TestCase):
         self.assertTrue(stored["tls_insecure"])
         self.assertEqual(stored["tls_fallback"], "ConnectError")
 
+    def test_successful_http_audit_keeps_proof_signals_but_not_the_body(self):
+        payload = {
+            "ok": True,
+            "tool": "http_probe",
+            "status": 200,
+            "url": "https://lab.example.com/fetch?url=http://169.254.169.254/",
+            "body": "ami-id\ninstance-id\ni-1234\nsecret-credential",
+            "headers": {"server": "nginx", "set-cookie": "session=secret"},
+        }
+        stored = prepare_tool_call_audit("http_probe", "ok", payload)
+        self.assertEqual(stored["signals"]["metadata_marker"], "aws:ami-id")
+        self.assertEqual(stored["signals"]["body_len"], len(payload["body"]))
+        self.assertNotIn("set-cookie", stored.get("headers", {}))
+        self.assertNotIn("session=secret", json.dumps(stored))
+        self.assertNotIn("body", stored)
+
     def test_add_tool_call_persists_compacted_http_result(self):
         call = self.server.index.add_tool_call(
             "http_request", status="ok", mission_id=self.mission["id"],

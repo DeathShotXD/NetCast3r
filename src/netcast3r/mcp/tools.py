@@ -27,8 +27,9 @@ import socket
 import ssl
 import time
 from dataclasses import dataclass, field
+from html.parser import HTMLParser
 from pathlib import Path
-from urllib.parse import quote, urlencode, urljoin, urlsplit
+from urllib.parse import parse_qsl, quote, urlencode, urljoin, urlsplit
 
 import httpx
 
@@ -42,10 +43,23 @@ POLICIES = ("readonly", "supervised", "full")
 RISK_LEVELS = {"low": 0, "medium": 1, "high": 2, "critical": 3}
 DEFAULT_POLICY = "supervised"
 
+# "headers" stays out of this set on purpose: audit_http_tool_result already
+# keeps only fingerprint-safe names (server, x-powered-by, ...). Sensitive
+# header *names* below are still scrubbed when the walker sees them.
 REDACT_KEYS = {"api_key", "apikey", "authorization", "cookie", "cookies", "password",
                "secret", "token", "private_key", "session", "set-cookie",
                "set_cookie", "x-api-key", "x-auth-token", "proxy-authorization",
-               "body", "json", "form", "headers", "arguments", "token_value"}
+               "body", "json", "form", "arguments", "token_value"}
+
+# A caller can name a header anything: X-CSRF, X-Amz-Security-Token,
+# X-Goog-Signature. Matching only the few names in REDACT_KEYS leaked the
+# value into the audit table. Any field whose *name* carries one of these
+# fragments is treated as a credential, which is the safe default for an
+# audit trail: over-redacting loses nothing, under-redacting leaks a secret.
+SENSITIVE_NAME_HINTS = ("authorization", "cookie", "token", "secret", "password",
+                        "passwd", "credential", "signature", "csrf", "xsrf",
+                        "session", "api-key", "apikey", "bearer", "recaptcha",
+                        "otp")
 
 METADATA_HOSTS = {"metadata.google.internal", "metadata.goog"}
 METADATA_IPS = {"169.254.169.254", "100.100.100.200", "fd00:ec2::254"}
@@ -194,9 +208,14 @@ def audit_args(tool_name: str, arguments: dict) -> dict:
     return clean
 
 
+def _sensitive_name(key: str) -> bool:
+    lowered = str(key or "").lower()
+    return any(hint in lowered for hint in SENSITIVE_NAME_HINTS)
+
+
 def redact_payload(value, key: str = ""):
     """Remove obvious credentials before anything reaches the audit table."""
-    if key.lower() in REDACT_KEYS:
+    if key.lower() in REDACT_KEYS or _sensitive_name(key):
         return "[redacted]"
     if isinstance(value, dict):
         return {str(name): redact_payload(item, str(name)) for name, item in value.items()}
@@ -2467,6 +2486,454 @@ def http_upload(ctx: ToolContext, args: dict) -> dict:
     }
 
 
+class _SurfaceParser(HTMLParser):
+    """Small, dependency-free HTML inventory parser."""
+
+    def __init__(self, base_url: str):
+        super().__init__(convert_charrefs=True)
+        self.base_url = base_url
+        self.forms: list[dict] = []
+        self.links: list[str] = []
+        self.scripts: list[str] = []
+        # Component frameworks render inputs without a <form>. They are still
+        # real parameters, so keep them instead of dropping the page.
+        self.inputs: list[dict] = []
+        self._form: dict | None = None
+
+    def handle_starttag(self, tag: str, attrs) -> None:
+        values = {str(key).lower(): str(value or "") for key, value in attrs}
+        if tag == "form":
+            self._form = {
+                "action": urljoin(self.base_url, values.get("action") or self.base_url),
+                "method": (values.get("method") or "GET").upper(),
+                "enctype": values.get("enctype") or "application/x-www-form-urlencoded",
+                "inputs": [],
+            }
+            self.forms.append(self._form)
+        elif tag in {"input", "select", "textarea", "button"}:
+            name = values.get("name", "").strip()
+            if name:
+                item = {
+                    "name": name[:120],
+                    "type": (values.get("type") or tag).lower()[:40],
+                    "required": "required" in values,
+                    "autocomplete": values.get("autocomplete", "")[:80],
+                }
+                if self._form is not None:
+                    self._form["inputs"].append(item)
+                else:
+                    self.inputs.append(item)
+        elif tag in {"a", "link"} and values.get("href"):
+            self.links.append(urljoin(self.base_url, values["href"]))
+        elif tag == "script" and values.get("src"):
+            self.scripts.append(urljoin(self.base_url, values["src"]))
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag == "form":
+            self._form = None
+
+
+def _request_args(args: dict, **overrides) -> dict:
+    request = {
+        key: args[key] for key in (
+            "target", "mission_id", "scope", "auth_profile", "headers",
+            "verify_tls", "timeout", "max_bytes", "follow_redirects")
+        if key in args
+    }
+    request.update(overrides)
+    return request
+
+
+SAFE_REPLAY_METHODS = {"GET", "HEAD", "OPTIONS"}
+
+
+def _guard_replay(method: str, args: dict, tool: str) -> None:
+    """Refuse to replay a state-changing method without an explicit ack.
+
+    ``access_control_compare`` repeats one request once per identity and
+    ``retest_request`` repeats it two to five times. On a live target that
+    could delete seven objects or create five accounts. The operator has to
+    say that the action is idempotent and safe before it is repeated.
+    """
+    method = str(method or "GET").upper()
+    if method in SAFE_REPLAY_METHODS:
+        return
+    if args.get("confirm_state_change") is True:
+        return
+    raise ToolError(
+        "confirm_required",
+        f"{tool} would replay {method} across repeats; pass "
+        "confirm_state_change=true only when the action is idempotent and safe "
+        "on the target")
+
+
+def _fingerprint(response: dict) -> dict:
+    body = str(response.get("body") or "")
+    normalized = re.sub(r"\b\d{4,}\b", "<n>", re.sub(r"\s+", " ", body)).strip()
+    return {
+        "status": int(response.get("status") or 0),
+        "bytes": int(response.get("bytes") or len(body)),
+        "sha256": hashlib.sha256(body.encode("utf-8", "replace")).hexdigest()[:16],
+        "shape_sha256": hashlib.sha256(
+            normalized.encode("utf-8", "replace")).hexdigest()[:16],
+        "location": str((response.get("headers") or {}).get("location") or "")[:300],
+        "content_type": str((response.get("headers") or {}).get(
+            "content-type") or "")[:120],
+        "elapsed_ms": int(response.get("elapsed_ms") or 0),
+        "body_sample": body[:240],
+    }
+
+
+def _surface_response(ctx: ToolContext, args: dict) -> tuple[dict, _SurfaceParser]:
+    response = http_request(ctx, _request_args(
+        args, method="GET", follow_redirects=args.get("follow_redirects", True),
+        max_bytes=args.get("max_bytes", 262144)))
+    parser = _SurfaceParser(str(response.get("url") or args["target"]))
+    try:
+        parser.feed(str(response.get("body") or ""))
+    except (TypeError, ValueError):
+        pass
+    return response, parser
+
+
+def web_surface_inventory(ctx: ToolContext, args: dict) -> dict:
+    """Inventory forms, parameters, links, scripts, and high-value input names."""
+    response, parser = _surface_response(ctx, args)
+    parameters = set()
+    for link in parser.links:
+        parameters.update(key for key, _ in parse_qsl(urlsplit(link).query,
+                                                      keep_blank_values=True))
+    for form in parser.forms:
+        parameters.update(item["name"] for item in form["inputs"])
+    parameters.update(item["name"] for item in parser.inputs)
+    urlish = sorted(name for name in parameters if any(token in name.lower() for token in (
+        "url", "uri", "link", "redirect", "return", "callback", "webhook", "image",
+        "avatar", "feed", "host", "domain", "next", "continue", "dest")))
+    objectish = sorted(name for name in parameters if any(token in name.lower() for token in (
+        "id", "user", "account", "profile", "application", "candidate", "roll",
+        "admit", "result", "order", "invoice", "document")))
+    return {
+        "url": response.get("url"), "status": response.get("status"),
+        "forms": parser.forms[:40], "links": parser.links[:200],
+        "scripts": parser.scripts[:100], "inputs": parser.inputs[:60],
+        "parameters": sorted(parameters)[:300],
+        "ssrf_candidates": urlish[:50], "object_candidates": objectish[:50],
+        "counts": {"forms": len(parser.forms), "links": len(parser.links),
+                   "scripts": len(parser.scripts), "parameters": len(parameters),
+                   "orphan_inputs": len(parser.inputs)},
+        "note": "Inventory only. Candidate names are leads, not vulnerabilities.",
+    }
+
+
+def auth_flow_inventory(ctx: ToolContext, args: dict) -> dict:
+    response, parser = _surface_response(ctx, args)
+    auth_tokens = ("login", "signin", "password", "reset", "forgot", "otp", "mfa",
+                   "2fa", "sso", "oauth", "oidc", "callback", "register", "signup")
+    links = [link for link in parser.links
+             if any(token in link.lower() for token in auth_tokens)]
+    forms = []
+    for form in parser.forms:
+        names = " ".join(item["name"] + " " + item["type"]
+                         for item in form["inputs"]).lower()
+        if any(token in (form["action"] + " " + names).lower() for token in auth_tokens):
+            forms.append(form)
+    providers = sorted({token for token in ("oauth", "oidc", "saml", "google",
+                                            "microsoft", "github", "facebook")
+                        if token in str(response.get("body") or "").lower()})
+    return {
+        "url": response.get("url"), "status": response.get("status"),
+        "auth_forms": forms[:30], "auth_links": links[:100],
+        "identity_signals": providers,
+        "set_cookie_names": sorted({item.split("=", 1)[0].strip()
+                                    for item in response.get("set_cookie") or []}),
+        "note": "This maps identity entry points and does not submit credentials.",
+    }
+
+
+def reset_flow_inventory(ctx: ToolContext, args: dict) -> dict:
+    response, parser = _surface_response(ctx, args)
+    reset_tokens = ("reset", "forgot", "recover", "password", "otp", "token", "email")
+    forms = [form for form in parser.forms if any(
+        token in (form["action"] + " " + " ".join(
+            item["name"] for item in form["inputs"])).lower()
+        for token in reset_tokens)]
+    links = [link for link in parser.links
+             if any(token in link.lower() for token in reset_tokens)]
+    return {
+        "url": response.get("url"), "status": response.get("status"),
+        "reset_forms": forms[:20], "reset_links": links[:50],
+        "host_header_testable": bool(forms or links),
+        "token_parameters": sorted({item["name"] for form in forms
+                                    for item in form["inputs"]
+                                    if any(token in item["name"].lower()
+                                           for token in ("token", "code", "otp"))}),
+        "note": "No reset was requested. Use a controlled account before submitting a form.",
+    }
+
+
+def session_cookie_audit(ctx: ToolContext, args: dict) -> dict:
+    response = http_request(ctx, _request_args(args, method="GET"))
+    rows = []
+    for raw in response.get("set_cookie") or []:
+        parts = [item.strip() for item in raw.split(";")]
+        name = parts[0].split("=", 1)[0].strip()
+        attrs = {item.split("=", 1)[0].strip().lower(): (
+            item.split("=", 1)[1].strip() if "=" in item else True)
+                 for item in parts[1:] if item}
+        issues = []
+        if "secure" not in attrs:
+            issues.append("missing Secure")
+        if "httponly" not in attrs:
+            issues.append("missing HttpOnly")
+        same_site = str(attrs.get("samesite") or "").lower()
+        if not same_site:
+            issues.append("missing SameSite")
+        elif same_site == "none" and "secure" not in attrs:
+            issues.append("SameSite=None without Secure")
+        rows.append({"name": name, "attributes": sorted(attrs), "same_site": same_site,
+                     "issues": issues})
+    return {"url": response.get("url"), "status": response.get("status"),
+            "cookies": rows, "issue_count": sum(len(row["issues"]) for row in rows),
+            "note": "Cookie values are omitted."}
+
+
+def security_headers_audit(ctx: ToolContext, args: dict) -> dict:
+    response = http_request(ctx, _request_args(args, method="GET"))
+    headers = response.get("headers") or {}
+    expected = {
+        "strict-transport-security": "HSTS",
+        "content-security-policy": "CSP",
+        "x-content-type-options": "MIME sniffing protection",
+        "x-frame-options": "frame protection",
+        "referrer-policy": "referrer policy",
+        "permissions-policy": "permissions policy",
+        "cache-control": "cache policy",
+    }
+    present = {key: str(headers[key])[:500] for key in expected if key in headers}
+    missing = [{"header": key, "purpose": label}
+               for key, label in expected.items() if key not in headers]
+    return {"url": response.get("url"), "status": response.get("status"),
+            "present": present, "missing": missing,
+            "tls_insecure": bool(response.get("tls_insecure")),
+            "note": "Missing defense-in-depth headers alone are usually informational."}
+
+
+def cors_policy_audit(ctx: ToolContext, args: dict) -> dict:
+    origins = args.get("origins") or ["https://netcast3r.invalid", "null"]
+    if not isinstance(origins, list) or not origins or len(origins) > 4:
+        raise ToolError("invalid_arguments", "origins must contain 1 to 4 values")
+    rows = []
+    for origin in origins:
+        response = http_request(ctx, _request_args(
+            args, method="GET", headers={**(args.get("headers") or {}),
+                                         "Origin": str(origin)}))
+        headers = response.get("headers") or {}
+        allow = str(headers.get("access-control-allow-origin") or "")
+        credentials = str(headers.get("access-control-allow-credentials") or "").lower()
+        rows.append({
+            "origin": str(origin), "status": response.get("status"),
+            "allow_origin": allow, "allow_credentials": credentials,
+            "reflected": allow == str(origin),
+            "potential_credential_exposure": allow == str(origin) and credentials == "true",
+        })
+    return {"target": args["target"], "probes": rows,
+            "potential_credential_exposure": any(
+                row["potential_credential_exposure"] for row in rows),
+            "note": "A reflected origin is a lead; prove readable sensitive data before reporting."}
+
+
+def access_control_compare(ctx: ToolContext, args: dict) -> dict:
+    profiles = args.get("auth_profiles") or []
+    if not isinstance(profiles, list) or len(profiles) > 6:
+        raise ToolError("invalid_arguments", "auth_profiles must contain at most 6 names")
+    method = str(args.get("method") or "GET").upper()
+    _guard_replay(method, args, "access_control_compare")
+    identities = ["anonymous"] + [str(item) for item in profiles if str(item).strip()]
+    rows = []
+    for identity in identities:
+        request = _request_args(
+            args, method=method,
+            follow_redirects=args.get("follow_redirects", False))
+        for key in ("body", "json", "form"):
+            if key in args:
+                request[key] = args[key]
+        if identity == "anonymous":
+            request.pop("auth_profile", None)
+        else:
+            request["auth_profile"] = identity
+        response = http_request(ctx, request)
+        rows.append({"identity": identity, **_fingerprint(response)})
+    signatures = {(row["status"], row["shape_sha256"], row["location"]) for row in rows}
+    return {
+        "target": args["target"], "responses": rows,
+        "distinct_responses": len(signatures),
+        "anonymous_matches_authenticated": bool(len(rows) > 1 and any(
+            (rows[0]["status"], rows[0]["shape_sha256"], rows[0]["location"]) ==
+            (row["status"], row["shape_sha256"], row["location"]) for row in rows[1:])),
+        "note": "Matching response shapes are leads only; inspect body samples for protected data.",
+    }
+
+
+def idor_sequence_probe(ctx: ToolContext, args: dict) -> dict:
+    template = str(args["target"])
+    if "{{id}}" not in template:
+        raise ToolError("invalid_arguments", "target must contain {{id}}")
+    ids = args.get("ids") or []
+    if not isinstance(ids, list) or not ids or len(ids) > 12:
+        raise ToolError("invalid_arguments", "ids must contain 1 to 12 controlled object ids")
+    rows = []
+    for object_id in ids:
+        rendered = template.replace("{{id}}", quote(str(object_id), safe=""))
+        response = http_request(ctx, _request_args(
+            args, target=rendered, method="GET",
+            follow_redirects=args.get("follow_redirects", False)))
+        rows.append({"id": str(object_id)[:120], **_fingerprint(response)})
+    successful = [row for row in rows if 200 <= row["status"] < 300]
+    return {
+        "target_template": template, "objects": rows,
+        "successful_objects": len(successful),
+        "distinct_shapes": len({row["shape_sha256"] for row in rows}),
+        "note": ("Use only object ids from controlled accounts. A 2xx is not IDOR; "
+                 "another account's protected data is the required proof."),
+    }
+
+
+def input_reflection_probe(ctx: ToolContext, args: dict) -> dict:
+    names = args.get("parameters") or []
+    if not isinstance(names, list) or not names or len(names) > 12:
+        raise ToolError("invalid_arguments", "parameters must contain 1 to 12 names")
+    marker = "nc3r" + hashlib.sha256(
+        str(time.monotonic_ns()).encode()).hexdigest()[:10]
+    parts = urlsplit(str(args["target"]))
+    existing = dict(parse_qsl(parts.query, keep_blank_values=True))
+    rows = []
+    for name in names:
+        query = dict(existing)
+        query[str(name)] = marker
+        target = parts._replace(query=urlencode(query)).geturl()
+        response = http_request(ctx, _request_args(args, target=target, method="GET"))
+        body = str(response.get("body") or "")
+        rows.append({"parameter": str(name), "status": response.get("status"),
+                     "reflected": marker in body,
+                     "content_type": (response.get("headers") or {}).get("content-type", ""),
+                     "body_sample": body[max(0, body.find(marker) - 80):
+                                         body.find(marker) + len(marker) + 80]
+                     if marker in body else ""})
+    return {"target": args["target"], "marker": marker, "results": rows,
+            "reflected": [row["parameter"] for row in rows if row["reflected"]],
+            "note": "The marker is inert. Reflection is not XSS without executable context proof."}
+
+
+def injection_differential_probe(ctx: ToolContext, args: dict) -> dict:
+    parameter = str(args.get("parameter") or "").strip()
+    if not parameter:
+        raise ToolError("invalid_arguments", "parameter is required")
+    parts = urlsplit(str(args["target"]))
+    original = dict(parse_qsl(parts.query, keep_blank_values=True))
+    baseline = str(args.get("baseline") or original.get(parameter) or "1")
+    variants = [baseline, baseline + "'", baseline + "\"", baseline + "\\", baseline + ")"]
+    rows = []
+    errors = re.compile(
+        r"(sql syntax|sqlstate|ora-\d+|postgresql|mysql|sqlite|odbc|jdbc|"
+        r"unclosed quotation|unterminated string|syntax error)", re.I)
+    for value in variants:
+        query = dict(original)
+        query[parameter] = value
+        target = parts._replace(query=urlencode(query)).geturl()
+        response = http_request(ctx, _request_args(args, target=target, method="GET"))
+        body = str(response.get("body") or "")
+        rows.append({"value_kind": "baseline" if value == baseline else "syntax",
+                     "status": response.get("status"), "bytes": response.get("bytes"),
+                     "shape_sha256": _fingerprint(response)["shape_sha256"],
+                     "database_error": bool(errors.search(body)),
+                     "body_sample": body[:240] if errors.search(body) else ""})
+    base = rows[0]
+    return {
+        "target": args["target"], "parameter": parameter, "probes": rows,
+        "differentials": sum(1 for row in rows[1:] if (
+            row["status"], row["shape_sha256"]) != (
+                base["status"], base["shape_sha256"])),
+        "database_errors": sum(1 for row in rows if row["database_error"]),
+        "note": "Uses syntax characters only. A differential is a lead, not proof of SQL injection.",
+    }
+
+
+def upload_policy_probe(ctx: ToolContext, args: dict) -> dict:
+    variants = [
+        ("netcast3r.txt", "text/plain", "NetCast3r authorized upload canary\n"),
+        ("netcast3r.png", "image/png", "\x89PNG\r\n\x1a\nNetCast3r canary"),
+    ]
+    if args.get("include_svg"):
+        variants.append(("netcast3r.svg", "image/svg+xml",
+                         '<svg xmlns="http://www.w3.org/2000/svg"><text>NetCast3r</text></svg>'))
+    rows = []
+    for filename, content_type, content in variants:
+        response = http_upload(ctx, {
+            **_request_args(args), "method": args.get("method", "POST"),
+            "field": args.get("field", "file"), "filename": filename,
+            "content_type": content_type, "content": content,
+            "form": args.get("form") or {},
+        })
+        body = str(response.get("body") or "")
+        rows.append({"filename": filename, "content_type": content_type,
+                     "status": response.get("status"), "bytes": response.get("bytes"),
+                     "accepted_hint": int(response.get("status") or 0) in {
+                         200, 201, 202, 204},
+                     "body_sample": body[:240]})
+    return {
+        "target": args["target"], "uploads": rows,
+        "accepted_hints": sum(1 for row in rows if row["accepted_hint"]),
+        "note": ("Only inert canaries were sent. Verify storage, retrieval, and authorization "
+                 "separately; success status alone is not a vulnerability."),
+    }
+
+
+def retest_request(ctx: ToolContext, args: dict) -> dict:
+    count = max(2, min(int(args.get("count") or 2), 5))
+    method = str(args.get("method") or "GET").upper()
+    _guard_replay(method, args, "retest_request")
+    rows = []
+    for _ in range(count):
+        request = _request_args(args, method=method)
+        for key in ("body", "json", "form"):
+            if key in args:
+                request[key] = args[key]
+        rows.append(_fingerprint(http_request(ctx, request)))
+    signatures = {(row["status"], row["shape_sha256"], row["location"]) for row in rows}
+    return {
+        "target": args["target"], "attempts": rows, "consistent": len(signatures) == 1,
+        "distinct_responses": len(signatures),
+        "note": "Retest records repeatability; it does not promote or close a finding.",
+    }
+
+
+def evidence_pack(ctx: ToolContext, args: dict) -> dict:
+    observations = args.get("observations")
+    if not isinstance(observations, list) or not observations or len(observations) > 50:
+        raise ToolError("invalid_arguments", "observations must contain 1 to 50 items")
+    mission_id = str(args.get("mission_id") or ctx.mission_id or "").strip()
+    if mission_id:
+        _mission(ctx, mission_id)
+    safe = redact_payload(observations)
+    payload = {
+        "format": "netcast3r-evidence-v1", "mission_id": mission_id,
+        "title": str(args.get("title") or "Evidence pack")[:200],
+        "created_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        "observations": safe,
+        "sha256": hashlib.sha256(
+            json.dumps(safe, sort_keys=True, default=str).encode()).hexdigest(),
+    }
+    root = Path(ctx.base) / "evidence"
+    root.mkdir(parents=True, exist_ok=True)
+    slug = re.sub(r"[^a-zA-Z0-9_.-]+", "-", mission_id or "standalone")[:80]
+    path = root / f"{slug}-{int(time.time() * 1000)}.json"
+    path.write_text(json.dumps(payload, indent=2, default=str) + "\n", encoding="utf-8")
+    path.chmod(0o600)
+    return {"path": str(path), "observations": len(observations),
+            "sha256": payload["sha256"], "redacted": True,
+            "note": "Sensitive request fields are redacted before the pack is written."}
+
+
 def oracle_extract(ctx: ToolContext, args: dict) -> dict:
     """Extract a value through a boolean or time-based oracle.
 
@@ -3440,6 +3907,19 @@ _HANDLERS.update({
     "http_probe": http_probe,
     "http_request": http_request,
     "http_upload": http_upload,
+    "web_surface_inventory": web_surface_inventory,
+    "auth_flow_inventory": auth_flow_inventory,
+    "reset_flow_inventory": reset_flow_inventory,
+    "session_cookie_audit": session_cookie_audit,
+    "security_headers_audit": security_headers_audit,
+    "cors_policy_audit": cors_policy_audit,
+    "access_control_compare": access_control_compare,
+    "idor_sequence_probe": idor_sequence_probe,
+    "input_reflection_probe": input_reflection_probe,
+    "injection_differential_probe": injection_differential_probe,
+    "upload_policy_probe": upload_policy_probe,
+    "retest_request": retest_request,
+    "evidence_pack": evidence_pack,
     "oracle_extract": oracle_extract,
     "race_run": race_run,
     "single_packet_race": single_packet_race,
@@ -5290,6 +5770,198 @@ TOOLS: tuple[Tool, ...] = (
                   "max_bytes": _integer("response body cap", 1024, 524288, 65536),
                   "timeout": _integer("timeout in seconds", 1, 60, 30)},
                  ["target", "content"]), "http_upload", open_world=True),
+    Tool("web_surface_inventory", "Inventory web inputs",
+         "Fetch one scoped page and extract forms, links, scripts, query parameters, "
+         "object identifiers, and URL-like SSRF candidates. No forms are submitted.",
+         "medium", "web",
+         _schema({"target": _string("in-scope page URL"),
+                  "mission_id": _string("mission whose scope authorizes the request"),
+                  "scope": _array("explicit scope entries"),
+                  "auth_profile": _string("optional stored session"),
+                  "headers": _object("extra request headers"),
+                  "follow_redirects": _boolean("follow scoped redirects", True),
+                  "verify_tls": _boolean("verify the target certificate", True),
+                  "max_bytes": _integer("HTML body cap", 1024, 524288, 262144),
+                  "timeout": _integer("timeout in seconds", 1, 60, 15)},
+                 ["target"]), "web_surface_inventory", open_world=True),
+    Tool("auth_flow_inventory", "Inventory authentication flows",
+         "Map login, registration, SSO, OAuth, MFA, and session entry points from one "
+         "scoped page without submitting credentials or changing account state.",
+         "medium", "auth",
+         _schema({"target": _string("in-scope auth or portal URL"),
+                  "mission_id": _string("mission whose scope authorizes the request"),
+                  "scope": _array("explicit scope entries"),
+                  "auth_profile": _string("optional stored session"),
+                  "headers": _object("extra request headers"),
+                  "follow_redirects": _boolean("follow scoped redirects", True),
+                  "verify_tls": _boolean("verify the target certificate", True),
+                  "max_bytes": _integer("HTML body cap", 1024, 524288, 262144),
+                  "timeout": _integer("timeout in seconds", 1, 60, 15)},
+                 ["target"]), "auth_flow_inventory", open_world=True),
+    Tool("reset_flow_inventory", "Inventory password reset flow",
+         "Map forgot-password, recovery, OTP, token, and email inputs without requesting "
+         "a reset. Use a controlled account before any later state-changing test.",
+         "medium", "auth",
+         _schema({"target": _string("in-scope reset or login URL"),
+                  "mission_id": _string("mission whose scope authorizes the request"),
+                  "scope": _array("explicit scope entries"),
+                  "auth_profile": _string("optional stored session"),
+                  "headers": _object("extra request headers"),
+                  "follow_redirects": _boolean("follow scoped redirects", True),
+                  "verify_tls": _boolean("verify the target certificate", True),
+                  "max_bytes": _integer("HTML body cap", 1024, 524288, 262144),
+                  "timeout": _integer("timeout in seconds", 1, 60, 15)},
+                 ["target"]), "reset_flow_inventory", open_world=True),
+    Tool("session_cookie_audit", "Audit session cookie attributes",
+         "Send one scoped GET and report cookie names plus Secure, HttpOnly, and "
+         "SameSite posture. Cookie values are never returned.",
+         "medium", "auth",
+         _schema({"target": _string("in-scope URL"),
+                  "mission_id": _string("mission whose scope authorizes the request"),
+                  "scope": _array("explicit scope entries"),
+                  "auth_profile": _string("optional stored session"),
+                  "headers": _object("extra request headers"),
+                  "verify_tls": _boolean("verify the target certificate", True),
+                  "timeout": _integer("timeout in seconds", 1, 60, 15)},
+                 ["target"]), "session_cookie_audit", open_world=True),
+    Tool("security_headers_audit", "Audit HTTP security headers",
+         "Inspect one scoped response for transport, content, framing, referrer, "
+         "permissions, and cache controls. Missing headers are posture observations.",
+         "medium", "web",
+         _schema({"target": _string("in-scope URL"),
+                  "mission_id": _string("mission whose scope authorizes the request"),
+                  "scope": _array("explicit scope entries"),
+                  "auth_profile": _string("optional stored session"),
+                  "headers": _object("extra request headers"),
+                  "verify_tls": _boolean("verify the target certificate", True),
+                  "timeout": _integer("timeout in seconds", 1, 60, 15)},
+                 ["target"]), "security_headers_audit", open_world=True),
+    Tool("cors_policy_audit", "Audit CORS policy",
+         "Send at most four scoped GET requests with explicit Origin values and identify "
+         "origin reflection with credentials. Sensitive readable data is still required.",
+         "medium", "web",
+         _schema({"target": _string("in-scope API URL"),
+                  "mission_id": _string("mission whose scope authorizes the requests"),
+                  "scope": _array("explicit scope entries"),
+                  "auth_profile": _string("optional stored session"),
+                  "headers": _object("extra request headers"),
+                  "origins": _array("one to four origins", {"type": "string"}),
+                  "verify_tls": _boolean("verify the target certificate", True),
+                  "timeout": _integer("timeout in seconds", 1, 60, 15)},
+                 ["target"]), "cors_policy_audit", open_world=True),
+    Tool("access_control_compare", "Compare access-control responses",
+         "Replay one scoped request anonymously and with up to six stored auth profiles, "
+         "then compare status, redirect, and normalized body shape for BOLA and role gaps.",
+         "medium", "authorization",
+         _schema({"target": _string("in-scope object or action URL"),
+                  "mission_id": _string("mission whose scope authorizes the requests"),
+                  "scope": _array("explicit scope entries"),
+                  "auth_profiles": _array("controlled identity profiles",
+                                          {"type": "string"}),
+                  "method": _string("HTTP method", enum=[
+                      "GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"]),
+                  "headers": _object("extra request headers"),
+                  "body": _string("raw request body"),
+                  "json": _object("JSON request body"),
+                  "form": _object("form request body"),
+                  "follow_redirects": _boolean("follow scoped redirects", False),
+                  "confirm_state_change": _boolean(
+                      "acknowledge replaying a non-idempotent method", False),
+                  "verify_tls": _boolean("verify the target certificate", True),
+                  "max_bytes": _integer("response body cap", 1024, 524288, 65536),
+                  "timeout": _integer("timeout in seconds", 1, 60, 15)},
+                 ["target"]), "access_control_compare", open_world=True),
+    Tool("idor_sequence_probe", "Probe controlled object identifiers",
+         "Replace {{id}} with at most twelve controlled object ids and compare scoped GET "
+         "responses. Use ids belonging to test accounts; a 2xx response is not proof.",
+         "medium", "authorization",
+         _schema({"target": _string("in-scope URL template containing {{id}}"),
+                  "ids": _array("controlled object identifiers", {"type": "string"}),
+                  "mission_id": _string("mission whose scope authorizes the requests"),
+                  "scope": _array("explicit scope entries"),
+                  "auth_profile": _string("stored session"),
+                  "headers": _object("extra request headers"),
+                  "follow_redirects": _boolean("follow scoped redirects", False),
+                  "verify_tls": _boolean("verify the target certificate", True),
+                  "max_bytes": _integer("response body cap", 1024, 524288, 65536),
+                  "timeout": _integer("timeout in seconds", 1, 60, 15)},
+                 ["target", "ids"]), "idor_sequence_probe", open_world=True),
+    Tool("input_reflection_probe", "Probe inert input reflection",
+         "Place one random inert marker into up to twelve query parameters and report "
+         "reflections with context. It does not send script or event-handler payloads.",
+         "medium", "injection",
+         _schema({"target": _string("in-scope URL"),
+                  "parameters": _array("query parameter names", {"type": "string"}),
+                  "mission_id": _string("mission whose scope authorizes the requests"),
+                  "scope": _array("explicit scope entries"),
+                  "auth_profile": _string("optional stored session"),
+                  "headers": _object("extra request headers"),
+                  "verify_tls": _boolean("verify the target certificate", True),
+                  "max_bytes": _integer("response body cap", 1024, 524288, 65536),
+                  "timeout": _integer("timeout in seconds", 1, 60, 15)},
+                 ["target", "parameters"]), "input_reflection_probe", open_world=True),
+    Tool("injection_differential_probe", "Probe injection differentials",
+         "Compare a baseline query parameter with four syntax-character variants and "
+         "detect response-shape changes or database error strings. No extraction runs.",
+         "medium", "injection",
+         _schema({"target": _string("in-scope URL"),
+                  "parameter": _string("query parameter to vary"),
+                  "baseline": _string("safe baseline value, default current value or 1"),
+                  "mission_id": _string("mission whose scope authorizes the requests"),
+                  "scope": _array("explicit scope entries"),
+                  "auth_profile": _string("optional stored session"),
+                  "headers": _object("extra request headers"),
+                  "verify_tls": _boolean("verify the target certificate", True),
+                  "max_bytes": _integer("response body cap", 1024, 524288, 65536),
+                  "timeout": _integer("timeout in seconds", 1, 60, 15)},
+                 ["target", "parameter"]), "injection_differential_probe", open_world=True),
+    Tool("upload_policy_probe", "Probe benign upload policy",
+         "Upload two inert canaries (text and minimal PNG), optionally a script-free SVG, "
+         "to compare extension and MIME handling. It never sends executable server code.",
+         "medium", "upload",
+         _schema({"target": _string("in-scope upload URL"),
+                  "mission_id": _string("mission whose scope authorizes the uploads"),
+                  "scope": _array("explicit scope entries"),
+                  "auth_profile": _string("optional stored session"),
+                  "headers": _object("extra request headers"),
+                  "method": _string("upload method", enum=["POST", "PUT", "PATCH"]),
+                  "field": _string("multipart file field"),
+                  "form": _object("extra form fields"),
+                  "include_svg": _boolean("also send a script-free SVG canary", False),
+                  "verify_tls": _boolean("verify the target certificate", True),
+                  "max_bytes": _integer("response body cap", 1024, 524288, 65536),
+                  "timeout": _integer("timeout in seconds", 1, 60, 30)},
+                 ["target"]), "upload_policy_probe", open_world=True),
+    Tool("retest_request", "Retest request consistency",
+         "Repeat one scoped request two to five times and compare status, redirects, and "
+         "normalized body shape. This records repeatability without changing findings.",
+         "medium", "verification",
+         _schema({"target": _string("in-scope URL"),
+                  "mission_id": _string("mission whose scope authorizes the requests"),
+                  "scope": _array("explicit scope entries"),
+                  "auth_profile": _string("optional stored session"),
+                  "method": _string("HTTP method", enum=[
+                      "GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"]),
+                  "headers": _object("extra request headers"),
+                  "body": _string("raw request body"),
+                  "json": _object("JSON request body"),
+                  "form": _object("form request body"),
+                  "count": _integer("repeat count", 2, 5, 2),
+                  "confirm_state_change": _boolean(
+                      "acknowledge replaying a non-idempotent method", False),
+                  "verify_tls": _boolean("verify the target certificate", True),
+                  "max_bytes": _integer("response body cap", 1024, 524288, 65536),
+                  "timeout": _integer("timeout in seconds", 1, 60, 15)},
+                 ["target"]), "retest_request", open_world=True),
+    Tool("evidence_pack", "Write redacted evidence pack",
+         "Write up to fifty supplied observations as a versioned JSON evidence pack "
+         "inside the workspace. Sensitive request fields are redacted before writing.",
+         "medium", "evidence",
+         _schema({"mission_id": _string("optional mission id"),
+                  "title": _string("evidence pack title"),
+                  "observations": _array("request and response observations",
+                                         {"type": "object"})},
+                 ["observations"]), "evidence_pack"),
     Tool("oracle_extract", "Extract through a blind oracle",
          "Extract a value character by character through a boolean, status, or "
          "time-based oracle. Put {{expr}} in the URL, a header, or the body; the "

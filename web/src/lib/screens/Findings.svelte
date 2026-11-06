@@ -164,14 +164,14 @@
     </div>
   </header>
 
-  <div class="obs-findings-tools" style="margin-bottom:14px">
+  <div class="obs-findings-tools" data-nc-zone="findings-filters">
     <label>
       <span class="obs-eyebrow">search</span>
-      <input class="obs-field" style="width:min(240px,70vw);padding:8px 10px" type="search" bind:value={q} oninput={debouncedLoad} />
+      <input class="obs-field" type="search" bind:value={q} oninput={debouncedLoad} placeholder="title, type, host..." aria-label="Search findings" />
     </label>
     <label>
       <span class="obs-eyebrow">severity</span>
-      <select class="obs-field" style="width:150px;padding:8px 10px" bind:value={severity} onchange={load}>
+      <select class="obs-field" bind:value={severity} onchange={load} aria-label="Filter by severity">
         <option value="">all</option>
         <option value="critical">critical</option>
         <option value="high">high</option>
@@ -182,7 +182,7 @@
     </label>
     <label>
       <span class="obs-eyebrow">state</span>
-      <select class="obs-field" style="width:170px;padding:8px 10px" bind:value={triage} onchange={load}>
+      <select class="obs-field" bind:value={triage} onchange={load} aria-label="Filter by triage state">
         <option value="">all</option>
         <option value="new">needs review</option>
         <option value="confirmed">confirmed</option>
@@ -234,11 +234,11 @@
                 <td>
                   <Chip label={sev} color={sevColor(sev)} shape={sevShape(sev)} />
                 </td>
-                <td style="max-width:320px">
-                  <span style="display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12.5px;color:var(--obs-text)">{finding.title}</span>
-                  <span class="obs-mono" style="display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:10px;color:var(--obs-muted)">{finding.secret_type}</span>
+                <td class="obs-findings-title">
+                  <span class="obs-findings-title-text" title={finding.title}>{finding.title}</span>
+                  <span class="obs-mono obs-findings-type" title={finding.secret_type || ''}>{finding.secret_type}</span>
                 </td>
-                <td class="obs-mono" style="max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11px;color:var(--obs-muted)">
+                <td class="obs-mono obs-findings-value" title={finding.value || ''}>
                   {finding.value}
                 </td>
                 <td>

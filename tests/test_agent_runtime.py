@@ -87,22 +87,28 @@ class RuntimeCases(RuntimeHarness):
         self.assertEqual(state["status"], "done", state["last_error"])
         self.assertIn("created 0 findings", state["summary"])
         self.assertEqual([task["kind"] for task in state["tasks"]],
-                         ["scope", "recall", "probe", "inventory", "verify"])
+                         ["scope", "recall", "probe", "inventory",
+                          "surface_workflow", "verify"])
         for task in state["tasks"]:
             self.assertEqual(task["status"], "verified", task)
         probe = next(task for task in state["tasks"] if task["kind"] == "probe")
         self.assertEqual(probe["evidence"]["status"], 200)
         self.assertEqual(probe["evidence"]["title"], "Lab target")
         self.assertIn("reachability, not a finding", probe["verifier_notes"])
-        self.assertEqual(state["usage"]["tasks_done"], 5)
+        surface = next(task for task in state["tasks"]
+                       if task["kind"] == "surface_workflow")
+        self.assertEqual(surface["tool"], "web_surface_inventory")
+        self.assertIn("leads, not findings", surface["verifier_notes"])
+        self.assertEqual(state["usage"]["tasks_done"], 6)
         self.assertEqual(state["usage"]["calls"], 0)
         self.assertFalse(state["usage"]["cost_reported"])
 
         calls, total = self.server.index.list_tool_calls(mission_id=mission["id"], limit=50)
-        self.assertEqual(total, 9)
+        self.assertEqual(total, 10)
         self.assertEqual({call["tool"] for call in calls},
                          {"scope_check", "http_probe", "missions_get",
-                          "runs_list", "findings_summary", "lessons_list", "skills_list"})
+                          "runs_list", "findings_summary", "lessons_list",
+                          "skills_list", "web_surface_inventory"})
         self.assertTrue(all(call["actor"] == "agent:runtime" for call in calls))
         self.assertTrue(all(call["status"] == "ok" for call in calls))
         self.assertEqual(self.server.index.list_findings(limit=10)[1], 0)

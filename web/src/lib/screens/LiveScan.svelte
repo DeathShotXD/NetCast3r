@@ -686,7 +686,7 @@
                 onclick={() => store.watch(item.id)}
               >
                 <span class="h-2 w-2 rounded-full" style="background:{statusColor(item.status)}"></span>
-                <span class="min-w-0 flex-1 truncate text-sm text-bone">{item.target}</span>
+                <span class="min-w-0 flex-1 truncate text-sm text-bone" title={item.target}>{item.target}</span>
                 <span class="mono text-xs text-ash">{statusLabel(item.status)}</span>
               </button>
             {/each}
@@ -701,7 +701,7 @@
       <div class="flex flex-wrap items-center gap-3">
         <div class="min-w-0">
           <p class="eyebrow">run {run.id.slice(-6)}</p>
-          <h1 class="truncate font-mono text-lg text-bone">{run.target}</h1>
+          <h1 class="truncate font-mono text-lg text-bone" title={run.target}>{run.target}</h1>
         </div>
         <span class="chip" style="color:{statusColor(run.status)}" title={run.error || ''}>
           <svg viewBox="0 0 8 8" class="h-[7px] w-[7px] fill-current" aria-hidden="true">
@@ -852,7 +852,7 @@
       {#if tab === 'feed'}
         <div class="grid lg:grid-cols-[1.55fr_1fr]">
           <div class="flex min-h-[460px] flex-col border-b border-indigo-deep lg:border-b-0 lg:border-r">
-            <div class="flex flex-wrap items-center gap-2 px-4 py-2">
+            <div class="obs-live-filter-bar flex flex-wrap items-center gap-2 px-4 py-2">
               {#each FILTERS as item (item.id)}
                 <button
                   class="live-filter"

@@ -6,6 +6,7 @@
     clock,
     isoMs,
     sevColor,
+    sevShape,
     stageForAgent,
     statusColor,
     statusLabel,
@@ -14,6 +15,7 @@
   import { store } from '../state.svelte';
   import { AGENT_COLORS, STAGES } from '../../tokens';
   import { countup, pauseOffscreen } from '../actions';
+  import Chip from '../ui/Chip.svelte';
   import Icon from '../ui/Icon.svelte';
   import PipelineDial from '../ui/PipelineDial.svelte';
   import Sparkline from '../ui/Sparkline.svelte';
@@ -1192,7 +1194,7 @@
               {/if}
             </div>
 
-            <h2 class="obs-hero-title">{focusRun?.target ?? 'The net is armed'}</h2>
+            <h2 class="obs-hero-title" title={focusRun?.target ?? undefined}>{focusRun?.target ?? 'The net is armed'}</h2>
             <p class="obs-hero-objective">{heroBody}</p>
 
             <div class="obs-hero-meta">
@@ -1546,16 +1548,14 @@
                     }}
                   >
                     <td>
-                      <span class="obs-chip" style="color:{sevColor(finding.severity)}">
-                        <span
-                          style="width:5px;height:5px;border-radius:50%;background:currentColor;box-shadow:0 0 5px currentColor"
-                          aria-hidden="true"
-                        ></span>
-                        {finding.severity}
-                      </span>
+                      <Chip
+                        label={finding.severity}
+                        color={sevColor(finding.severity)}
+                        shape={sevShape(finding.severity)}
+                      />
                     </td>
                     <td>
-                      <div class="obs-finding-title">{finding.title}</div>
+                      <div class="obs-finding-title" title={finding.title}>{finding.title}</div>
                       <div class="obs-finding-sub">
                         {finding.secret_type} - {ago(finding.created_at)}
                       </div>

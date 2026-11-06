@@ -28,6 +28,19 @@ ACTIONS = {
     "http_request": "send one scoped request and keep the capped response body",
     "http_path_diff": "compare encoded, cased, and slashed path variants",
     "http_upload": "send one multipart upload to an in-scope endpoint",
+    "web_surface_inventory": "map forms, parameters, scripts, object ids, and URL inputs",
+    "auth_flow_inventory": "map login, reset, MFA, OAuth, and registration entry points",
+    "reset_flow_inventory": "map reset forms and token inputs without requesting a reset",
+    "session_cookie_audit": "inspect cookie names and security attributes",
+    "security_headers_audit": "inspect response security and cache headers",
+    "cors_policy_audit": "compare CORS policy for explicit untrusted origins",
+    "access_control_compare": "compare one request across anonymous and test identities",
+    "idor_sequence_probe": "compare controlled object ids through one URL template",
+    "input_reflection_probe": "place an inert marker into selected query parameters",
+    "injection_differential_probe": "compare safe syntax-character input variants",
+    "upload_policy_probe": "compare inert upload canaries by extension and MIME",
+    "retest_request": "repeat a request and record response consistency",
+    "evidence_pack": "write redacted observations as a durable evidence pack",
     "oracle_extract": "extract a value through a boolean, status, or time oracle",
     "race_run": "run a small concurrent burst against one endpoint",
     "single_packet_race": "send a last-byte-synchronised HTTP/2 race",
@@ -72,8 +85,13 @@ MAX_MODEL_CALLS = 12
 MAX_RESULT_CHARS = 1800
 MAX_PLAN_MOVES = 4
 
-DEFAULT_TARGET_ACTIONS = {"http_probe", "http_request", "http_path_diff",
-                          "http_upload", "host_probe"}
+DEFAULT_TARGET_ACTIONS = {
+    "http_probe", "http_request", "http_path_diff", "http_upload", "host_probe",
+    "web_surface_inventory", "auth_flow_inventory", "reset_flow_inventory",
+    "session_cookie_audit", "security_headers_audit", "cors_policy_audit",
+    "access_control_compare", "idor_sequence_probe", "input_reflection_probe",
+    "injection_differential_probe", "upload_policy_probe", "retest_request",
+}
 TARGET_ALIASES = ("url", "uri", "host", "hostname", "target_url", "endpoint",
                   "base_url", "address")
 
@@ -160,9 +178,13 @@ def _compact(payload, limit: int = MAX_RESULT_CHARS) -> dict:
         keep["body_sample"] = body[:900]
     headers = payload.get("headers")
     if isinstance(headers, dict):
+        # Fingerprint-safe only. Cookie / Authorization never land here.
         interesting = {name: headers[name] for name in
                        ("content-type", "location", "www-authenticate",
-                        "server", "x-powered-by", "content-length")
+                        "server", "x-powered-by", "x-generator", "content-length",
+                        "cf-ray", "cf-cache-status", "x-sucuri-id",
+                        "x-akamai-transformed", "akamai-grn", "x-iinfo",
+                        "x-cdn", "x-fastly-request-id", "x-served-by")
                        if name in headers}
         if interesting:
             keep["headers"] = interesting
@@ -186,9 +208,16 @@ def audit_http_tool_result(payload: dict) -> dict:
 def prepare_tool_call_audit(tool: str, status: str, result) -> object:
     """Redact and compact tool output before it is persisted."""
     from .mcp.tools import redact_payload
+    from .verdicts import probe_signals
 
     if status == "ok" and tool in {"http_probe", "http_request"} and isinstance(result, dict):
-        return redact_payload(audit_http_tool_result(result))
+        compact = redact_payload(audit_http_tool_result(result))
+        # The body is redacted, so keep the small non-secret digest the
+        # evidence classifier needs: which marker it saw, where it redirected,
+        # and a body hash. Without this a verdict can never be read back.
+        if isinstance(compact, dict):
+            compact["signals"] = probe_signals(result)
+        return compact
     return redact_payload(result)
 
 

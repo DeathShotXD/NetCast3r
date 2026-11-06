@@ -6,6 +6,44 @@ Notable changes to NetCast3r, newest first.
 
 ### Added
 
+- **Evidence verdicts**: a lead now carries an honest label for what the
+  recorded responses prove: `supported`, `proven`, `redirect-only`,
+  `edge-blocked`, `blocked`, `inconclusive`, or `untested`. A Cloudflare `403` is
+  edge-blocked, not refuted; a `3xx` to another host is an open redirect, not
+  SSRF. A refusal with no stored edge evidence is `blocked`, never guessed.
+  Each HTTP audit row now keeps a small non-secret proof digest (marker,
+  `Location`, body hash) so a verdict survives body redaction. Shown in the
+  Leads tab, in `GET /api/v1/hypotheses/{id}/evidence`, and as a `## Verdict`
+  section with a per-probe table in the case file. See
+  [docs/VERDICTS.md](docs/VERDICTS.md).
+- **Thirteen operator workflow tools**: `web_surface_inventory`,
+  `auth_flow_inventory`, `reset_flow_inventory`, `session_cookie_audit`,
+  `security_headers_audit`, `cors_policy_audit`, `access_control_compare`,
+  `idor_sequence_probe`, `input_reflection_probe`,
+  `injection_differential_probe`, `upload_policy_probe`, `retest_request`, and
+  `evidence_pack`. The tool surface is now 253 typed tools. Each returns
+  fingerprints and candidate names as leads, never findings.
+
+### Fixed
+
+- **Credential redaction by name**: a custom header such as `X-CSRF`,
+  `X-Amz-Security-Token`, or `X-Goog-Signature` reached the tool-call audit
+  table verbatim because only a fixed allow-list was checked. Any field whose
+  name carries a credential fragment is now redacted.
+- **Model-health gate**: the director picked the oldest failure in the window,
+  so a success between two failure bursts kept the gate open forever. It now
+  picks the newest failure.
+- **Cursor reticle on focus shifts**: the custom cursor hid on window blur,
+  leaving `cursor: none` with no reticle after a native select or dialog. It
+  now parks only when the tab is actually hidden.
+- **Replay guard**: `access_control_compare` and `retest_request` repeat a
+  request across identities or attempts. They now refuse a non-idempotent
+  method unless `confirm_state_change=true` is explicit.
+- **Inputs outside a form**: the surface inventory dropped inputs rendered
+  outside `<form>` (component frameworks). They are now captured as parameters.
+
+### Added (continued)
+
 - **Web2root attack-surface map**: `web2root_map` / `POST
   /api/v1/missions/{id}/web2root` turns one authorised seed into CT + passive
   DNS + DNS brute names, live HTTP/TLS probes, graph assets, a refreshed

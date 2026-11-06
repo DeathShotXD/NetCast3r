@@ -119,7 +119,10 @@ class CandidateTests(unittest.TestCase):
         self.assertEqual(len(self.data(listing)["items"]), 1)
         promote = self.call(
             "POST", f"/api/v1/candidates/{self.candidate['id']}/promote",
-            {"severity": "high", "impact": "A user reads another user's order"})
+            {"severity": "high",
+             "impact": "A user reads another user's order",
+             "force": True,
+             "notes": "Operator reviewed the candidate evidence and accepts promotion."})
         self.assertEqual(promote.status, 200)
         body = self.data(promote)
         self.assertEqual(body["candidate"]["status"], "promoted")

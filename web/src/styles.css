@@ -2039,6 +2039,12 @@
     background: color-mix(in srgb, var(--nc-violet) 12%, transparent);
   }
 
+  .live-tab:focus-visible,
+  .live-filter:focus-visible {
+    outline: none;
+    box-shadow: var(--obs-focus, 0 0 0 2px #050608, 0 0 0 4px rgba(200, 248, 26, 0.55));
+  }
+
   .report-prose {
     color: var(--nc-bone-dust);
     font-size: 13.5px;

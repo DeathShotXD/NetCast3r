@@ -57,6 +57,9 @@ ROLE_TITLES = {
 # registry still applies scope, risk, rate, and audit on every call.
 ROLE_ACTIONS = {
     "scout": ("scope_check", "http_probe", "http_path_diff", "host_probe",
+              "web_surface_inventory", "auth_flow_inventory",
+              "reset_flow_inventory", "session_cookie_audit",
+              "security_headers_audit", "cors_policy_audit",
               "technique_search", "chain_search", "technique_plan", "chain_plan",
               "knowledge_list", "knowledge_read", "skills_get", "lessons_list",
               "threatintel_query", "research_sources",
@@ -66,14 +69,19 @@ ROLE_ACTIONS = {
               "auth_profile_list", "auth_profile_set", "reveng_analyze"),
     "attacker": ("http_request", "http_probe", "http_upload", "oracle_extract", "race_run",
                  "single_packet_race", "last_byte_race", "http_path_diff",
+                 "access_control_compare", "idor_sequence_probe",
+                 "input_reflection_probe", "injection_differential_probe",
+                 "upload_policy_probe", "retest_request",
                  "hypothesis_create", "hypothesis_list", "technique_plan",
                  "chain_plan", "technique_search", "chain_search",
                  "browser_goto", "browser_snapshot", "browser_type",
                  "browser_click", "auth_profile_list", "inbox_wait",
                  "reveng_analyze"),
-    "validator": ("hypothesis_list", "http_probe", "lessons_list",
-                  "agent_notes_list", "auth_profile_list", "browser_snapshot"),
-    "scribe": ("agent_notes_write", "agent_notes_list", "lessons_list"),
+    "validator": ("hypothesis_list", "http_probe", "retest_request",
+                  "access_control_compare", "lessons_list", "agent_notes_list",
+                  "auth_profile_list", "browser_snapshot"),
+    "scribe": ("agent_notes_write", "agent_notes_list", "lessons_list",
+               "evidence_pack"),
 }
 
 # Only a move that could produce a real observation is worth validating. A
@@ -81,7 +89,11 @@ ROLE_ACTIONS = {
 EVIDENCE_ACTIONS = {
     "http_probe", "http_request", "http_path_diff", "http_upload",
     "oracle_extract", "race_run", "single_packet_race", "last_byte_race",
-    "host_probe",
+    "host_probe", "web_surface_inventory", "auth_flow_inventory",
+    "reset_flow_inventory", "session_cookie_audit", "security_headers_audit",
+    "cors_policy_audit", "access_control_compare", "idor_sequence_probe",
+    "input_reflection_probe", "injection_differential_probe",
+    "upload_policy_probe", "retest_request",
 }
 
 STRATEGIST_SYSTEM = """You are the strategist in NetCast3r's security mesh.
@@ -209,6 +221,30 @@ def _prompt(template: str, role: str) -> str:
             .replace("<<ACTIONS>>", _role_menu(role)))
 
 
+_URL_RE = re.compile(r"https?://[^\s'\"<>()]+", re.IGNORECASE)
+_HOSTPATH_RE = re.compile(
+    r"\b([a-z0-9][a-z0-9.-]*\.[a-z]{2,})(/[A-Za-z0-9_./~-]*)", re.IGNORECASE)
+
+
+def _anchor_url(text: str) -> str:
+    """Extract the first in-scope-looking URL from free text.
+
+    Accepts a full ``https://host/path`` or a bare ``host/path`` token (as the
+    hunt.map stores anchors like ``apply.fpsc.gov.pk/admit (200)``) and returns
+    a normalized ``https://host/path`` URL, or an empty string when none fits.
+    """
+    text = str(text or "")
+    match = _URL_RE.search(text)
+    if match:
+        return match.group(0).rstrip(".,);]'\"")
+    match = _HOSTPATH_RE.search(text)
+    if match:
+        host = match.group(1).lower()
+        path = (match.group(2) or "/").rstrip(".,);]'\"")
+        return f"https://{host}{path or '/'}"
+    return ""
+
+
 class Swarm(Autopilot):
     def __init__(self, registry, complete_for, mission: dict,
                  max_steps: int = DEFAULT_STEPS,
@@ -235,6 +271,9 @@ class Swarm(Autopilot):
         self.corroborated = 0
         self.contested = 0
         self.rounds = 0
+        # Cached (host, path) anchors parsed once from the latest hunt.map so a
+        # no-model round can still aim a raw-capture move at a real surface.
+        self._portal_anchor_cache: list[str] | None = None
 
     def _emit(self, stage: str, payload: dict) -> None:
         with self._emit_lock:
@@ -486,10 +525,110 @@ class Swarm(Autopilot):
                     "why": "look for a normalization differential on the root",
                     "expects": "a variant with a different status or body"}
         if role == "attacker":
+            # With no model to write the request, still press the seeded
+            # portal objective toward critical-ready evidence: aim a concrete
+            # raw-capture or authorization-diff move at a mapped surface. Only
+            # fall back to planning when the objective names no real anchor.
+            evidence = self._portal_evidence_move(objective)
+            if evidence:
+                return evidence
             return {"action": "chain_plan", "args": {"target": target, "limit": 3},
                     "why": "rank multi-step chains before spending a request",
                     "expects": "a ranked chain with a first test"}
         return None
+
+    # -- deterministic portal pressure ------------------------------------
+    def _portal_anchors(self) -> list[str]:
+        """Live auth/object/api anchor URLs parsed once from the hunt.map note.
+
+        These let a no-model attacker round target a real portal surface
+        instead of only the seed root. Parsing is best effort and cached.
+        """
+        if self._portal_anchor_cache is not None:
+            return self._portal_anchor_cache
+        anchors: list[str] = []
+        payload, is_error, _ = self._tool("agent_notes_list", {
+            "mission_id": self.mission_id, "limit": 30})
+        notes = payload.get("items") if not is_error and isinstance(payload, dict) else []
+        latest = None
+        for note in notes if isinstance(notes, list) else []:
+            if isinstance(note, dict) and str(note.get("kind") or "") == "hunt.map":
+                latest = note
+        parsed: dict = {}
+        if isinstance(latest, dict):
+            body = latest.get("body")
+            if isinstance(body, dict):
+                parsed = body
+            elif isinstance(body, str) and body.strip():
+                try:
+                    loaded = json.loads(body)
+                    if isinstance(loaded, dict):
+                        parsed = loaded
+                except json.JSONDecodeError:
+                    parsed = {}
+        rows: list[str] = []
+        for key in ("object_api_surfaces", "auth_surfaces", "path_map"):
+            value = parsed.get(key)
+            if isinstance(value, list):
+                rows.extend(str(item) for item in value)
+        for row in rows:
+            url = _anchor_url(row)
+            if url and url not in anchors:
+                anchors.append(url)
+        self._portal_anchor_cache = anchors
+        return anchors
+
+    def _objective_anchor(self, objective: dict) -> str:
+        """Best in-scope URL for an objective: an explicit one in the text,
+        otherwise the first live anchor from the hunt.map."""
+        text = " ".join(str(objective.get(key) or "") for key in
+                        ("goal", "hypothesis", "expected", "target"))
+        url = _anchor_url(text)
+        if url:
+            return url
+        anchors = self._portal_anchors()
+        return anchors[0] if anchors else ""
+
+    def _portal_evidence_move(self, objective: dict) -> dict | None:
+        """Turn a seeded portal objective into one raw-capture tool call.
+
+        The validator only upgrades to "supports" on raw status, headers, and a
+        body snippet, so every branch here captures a real request/response.
+        """
+        if not isinstance(objective, dict):
+            return None
+        text = " ".join(str(objective.get(key) or "") for key in
+                        ("goal", "hypothesis", "expected")).lower()
+        anchor = self._objective_anchor(objective)
+        if not anchor:
+            return None
+        if any(token in text for token in
+               ("upload", "file upload", "multipart", "attachment", "import")):
+            return {"action": "upload_policy_probe",
+                    "args": {"target": anchor},
+                    "why": "capture the raw upload-policy response for the mapped upload surface",
+                    "expects": "status, headers, and the stored path of an inert canary",
+                    "hypothesis": str(objective.get("hypothesis") or "")[:240],
+                    "falsifier": "the canary is rejected or never stored"}
+        if any(token in text for token in
+               ("idor", "bola", "object", "admit", "result", "candidate",
+                "applicant", "roll", "dashboard", "profile", "account", "/api",
+                "api object")):
+            return {"action": "access_control_compare",
+                    "args": {"target": anchor},
+                    "why": "replay the mapped object anonymously and with stored auth to capture a raw authorization diff",
+                    "expects": "a status or body difference proving cross-account object access",
+                    "hypothesis": str(objective.get("hypothesis") or "")[:240],
+                    "falsifier": "every identity gets the same authorized response"}
+        # auth / oauth / reset / session / login / default: capture the raw
+        # request and response so the next falsifier has a real baseline.
+        return {"action": "http_request",
+                "args": {"target": anchor, "method": "GET",
+                         "max_bytes": 32768, "follow_redirects": False},
+                "why": "capture the raw request/response for the mapped auth surface before any claim of support",
+                "expects": "raw status, headers, and a body snippet to anchor the next falsifier",
+                "hypothesis": str(objective.get("hypothesis") or "")[:240],
+                "falsifier": "the surface only returns a static shell with no auth state"}
 
     def _clean_move(self, role: str, value) -> dict | None:
         if not isinstance(value, dict):

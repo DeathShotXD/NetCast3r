@@ -600,8 +600,10 @@ AGENT_TASK_STATUSES = {"pending", "running", "verified", "unverified",
 AGENT_TASK_KINDS = {"scope", "recall", "probe", "inventory", "analysis", "verify",
                     "auth_inventory", "api_inventory", "findings_inventory",
                     "reports_inventory", "training_plan", "training_research",
-                    "training_gaps", "training_knowledge"}
-MODEL_CALL_STATUSES = {"ok", "error", "unavailable", "budget"}
+                    "training_gaps", "training_knowledge",
+                    "surface_workflow", "auth_workflow", "api_workflow",
+                    "retest_workflow"}
+MODEL_CALL_STATUSES = {"ok", "error", "unavailable", "budget", "rotating"}
 APPROVAL_RISKS = {"low", "medium", "high", "critical"}
 APPROVAL_DECISIONS = {"approved", "rejected"}
 TOOL_CALL_STATUSES = {"ok", "error", "denied", "approval_required", "confirm_required"}

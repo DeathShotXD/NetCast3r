@@ -176,7 +176,7 @@
 </script>
 
 {#if store.palette}
-  <div class="palette-veil fixed inset-0 z-[60]" role="presentation" onclick={() => (store.palette = false)}>
+  <div class="palette-veil fixed inset-0" role="presentation" onclick={() => (store.palette = false)}>
     <div
       class="mx-auto mt-[12vh] w-[min(580px,92vw)]"
       role="dialog"
@@ -213,7 +213,7 @@
                   onclick={() => pick(row.item)}
                 >
                   <span class="palette-glyph" aria-hidden="true">{row.item.glyph}</span>
-                  <span class="min-w-0 flex-1 truncate">{row.item.label}</span>
+                  <span class="min-w-0 flex-1 truncate" title={row.item.label}>{row.item.label}</span>
                   <span class="hidden shrink-0 text-xs text-ash sm:inline">{row.item.hint}</span>
                 </button>
               </li>

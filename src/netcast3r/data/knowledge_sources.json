@@ -31,7 +31,7 @@
     {
       "id": "hackerone-disclosed",
       "name": "HackerOne disclosed reports",
-      "url": "http://h1.nobbd.de/reports_rss.xml",
+      "url": "https://h1.nobbd.de/reports_rss.xml",
       "kind": "rss",
       "tags": ["hackerone", "bug-bounty", "disclosed", "critical"]
     },

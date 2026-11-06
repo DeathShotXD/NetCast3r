@@ -616,5 +616,88 @@ class EvidenceCompactionTests(unittest.TestCase):
         self.assertIn("json", menu)
 
 
+def _bare_swarm(registry=None):
+    reg = registry or FakeRegistry()
+    return swarm.Swarm(reg, lambda role, messages, exclude=None: {}, mission(),
+                       max_steps=6, max_seconds=30, max_model_calls=6,
+                       run_id="run_portal")
+
+
+class PortalEvidenceTests(unittest.TestCase):
+    """A no-model attacker round must still capture raw portal evidence."""
+
+    def test_anchor_url_from_full_url_and_bare_host(self):
+        self.assertEqual(
+            swarm._anchor_url("see https://apply.fpsc.gov.pk/admit now"),
+            "https://apply.fpsc.gov.pk/admit")
+        self.assertEqual(
+            swarm._anchor_url("BOLA on apply.fpsc.gov.pk/admit: swap the id"),
+            "https://apply.fpsc.gov.pk/admit")
+        self.assertEqual(swarm._anchor_url("no host in this text"), "")
+
+    def test_dead_model_attacker_captures_object_authorization_diff(self):
+        mesh = _bare_swarm()
+        objective = {
+            "owner": "attacker",
+            "goal": ("Test open hypothesis: BOLA on apply.fpsc.gov.pk/admit: "
+                     "swap the applicant id"),
+            "hypothesis": "swapping the roll id reads another candidate",
+            "expected": "cross-account object read"}
+        move = mesh._baseline_move("attacker", objective, 2, 0)
+        self.assertEqual(move["action"], "access_control_compare")
+        self.assertEqual(move["args"]["target"],
+                         "https://apply.fpsc.gov.pk/admit")
+
+    def test_dead_model_attacker_captures_raw_request_on_auth_surface(self):
+        mesh = _bare_swarm()
+        objective = {
+            "owner": "attacker",
+            "goal": "Exercise OAuth redirect on https://apply.fpsc.gov.pk/oauth",
+            "hypothesis": "loose redirect_uri allows code theft",
+            "expected": "the code leaks to an attacker redirect"}
+        move = mesh._baseline_move("attacker", objective, 2, 0)
+        self.assertEqual(move["action"], "http_request")
+        self.assertEqual(move["args"]["target"],
+                         "https://apply.fpsc.gov.pk/oauth")
+        self.assertEqual(move["args"]["method"], "GET")
+
+    def test_dead_model_attacker_probes_upload_policy(self):
+        mesh = _bare_swarm()
+        objective = {
+            "owner": "attacker",
+            "goal": "Unrestricted upload on apply.fpsc.gov.pk/upload",
+            "hypothesis": "extension handling stores an executable canary",
+            "expected": "a canary stored and served dangerously"}
+        move = mesh._baseline_move("attacker", objective, 2, 0)
+        self.assertEqual(move["action"], "upload_policy_probe")
+        self.assertEqual(move["args"]["target"],
+                         "https://apply.fpsc.gov.pk/upload")
+
+    def test_objective_without_anchor_falls_back_to_chain_plan(self):
+        mesh = _bare_swarm()  # FakeRegistry exposes no hunt.map anchors
+        objective = {"owner": "attacker",
+                     "goal": "Rank the multi-step chains for this surface",
+                     "hypothesis": "", "expected": ""}
+        move = mesh._baseline_move("attacker", objective, 2, 0)
+        self.assertEqual(move["action"], "chain_plan")
+
+    def test_portal_anchors_parse_from_hunt_map_note(self):
+        payload = {"items": [{"kind": "hunt.map", "body": json.dumps({
+            "object_api_surfaces": ["apply.fpsc.gov.pk/admit (200)"],
+            "auth_surfaces": ["apply.fpsc.gov.pk/login (200)"]})}]}
+        mesh = _bare_swarm(FakeRegistry(payload=payload))
+        anchors = mesh._portal_anchors()
+        self.assertIn("https://apply.fpsc.gov.pk/admit", anchors)
+        self.assertIn("https://apply.fpsc.gov.pk/login", anchors)
+        # A bare object objective with no inline URL now reuses the map anchor.
+        objective = {"owner": "attacker",
+                     "goal": "Exercise mapped chain: dual-account IDOR object",
+                     "hypothesis": "", "expected": ""}
+        move = mesh._baseline_move("attacker", objective, 2, 0)
+        self.assertEqual(move["action"], "access_control_compare")
+        self.assertEqual(move["args"]["target"],
+                         "https://apply.fpsc.gov.pk/admit")
+
+
 if __name__ == "__main__":
     unittest.main()
