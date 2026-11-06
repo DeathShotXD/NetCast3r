@@ -50,15 +50,15 @@ def _apply_options(config, args) -> None:
         run.patterns_file = args.patterns
     if getattr(args, "recipes", None):
         run.recipes_file = args.recipes
-    if getattr(args, "rate", None):
+    if getattr(args, "rate", None) is not None:
         run.requests_per_second = args.rate
-    if getattr(args, "delay", None):
+    if getattr(args, "delay", None) is not None:
         run.delay = args.delay
     if getattr(args, "retries", None) is not None:
         run.retries = args.retries
-    if getattr(args, "timeout", None):
+    if getattr(args, "timeout", None) is not None:
         run.timeout = args.timeout
-    if getattr(args, "max_response_size", None):
+    if getattr(args, "max_response_size", None) is not None:
         run.max_response_size = args.max_response_size
     if getattr(args, "user_agent", None):
         run.user_agent = args.user_agent
