@@ -23,9 +23,25 @@ import calendar
 import json
 import threading
 import time
+from urllib.parse import urlsplit
 
 from .events import Event
 from .. import prime as prime_module
+
+
+def _angle_fragment(target: str) -> str:
+    """A path fragment that can be compared with a hint label.
+
+    A root URL has no distinguishing path, so it never filters a hint.
+    """
+    try:
+        parts = urlsplit(target if "://" in target else "https://" + target)
+    except ValueError:
+        return ""
+    path = (parts.path or "").strip().lower()
+    if path in ("", "/"):
+        return ""
+    return path
 
 MIN_TICK = 5.0
 MAX_TICK = 300.0
@@ -765,6 +781,19 @@ class Director:
         if not hints:
             hints = ["auth surfaces", "API object IDs", "OAuth callbacks",
                      "cloud metadata SSRF only after URL sinks are mapped"]
+        blocked = self._blocked_angles(mission_id)
+        skipped: list[str] = []
+        if blocked:
+            kept = [hint for hint in hints
+                    if not any(fragment in hint.lower() for fragment in blocked)]
+            skipped = [hint for hint in hints if hint not in kept]
+            if kept:
+                hints = kept
+            else:
+                # Every mapped endpoint is a settled refusal. Point the next
+                # run at angles that are not a path replay.
+                hints = ["authentication and reset flows", "API object ownership",
+                         "OAuth callback handling", "URL-fetching features"]
         spa_shell, shell_bytes = self._spa_shell_signal(mission_id)
         if spa_shell:
             # Path-guessing is settled: the stall is the SPA catch-all, so the
@@ -786,6 +815,9 @@ class Director:
                 "hypotheses. Prefer coverage gaps, auth/IDOR/OAuth, and "
                 "PoC-gated promotion. Never stop."
             )
+        if skipped:
+            body += (" Do not retry an angle already edge-blocked or refused: "
+                     + "; ".join(skipped[:5]) + ".")
         try:
             existing = self.server.index.list_directions(
                 mission_id, status="queued", limit=20)
@@ -798,9 +830,58 @@ class Director:
                 "deepen", "queued deepen direction after stall",
                 mission_id=mission_id,
                 data={"no_progress": mstate.get("no_progress"),
-                      "hints": hints[:5]})
+                      "hints": hints[:5], "skipped_blocked": skipped[:5]})
         except Exception:  # noqa: BLE001
             pass
+
+    def _blocked_angles(self, mission_id: str) -> list[str]:
+        """Return path fragments whose recorded probes were refused.
+
+        A stall used to re-queue the same endpoint even after every probe had
+        been stopped by an edge control, which burns the next run on a settled
+        question. Read the verdict from the stored responses instead.
+        """
+        try:
+            hypotheses, _ = self.server.index.list_hypotheses(
+                mission_id=mission_id, limit=200)
+            if not hypotheses:
+                return []
+            rows, _ = self.server.index.list_tool_calls(
+                mission_id=mission_id, limit=4000)
+        except Exception:  # noqa: BLE001 - a broken read must not stop a stall
+            return []
+        if not rows:
+            return []
+        from .. import verdicts as verdicts_module
+
+        blocked: list[str] = []
+        for hypothesis in hypotheses:
+            technique = str(hypothesis.get("technique") or "").lower()
+            if not any(key in technique for key in ("ssrf", "redirect")):
+                continue
+            if str(hypothesis.get("status") or "") in {
+                    "refuted", "promoted", "archived"}:
+                continue
+            fragment = _angle_fragment(str(hypothesis.get("target") or ""))
+            if not fragment:
+                continue
+            # Classify only the probes that hit this angle. The mission log
+            # mixes hundreds of unrelated requests, and an unrelated 301 must
+            # not turn this lead into a redirect.
+            subset = [
+                row for row in rows
+                if fragment in str((row.get("args") or {}).get("target")
+                                   or "").lower()]
+            if not subset:
+                continue
+            try:
+                verdict = verdicts_module.classify(hypothesis, subset) or {}
+            except Exception:  # noqa: BLE001
+                continue
+            if verdict.get("verdict") not in {"edge-blocked", "blocked"}:
+                continue
+            blocked.append(fragment)
+        return blocked
 
     def _reap(self) -> list[dict]:
         """Retire finished runs and update each mission's progress counters."""

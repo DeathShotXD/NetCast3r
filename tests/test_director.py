@@ -299,6 +299,62 @@ class DirectorTests(unittest.TestCase):
         self.assertEqual(decision["mode"], "hunt")
         self.assertIn("model gate", decision["model_gate"])
 
+    def test_deepen_skips_an_angle_the_edge_already_blocked(self):
+        mission = self.mission("blocked")
+        self.server.index.upsert_graph_node(
+            mission["id"], "endpoint",
+            "https://example.com/api/auth/callback",
+            label="https://example.com/api/auth/callback")
+        self.server.index.upsert_graph_node(
+            mission["id"], "endpoint", "https://example.com/api/orders",
+            label="https://example.com/api/orders")
+        lead = self.server.index.create_hypothesis(
+            "SSRF through the callback", target="https://example.com/api/auth/callback",
+            mission_id=mission["id"], technique="ssrf",
+            rationale="url parameter", expected="metadata body")
+        self.server.index.add_tool_call(
+            "http_request", status="ok", mission_id=mission["id"],
+            args={"target": "https://example.com/api/auth/callback?url=http://169.254.169.254/"},
+            result={"status": 403, "headers": {"cf-ray": "abc", "server": "cloudflare"},
+                    "body": "blocked"})
+        self.director._queue_deepen(mission["id"], {"no_progress": 3})
+        directions = self.server.index.list_directions(mission["id"], status="queued")
+        body = directions[-1]["body"]
+        self.assertIn("Do not retry an angle already edge-blocked", body)
+        self.assertIn("/api/auth/callback", body)
+        # The unblocked endpoint is still a hint.
+        self.assertIn("/api/orders", body.split("Do not retry")[0])
+        self.assertEqual(lead["status"], "open")
+
+    def test_deepen_moves_off_paths_when_every_endpoint_is_blocked(self):
+        mission = self.mission("all-blocked")
+        self.server.index.upsert_graph_node(
+            mission["id"], "endpoint", "https://example.com/api/auth/callback",
+            label="https://example.com/api/auth/callback")
+        self.server.index.create_hypothesis(
+            "SSRF through the callback", target="https://example.com/api/auth/callback",
+            mission_id=mission["id"], technique="ssrf",
+            rationale="url parameter", expected="metadata body")
+        self.server.index.add_tool_call(
+            "http_request", status="ok", mission_id=mission["id"],
+            args={"target": "https://example.com/api/auth/callback?url=http://169.254.169.254/"},
+            result={"status": 403, "headers": {"cf-ray": "abc"}, "body": "blocked"})
+        self.director._queue_deepen(mission["id"], {"no_progress": 3})
+        body = self.server.index.list_directions(
+            mission["id"], status="queued")[-1]["body"]
+        self.assertIn("URL-fetching features", body)
+        self.assertIn("Do not retry an angle already edge-blocked", body)
+        self.assertIn("/api/auth/callback", body)
+
+    def test_deepen_without_blocked_evidence_keeps_every_hint(self):
+        mission = self.mission("open")
+        self.server.index.upsert_graph_node(
+            mission["id"], "endpoint", "https://example.com/api/orders",
+            label="https://example.com/api/orders")
+        self.director._queue_deepen(mission["id"], {"no_progress": 3})
+        directions = self.server.index.list_directions(mission["id"], status="queued")
+        self.assertNotIn("Do not retry an angle already", directions[-1]["body"])
+
     def test_the_gate_uses_the_newest_failure_regardless_of_log_order(self):
         # A success between two failure bursts must not keep the gate open.
         now = time.time()

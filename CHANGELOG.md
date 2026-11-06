@@ -33,6 +33,9 @@ Notable changes to NetCast3r, newest first.
 - **Model-health gate**: the director picked the oldest failure in the window,
   so a success between two failure bursts kept the gate open forever. It now
   picks the newest failure.
+- **Verdict-aware deepen**: a stall no longer re-queues an endpoint whose
+  recorded probes were `edge-blocked` or `blocked`; the direction names the
+  skipped angle and keeps the remaining hints.
 - **Cursor reticle on focus shifts**: the custom cursor hid on window blur,
   leaving `cursor: none` with no reticle after a native select or dialog. It
   now parks only when the tab is actually hidden.

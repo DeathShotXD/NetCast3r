@@ -82,6 +82,8 @@ plan notes are excluded, so bookkeeping never looks like progress.
 - no new progress: the mission's cooldown doubles, up to five minutes;
 - after three flat runs: the director queues a **deepen** direction from graph
   endpoints and keeps scheduling — missions never park themselves;
+- a deepen hint whose recorded probes are `edge-blocked` or `blocked` is
+  removed and named in the direction, so a settled refusal is not re-queued;
 - only the operator **pause** or **kill** stops continuous hunting.
 
 `POST /api/v1/director/kill` (or the **Kill** button, or `director_control`
