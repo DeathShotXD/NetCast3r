@@ -211,7 +211,7 @@ netcast3r mcp --print-config    # optional: paste into opencode.jsonc
 opencode mcp list
 ```
 
-The server has 254 typed tools with risk tiers, scope enforcement, single-use
+The server has 258 typed tools with risk tiers, scope enforcement, single-use
 approvals, rate limits, and a full tool-call audit, plus disposable inboxes,
 OAST callbacks, named auth profiles, a scoped authenticated `http_request`, a
 path-variant differential, run-to-run surface diffing, local reverse-engineering
@@ -305,6 +305,7 @@ required before a candidate is marked corroborated.
 - [Exploits](docs/EXPLOITS.md) - the typed exploit module catalog and how it plans
 - [Capabilities](docs/CAPABILITIES.md) - the external tool broker, API-spec ingestion, program briefs, and PoCs
 - [Web2root](docs/WEB2ROOT.md) - single-seed surface map through foothold and report
+- [File-read chains](docs/CHAINS.md) - LFI to source disclosure, auth bypass, and the approval boundary
 - [Brain](docs/BRAIN.md) - main brain loop, spectate, and mid-hunt instruct
 - [Leads and evidence](docs/LEADS.md) - how to inspect a hypothesis, its tool calls, and its verdict
 - [Evidence verdicts](docs/VERDICTS.md) - supported, proven, redirect-only, and edge-blocked, and what each proves

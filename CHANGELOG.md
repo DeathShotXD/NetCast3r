@@ -28,7 +28,15 @@ Notable changes to NetCast3r, newest first.
   holds (a certificate-transparency export, a programme asset list), enforces
   mission scope, resolves and optionally probes each name, and writes only
   observed hosts and endpoints into the evidence graph. The tool surface is
-  now 254 typed tools.
+  now 258 typed tools.
+- **File-read chain toolkit**: `path_traversal_probe`, `source_disclosure_scan`,
+  `auth_cookie_probe`, and `chain_run` take a confirmed LFI through traversal
+  depth, source and config disclosure, masked secret and sink extraction, and a
+  cookie auth-bypass check. Upload and OS-command candidates are returned for
+  approval and never fired. See [docs/CHAINS.md](docs/CHAINS.md).
+- **Cookie reuse in test cases**: a `test_case_run` step can set
+  `use_previous_cookies: true` to carry the session cookies returned by an
+  earlier step, so an auth bypass is proved end to end without copying a token.
 
 ### Fixed
 
@@ -54,6 +62,10 @@ Notable changes to NetCast3r, newest first.
   held one. Findings now store `mission_id`, the startup migration backfills it
   from the promoted hypothesis, `GET /api/v1/findings?mission_id=...` filters by
   it, and the mission count includes it.
+- **Helix progress instead of model health**: a quiet model tick now reports the
+  live target, pages mapped, open leads, and confirmed findings. A directive-only
+  tick with an unchanged line is not journaled, so the dock stops repeating
+  "models were quiet".
 - **Cursor reticle on focus shifts**: the custom cursor hid on window blur,
   leaving `cursor: none` with no reticle after a native select or dialog. It
   now parks only when the tab is actually hidden.

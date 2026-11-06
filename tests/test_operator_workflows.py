@@ -26,6 +26,16 @@ class WorkflowHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         parsed = urlsplit(self.path)
         query = parse_qs(parsed.query)
+        if parsed.path == "/session-login":
+            self._send(200, b"ok", "text/plain",
+                       {"Set-Cookie": "sid=jar-value; Path=/; HttpOnly"})
+            return
+        if parsed.path == "/session-protected":
+            if "sid=jar-value" in (self.headers.get("Cookie") or ""):
+                self._send(200, b"protected content", "text/html")
+            else:
+                self._send(401, b"denied", "text/plain")
+            return
         if parsed.path.startswith("/object/"):
             object_id = parsed.path.rsplit("/", 1)[-1]
             body = json.dumps({"application_id": object_id, "owner": "controlled"}).encode()
@@ -132,6 +142,16 @@ class OperatorWorkflowTests(unittest.TestCase):
             tool = _TOOL_MAP[name]
             self.assertTrue(tool.description)
             self.assertEqual(tool.input_schema["type"], "object")
+
+    def test_sequential_steps_can_reuse_a_session_cookie(self):
+        result = self.call("test_case_run", base_url=self.base_url, steps=[
+            {"name": "login", "path": "/session-login", "expect_status": 200},
+            {"name": "protected", "path": "/session-protected",
+             "use_previous_cookies": True, "expect_status": 200,
+             "expect_body_contains": "protected content"},
+        ])
+        self.assertTrue(result["ok"], result)
+        self.assertEqual(result["passed"], 2)
 
     def test_replaying_a_state_changing_method_needs_an_ack(self):
         for tool in ("retest_request", "access_control_compare"):

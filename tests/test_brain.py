@@ -303,6 +303,50 @@ class CognitionTests(unittest.TestCase):
         self.assertIn("order API", turns[0]["text"])
         self.assertEqual(self.index.totals().get("findings", 0), 0)
 
+    def test_a_quiet_model_reports_hunt_progress_without_repeating(self):
+        run = self.index.create_run(
+            "https://lab.example.com/", {"mode": "hunt"})
+        self.index.add_mission_run(self.mission["id"], run["id"])
+        self.index.update_run(run["id"], status="done", counts_json={
+            "target": "https://lab.example.com/", "pages": 12, "leads": 3})
+        self.index.create_hypothesis(
+            "order idor", target="https://lab.example.com/api/orders/7",
+            mission_id=self.mission["id"], technique="idor",
+            rationale="object id", expected="other user data")
+        brain.set_operator_priority(self.index, self.mission["id"])
+
+        def quiet(messages):
+            return {"text": "", "provider": "fake", "model": "free"}
+
+        first = brain.cognition(
+            self.server, self.index, self.server._director(), complete=quiet)
+        self.assertTrue("Hunting" in first["reply"] or "Pass on" in first["reply"])
+        self.assertNotIn("Models were quiet", first["reply"])
+        self.assertIn("lab.example.com", first["reply"])
+        before = len(self.index.list_brain_log(
+            limit=50, mission_id=self.mission["id"]))
+        second = brain.cognition(
+            self.server, self.index, self.server._director(),
+            complete=quiet, previous=first)
+        after = len(self.index.list_brain_log(
+            limit=50, mission_id=self.mission["id"]))
+        self.assertEqual(second["reply"], first["reply"])
+        self.assertEqual(after, before)
+
+    def test_a_supported_file_read_points_the_next_run_at_chain_run(self):
+        lead = self.index.create_hypothesis(
+            "file read", target="https://lab.example.com/download?file=x",
+            mission_id=self.mission["id"], technique="path-traversal",
+            rationale="file parameter", expected="config")
+        self.index.patch_hypothesis(
+            lead["id"], status="supported",
+            test={"steps": [{"url": "https://lab.example.com/download?file=x"}]},
+            result={"ok": True})
+        directive = brain.critical_ready_directive(
+            self.index, self.mission["id"])
+        self.assertIsNotNone(directive)
+        self.assertIn("chain_run", directive["body"])
+
     def test_a_supervised_mission_blocks_run_module(self):
         supervised = self.index.create_mission(
             "Careful", "https://lab.example.com/", status="active",

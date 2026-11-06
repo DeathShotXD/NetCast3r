@@ -1103,7 +1103,20 @@ def critical_ready_directive(index, mission_id: str) -> dict | None:
     except Exception:  # noqa: BLE001
         rows = []
     if rows:
-        title = str((rows[0] or {}).get("title") or "supported lead")[:120]
+        lead = rows[0] or {}
+        title = str(lead.get("title") or "supported lead")[:120]
+        technique = str(lead.get("technique") or "").lower()
+        if any(token in technique for token in ("traversal", "lfi", "file-read")):
+            return {
+                "kind": "directive",
+                "mission_id": mission_id,
+                "body": (
+                    f"File-read chain: '{title}' is supported. Run chain_run with the "
+                    "recorded read URL, scan the disclosed source read-only, and stop at "
+                    "the approval line for any upload, database command, or OS command. "
+                    "Promote only the primitive you can replay."
+                )[:500],
+            }
         return {
             "kind": "directive",
             "mission_id": mission_id,
@@ -1114,6 +1127,36 @@ def critical_ready_directive(index, mission_id: str) -> dict | None:
             )[:500],
         }
     return None
+
+
+def _progress_reply(index, mission_id: str) -> tuple[str, str]:
+    """Describe the live hunt from the ledger instead of reporting model health."""
+    mission = index.get_mission(mission_id) or {}
+    target = str(mission.get("target") or "")
+    runs = mission.get("runs") or []
+    latest = runs[0] if runs else {}
+    counts = latest.get("counts") or {}
+    host = str(counts.get("target") or target).split("://", 1)[-1].rstrip("/")
+    try:
+        _, open_leads = index.list_hypotheses(
+            mission_id=mission_id, status="open", limit=1)
+    except Exception:  # noqa: BLE001 - a broken read must not stop the tick
+        open_leads = 0
+    findings = int(mission.get("finding_count") or 0)
+    status = str(latest.get("status") or "")
+    pages = int(counts.get("pages") or 0)
+    leads = int(counts.get("leads") or 0)
+    if status == "running":
+        reply = (f"Hunting {host}: {pages} pages mapped, {open_leads} open leads, "
+                 f"{findings} confirmed finding(s).")
+    elif latest:
+        reply = (f"Pass on {host} {status}: {leads} leads staged, {open_leads} open "
+                 f"overall, {findings} confirmed finding(s).")
+    else:
+        reply = (f"Hunting {host}: {open_leads} open leads, "
+                 f"{findings} confirmed finding(s).")
+    focus = f"{host} - {status or 'queued'} - {open_leads} open leads"
+    return reply, focus
 
 
 def cognition(server, index, director, mission_id: str = "", complete=None,
@@ -1180,14 +1223,24 @@ def cognition(server, index, director, mission_id: str = "", complete=None,
         applied.append(_apply(index, director, steer, steer_id))
         applied = [a for a in applied if a]
         if not reply.strip():
-            reply = ("Models were quiet; steering the locked mission toward "
-                     "critical-ready evidence.")
+            reply, progress_focus = _progress_reply(index, steer_id)
+            if not focus:
+                focus = progress_focus
         if not focus:
             focus = "critical_ready on the locked mission"
     result = {"reply": reply, "reasoning": reasoning, "focus": focus,
               "actions": applied, "provider": provider, "model": model,
               "mission_id": mission_id, "error": error}
-    if journal and (reply or applied):
+    # A directive-only tick with an unchanged progress line is not news. Do not
+    # fill the Helix feed with "models were quiet" every 150 seconds.
+    substantive = any(
+        row.get("applied") and str(row.get("kind") or "") != "directive"
+        for row in applied)
+    repeat = bool(
+        previous
+        and str(previous.get("reply") or "").strip() == reply.strip()
+        and not substantive)
+    if journal and (reply or applied) and not repeat:
         try:
             index.add_brain_turn("auto", reply, mission_id=mission_id,
                                  focus=focus, provider=provider, model=model,

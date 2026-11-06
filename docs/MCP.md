@@ -455,6 +455,9 @@ Broad scanners (nuclei, dalfox, nmap) are intentionally not part of the active
 surface: they consume time and produce too many false positives. The precision
 path is `http_request`, `http_path_diff`, the scoped browser, and
 `test_case_run`, which executes an explicit ordered test case with assertions.
+A step may set `use_previous_cookies: true` to reuse the session cookies set by
+an earlier step, which is how an auth-bypass chain is proved end to end without
+copying a session id by hand.
 `recon_passive` uses a fixed argv, never a shell, refuses private/metadata
 targets, caps output at 200 KB, and requires a mission or explicit scope.
 

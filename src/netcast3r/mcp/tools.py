@@ -36,7 +36,7 @@ import httpx
 from .. import (authstore, browser, chains, codeaudit, integrations, lastbyte,
                 oast, offsec, pathdiff, pivot, quality, research, reveng,
                 selfmodel, single_packet, sqa, stix, surface, tempmail,
-                threatintel, training)
+                threatintel, training, webchain)
 from ..scope import ScopeManager
 
 POLICIES = ("readonly", "supervised", "full")
@@ -1285,6 +1285,7 @@ def test_case_run(ctx: ToolContext, args: dict) -> dict:
     fail_fast = bool(args.get("fail_fast", True))
     results = []
     passed = failed = 0
+    jar: dict[str, str] = {}
     for index, step in enumerate(steps, 1):
         if not isinstance(step, dict):
             raise ToolError("invalid_arguments", f"step {index} must be an object")
@@ -1298,7 +1299,15 @@ def test_case_run(ctx: ToolContext, args: dict) -> dict:
             raise ToolError("invalid_arguments", f"step {index} needs url, path, or base_url")
         call_args = {"target": target, "method": method,
                      "mission_id": mission_id, "scope": args.get("scope")}
-        for key in ("headers", "auth_profile", "body", "json", "form",
+        step_headers = dict(step.get("headers") or {})
+        if step.get("use_previous_cookies") and jar:
+            existing = step_headers.pop("Cookie", "") or step_headers.pop("cookie", "")
+            merged = "; ".join(filter(None, [existing] + [
+                f"{name}={value}" for name, value in jar.items()]))
+            step_headers["Cookie"] = merged
+        if step_headers:
+            call_args["headers"] = step_headers
+        for key in ("auth_profile", "body", "json", "form",
                     "follow_redirects", "verify_tls", "max_bytes", "timeout"):
             if key in step:
                 call_args[key] = step[key]
@@ -1307,6 +1316,11 @@ def test_case_run(ctx: ToolContext, args: dict) -> dict:
             actual = int(response.get("status") or 0)
             body = str(response.get("body") or "")
             headers = response.get("headers") or {}
+            for raw in response.get("set_cookie") or []:
+                pair = str(raw).split(";", 1)[0]
+                name, sep, value = pair.partition("=")
+                if sep and name.strip():
+                    jar[name.strip()] = value.strip()
         except ToolError as exc:
             results.append({"step": index, "name": step.get("name", ""),
                             "target": target, "method": method, "pass": False,
@@ -1354,6 +1368,228 @@ def test_case_run(ctx: ToolContext, args: dict) -> dict:
             "ok": failed == 0,
             "note": ("Assertions and raw responses are recorded per step. This harness "
                      "does not decide that a target is vulnerable.")}
+
+
+def _chain_fetch(ctx: ToolContext, args: dict, url: str) -> tuple[dict | None, str]:
+    request = {
+        "target": url,
+        "mission_id": str(args.get("mission_id") or ""),
+        "method": "GET", "max_bytes": int(args.get("max_bytes") or 65536),
+        "timeout": int(args.get("timeout") or 20),
+        "follow_redirects": False,
+    }
+    if isinstance(args.get("headers"), dict) and args["headers"]:
+        request["headers"] = args["headers"]
+    try:
+        return http_request(ctx, request), ""
+    except ToolError as exc:
+        return None, f"{exc.code}: {exc.message}"
+
+
+def _chain_jar(result: dict, jar: dict[str, str]) -> None:
+    for raw in result.get("set_cookie") or []:
+        pair = str(raw).split(";", 1)[0]
+        name, sep, value = pair.partition("=")
+        if sep and name.strip():
+            jar[name.strip()] = value.strip()
+
+
+def path_traversal_probe(ctx: ToolContext, args: dict) -> dict:
+    """Test one file parameter for traversal depth and encoding variants."""
+    template = str(args.get("target") or "").strip()
+    if "{{path}}" not in template:
+        raise ToolError("invalid_arguments", "target must contain {{path}}")
+    paths = [str(item) for item in (args.get("paths") or webchain.DEFAULT_PATHS)
+             if str(item).strip()][:12]
+    if not paths:
+        raise ToolError("invalid_arguments", "paths must not be empty")
+    not_found = str(args.get("not_found_marker") or "file not found").lower()
+    rows = []
+    for path in paths:
+        url = template.replace("{{path}}", path)
+        result, error = _chain_fetch(ctx, args, url)
+        if result is None:
+            rows.append({"path": path, "url": url, "error": error[:200],
+                         "status": 0, "kind": "error", "source": False})
+            continue
+        body = str(result.get("body") or "")
+        headers = result.get("headers") or {}
+        content_type = str(headers.get("content-type") or "")
+        info = webchain.classify(body, content_type)
+        kind = info["kind"]
+        if not_found and not_found in body.lower() and len(body) < 800:
+            kind = "not-found"
+        depth = path.count("..")
+        encoded = ("%2f" if "%2f" in path.lower()
+                   else "%5c" if "%5c" in path.lower() else "plain")
+        rows.append({
+            "path": path, "url": url, "status": result.get("status"),
+            "kind": kind, "bytes": len(body), "depth": depth,
+            "encoding": encoded, "source": kind in {"source", "config"},
+            "content_type": content_type[:60],
+        })
+    confirmed = [row for row in rows if row.get("source")]
+    depth = max((row.get("depth") or 0) for row in confirmed) if confirmed else 0
+    encodings = sorted({row.get("encoding") for row in confirmed if row.get("encoding")})
+    return {
+        "target_template": template,
+        "probes": rows,
+        "read_confirmed": bool(confirmed),
+        "depth": depth,
+        "encodings": encodings,
+        "confirmed_paths": [row["path"] for row in confirmed][:12],
+        "verdict": ("traversal-confirmed" if confirmed else "not-confirmed"),
+        "note": ("A readable source or config file is a file-read primitive. "
+                 "It is not code execution."),
+    }
+
+
+def source_disclosure_scan(ctx: ToolContext, args: dict) -> dict:
+    """Read a bounded set of application files through a confirmed file-read."""
+    template = str(args.get("read_url") or "").strip()
+    if "{{path}}" not in template:
+        raise ToolError("invalid_arguments", "read_url must contain {{path}}")
+    paths = [str(item) for item in
+             (args.get("paths") or webchain.DEFAULT_SOURCE_PATHS)
+             if str(item).strip()][:int(args.get("max_files") or 20)]
+    sources = []
+    for path in paths:
+        url = template.replace("{{path}}", path)
+        result, error = _chain_fetch(ctx, args, url)
+        if result is None:
+            continue
+        body = str(result.get("body") or "")
+        info = webchain.classify(body, str(
+            (result.get("headers") or {}).get("content-type") or ""))
+        if info["kind"] not in {"source", "config"}:
+            continue
+        finding = webchain.scan(body)
+        sources.append({
+            "path": path, "kind": info["kind"], "bytes": info["bytes"],
+            "secrets": finding["secrets"], "sinks": finding["sinks"],
+        })
+    summary = webchain.summarize(sources)
+    return {
+        "files_scanned": len(paths),
+        "sources": sources,
+        "secrets_total": sum(len(item["secrets"]) for item in sources),
+        "sinks": sorted({sink["kind"] for item in sources
+                         for sink in item["sinks"]}),
+        "summary": summary,
+        "note": ("Values are masked. A source disclosure is evidence, not a "
+                 "finding until an operator promotes it."),
+    }
+
+
+def auth_cookie_probe(ctx: ToolContext, args: dict) -> dict:
+    """Test whether a server trusts identity cookies without validation."""
+    target = str(args.get("target") or "").strip()
+    protected = str(args.get("protected_url") or "").strip()
+    marker = str(args.get("success_marker") or "").strip()
+    if not target or not protected:
+        raise ToolError("invalid_arguments", "target and protected_url are required")
+    payloads = args.get("cookie_payloads") or []
+    if isinstance(payloads, dict):
+        payloads = [payloads]
+    if not isinstance(payloads, list) or len(payloads) > 6:
+        raise ToolError("invalid_arguments", "cookie_payloads must be 0 to 6 objects")
+
+    def probe(cookies: dict | None) -> dict:
+        headers = {}
+        if cookies:
+            headers["Cookie"] = "; ".join(
+                f"{name}={value}" for name, value in cookies.items())
+        request_args = {**args, "headers": headers} if headers else dict(args)
+        first, error = _chain_fetch(ctx, request_args, target)
+        if first is None:
+            return {"set_status": 0, "error": error[:160], "success": False}
+        jar: dict[str, str] = {}
+        _chain_jar(first, jar)
+        session_request = dict(args)
+        if jar:
+            session_request["headers"] = {"Cookie": "; ".join(
+                f"{name}={value}" for name, value in jar.items())}
+        second, error = _chain_fetch(ctx, session_request, protected)
+        if second is None:
+            return {"set_status": first.get("status"), "error": error[:160],
+                    "success": False}
+        body = str(second.get("body") or "")
+        return {"set_status": first.get("status"),
+                "protected_status": second.get("status"),
+                "session_cookies": len(jar),
+                "success": bool(marker and marker in body)}
+
+    baseline = probe(None)
+    attempts = []
+    for payload in payloads:
+        if not isinstance(payload, dict):
+            continue
+        row = probe({str(k): str(v) for k, v in payload.items()})
+        row["payload"] = payload
+        attempts.append(row)
+    bypass = (not baseline.get("success")
+              and any(row.get("success") for row in attempts))
+    return {
+        "target": target, "protected_url": protected,
+        "baseline_authenticated": baseline.get("success"),
+        "attempts": attempts,
+        "bypass": bool(bypass),
+        "verdict": ("auth-bypass" if bypass else
+                    "baseline-authenticated" if baseline.get("success")
+                    else "not-confirmed"),
+        "note": ("Each attempt reads the target, keeps the session cookie it "
+                 "returns, and asks the protected page. No write is performed."),
+    }
+
+
+def chain_run(ctx: ToolContext, args: dict) -> dict:
+    """Lead a file-read primitive through source scan and auth bypass."""
+    read_url = str(args.get("read_url") or "").strip()
+    if "{{path}}" not in read_url:
+        raise ToolError("invalid_arguments", "read_url must contain {{path}}")
+    traversal = path_traversal_probe(ctx, {
+        **args, "target": read_url,
+        "paths": args.get("probe_paths") or list(webchain.DEFAULT_PATHS),
+    })
+    if not traversal.get("read_confirmed"):
+        return {"traversal": traversal, "sources": {"sources": []},
+                "auth": None, "summary": webchain.summarize([]),
+                "note": "No readable source or config was confirmed."}
+    sources = source_disclosure_scan(ctx, {
+        **args, "read_url": read_url,
+        "paths": args.get("source_paths") or list(webchain.DEFAULT_SOURCE_PATHS),
+    })
+    auth = None
+    if args.get("cookie_target") and args.get("protected_url"):
+        auth = auth_cookie_probe(ctx, {
+            **args, "target": args["cookie_target"],
+            "cookie_payloads": args.get("cookie_payloads") or [],
+            "success_marker": args.get("success_marker") or "",
+        })
+    summary = webchain.summarize(sources.get("sources") or [], auth)
+    mission_id = str(args.get("mission_id") or "")
+    if mission_id:
+        try:
+            _call(ctx, "POST", f"/api/v1/missions/{mission_id}/notes", body={
+                "kind": "chain.plan",
+                "title": f"File-read chain: {summary['verdict']}",
+                "body": json.dumps({
+                    "traversal": {"verdict": traversal["verdict"],
+                                  "depth": traversal["depth"],
+                                  "paths": traversal["confirmed_paths"]},
+                    "sources": {"readable": summary["readable_sources"],
+                                "secrets": summary["secrets"],
+                                "sinks": summary["sink_kinds"]},
+                    "auth": (auth or {}).get("verdict"),
+                    "candidates": summary["candidates"],
+                }, default=str)[:8000],
+            })
+        except Exception:  # noqa: BLE001 - the note is best effort
+            pass
+    return {"traversal": traversal, "sources": sources, "auth": auth,
+            "summary": summary,
+            "note": ("Chain analysis only. Uploads, OS commands, and database "
+                     "command execution require explicit approval.")}
 
 
 def hypothesis_create(ctx: ToolContext, args: dict) -> dict:
@@ -3841,6 +4077,10 @@ _HANDLERS.update({
     "recon_passive": recon_passive,
     "fetch_artifact": fetch_artifact,
     "test_case_run": test_case_run,
+    "path_traversal_probe": path_traversal_probe,
+    "source_disclosure_scan": source_disclosure_scan,
+    "auth_cookie_probe": auth_cookie_probe,
+    "chain_run": chain_run,
     "hypothesis_create": hypothesis_create,
     "hypothesis_list": hypothesis_list,
     "hypothesis_get": hypothesis_get,
@@ -5048,6 +5288,62 @@ TOOLS: tuple[Tool, ...] = (
                   "fail_fast": _boolean("stop at the first failed assertion", True),
                   "steps": _array("ordered steps", {"type": "object"})},
                  ["steps"]), "test_case_run", open_world=True),
+    Tool("path_traversal_probe", "Probe one file parameter for traversal",
+         "Send a bounded set of plain, parent-directory, and encoded paths through a file "
+         "parameter. Classify each response as server source, config, HTML, not found, or "
+         "error, and report the depth and encoding that worked. Read-only.",
+         "medium", "web",
+         _schema({"target": _string("URL template containing {{path}}"),
+                  "mission_id": _string("mission whose scope authorizes the requests"),
+                  "paths": _array("path variants", {"type": "string"}),
+                  "not_found_marker": _string("body text that means not found"),
+                  "max_bytes": _integer("response cap", 1024, 524288, 65536),
+                  "timeout": _integer("timeout in seconds", 1, 60, 20)},
+                 ["target"]), "path_traversal_probe", open_world=True),
+    Tool("source_disclosure_scan", "Read application source through a file read",
+         "Fetch a bounded list of common application source and config paths through a "
+         "confirmed file-read template. Classify each file and scan it for credential-shaped "
+         "values, SQL concatenation, cookie trust, upload handlers, and command sinks. "
+         "Values are masked. Read-only.",
+         "medium", "web",
+         _schema({"read_url": _string("URL template containing {{path}}"),
+                  "mission_id": _string("mission whose scope authorizes the requests"),
+                  "paths": _array("source paths to try", {"type": "string"}),
+                  "max_files": _integer("files to fetch", 1, 40, 20),
+                  "max_bytes": _integer("response cap", 1024, 524288, 65536),
+                  "timeout": _integer("timeout in seconds", 1, 60, 20)},
+                 ["read_url"]), "source_disclosure_scan", open_world=True),
+    Tool("auth_cookie_probe", "Test whether identity cookies are trusted blindly",
+         "Read a login handler with a small set of cookie payloads, keep the session cookie "
+         "each response returns, and ask a protected page whether the session is now "
+         "authenticated. Read-only; no write, no credential guess.",
+         "medium", "web",
+         _schema({"target": _string("login handler URL"),
+                  "protected_url": _string("page that proves the session"),
+                  "success_marker": _string("text that only an authenticated page shows"),
+                  "mission_id": _string("mission whose scope authorizes the requests"),
+                  "cookie_payloads": _array("cookie objects to try", {"type": "object"}),
+                  "max_bytes": _integer("response cap", 1024, 524288, 65536),
+                  "timeout": _integer("timeout in seconds", 1, 60, 20)},
+                 ["target", "protected_url", "success_marker"]),
+         "auth_cookie_probe", open_world=True),
+    Tool("chain_run", "Lead a file read through source and auth",
+         "Given a confirmed file-read template, run the traversal probe, scan the reachable "
+         "source, optionally test a cookie auth bypass, and return the ranked chain. Uploads, "
+         "OS commands, and database command execution are listed for approval and never "
+         "fired. Writes a chain.plan note on the mission.",
+         "medium", "web",
+         _schema({"read_url": _string("URL template containing {{path}}"),
+                  "mission_id": _string("mission whose scope authorizes the requests"),
+                  "probe_paths": _array("traversal variants", {"type": "string"}),
+                  "source_paths": _array("source files to fetch", {"type": "string"}),
+                  "cookie_target": _string("login handler for the cookie test"),
+                  "protected_url": _string("page that proves the session"),
+                  "success_marker": _string("authenticated-page marker"),
+                  "cookie_payloads": _array("cookie objects to try", {"type": "object"}),
+                  "max_bytes": _integer("response cap", 1024, 524288, 65536),
+                  "timeout": _integer("timeout in seconds", 1, 60, 20)},
+                 ["read_url"]), "chain_run", open_world=True),
     Tool("hypothesis_evidence", "Read everything recorded for a lead",
          "Collect the hypothesis record, its notes, tool calls, runs, graph "
          "nodes, and finding link so a human can see exactly what happened. "
