@@ -983,6 +983,57 @@ class Director:
                          reverse=True)
         return dict(ordered[:60])
 
+    def _auto_postex(self, mission_id: str, out: dict) -> None:
+        """After a foothold, start the ready post-exploitation modules.
+
+        Only an active autonomous mission is touched. Already-run modules are
+        skipped, and at most two start per mature cycle so the pool is not
+        flooded.
+        """
+        mission = self.server.index.get_mission(mission_id) or {}
+        if (str(mission.get("autonomy") or "") != "autonomous"
+                or str(mission.get("status") or "") != "active"):
+            return
+        try:
+            from .. import exploits as exploits_module
+            from .. import postex as postex_module
+
+            plan = postex_module.plan(self.server.index, mission_id, limit=12)
+        except Exception:  # noqa: BLE001 - post-ex is an add-on
+            return
+        ready = [item for item in (plan.get("objectives") or [])
+                 if item.get("ready") and item.get("module_id")]
+        if not ready:
+            return
+        done: set[str] = set()
+        for run in mission.get("runs") or []:
+            options = run.get("options") or {}
+            if options.get("mode") == "exploit" and options.get("module_id"):
+                done.add(str(options["module_id"]))
+        started = []
+        for item in ready[:2]:
+            module_id = str(item["module_id"])
+            if module_id in done:
+                continue
+            try:
+                run = self.server._exploits().start(
+                    mission_id, module_id,
+                    {"policy": "full", "goal": "autonomous post-exploitation"})
+                started.append({"module_id": module_id, "run_id": run["id"]})
+            except Exception as exc:  # noqa: BLE001 - one module must not stop
+                started.append({"module_id": module_id,
+                                "error": f"{type(exc).__name__}: {exc}"})
+        if started:
+            out["postex"] = started
+            try:
+                self.server.index.add_director_log(
+                    "postex",
+                    f"started {len([s for s in started if s.get('run_id')])} "
+                    "post-exploitation module(s)",
+                    mission_id=mission_id, data={"started": started})
+            except Exception:  # noqa: BLE001
+                pass
+
     def _mature(self, mission_id: str) -> dict:
         """Turn a finished run into durable, shared knowledge.
 
@@ -1087,6 +1138,9 @@ class Director:
                 built = exploits_module.build_hypotheses(self.server.index,
                                                          mission_id, limit=3)
                 out["leads_created"] = built["count"]
+            # A foothold must continue into post-exploitation without a human
+            # click: start the ready post-ex modules that have not run yet.
+            self._auto_postex(mission_id, out)
             self.server.index.add_director_log(
                 "mature", f"stage {stage['stage']}: {stage['reason']}",
                 mission_id=mission_id,

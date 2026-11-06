@@ -78,6 +78,7 @@ export interface Mission {
   objective: string;
   status: MissionStatus;
   autonomy: Autonomy;
+  unrestricted?: boolean;
   budget: { max_usd?: number; max_minutes?: number; [key: string]: unknown };
   scope: string[];
   plan: unknown[];

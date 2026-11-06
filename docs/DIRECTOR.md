@@ -92,6 +92,14 @@ plan notes are excluded, so bookkeeping never looks like progress.
 with `action=kill`) is the kill switch. It cancels every run the director
 started, and every run at all when `all=true`, then disengages and pauses.
 
+## Post-exploitation
+
+After a run matures, an active autonomous mission with ready post-ex
+objectives starts up to two of them per cycle through the exploit runner
+(`/api/v1/exploits/run`), skipping modules that already ran and logging a
+`postex` director event. The objectives come from `postex.plan`, so only modules
+whose preconditions the evidence graph actually satisfies are started.
+
 ## Authorization: the domain is the authorization
 
 Picking a target is the authorization. An **active** mission set to

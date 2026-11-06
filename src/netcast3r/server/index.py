@@ -220,6 +220,7 @@ CREATE TABLE IF NOT EXISTS missions (
     objective TEXT,
     status TEXT DEFAULT 'draft',
     autonomy TEXT DEFAULT 'supervised',
+    unrestricted INTEGER DEFAULT 0,
     budget_json TEXT DEFAULT '{}',
     scope_json TEXT DEFAULT '[]',
     plan_json TEXT DEFAULT '[]',
@@ -733,6 +734,16 @@ class Index:
             # Rows created before packs existed are Academy labs.
             self.conn.execute(
                 "UPDATE training_progress SET source = 'portswigger' WHERE source IS NULL OR source = ''")
+        missions_cols = {row["name"] for row in self.conn.execute("PRAGMA table_info(missions)")}
+        added_unrestricted = False
+        if missions_cols and "unrestricted" not in missions_cols:
+            self.conn.execute(
+                "ALTER TABLE missions ADD COLUMN unrestricted INTEGER DEFAULT 0")
+            added_unrestricted = True
+        if added_unrestricted:
+            # Existing missions adopt the unrestricted default once.
+            self.conn.execute(
+                "UPDATE missions SET unrestricted = 1 WHERE unrestricted = 0")
         findings = {row["name"] for row in self.conn.execute("PRAGMA table_info(findings)")}
         if findings and "mission_id" not in findings:
             # Findings promoted from a hypothesis had no mission link, so the
@@ -2100,7 +2111,7 @@ class Index:
     def create_mission(self, title: str, target: str, objective: str = "",
                        status: str = "draft", autonomy: str = "supervised",
                        budget: dict | None = None, scope: list | None = None,
-                       plan: list | None = None) -> dict:
+                       plan: list | None = None, unrestricted: bool = True) -> dict:
         title = (title or "").strip()
         target = (target or "").strip()
         if not title:
@@ -2116,9 +2127,11 @@ class Index:
         with self._lock:
             self.conn.execute(
                 "INSERT INTO missions (id, title, target, objective, status, autonomy, "
-                "budget_json, scope_json, plan_json, created_at, updated_at, started_at) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "unrestricted, budget_json, scope_json, plan_json, created_at, "
+                "updated_at, started_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (mission_id, title, target, objective, status, autonomy,
+                 1 if unrestricted else 0,
                  json.dumps(budget or {}), json.dumps(scope or []), json.dumps(plan or []),
                  now, now, now if status == "active" else None),
             )
@@ -2183,6 +2196,9 @@ class Index:
                     raise ValueError(f"{column} required")
                 sets.append(f"{column} = ?")
                 values.append(value)
+        if "unrestricted" in fields and fields["unrestricted"] is not None:
+            sets.append("unrestricted = ?")
+            values.append(1 if fields["unrestricted"] else 0)
         if "status" in fields and fields["status"] is not None:
             status = str(fields["status"]).strip()
             if status not in MISSION_STATUSES:
@@ -2259,6 +2275,7 @@ class Index:
         item["budget"] = _loads(item.pop("budget_json"), {})
         item["scope"] = _loads(item.pop("scope_json"), [])
         item["plan"] = _loads(item.pop("plan_json"), [])
+        item["unrestricted"] = bool(item.get("unrestricted"))
         item["training"] = _is_training_mission(item)
         return item
 

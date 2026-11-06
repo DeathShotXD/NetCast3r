@@ -104,6 +104,23 @@ class DirectorTests(unittest.TestCase):
         self.assertIn("budget", reason)
         self.assertIn("1/1", reason)
 
+    def test_missions_are_unrestricted_by_default(self):
+        mission = self.server.index.create_mission("Default", "https://x.example")
+        self.assertTrue(mission["unrestricted"])
+
+    def test_a_foothold_starts_post_exploitation(self):
+        mission = self.server.index.create_mission(
+            "Postex", "https://lab.example.com/", status="active",
+            autonomy="autonomous", scope=["lab.example.com"])
+        self.server.index.upsert_graph_node(
+            mission["id"], "service", "389/ldap", label="ldap")
+        out: dict = {}
+        self.director._auto_postex(mission["id"], out)
+        self.assertIn("postex", out)
+        self.assertTrue(out["postex"])
+        self.assertTrue(any(item.get("run_id") or item.get("error")
+                            for item in out["postex"]))
+
     def test_a_training_mission_is_never_driven(self):
         self.server.index.create_mission(
             "Lab", "https://portswigger.net/", status="active",

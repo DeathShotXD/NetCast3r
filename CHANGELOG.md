@@ -6,6 +6,15 @@ Notable changes to NetCast3r, newest first.
 
 ### Autonomy and throughput
 
+- **Unrestricted is the default**: every mission is created `unrestricted`, so
+  host shell, host writes, sensitive reads, and destructive steps run without a
+  per-call approval. Existing missions adopt the default on migration. A mission
+  can still opt out with `unrestricted=false`.
+- **Post-exploitation starts itself**: after a run matures, the director starts
+  the ready post-ex modules (up to two per cycle) for an active autonomous
+  mission, skipping modules already run and logging a `postex` event. A foothold
+  no longer waits for a human click.
+
 - **Model rotation on bad replies**: a prose-only, empty, refused, or
   schema-invalid model reply is now a failed candidate. The provider bus walks
   to the next provider and model instead of ending the run. Solver, mesh,

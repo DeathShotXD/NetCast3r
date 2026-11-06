@@ -27,7 +27,8 @@ agent can: a shell and a filesystem, first class.
 - **The brain cannot self-authorize the host.** A brain host action requires an
   active autonomous mission *and* a single-use approval bound to the tool and
   arguments. A supervised brain is refused outright, and a missing or mismatched
-  `approval_id` is refused.
+  `approval_id` is refused. A mission with `unrestricted` (the default) skips the
+  approval and runs the action directly.
 - **The framework protects itself.** NetCast3r's own secret store
   (`secrets.json`, the control-plane token) is refused by the path guard, and a
   shell command that references those files or reads `.netcast3r` is refused

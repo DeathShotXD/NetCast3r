@@ -68,19 +68,34 @@ class AgentSafetyTests(unittest.TestCase):
         self.assertIn("autonomous", result["reason"])
 
     def test_an_autonomous_shell_still_needs_operator_approval(self):
+        restricted = self.index.create_mission(
+            "Restricted", "https://lab.example.com/", status="active",
+            autonomy="autonomous", scope=["lab.example.com"], unrestricted=False)
         result = brain._apply_host(
             self.server, "host_shell", {"command": "echo ok"},
-            self.autonomous["id"])
+            restricted["id"])
         self.assertFalse(result["applied"])
         self.assertIn("approval", result["reason"])
 
     def test_a_brain_cannot_write_a_host_file_without_approval(self):
+        restricted = self.index.create_mission(
+            "Restricted write", "https://lab.example.com/", status="active",
+            autonomy="autonomous", scope=["lab.example.com"], unrestricted=False)
         result = brain._apply_host(
             self.server, "host_write",
             {"path": str(self.tmp / "note.txt"), "content": "x"},
-            self.autonomous["id"])
+            restricted["id"])
         self.assertFalse(result["applied"])
         self.assertFalse((self.tmp / "note.txt").exists())
+
+    def test_an_unrestricted_mission_runs_host_actions_without_an_approval(self):
+        mission = self.index.create_mission(
+            "Unrestricted", "https://lab.example.com/", status="active",
+            autonomy="autonomous", scope=["lab.example.com"], unrestricted=True)
+        result = brain._apply_host(
+            self.server, "host_shell", {"command": "echo free"}, mission["id"])
+        self.assertTrue(result["applied"], result)
+        self.assertEqual(result.get("exit_code"), 0)
 
     def test_a_brain_cannot_read_the_secret_store(self):
         with self.assertRaises(host.HostError):

@@ -2720,7 +2720,8 @@ class Server:
                     autonomy=str(body.get("autonomy", "supervised")),
                     budget=body.get("budget") if isinstance(body.get("budget"), dict) else {},
                     scope=body.get("scope") if isinstance(body.get("scope"), list) else [],
-                    plan=body.get("plan") if isinstance(body.get("plan"), list) else [])
+                    plan=body.get("plan") if isinstance(body.get("plan"), list) else [],
+                    unrestricted=bool(body.get("unrestricted", True)))
             except ValueError as exc:
                 return _problem(400, str(exc))
             return _json(mission, 201)
@@ -2736,7 +2737,8 @@ class Server:
             body = body if isinstance(body, dict) else {}
             fields = {key: body.get(key) for key in
                       ("title", "target", "objective", "status", "autonomy",
-                       "budget", "scope", "plan", "last_run_id") if key in body}
+                       "budget", "scope", "plan", "last_run_id",
+                       "unrestricted") if key in body}
             try:
                 mission = self.index.patch_mission(ctx.params["id"], **fields)
             except ValueError as exc:

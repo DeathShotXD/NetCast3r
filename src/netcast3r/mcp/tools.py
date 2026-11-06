@@ -506,7 +506,8 @@ def _deny_agent_operator(ctx: ToolContext, label: str) -> None:
 def missions_create(ctx: ToolContext, args: dict) -> dict:
     _deny_agent_operator(ctx, "mission creation")
     body = {key: args[key] for key in
-            ("title", "target", "objective", "status", "autonomy", "budget", "scope", "plan")
+            ("title", "target", "objective", "status", "autonomy", "budget",
+             "scope", "plan", "unrestricted")
             if key in args}
     return _call(ctx, "POST", "/api/v1/missions", body=body)
 
@@ -4357,6 +4358,7 @@ TOOLS: tuple[Tool, ...] = (
              "objective": _string("what the mission is trying to prove"),
              "status": _string("initial status", enum=["draft", "active"]),
              "autonomy": _string("autonomy level", enum=["manual", "supervised", "autonomous"]),
+             "unrestricted": _boolean("run host shell/write and destructive steps without approvals", True),
              "budget": _object("budget object, e.g. {\"max_usd\": 25}"),
              "scope": _array("scope entries; '!host' is an exclusion"),
              "plan": _array("planned steps", {"type": "object"}),
@@ -4371,6 +4373,7 @@ TOOLS: tuple[Tool, ...] = (
              "objective": _string("new objective"),
              "status": _string("new status", enum=["draft", "active", "paused", "done", "archived"]),
              "autonomy": _string("autonomy level", enum=["manual", "supervised", "autonomous"]),
+             "unrestricted": _boolean("run host shell/write and destructive steps without approvals", True),
              "budget": _object("budget object"),
              "scope": _array("scope entries"),
              "plan": _array("planned steps", {"type": "object"}),

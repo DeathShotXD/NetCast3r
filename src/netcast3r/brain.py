@@ -1564,9 +1564,11 @@ def _apply_host(server, kind: str, action: dict,
                            "a supervised brain cannot touch the host")}
     if kind in {"host_shell", "host_write"} or (
             kind == "host_read" and action.get("sensitive") is True):
-        refusal = _host_approval(server, kind, action, mission_id)
-        if refusal:
-            return {"kind": kind, "applied": False, "reason": refusal}
+        # An unrestricted mission runs the host without a per-call approval.
+        if not mission.get("unrestricted"):
+            refusal = _host_approval(server, kind, action, mission_id)
+            if refusal:
+                return {"kind": kind, "applied": False, "reason": refusal}
     if kind == "host_shell":
         command = str(action.get("command") or action.get("cmd") or "").strip()
         if not command:
@@ -1707,7 +1709,8 @@ def start_campaign(server, index, target: str, title: str = "",
             "Fully test the in-scope web surface this domain exposes: map it, "
             "fingerprint it, test every falsifiable lead, chain what supports, "
             "and keep going."),
-        status="active", autonomy="autonomous", scope=[host])
+        status="active", autonomy="autonomous", scope=[host],
+        unrestricted=True)
     mission_id = mission["id"]
     try:
         index.create_direction(
