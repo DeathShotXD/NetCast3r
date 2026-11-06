@@ -1894,6 +1894,8 @@ class Server:
 
             body = ctx.json()
             body = body if isinstance(body, dict) else {}
+            if body.get("force_heavy"):
+                return _problem(403, "force_heavy cannot grant upgrade authorization")
             peer = second_brain_module.peers(self.base)
             try:
                 return _json(second_brain_module.self_upgrade(
@@ -1902,9 +1904,9 @@ class Server:
                     rationale=str(body.get("rationale") or body.get("reason") or ""),
                     body=str(body.get("body") or body.get("code") or ""),
                     area=str(body.get("area") or "exploit"),
-                    apply_code=bool(body.get("apply_code", peer.get("heavy"))),
+                    apply_code=bool(body.get("apply_code", False)),
                     filename=str(body.get("filename") or ""),
-                    peer_heavy=bool(peer.get("heavy") or body.get("force_heavy"))))
+                    peer_heavy=bool(peer.get("heavy"))))
             except ValueError as exc:
                 return _problem(400, str(exc))
 

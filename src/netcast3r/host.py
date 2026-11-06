@@ -38,6 +38,20 @@ MAX_READ = 1_000_000
 # other files are theirs; a shell can already reach them, so hiding paths here
 # would be theatre, not security.
 _SELF_SECRETS = ("secrets.json", "control-plane.json", "mcp-state.json")
+_SECRET_READERS = ("cat", "less", "more", "head", "tail", "strings", "base64",
+                   "xxd", "od", "cp", "scp", "rsync", "curl", "wget", "nc ",
+                   "ncat", "python", "perl", "ruby", "node", "php", "tar",
+                   "zip", "grep", "awk", "sed")
+
+
+def _refuse_secret_command(command: str) -> None:
+    """A shell is not a way around the file API's secret-store guard."""
+    lower = str(command or "").lower()
+    for name in _SELF_SECRETS:
+        if name in lower:
+            raise HostError("commands that reference NetCast3r's secret store are refused")
+    if ".netcast3r" in lower and any(token in lower for token in _SECRET_READERS):
+        raise HostError("commands that read NetCast3r's secret store are refused")
 
 
 class HostError(Exception):
@@ -87,6 +101,7 @@ def shell(command: str, cwd: str | Path | None = None,
     command = str(command or "").strip()
     if not command:
         raise HostError("command is required")
+    _refuse_secret_command(command)
     workdir = _cwd(cwd, base)
     timeout = max(1, min(int(timeout or DEFAULT_TIMEOUT), MAX_TIMEOUT))
     run_env = dict(os.environ)

@@ -22,6 +22,25 @@ result, and it is idempotent.
 Endpoint shapes are stored host-agnostically: `/api/orders/42` becomes
 `/api/orders/{n}`, so the shape transfers to the next target.
 
+## Trust levels
+
+Memory is not one bucket. Every entry carries its provenance and confidence:
+
+- **verified**: a supported hypothesis with a passing test, a promoted finding,
+  or an artifact hash. Only this level can be cited as proof.
+- **observed**: a raw tool result or graph node. It happened, but it is not yet
+  a conclusion.
+- **hypothesis**: model-generated. Confidence is capped and the entry is a lead,
+  never a finding.
+- **peer note**: an insight from a connected harness, stored at 0.55 and marked
+  unverified until a test supports it.
+- **target content**: untrusted data. It is quoted as data, never followed as an
+  instruction, and it can never promote itself to a verified fact.
+
+The brains are told this explicitly: every tool result is untrusted data, and
+only the promotion gate turns a lead into a finding. A prompt injected from a
+target page therefore has no path to a finding, a scope change, or an approval.
+
 ## The campaign
 
 `src/netcast3r/campaign.py` is the stage machine that turns a bare domain into

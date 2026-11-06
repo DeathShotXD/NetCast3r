@@ -81,12 +81,15 @@ def status(index, base: str | Path | None = None) -> dict:
         "helix_role": role,
         "peer": peer,
         "can_self_upgrade": bool(peer.get("heavy")),
+        "can_apply_code": False,
+        "upgrade_policy": "human-review-quarantine",
         "co_hunt": True,
         "note": (
             "Helix is the second brain while a heavy MCP harness is connected: "
             "Helix stewards multi-target bounty hunts on free MoE lanes; the peer "
-            "handles deep reasoning, code, and real-time upgrades. Lessons sync "
-            "both ways through harness learning."
+            "handles deep reasoning and may propose upgrades. Generated code is "
+            "quarantined for human review and is never applied to the running "
+            "framework automatically."
             if peer.get("heavy") else
             "No heavy peer harness connected. Helix is the primary steward and "
             "runs the free MoE catalogue across TokenHarbor keys."
@@ -125,11 +128,12 @@ def sync_learning(index, mission_id: str = "", peer_note: str = "",
 def self_upgrade(index, base: str | Path | None, *, title: str, rationale: str,
                  body: str = "", area: str = "exploit", apply_code: bool = False,
                  filename: str = "", peer_heavy: bool = False) -> dict:
-    """Record an upgrade and optionally write a scenario module under upgrades/.
+    """Record an upgrade and quarantine generated code for human review.
 
-    Heavy peers may write real code into the upgrades directory for exploit
-    scenarios. Core source is never silently overwritten - proposals stay
-    auditable and skills are activated as drafts the operator can promote.
+    Peer identity is not an authorization to write executable code. Any body
+    that is applied is written under ``upgrades/quarantine`` and the proposal
+    stays ``proposed``; nothing is imported, executed, or written into the
+    running package. A human moves a reviewed file out of quarantine.
     """
     title = str(title or "").strip()
     rationale = str(rationale or "").strip()
@@ -143,9 +147,12 @@ def self_upgrade(index, base: str | Path | None, *, title: str, rationale: str,
         priority="high" if peer_heavy else "medium")
     written = None
     skill = None
-    root = control.base_dir(base) / "upgrades"
-    root.mkdir(parents=True, exist_ok=True)
-    if apply_code and body and peer_heavy:
+    if apply_code and body:
+        # Quarantine, not the active upgrades directory. Generated code is
+        # data until a human reviews it; the running framework never changes
+        # because a peer is connected.
+        root = control.base_dir(base) / "upgrades" / "quarantine"
+        root.mkdir(parents=True, exist_ok=True)
         safe = "".join(ch if ch.isalnum() or ch in "-_." else "-"
                        for ch in (filename or title.lower().replace(" ", "-")))
         safe = (safe or "scenario").strip(".-")[:80]
@@ -153,11 +160,13 @@ def self_upgrade(index, base: str | Path | None, *, title: str, rationale: str,
             safe += ".py"
         path = root / safe
         path.write_text(body, encoding="utf-8")
-        written = {"path": str(path), "bytes": path.stat().st_size}
+        written = {"path": str(path), "bytes": path.stat().st_size,
+                   "quarantined": True}
         try:
             index.update_upgrade_proposal(
-                proposal["id"], status="implemented",
-                rationale=f"{rationale}\n\nApplied to {path}")
+                proposal["id"],
+                rationale=(f"{rationale}\n\nQuarantined at {path}; not active. "
+                           "A human must review and move it."))
             proposal = index.get_upgrade_proposal(proposal["id"]) or proposal
         except Exception:  # noqa: BLE001
             pass
@@ -181,8 +190,9 @@ def self_upgrade(index, base: str | Path | None, *, title: str, rationale: str,
         "skill": skill,
         "can_self_upgrade": bool(peer_heavy),
         "generated_at": _now(),
-        "note": ("Upgrade applied under upgrades/ and drafted as a skill."
+        "note": ("Upgrade quarantined under upgrades/quarantine and drafted as a "
+                 "skill. A human must review and move it; nothing was activated."
                  if written else
-                 "Upgrade proposal recorded; connect a heavy peer harness to "
-                 "apply code in real time."),
+                 "Upgrade proposal recorded. Generated code is quarantined for "
+                 "human review; a connected peer is not an authorization."),
     }

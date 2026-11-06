@@ -24,11 +24,16 @@ agent can: a shell and a filesystem, first class.
   authorized autonomous mission runs them and the audit records
   `authorized:autonomous`. Every call is a tool call with its command, cwd, and
   exit code.
+- **The brain cannot self-authorize the host.** A brain host action requires an
+  active autonomous mission *and* a single-use approval bound to the tool and
+  arguments. A supervised brain is refused outright, and a missing or mismatched
+  `approval_id` is refused.
 - **The framework protects itself.** NetCast3r's own secret store
-  (`secrets.json`, the control-plane token) is refused by the path guard, so a
-  prompt injected from a target cannot use the shell to read the control-plane
-  token. Everything else on the host is the operator's to grant; hiding it would
-  be theatre, since a shell can already reach it.
+  (`secrets.json`, the control-plane token) is refused by the path guard, and a
+  shell command that references those files or reads `.netcast3r` is refused
+  before it runs. A prompt injected from a target cannot use either path to read
+  the control-plane token. Everything else on the host is the operator's to
+  grant; hiding it would be theatre, since a shell can already reach it.
 - **Bounded.** A wall-clock timeout on every command, with the whole process
   group killed on expiry, and an output cap on every stream.
 - **No shell=False theatre.** `host_shell` is a real shell (`/bin/sh -lc`); the

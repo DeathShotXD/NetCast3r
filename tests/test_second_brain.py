@@ -37,7 +37,7 @@ class SecondBrainTests(unittest.TestCase):
         self.assertTrue(status["peer"]["heavy"])
         self.assertTrue(status["can_self_upgrade"])
 
-    def test_self_upgrade_writes_under_upgrades_when_heavy(self):
+    def test_a_heavy_peer_upgrade_is_quarantined_for_review(self):
         control.write_mcp_state(self.tmp, {
             "schema": 1, "pid": os.getpid(),
             "client": {"name": "cursor", "version": "1"},
@@ -53,10 +53,12 @@ class SecondBrainTests(unittest.TestCase):
             body=body, apply_code=True, peer_heavy=True,
             filename="idor_order_probe.py")
         self.assertTrue(result["written"])
+        self.assertTrue(result["written"].get("quarantined"))
         path = Path(result["written"]["path"])
         self.assertTrue(path.is_file())
+        self.assertIn("quarantine", path.parts)
         self.assertIn("probe_idor", path.read_text())
-        self.assertEqual((result.get("proposal") or {}).get("status"), "implemented")
+        self.assertEqual((result.get("proposal") or {}).get("status"), "proposed")
 
     def test_brain_context_exposes_second_brain_and_moe(self):
         from netcast3r import brain

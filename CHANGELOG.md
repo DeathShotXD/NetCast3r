@@ -4,6 +4,25 @@ Notable changes to NetCast3r, newest first.
 
 ## Unreleased
 
+### Security
+
+- **Malformed scope fails closed**: a scope that declares positive entries but
+  parses none of them no longer becomes an allow-all. An exclusion-only scope
+  still allows other hosts.
+- **Peer identity is not upgrade authorization**: `force_heavy` is rejected,
+  and a heavy peer can only propose an upgrade. Any generated code is written to
+  `upgrades/quarantine` and the proposal stays `proposed`; nothing is imported,
+  executed, or written into the running package.
+- **Brain host actions are gated**: host shell, host write, and sensitive host
+  read require an active autonomous mission plus a single-use approval bound to
+  the tool and arguments. A supervised brain cannot touch the host, and a shell
+  command cannot read NetCast3r's own secret store.
+- **Mission lifecycle is operator-only over MCP**: `missions_create`,
+  `missions_update`, and `missions_delete` are operator-only tools, so an agent
+  cannot mint its own authorization boundary.
+- **Per-campaign run budget**: `budget.max_runs` is enforced by the director
+  before a mission can start another run.
+
 ### Added
 
 - **Evidence verdicts**: a lead now carries an honest label for what the

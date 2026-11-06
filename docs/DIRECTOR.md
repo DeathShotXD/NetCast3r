@@ -67,6 +67,8 @@ limiter. On top of that:
   `all` include more;
 - a `manual` mission is never picked up;
 - a training mission is never picked up; labs run by recipe only;
+- `budget.max_runs` is checked against the mission's run count before a start,
+  so a campaign cap is enforced independently of the global concurrency limit;
 - an autonomous mission runs the full chain in scope under the `full` policy;
   a supervised mission runs read/probe work and parks at the first high-risk
   requirement;

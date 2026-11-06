@@ -123,6 +123,10 @@ class ScopeManager:
     def __init__(self, in_scope=None, out_of_scope=None):
         self.in_rules: list[ScopeRule] = []
         self.out_rules: list[ScopeRule] = [r for r in (parse_rule(x) for x in (out_of_scope or [])) if r]
+        # A scope that declares a positive entry but parses none of them is a
+        # malformed scope, not an empty allow-all. Track the intent separately
+        # from the parsed rules so that case fails closed.
+        self.positive_intent = False
         # A line that starts with "!" is an exclusion, in either file.
         for entry in (in_scope or []):
             text = entry.strip()
@@ -131,6 +135,7 @@ class ScopeManager:
                 if rule:
                     self.out_rules.append(rule)
             else:
+                self.positive_intent = True
                 rule = parse_rule(text)
                 if rule:
                     self.in_rules.append(rule)
@@ -173,7 +178,10 @@ class ScopeManager:
         if any(rule.matches(host, path) for rule in self.out_rules):
             return False
         if not self.in_rules:
-            return True
+            # Fail closed when a positive scope was declared but none of it
+            # parsed. A manager with no declaration at all keeps the legacy
+            # allow-all behaviour used by unscoped local callers.
+            return not self.positive_intent
         return any(rule.matches(host, path) for rule in self.in_rules)
 
     def classify(self, target: str) -> str:

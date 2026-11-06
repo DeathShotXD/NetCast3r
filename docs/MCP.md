@@ -177,8 +177,8 @@ silently ignored.
 | Tool | Risk | Purpose |
 | --- | --- | --- |
 | `missions_list` / `missions_get` | low | Read the portfolio |
-| `missions_create` | medium | Create a scoped mission |
-| `missions_update` | medium | Change fields or status |
+| `missions_create` | medium | Create a scoped mission (operator-only) |
+| `missions_update` | medium | Change fields or status (operator-only) |
 | `missions_attach_run` | medium | Link an existing run |
 | `mission_start_run` | medium | Start a scoped scan and link it |
 | `mission_hunt` | medium | Standalone hunt: scope, fingerprint, surface, research, hypotheses |
@@ -233,7 +233,11 @@ silently ignored.
 | `agent_status` | low | Read the runtime plan, tasks, budget, and model calls |
 | `agent_start` | medium | Plan and run the bounded mission agent |
 | `agent_pause` / `agent_resume` / `agent_stop` | low | Control a live run |
-| `missions_delete` | high | Delete mission, links, approvals |
+| `missions_delete` | high | Delete mission, links, approvals (operator-only) |
+
+Mission creation, update, and deletion establish the authorization boundary, so
+they are operator-only over MCP. An agent can read the portfolio and operate
+inside a mission, but it cannot mint a new mission or widen an existing one.
 
 A mission has several ways to move. `mission_start_run` starts the crawler.
 `mission_hunt` runs a deterministic read-only pass: scope, fingerprint, safe

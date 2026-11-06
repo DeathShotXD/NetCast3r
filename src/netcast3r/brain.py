@@ -1437,7 +1437,7 @@ def _apply(index, director, action, default_mission: str = "") -> dict:
         if kind in {"host_shell", "host_read", "host_write", "host_list"}:
             if server is None:
                 return {"kind": kind, "applied": False, "reason": "no server"}
-            return _apply_host(server, kind, action)
+            return _apply_host(server, kind, action, default_mission)
         if kind == "peer_sync":
             from . import second_brain as second_brain_module
             base = getattr(server, "base", None) if server is not None else None
@@ -1454,14 +1454,14 @@ def _apply(index, director, action, default_mission: str = "") -> dict:
             from . import second_brain as second_brain_module
             base = getattr(server, "base", None) if server is not None else None
             peer = second_brain_module.peers(base)
-            heavy = bool(peer.get("heavy") or action.get("force_heavy"))
+            heavy = bool(peer.get("heavy"))
             result = second_brain_module.self_upgrade(
                 index, base,
                 title=str(action.get("title") or ""),
                 rationale=str(action.get("rationale") or action.get("reason") or ""),
                 body=str(action.get("body") or action.get("code") or ""),
                 area=str(action.get("area") or "exploit"),
-                apply_code=bool(action.get("apply_code", heavy)),
+                apply_code=bool(action.get("apply_code", False)),
                 filename=str(action.get("filename") or ""),
                 peer_heavy=heavy)
             return {"kind": kind, "applied": True,
@@ -1509,10 +1509,59 @@ def _stop_run(server, director, run_id: str) -> bool:
     return stopped
 
 
-def _apply_host(server, kind: str, action: dict) -> dict:
+def _host_approval(server, kind: str, action: dict, mission_id: str) -> str:
+    """Return '' when a human approval covers this host action, else the reason."""
+    from .mcp.tools import args_digest
+
+    approval_id = str(action.get("approval_id") or "").strip()
+    if not approval_id:
+        return f"{kind} needs an approved approval_id from the operator"
+    try:
+        approval = server.index.get_approval(approval_id)
+    except Exception:  # noqa: BLE001
+        return "approval store is unavailable"
+    if not approval:
+        return "approval not found"
+    if approval.get("status") != "approved":
+        return f"approval is {approval.get('status') or 'unknown'}, not approved"
+    if approval.get("used_at"):
+        return "approval has already been used"
+    if mission_id and approval.get("mission_id") != mission_id:
+        return "approval belongs to a different mission"
+    payload = approval.get("payload") or {}
+    if str(payload.get("tool") or "") != kind:
+        return "approval is not bound to this host action"
+    allowed = {
+        "host_shell": ("command", "cwd", "timeout"),
+        "host_write": ("path", "content", "append", "sensitive"),
+        "host_read": ("path", "sensitive"),
+    }.get(kind, ())
+    arguments = {key: action[key] for key in allowed if key in action}
+    if str(payload.get("args_digest") or "") != args_digest(kind, arguments):
+        return "approval was granted for different arguments"
+    try:
+        server.index.consume_approval(approval_id)
+    except Exception as exc:  # noqa: BLE001
+        return f"approval could not be spent: {exc}"
+    return ""
+
+
+def _apply_host(server, kind: str, action: dict,
+                default_mission: str = "") -> dict:
     from . import host as host_module
 
     base = getattr(server, "base", None)
+    mission_id = str(action.get("mission_id") or default_mission or "")
+    mission = server.index.get_mission(mission_id) if mission_id else None
+    if not mission or str(mission.get("autonomy") or "") != "autonomous":
+        return {"kind": kind, "applied": False,
+                "reason": ("host actions need an active autonomous mission; "
+                           "a supervised brain cannot touch the host")}
+    if kind in {"host_shell", "host_write"} or (
+            kind == "host_read" and action.get("sensitive") is True):
+        refusal = _host_approval(server, kind, action, mission_id)
+        if refusal:
+            return {"kind": kind, "applied": False, "reason": refusal}
     if kind == "host_shell":
         command = str(action.get("command") or action.get("cmd") or "").strip()
         if not command:

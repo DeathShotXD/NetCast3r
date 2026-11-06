@@ -499,6 +499,14 @@ class Director:
             return f"scope filter is autonomous, mission is {autonomy}"
         if filt == "supervised" and autonomy not in {"supervised", "autonomous"}:
             return f"scope filter is supervised, mission is {autonomy}"
+        budget = mission.get("budget")
+        if isinstance(budget, dict) and budget.get("max_runs") is not None:
+            try:
+                spent = int(mission.get("run_count") or 0)
+                if spent >= int(budget["max_runs"]):
+                    return f"campaign run budget spent ({spent}/{budget['max_runs']})"
+            except (TypeError, ValueError):
+                return "campaign budget is malformed"
         if not str(mission.get("target") or "").strip():
             return "no target"
         return ""
@@ -1120,6 +1128,10 @@ class Director:
         else:
             options = {"mode": mode, "policy": policy, "goal": goal}
             options.update(MODE_BUDGETS.get(mode, {}))
+            budget = mission.get("budget") if isinstance(mission.get("budget"), dict) else {}
+            for key in ("max_seconds", "max_model_calls"):
+                if budget.get(key) is not None:
+                    options[key] = budget[key]
             run = self.server._solvers().start(mission_id, options)
             runner = "solver"
         if queued:

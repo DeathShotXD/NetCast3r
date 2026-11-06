@@ -32,6 +32,12 @@ refuted one a failure), so exposure counts track reality rather than repetition.
 
 Proposals are a backlog. Nothing is applied automatically; an operator decides.
 
+Generated upgrade code is never applied to the running package. When
+`apply_code` is set, the file is written under `upgrades/quarantine`, the
+proposal stays `proposed`, and a human reviews it before moving it. A connected
+heavy peer can propose and can raise the priority, but it is not an
+authorization: `force_heavy` is rejected.
+
 ## Post-exploitation planning
 
 `src/netcast3r/postex.py` reads the graph and the exploit catalog and proposes

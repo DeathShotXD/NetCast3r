@@ -90,6 +90,20 @@ class DirectorTests(unittest.TestCase):
         self.assertFalse(rows[manual["id"]]["eligible"])
         self.assertIn("manual", rows[manual["id"]]["reason"])
 
+    def test_a_campaign_run_budget_blocks_the_next_start(self):
+        mission = self.server.index.create_mission(
+            "Budget", "http://127.0.0.1:9/", status="active",
+            autonomy="autonomous", scope=["127.0.0.1"],
+            budget={"max_runs": 1})
+        run = self.server.index.create_run(
+            "http://127.0.0.1:9/", {"mode": "hunt", "mission_id": mission["id"]})
+        self.server.index.add_mission_run(mission["id"], run["id"])
+        current = self.server.index.get_mission(mission["id"])
+        reason = self.director._ineligible_reason(
+            current, self.server.index.ensure_director_state())
+        self.assertIn("budget", reason)
+        self.assertIn("1/1", reason)
+
     def test_a_training_mission_is_never_driven(self):
         self.server.index.create_mission(
             "Lab", "https://portswigger.net/", status="active",

@@ -477,7 +477,20 @@ def missions_get(ctx: ToolContext, args: dict) -> dict:
     return _mission(ctx, args["mission_id"])
 
 
+def _deny_agent_operator(ctx: ToolContext, label: str) -> None:
+    """The authorization boundary belongs to the local operator, not a peer."""
+    actor = str(getattr(ctx, "actor", "") or "")
+    allowed = (actor in {"operator", "operator:manual", "test"}
+               or actor.startswith(("operator:", "operator/", "test/")))
+    if not allowed:
+        raise ToolError(
+            "policy_denied",
+            f"{label} is operator-only; an agent or peer cannot change the "
+            "authorization boundary")
+
+
 def missions_create(ctx: ToolContext, args: dict) -> dict:
+    _deny_agent_operator(ctx, "mission creation")
     body = {key: args[key] for key in
             ("title", "target", "objective", "status", "autonomy", "budget", "scope", "plan")
             if key in args}
@@ -485,11 +498,13 @@ def missions_create(ctx: ToolContext, args: dict) -> dict:
 
 
 def missions_update(ctx: ToolContext, args: dict) -> dict:
+    _deny_agent_operator(ctx, "mission update")
     mission_id = args.pop("mission_id")
     return _call(ctx, "PATCH", f"/api/v1/missions/{mission_id}", body=args)
 
 
 def missions_delete(ctx: ToolContext, args: dict) -> dict:
+    _deny_agent_operator(ctx, "mission deletion")
     mission_id = args["mission_id"]
     return _call(ctx, "DELETE", f"/api/v1/missions/{mission_id}")
 
@@ -6772,6 +6787,10 @@ class ToolRegistry:
             raise ToolError("unknown_tool", f"unknown tool: {name}")
         args = dict(arguments or {})
         actor = actor or self.ctx.actor
+        # Handlers must see the caller that is actually acting, not the actor
+        # the context was constructed with. Mission-boundary tools use this to
+        # distinguish the operator from an agent or a connected peer.
+        self.ctx.actor = actor
         started = time.monotonic()
         approval_id = ""
         status = "ok"

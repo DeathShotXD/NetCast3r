@@ -110,18 +110,32 @@ class BrainChatTests(unittest.TestCase):
         self.assertTrue(kinds.get("pause"))
         self.assertFalse(kinds.get("teleport", True))
 
-    def test_helix_can_start_campaign_and_host_shell(self):
+    def test_helix_can_start_campaign_and_host_shell_with_approval(self):
+        from netcast3r.mcp.tools import args_digest
+
+        mission = self.index.create_mission(
+            "Host work", "https://lab.example.com/", status="active",
+            autonomy="autonomous", scope=["lab.example.com"])
+        approval = self.index.create_approval(
+            mission["id"], "host shell proof", risk="high",
+            payload={"tool": "host_shell",
+                     "args_digest": args_digest("host_shell",
+                                                {"command": "echo helix-ok"})})
+        self.index.decide_approval(approval["id"], "approved",
+                                   decided_by="operator")
+
         def complete(messages):
             return reply({"reply": "scanning example.com", "actions": [
                 {"kind": "start_campaign", "target": "lab.example.com"},
-                {"kind": "host_shell", "command": "echo helix-ok"}]})
+                {"kind": "host_shell", "command": "echo helix-ok",
+                 "mission_id": mission["id"], "approval_id": approval["id"]}]})
 
         result = brain.chat(self.server, self.index, self.director,
                             "hunt lab.example.com and echo helix-ok",
-                            complete=complete)
+                            mission_id=mission["id"], complete=complete)
         by_kind = {a["kind"]: a for a in result["actions"]}
         self.assertTrue(by_kind["start_campaign"]["applied"])
-        self.assertTrue(by_kind["host_shell"]["applied"])
+        self.assertTrue(by_kind["host_shell"]["applied"], by_kind["host_shell"])
         self.assertEqual(by_kind["host_shell"].get("exit_code"), 0)
         self.assertIn("helix-ok", by_kind["host_shell"].get("stdout", ""))
         missions, _ = self.index.list_missions(limit=10)

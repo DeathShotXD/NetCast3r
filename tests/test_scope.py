@@ -55,6 +55,16 @@ class ScopeManagerTests(unittest.TestCase):
         manager = ScopeManager()
         self.assertTrue(manager.is_in_scope("https://anything.net/"))
 
+    def test_a_malformed_scope_fails_closed(self):
+        manager = ScopeManager(in_scope=["%%%", "http://", " ", "re:["])
+        self.assertFalse(manager.is_in_scope("https://example.com/"))
+        self.assertFalse(manager.is_in_scope("https://anything.net/"))
+
+    def test_an_exclusion_only_scope_still_allows_other_hosts(self):
+        manager = ScopeManager(in_scope=["!admin.example.com"])
+        self.assertTrue(manager.is_in_scope("https://api.example.com/"))
+        self.assertFalse(manager.is_in_scope("https://admin.example.com/"))
+
     def test_seed_becomes_suffix_rule(self):
         manager = ScopeManager()
         manager.add_seed("https://target.com")
