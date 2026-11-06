@@ -406,27 +406,43 @@ def seed_surface(index, mission_id: str, hosts, *, probe: bool = True,
         raise ValueError("hosts must be a list")
     scope = _mission_scope(mission)
     limit = max(1, min(int(limit or 200), 500))
-    accepted: list[str] = []
+    accepted: list[dict] = []
     rejected: list[str] = []
+    seen: set[str] = set()
     for raw in hosts:
-        host = _host_of(str(raw or ""))
+        text = str(raw or "").strip()
+        if not text:
+            continue
+        parts = urlsplit(text if "://" in text else "//" + text)
+        host = (parts.hostname or "").lower().rstrip(".")
         if not host:
             continue
         if not scope.is_in_scope("https://" + host):
             if host not in rejected:
                 rejected.append(host)
             continue
-        if host not in accepted:
-            accepted.append(host)
+        # Keep a non-default port: an operator list can point at a lab or an
+        # internal app on :8443, and dropping the port would probe 443.
+        try:
+            port = parts.port
+        except ValueError:
+            port = None
+        probe_host = f"{host}:{port}" if port else host
+        if probe_host in seen:
+            continue
+        seen.add(probe_host)
+        accepted.append({"host": host, "probe": probe_host, "port": port})
     accepted = accepted[:limit]
 
     config = load_config()
     own_session = session is None
     session = session or Session(config)
 
-    def work(name: str) -> dict:
-        ips = _resolve(name)
-        row = {"host": name, "ips": ips, "http": None}
+    def work(entry: dict) -> dict:
+        name = str(entry.get("probe") or entry.get("host") or "")
+        ips = _resolve(entry.get("host") or name)
+        row = {"host": entry.get("host") or name, "probe": name,
+               "port": entry.get("port"), "ips": ips, "http": None}
         if ips and probe:
             row["http"] = _http_probe(session, name)
         return row
@@ -454,6 +470,7 @@ def seed_surface(index, mission_id: str, hosts, *, probe: bool = True,
         live.append({
             "host": name,
             "ips": row.get("ips") or [],
+            "port": row.get("port"),
             "status": http.get("status"),
             "url": http.get("url"),
             "title": http.get("title"),
@@ -462,7 +479,9 @@ def seed_surface(index, mission_id: str, hosts, *, probe: bool = True,
         try:
             host_node = index.upsert_graph_node(
                 mission_id, "host", name, label=name, confidence="observed",
-                data={"source": "surface_seed", "ips": (row.get("ips") or [])[:8]})
+                data={"source": "surface_seed",
+                      "port": row.get("port"),
+                      "ips": (row.get("ips") or [])[:8]})
             for ip in (row.get("ips") or [])[:4]:
                 ip_node = index.upsert_graph_node(
                     mission_id, "ip", ip, label=ip, confidence="observed",
