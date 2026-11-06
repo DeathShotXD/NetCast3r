@@ -42,6 +42,20 @@ class HuntRunnerTests(unittest.TestCase):
         self.server.jobs.shutdown(wait=False)
         self.server.index.close()
 
+    def test_fallback_prefers_an_application_surface(self):
+        mission = self.server.index.create_mission(
+            "Wildcard priority", "http://127.0.0.1:9/", status="active",
+            scope=["127.0.0.1"])
+        self.server.index.upsert_graph_node(
+            mission["id"], "endpoint", "http://127.0.0.1/static",
+            label="static", data={"status": 200})
+        self.server.index.upsert_graph_node(
+            mission["id"], "endpoint", "http://127.0.0.1/portal/login",
+            label="portal", data={"status": 200})
+        runner = self.server._hunts()
+        self.assertEqual(runner._fallback_target(mission["id"]),
+                         "http://127.0.0.1/portal/login")
+
     def test_fallback_rotates_the_seed_across_runs(self):
         mission = self.server.index.create_mission(
             "Wildcard rotate", "http://127.0.0.1:9/", status="active",

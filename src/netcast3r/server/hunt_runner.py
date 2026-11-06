@@ -126,7 +126,9 @@ class HuntRunner:
                 mission_id, kind="endpoint")
         except Exception:  # noqa: BLE001
             endpoints = []
-        ranked: list[tuple[int, str]] = []
+        ranked: list[tuple[int, int, str]] = []
+        keywords = ("admin", "api", "portal", "dashboard", "login", "auth",
+                    "sso", "apply", "app", "account")
         for node in endpoints:
             key = str(node.get("key") or "")
             if not key.startswith("http") or not in_scope(key):
@@ -138,13 +140,16 @@ class HuntRunner:
                 except ValueError:
                     data = {}
             status = (data or {}).get("status") if isinstance(data, dict) else None
-            ranked.append((0 if status in (200, 301, 302, 401, 403) else 1, key))
+            lowered = key.lower()
+            interesting = 0 if any(word in lowered for word in keywords) else 1
+            ranked.append((0 if status in (200, 301, 302, 401, 403) else 1,
+                           interesting, key))
         ranked.sort()
         if ranked:
             # Rotate the seed across runs so a wildcard programme is not
             # hammered through the same first host every time.
             offset = int(mission.get("run_count") or 0) % len(ranked)
-            return (ranked[offset:] + ranked[:offset])[0][1]
+            return (ranked[offset:] + ranked[:offset])[0][2]
         try:
             hosts = self.server.index.list_graph_nodes(mission_id, kind="host")
         except Exception:  # noqa: BLE001
