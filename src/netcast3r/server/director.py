@@ -78,7 +78,7 @@ DIRECTOR_NOTE = (
 
 class Director:
     def __init__(self, server, tick_seconds: float = 10.0,
-                 max_concurrent: int = 1):
+                 max_concurrent: int = 8):
         self.server = server
         self.prime = prime_module.Prime(server.index)
         self._stop = threading.Event()
@@ -247,7 +247,9 @@ class Director:
         return self.status()
 
     def resume(self) -> dict:
-        self.server.index.patch_director_state(paused=0)
+        # Resume must re-engage too: kill writes engaged=0, and a bare paused=0
+        # left the loop ticking into an immediate idle return.
+        self.server.index.patch_director_state(paused=0, engaged=1)
         self.server.index.add_director_log("control", "resumed")
         self.start()
         return self.status()
@@ -327,7 +329,7 @@ class Director:
             "paused": bool(state.get("paused")),
             "scope_filter": state.get("scope_filter") or "autonomous",
             "tick_seconds": int(state.get("tick_seconds") or 15),
-            "max_concurrent": int(state.get("max_concurrent") or 1),
+            "max_concurrent": int(state.get("max_concurrent") or 8),
             "cycles": int(state.get("cycles") or 0),
             "runs_started": int(state.get("runs_started") or 0),
             "stop_reason": state.get("stop_reason") or "",
@@ -419,7 +421,7 @@ class Director:
         self._clear_parks(active)
         runs = active.get("runs") or {}
         busy = self._busy_run_count(runs)
-        if busy >= int(state.get("max_concurrent") or 1):
+        if busy >= int(state.get("max_concurrent") or 8):
             self._touch(active, state)
             return {"action": "wait", "reason": f"{busy} run(s) in flight"}
         eligible = {mission["id"] for mission in self._eligible(state)}
@@ -458,22 +460,33 @@ class Director:
             return {"action": "idle", "reason": "no eligible mission"}
         decision = self.prime.decide(limit=50)
         chosen = None
-        for row in decision["ranked"]:
-            # The scope filter is authoritative: Prime ranks the whole
-            # portfolio, but only an eligible mission may be started.
-            if row["mission_id"] not in eligible:
-                continue
-            if self._busy(row["mission_id"], active):
-                continue
-            if self._cooldown_left(row["mission_id"], row, active) > 0:
-                continue
-            chosen = row
-            break
-        if chosen is None:
-            self._touch(active, state)
-            return {"action": "idle",
-                    "reason": "every candidate is in flight or cooling down"}
-        return self._start(chosen, active, state)
+        started: list[dict] = []
+        # Fill the free slots in this tick instead of one run per 15 seconds.
+        for _burst in range(4):
+            chosen = None
+            for row in decision["ranked"]:
+                # The scope filter is authoritative: Prime ranks the whole
+                # portfolio, but only an eligible mission may be started.
+                if row["mission_id"] not in eligible:
+                    continue
+                if self._busy(row["mission_id"], active):
+                    continue
+                if self._cooldown_left(row["mission_id"], row, active) > 0:
+                    continue
+                chosen = row
+                break
+            if chosen is None:
+                break
+            started.append(self._start(chosen, active, state))
+            active = (self.server.index.ensure_director_state().get("active") or {})
+            busy = self._busy_run_count(active.get("runs") or {})
+            if busy >= int(state.get("max_concurrent") or 8):
+                break
+        if started:
+            return started[-1]
+        self._touch(active, state)
+        return {"action": "idle",
+                "reason": "every candidate is in flight or cooling down"}
 
     # -- eligibility -------------------------------------------------------
     def _all_candidates(self) -> list[dict]:
@@ -484,8 +497,7 @@ class Director:
         return [m for m in self._all_candidates()
                 if self._ineligible_reason(m, state) == ""]
 
-    @staticmethod
-    def _ineligible_reason(mission: dict, state: dict) -> str:
+    def _ineligible_reason(self, mission: dict, state: dict) -> str:
         if mission.get("training"):
             return "training mission"  # labs are explicit, never auto-driven
         status = str(mission.get("status") or "")
@@ -507,6 +519,17 @@ class Director:
                     return f"campaign run budget spent ({spent}/{budget['max_runs']})"
             except (TypeError, ValueError):
                 return "campaign budget is malformed"
+        if isinstance(budget, dict) and budget.get("max_usd") is not None:
+            # Only enforced when the providers actually reported a price.
+            try:
+                usage = self.server.index.agent_model_usage(str(mission["id"]))
+                if usage.get("cost_cents") is not None:
+                    spent_usd = float(usage["cost_cents"]) / 100.0
+                    if spent_usd >= float(budget["max_usd"]):
+                        return (f"campaign cost budget spent "
+                                f"({spent_usd:.2f}/{budget['max_usd']} USD)")
+            except (TypeError, ValueError, KeyError):
+                pass
         if not str(mission.get("target") or "").strip():
             return "no target"
         return ""
@@ -662,13 +685,17 @@ class Director:
             if age < 0 or age > MODEL_GATE_WINDOW:
                 continue
             kind = str(row.get("kind") or "")
-            if kind == "brain" and str((row.get("data") or {}).get("model") or ""):
-                last_success = max(last_success, age)
+            if kind in {"brain", "helix"} and str(
+                    (row.get("data") or {}).get("model") or ""):
+                # Newest success wins (smallest age).
+                if last_success < 0 or age < last_success:
+                    last_success = age
             elif kind == "brain-wait":
                 message = str(row.get("message") or "")
                 soft = any(token in message.lower()
                            for token in ("429", "rate limit", "rate_limited",
-                                         "too many requests"))
+                                         "too many requests", "no content",
+                                         "empty", "timeout", "timed out"))
                 if soft:
                     soft_failures += 1
                 else:
@@ -1044,7 +1071,8 @@ class Director:
             # Compound operational memory from this run's real tool failures
             # and repeated successes. Draft skills stay human-gated.
             learned = harness_module.learn_tick(self.server.index,
-                                                mission_id=mission_id)
+                                                mission_id=mission_id,
+                                                outcomes=False)
             out["harness"] = {
                 "lessons": len(learned.get("lessons_created") or []),
                 "skills": len((learned.get("skills") or {}).get("created") or []),

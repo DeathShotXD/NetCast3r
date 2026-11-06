@@ -551,8 +551,18 @@ def parse(text: str, filename: str = "", platform: str = "") -> ProgramBrief:
     if len(brief.in_scope) + len(brief.out_of_scope) > MAX_ASSETS:
         brief.warnings.append(
             f"capped at {MAX_ASSETS} assets; split the brief by program")
-        brief.in_scope = brief.in_scope[:MAX_ASSETS]
-        brief.out_of_scope = brief.out_of_scope[:max(0, MAX_ASSETS - len(brief.in_scope))]
+        # Exclusions must survive the cap: a scope without them tests excluded
+        # hosts. Reserve up to half the budget for them.
+        out_cap = min(len(brief.out_of_scope), max(1, MAX_ASSETS // 2))
+        in_cap = max(0, MAX_ASSETS - out_cap)
+        dropped_in = max(0, len(brief.in_scope) - in_cap)
+        dropped_out = max(0, len(brief.out_of_scope) - out_cap)
+        brief.in_scope = brief.in_scope[:in_cap]
+        brief.out_of_scope = brief.out_of_scope[:out_cap]
+        if dropped_in or dropped_out:
+            brief.warnings.append(
+                f"dropped {dropped_in} in-scope and {dropped_out} exclusion(s) "
+                "at the cap")
     if not brief.in_scope and not brief.out_of_scope:
         raise ProgramBriefError(
             "no hosts, URLs, IPs, or networks could be read from the brief")

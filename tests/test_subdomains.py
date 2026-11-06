@@ -56,7 +56,9 @@ class SubdomainFinderTests(unittest.TestCase):
         self.assertIn("api.example.com", found)
         self.assertNotIn("example.com", found)
         self.assertNotIn("evil.other.net", found)
-        self.assertEqual(found, sorted(set(found)))
+        self.assertEqual(set(found), {"www.example.com", "api.example.com"})
+        # Ranked, not alphabetical: www before api is the priority order.
+        self.assertEqual(found[0], "www.example.com")
 
     def test_passive_dns_names_are_collected(self):
         otx = json.dumps({"passive_dns": [
@@ -80,7 +82,7 @@ class SubdomainFinderTests(unittest.TestCase):
         self.assertIn("api.example.com", found)
         self.assertNotIn("beta.example.com", found)
 
-    def test_a_wildcard_dns_answer_skips_the_brute_pass(self):
+    def test_a_wildcard_dns_answer_still_brutes(self):
         calls = []
 
         def resolver(host):
@@ -89,8 +91,11 @@ class SubdomainFinderTests(unittest.TestCase):
 
         finder, _ = self._finder(resolver=resolver)
         found = finder.find(["example.com"])
-        self.assertEqual(found, [])
-        self.assertEqual(len(calls), 1)
+        # Every word resolves under a wildcard, so the brute pass still yields
+        # real candidate labels instead of an empty result.
+        self.assertTrue(found)
+        self.assertGreater(len(calls), 1)
+        self.assertIn("www.example.com", found)
 
     def test_results_are_capped(self):
         crt = json.dumps([

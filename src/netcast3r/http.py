@@ -70,6 +70,7 @@ class Session:
         self.delay = config.run.delay
         self.stop_on_rate_limit = config.run.stop_on_rate_limit
         self.stats = Stats()
+        self._recent: list[int] = []
         self._client = client
         self._lock = threading.Lock()
         self._next_slot = 0.0
@@ -118,15 +119,27 @@ class Session:
             self._clients.clear()
 
     def _stop_check(self) -> None:
-        attempts = self.stats.attempts()
-        if not self.stop_on_rate_limit or attempts < 20:
+        """Rolling window, not a lifetime ratio.
+
+        A lifetime 95 percent threshold aborts a good run after one early burst
+        of 429s. Only stop when the recent window shows no success at all.
+        """
+        if not self.stop_on_rate_limit:
             return
-        if self.stats.status_429 > attempts * 0.95:
-            raise StopRun("more than 95 percent of responses were rate limited")
-        if self.stats.status_403 > attempts * 0.95:
-            raise StopRun("more than 95 percent of responses were forbidden")
-        if self.stats.timeouts > attempts * 0.95:
-            raise StopRun("more than 95 percent of requests timed out")
+        recent = self._recent[-40:]
+        if len(recent) < 25:
+            return
+        good = sum(1 for status in recent if 200 <= status < 400)
+        if good:
+            return
+        blocked = sum(1 for status in recent if status in (429, 403))
+        timeouts = sum(1 for status in recent if status == 0)
+        if blocked >= len(recent) * 0.8:
+            raise StopRun(
+                f"no success in the last {len(recent)} responses; rate limited or forbidden")
+        if timeouts >= len(recent) * 0.8:
+            raise StopRun(
+                f"no success in the last {len(recent)} responses; timeouts")
 
     def request(self, method: str, url: str, headers: dict | None = None,
                 follow_redirects: bool | None = None, **kw) -> Response | None:
@@ -160,6 +173,8 @@ class Session:
                 with self._lock:
                     self.stats.timeouts += 1
                     self.stats.errors += 1
+                    self._recent.append(0)
+                    del self._recent[:-60]
                 if attempt <= self.retries:
                     time.sleep(0.4 * attempt)
                     continue
@@ -180,6 +195,8 @@ class Session:
 
             with self._lock:
                 self.stats.requests += 1
+                self._recent.append(result.status_code)
+                del self._recent[:-60]
                 self.stats.bytes_read += len(result.text)
                 if result.status_code == 429:
                     self.stats.status_429 += 1

@@ -926,8 +926,18 @@ def record_module_run(index, mission_id: str, module_id: str, result: dict) -> l
         status = "blocked"
         evidence = f"blocked by {result.get('blocked')} step(s) in {module_id}"
     else:
-        status = "covered"
-        evidence = f"{module_id} ran with no supporting observation"
+        refutes = int(result.get("refutes") or 0)
+        ran = int(result.get("ran") or 0)
+        if refutes > 0:
+            status = "covered"
+            evidence = f"{refutes} refuted step(s) in {module_id}"
+        elif ran > 0:
+            # A run whose steps were all inconclusive did not settle the item.
+            status = "in_progress"
+            evidence = f"{module_id} ran but every verdict was inconclusive"
+        else:
+            status = "covered"
+            evidence = f"{module_id} ran with no supporting observation"
     written = []
     for item_id in item_ids:
         try:

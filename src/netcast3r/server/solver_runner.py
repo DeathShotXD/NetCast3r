@@ -17,7 +17,7 @@ from .. import autopilot, model_solver, swarm
 
 
 class SolverRunner:
-    def __init__(self, server, complete=None, workers: int = 8):
+    def __init__(self, server, complete=None, workers: int = 16):
         self.server = server
         self._complete = complete
         self.pool = ThreadPoolExecutor(max_workers=max(1, workers),
@@ -85,6 +85,7 @@ class SolverRunner:
     def _completion(self, messages: list[dict]) -> dict:
         if self._complete is not None:
             return self._complete(messages)
+        from ..agents import _first_json
         from ..config import load_config
         from ..providers import ProviderBus
         from .runner import DashboardBridge
@@ -94,8 +95,9 @@ class SolverRunner:
             DashboardBridge(self.server.index, self.server.keys).apply(config)
         except Exception:  # noqa: BLE001 - a broken provider row must not stop the loop
             pass
-        completion = ProviderBus(config, timeout=45.0).complete(
-            "sentinel", messages, timeout=45.0)
+        completion = ProviderBus(config, timeout=60.0).complete(
+            "sentinel", messages, timeout=60.0,
+            validate=lambda text: _first_json(text) is not None)
         return {"text": completion.text or "", "provider": completion.provider,
                 "model": completion.model, "error": completion.error or "",
                 "usage": completion.usage or {}}
@@ -110,6 +112,7 @@ class SolverRunner:
         """
         if self._complete is not None:
             return self._complete(messages)
+        from ..agents import _first_json
         from ..config import load_config
         from ..providers import ProviderBus
         from .runner import DashboardBridge
@@ -119,8 +122,9 @@ class SolverRunner:
             DashboardBridge(self.server.index, self.server.keys).apply(config)
         except Exception:  # noqa: BLE001 - a broken provider row must not stop the loop
             pass
-        completion = ProviderBus(config, timeout=45.0).complete(
-            agent, messages, timeout=45.0, exclude_providers=exclude)
+        completion = ProviderBus(config, timeout=60.0).complete(
+            agent, messages, timeout=60.0, exclude_providers=exclude,
+            validate=lambda text: _first_json(text) is not None)
         return {"text": completion.text or "", "provider": completion.provider,
                 "model": completion.model, "error": completion.error or "",
                 "usage": completion.usage or {}}

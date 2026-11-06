@@ -38,10 +38,10 @@ DEFAULT_SECONDS = 600.0
 MAX_SECONDS = 1800.0
 DEFAULT_MODEL_CALLS = 12
 MAX_MODEL_CALLS = 36
-MAX_OBJECTIVES = 3
+MAX_OBJECTIVES = 5
 MAX_OBSERVATIONS = 8
 MAX_CORROBORATIONS = 2
-MAX_ROUNDS = 8
+MAX_ROUNDS = 12
 
 ROLE_ORDER = ("strategist", "scout", "attacker", "validator", "scribe")
 
@@ -301,6 +301,7 @@ class Swarm(Autopilot):
         try:
             completion = self.complete_for(role, messages, exclude) or {}
         except Exception as exc:  # noqa: BLE001 - a dead provider is an observation
+            self._refund_call()
             return None, f"{type(exc).__name__}: {exc}", ""
         if not isinstance(completion, dict):
             completion = {"text": str(completion)}
@@ -309,8 +310,15 @@ class Swarm(Autopilot):
         error = str(completion.get("error") or "")
         data = _first_json(text) if text else None
         if not isinstance(data, dict):
+            # A 429/empty/schema miss must not burn the hard call budget; a dead
+            # model would otherwise stop the mesh after 12-16 soft failures.
+            self._refund_call()
             return None, (error or "reply was not a JSON object"), provider
         return data, error, provider
+
+    def _refund_call(self) -> None:
+        with self._lock:
+            self.model_calls = max(0, self.model_calls - 1)
 
     # -- planning ----------------------------------------------------------
     def _clean_objectives(self, value) -> list[dict]:
@@ -487,8 +495,11 @@ class Swarm(Autopilot):
                             False)
             return [], "strategist finished", True
         if not data and note == "model budget spent":
-            # The budget is a hard stop. Falling through to the deterministic
-            # baseline here would quietly spend actions the budget forbade.
+            # The budget is spent, but steps and seconds may remain. Seed
+            # deterministic objectives instead of ending the mesh.
+            seeded = self._context_objectives() or self._baseline_objectives(self.rounds)
+            if seeded:
+                return seeded, "model budget spent; deterministic objectives", False
             return [], "model budget spent", True
         if self._plan_is_empty(data):
             # Timeout, empty body, or empty JSON: seed from leads and the
@@ -909,19 +920,19 @@ class Swarm(Autopilot):
                     "status": payload.get("status"),
                     "verdict": verdict.get("verdict"),
                 })
-                if errors >= 3:
+                if errors >= 5:
                     stop = "three consecutive tool errors"
                     break
             self._scribe(self.rounds, rows)
-            if errors >= 3:
+            if errors >= 5:
                 break
             # A round that ran nothing is a wasted round. One can happen when a
             # duplicate proposal is skipped; two in a row means the strategist
             # is not learning from the observations, so stop instead of
             # spending the rest of the model budget on the same loop.
             empty_rounds = empty_rounds + 1 if not rows else 0
-            if empty_rounds >= 2:
-                stop = "two rounds with no executed move"
+            if empty_rounds >= 3:
+                stop = "three rounds with no executed move"
                 summary = ("the strategist repeated work the mesh had already "
                            "done; stopped before spending the model budget")
                 break

@@ -18,7 +18,7 @@ from urllib.parse import urlsplit
 VERIFY_ACTIONS = {
     "http_probe", "http_request", "http_path_diff", "http_upload",
     "oracle_extract", "race_run", "single_packet_race", "last_byte_race",
-    "host_probe",
+    "host_probe", "reveng_analyze",
 }
 
 VERIFIER_SYSTEM = """You are the verifier in NetCast3r.

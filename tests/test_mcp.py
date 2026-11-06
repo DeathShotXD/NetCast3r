@@ -98,17 +98,23 @@ class MCPIntegrationTests(unittest.TestCase):
         self.assertEqual(audit["items"][0]["actor"], "test/1")
         self.assertEqual(audit["items"][0]["status"], "ok")
 
-    def test_readonly_denies_mutation_but_allows_reads(self):
+    def test_readonly_allows_medium_reads_and_denies_destructive_writes(self):
         ctx = ToolContext(plane=self.plane, policy="readonly", base=self.tmp)
         registry = ToolRegistry(ctx)
         payload, is_error = registry.call("missions_list", {}, actor="test")
         self.assertFalse(is_error, payload)
+        # Medium, non-destructive reads are now allowed under readonly.
         payload, is_error = registry.call(
-            "missions_create", {"title": "Nope", "target": "example.com"}, actor="test")
+            "missions_create", {"title": "Readonly", "target": "example.com"},
+            actor="test")
+        self.assertFalse(is_error, payload)
+        # A high-risk destructive delete is still refused.
+        payload, is_error = registry.call(
+            "missions_delete", {"mission_id": "msn_missing"}, actor="test")
         self.assertTrue(is_error)
         self.assertEqual(payload["error"]["code"], "policy_denied")
         audit = self.plane.request("GET", "/api/v1/tool-calls")["items"]
-        denied = [item for item in audit if item["tool"] == "missions_create"]
+        denied = [item for item in audit if item["tool"] == "missions_delete"]
         self.assertEqual(denied[0]["status"], "denied")
 
     def test_schema_rejects_unknown_arguments(self):
@@ -492,11 +498,15 @@ class MCPIntegrationTests(unittest.TestCase):
             httpd.shutdown()
             httpd.server_close()
 
-    def test_readonly_denies_http_request(self):
+    def test_readonly_allows_http_request_and_denies_high_risk(self):
         ctx = ToolContext(plane=self.plane, policy="readonly", base=self.tmp)
         registry = ToolRegistry(ctx)
         payload, is_error = registry.call(
-            "http_request", {"target": "https://example.com/"}, actor="test")
+            "http_request", {"target": "https://example.com/",
+                             "scope": ["example.com"]}, actor="test")
+        self.assertFalse(is_error, payload)
+        payload, is_error = registry.call(
+            "host_shell", {"command": "true"}, actor="test")
         self.assertTrue(is_error)
         self.assertEqual(payload["error"]["code"], "policy_denied")
 

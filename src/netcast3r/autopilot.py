@@ -179,7 +179,12 @@ def _compact(payload, limit: int = MAX_RESULT_CHARS) -> dict:
     # error string, or the difference between two responses.
     body = payload.get("body")
     if isinstance(body, str) and body.strip():
-        keep["body_sample"] = body[:900]
+        # Long enough to carry a proof, a token, or a dumped record. Raise the
+        # cap when the caller paid for a larger read.
+        keep["body_sample"] = body[:4000]
+    cookies = payload.get("set_cookie")
+    if isinstance(cookies, list) and cookies:
+        keep["set_cookie"] = [str(item)[:200] for item in cookies[:6]]
     headers = payload.get("headers")
     if isinstance(headers, dict):
         # Fingerprint-safe only. Cookie / Authorization never land here.
@@ -436,7 +441,9 @@ class Autopilot:
         text, error = self._model(messages)
         data = _first_json(text) if text else None
         if not isinstance(data, dict):
-            return [], (error or "reflection was not valid JSON"), True
+            # A weak model often blows the JSON shape on reflection. That is
+            # not a reason to end the run while steps remain.
+            return [], (error or "reflection was not valid JSON"), False
         summary = str(data.get("summary") or "").strip()
         done = bool(data.get("done"))
         nxt = self._clean_moves(data.get("next"))
@@ -477,7 +484,7 @@ class Autopilot:
                                             sort_keys=True, default=str)
             repeated = repeated + 1 if signature == last_signature else 0
             last_signature = signature
-            if repeated >= 1:
+            if repeated >= 2:
                 stop = "operator repeated the same move"
                 self._emit("decide", {"text": stop})
                 break
@@ -501,8 +508,8 @@ class Autopilot:
                 "url": str(payload.get("url") or ""),
                 "status": payload.get("status"),
             })
-            if errors >= 3:
-                stop = "three consecutive tool errors"
+            if errors >= 5:
+                stop = "five consecutive tool errors"
                 self._emit("decide", {"text": stop})
                 break
 
@@ -520,6 +527,11 @@ class Autopilot:
                 if plan:
                     self._note("plan", f"Revised plan after step {len(executed)}",
                                json.dumps(plan, default=str)[:4000])
+            if not plan and len(executed) < self.max_steps:
+                # The model is quiet or out of budget. Never idle with steps
+                # remaining: run the deterministic baseline again.
+                plan, note = self._fallback_plan()
+                self._emit("decide", {"text": note})
 
         if not summary:
             summary = self._final_summary(executed)

@@ -157,7 +157,16 @@ class MCPServer:
             name = str(info.get("name") or "mcp")[:80]
             version = str(info.get("version") or "")[:40]
             self.client_info = {"name": name, "version": version}
-            self.actor = f"{name}/{version}" if version else name
+            # A local stdio client is the operator on this machine, so it may
+            # manage mission lifecycles. A remote HTTP peer is an agent unless
+            # it overrides the actor explicitly.
+            override = str(os.environ.get("NETCAST3R_MCP_ACTOR") or "").strip()
+            if override:
+                self.actor = override
+            elif self.transport == "stdio":
+                self.actor = "operator:stdio"
+            else:
+                self.actor = f"mcp:{name}/{version}" if version else f"mcp:{name}"
             self.registry.ctx.actor = self.actor
             self.initialized = True
             self._write_state()

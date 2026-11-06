@@ -252,7 +252,8 @@ class Prime:
     def decide(self, limit: int = 3, use_model: bool | None = None) -> dict:
         rows = self.portfolio()
         ranked = []
-        for row in rows[:MAX_OBJECTIVES]:
+        window = max(1, min(max(limit, MAX_OBJECTIVES), 50))
+        for row in rows[:window]:
             objective = self.next_objective(row)
             ranked.append({**row, "objective": objective,
                            "mode": self.mode_for(row, objective)})

@@ -679,9 +679,12 @@ def _host_matches(host: str, lesson: dict) -> bool:
         for key in ("title", "lesson", "context", "next_step", "technique")
     ).lower()
     tags = {str(tag).lower() for tag in (lesson.get("tags") or [])}
+    if host in blob or host in tags or f"host:{host}" in tags:
+        return True
+    # A short first label like "api" or "www" is too generic to clear a lesson
+    # for every host that happens to carry it as a tag.
     slug = host.split(".")[0]
-    return (host in blob or host in tags or f"host:{host}" in tags
-            or (slug and slug in tags))
+    return bool(slug and len(slug) >= 7 and slug in tags)
 
 
 def _note_matches_unreachable(host: str, note: dict) -> bool:

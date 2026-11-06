@@ -134,21 +134,23 @@ class AutopilotLoopTests(unittest.TestCase):
     def test_repeated_identical_move_stops_the_loop(self):
         operator = self.make(scripted(
             plan(("http_probe", {"target": "http://127.0.0.1:9/"}),
+                 ("http_probe", {"target": "http://127.0.0.1:9/"}),
                  ("http_probe", {"target": "http://127.0.0.1:9/"}))),
         )
         result = operator.run()
         self.assertIn("repeated", result["stop"])
-        self.assertEqual(len(result["steps"]), 1)
+        self.assertEqual(len(result["steps"]), 2)
 
     def test_three_consecutive_tool_errors_stop_the_loop(self):
-        operator = self.make(
-            scripted(plan(("http_probe", {"target": "http://127.0.0.1:9/a"}),
-                          ("http_probe", {"target": "http://127.0.0.1:9/b"}),
-                          ("http_probe", {"target": "http://127.0.0.1:9/c"}))),
-            registry=FakeRegistry(error=True))
+        first = [("http_probe", {"target": f"http://127.0.0.1:9/{name}"})
+                 for name in ("a", "b", "c", "d")]
+        operator = self.make(scripted(
+            plan(*first),
+            plan(("http_probe", {"target": "http://127.0.0.1:9/e"})),
+        ), registry=FakeRegistry(error=True))
         result = operator.run()
-        self.assertIn("three consecutive", result["stop"])
-        self.assertEqual(len(result["steps"]), 3)
+        self.assertIn("five consecutive", result["stop"])
+        self.assertEqual(len(result["steps"]), 5)
         self.assertFalse(result["steps"][-1]["ok"])
 
     def test_notes_are_written_for_brief_plan_and_summary(self):

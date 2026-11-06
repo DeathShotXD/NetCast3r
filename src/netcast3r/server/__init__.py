@@ -515,7 +515,24 @@ class Server:
 
         @add("POST", r"/api/v1/runs/(?P<id>[A-Za-z0-9_]+)/stop")
         def stop_run(ctx):
-            return _json({"stopped": self.jobs.cancel(ctx.params["id"])})
+            run = self.index.get_run(ctx.params["id"]) or {}
+            options = run.get("options") or {}
+            mode = str(options.get("mode") or (run.get("counts") or {}).get("mode") or "")
+            stopped = False
+            try:
+                if mode == "hunt":
+                    stopped = self._hunts().cancel(ctx.params["id"])
+                elif mode in {"autopilot", "swarm", "solve"}:
+                    stopped = self._solvers().cancel(ctx.params["id"])
+                elif mode in {"path", "paths"}:
+                    stopped = self._paths().cancel(ctx.params["id"])
+                elif mode in {"exploit", "exploits"}:
+                    stopped = self._exploits().cancel(ctx.params["id"])
+            except Exception:  # noqa: BLE001 - fall through to the job registry
+                stopped = False
+            if not stopped:
+                stopped = self.jobs.cancel(ctx.params["id"])
+            return _json({"stopped": stopped})
 
         @add("POST", r"/api/v1/runs/(?P<id>[A-Za-z0-9_]+)/rerun")
         def rerun(ctx):

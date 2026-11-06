@@ -160,7 +160,11 @@ def _validate(value, schema: dict, path: str = "arguments") -> None:
             if name not in value:
                 raise ToolError("invalid_arguments", f"{path}.{name} is required")
         if schema.get("additionalProperties") is False:
-            unknown = sorted(set(value) - set(properties))
+            # approval_id and confirm are accepted by every tool: the risk gate
+            # can require them on any high-risk handler, and forgetting to
+            # declare them in a schema used to make a tool uncallable.
+            unknown = sorted(set(value) - set(properties)
+                             - {"approval_id", "confirm"})
             if unknown:
                 raise ToolError("invalid_arguments",
                                 f"unknown argument(s): {', '.join(unknown)}")
@@ -235,18 +239,27 @@ class RateLimiter:
     """Per-process sliding windows. Cheap, predictable, and auditable."""
 
     LIMITS = {
-        "default": (180, 60.0),
-        "mutation": (40, 60.0),
-        "scan": (6, 3600.0),
-        "probe": (60, 60.0),
-        "request": (90, 60.0),
-        "oracle": (600, 60.0),
-        "race": (20, 60.0),
-        "wait": (6, 60.0),
+        "default": (300, 60.0),
+        "mutation": (120, 60.0),
+        "scan": (30, 3600.0),
+        "probe": (300, 60.0),
+        "request": (600, 60.0),
+        "oracle": (1200, 60.0),
+        "race": (60, 60.0),
+        "wait": (30, 60.0),
     }
 
     def __init__(self):
         self._calls: dict[str, list[float]] = {}
+
+    def retry_after(self, bucket: str) -> float:
+        """Seconds until a slot frees, or 0 when one is free now."""
+        limit, window = self.LIMITS.get(bucket, self.LIMITS["default"])
+        now = time.monotonic()
+        calls = [stamp for stamp in self._calls.get(bucket, []) if now - stamp < window]
+        if len(calls) < limit:
+            return 0.0
+        return max(0.0, window - (now - min(calls)))
 
     def check(self, bucket: str) -> None:
         limit, window = self.LIMITS.get(bucket, self.LIMITS["default"])
@@ -372,7 +385,8 @@ _SENSITIVE_NAMES = {"control-plane.json", "auth-profiles.json", "secrets.json",
                     ".netrc", ".git-credentials", "credentials", ".env",
                     "known_hosts"}
 _SENSITIVE_DIRS = {".ssh", ".aws", ".gnupg", ".netcast3r"}
-_ALLOWED_BASE_DIRS = {"artifacts", "downloads", "results", "uploads", "samples"}
+_ALLOWED_BASE_DIRS = {"artifacts", "downloads", "results", "uploads", "samples",
+                      "evidence"}
 
 
 def _guard_local_path(ctx: ToolContext, path: str, allow_base: bool = False) -> str:
@@ -930,8 +944,28 @@ def coverage_mark(ctx: ToolContext, args: dict) -> dict:
 
 
 def campaign_start(ctx: ToolContext, args: dict) -> dict:
+    domains = args.get("domains") or []
+    if domains:
+        if not isinstance(domains, list) or len(domains) > 50:
+            raise ToolError("invalid_arguments",
+                            "domains must be a list of at most 50 targets")
+        results = []
+        for target in domains:
+            text = str(target or "").strip()
+            if not text:
+                continue
+            try:
+                results.append(_call(ctx, "POST", "/api/v1/campaigns", body={
+                    "target": text,
+                    "title": str(args.get("title") or ""),
+                    "objective": str(args.get("objective") or "")}))
+            except ToolError as exc:
+                results.append({"target": text, "error": f"{exc.code}: {exc.message}"})
+        return {"count": len(results), "campaigns": results}
     body = {key: args[key] for key in ("target", "title", "objective")
             if key in args}
+    if not str(body.get("target") or "").strip():
+        raise ToolError("invalid_arguments", "target or domains is required")
     return _call(ctx, "POST", "/api/v1/campaigns", body=body)
 
 
@@ -2370,46 +2404,71 @@ def http_probe(ctx: ToolContext, args: dict) -> dict:
     parts = urlsplit(url)
     if parts.scheme not in {"http", "https"} or not parts.hostname:
         raise ToolError("invalid_arguments", "target must be an http(s) URL or hostname")
-    _require_scope(ctx, target, args.get("mission_id", ""), args.get("scope"), probe=True)
+    mission_id = args.get("mission_id", "")
+    _require_scope(ctx, target, mission_id, args.get("scope"), probe=True)
     method = args.get("method", "GET").upper()
     if method not in {"GET", "HEAD"}:
         raise ToolError("invalid_arguments", "probe supports GET and HEAD only")
     maximum = int(args.get("max_bytes", 65536))
-    maximum = max(1024, min(maximum, 262144))
+    maximum = max(1024, min(maximum, 1048576))
     verify_tls = bool(args.get("verify_tls", True))
+    follow = bool(args.get("follow_redirects", False))
+    extra_headers = {str(key): str(value) for key, value in
+                     (args.get("headers") or {}).items()}
     started = time.monotonic()
 
     def _once(verify: bool) -> dict:
+        current = url
+        redirects: list[dict] = []
         with httpx.Client(timeout=args.get("timeout", 15), trust_env=False,
                           follow_redirects=False, verify=verify,
-                          headers={"user-agent": "NetCast3r-MCP/0.1"}) as client:
-            with client.stream(method, url) as response:
-                chunks, size = [], 0
-                for chunk in response.iter_bytes():
-                    if size + len(chunk) > maximum:
-                        chunks.append(chunk[: maximum - size])
-                        size = maximum
-                        break
-                    chunks.append(chunk)
-                    size += len(chunk)
-                body = b"".join(chunks)
-                headers = {key.lower(): value for key, value in response.headers.items()
-                           if key.lower() in {"content-type", "content-length", "server",
-                                              "location", "allow", "x-powered-by",
-                                              "strict-transport-security"}}
-                return {
-                    "target": target,
-                    "url": str(response.url),
-                    "status": response.status_code,
-                    "method": method,
-                    "headers": headers,
-                    "body": body.decode("utf-8", "replace"),
-                    "bytes": len(body),
-                    "truncated": size >= maximum,
-                    "verify_tls": verify,
-                    "tls_insecure": (not verify),
-                    "elapsed_ms": int((time.monotonic() - started) * 1000),
-                }
+                          headers={"user-agent": "NetCast3r-MCP/0.1",
+                                   **extra_headers}) as client:
+            for _hop in range(6):
+                with client.stream(method, current) as response:
+                    chunks, size = [], 0
+                    for chunk in response.iter_bytes():
+                        if size + len(chunk) > maximum:
+                            chunks.append(chunk[: maximum - size])
+                            size = maximum
+                            break
+                        chunks.append(chunk)
+                        size += len(chunk)
+                    body = b"".join(chunks)
+                    headers = {key.lower(): value for key, value in response.headers.items()
+                               if key.lower() in {"content-type", "content-length", "server",
+                                                  "location", "allow", "x-powered-by",
+                                                  "strict-transport-security"}}
+                    record = {
+                        "target": target,
+                        "url": str(response.url),
+                        "status": response.status_code,
+                        "method": method,
+                        "headers": headers,
+                        "body": body.decode("utf-8", "replace"),
+                        "bytes": len(body),
+                        "truncated": size >= maximum,
+                        "verify_tls": verify,
+                        "tls_insecure": (not verify),
+                        "elapsed_ms": int((time.monotonic() - started) * 1000),
+                    }
+                    location = response.headers.get("location")
+                    if follow and 300 <= response.status_code < 400 and location:
+                        nxt = urljoin(str(response.url), location)
+                        try:
+                            _require_scope(ctx, nxt, mission_id, args.get("scope"),
+                                           probe=True)
+                        except ToolError:
+                            record["blocked_redirect"] = nxt
+                            record["redirects"] = redirects
+                            return record
+                        redirects.append({"from": str(response.url), "to": nxt,
+                                          "status": response.status_code})
+                        current = nxt
+                        continue
+                    record["redirects"] = redirects
+                    return record
+        return record
 
     try:
         result = _once(verify_tls)
@@ -2431,7 +2490,7 @@ def http_probe(ctx: ToolContext, args: dict) -> dict:
         else:
             raise ToolError("probe_failed", f"probe failed: {type(first).__name__}",
                             str(first)) from first
-    _maybe_clear_dead_host_lesson(ctx, result, args.get("mission_id", ""))
+    _maybe_clear_dead_host_lesson(ctx, result, mission_id)
     return result
 
 
@@ -2500,16 +2559,16 @@ def http_request(ctx: ToolContext, args: dict) -> dict:
         if not isinstance(body, str):
             raise ToolError("invalid_arguments", "body must be a string")
         content = body.encode("utf-8")
-    if content is not None and len(content) > 1_048_576:
-        raise ToolError("invalid_arguments", "request body is larger than 1 MiB")
+    if content is not None and len(content) > 10_485_760:
+        raise ToolError("invalid_arguments", "request body is larger than 10 MiB")
 
     maximum = int(args.get("max_bytes", 65536))
-    maximum = max(1024, min(maximum, 524288))
+    maximum = max(1024, min(maximum, 2_097_152))
     timeout = float(args.get("timeout", 15))
-    timeout = max(1.0, min(timeout, 60.0))
+    timeout = max(1.0, min(timeout, 120.0))
     follow = bool(args.get("follow_redirects", False))
     max_hops = int(args.get("max_redirects", 5)) if follow else 0
-    max_hops = max(0, min(max_hops, 5))
+    max_hops = max(0, min(max_hops, 10))
     verify_tls = bool(args.get("verify_tls", True))
 
     redirects: list[dict] = []
@@ -2807,18 +2866,20 @@ def _request_args(args: dict, **overrides) -> dict:
 SAFE_REPLAY_METHODS = {"GET", "HEAD", "OPTIONS"}
 
 
-def _guard_replay(method: str, args: dict, tool: str) -> None:
+def _guard_replay(method: str, args: dict, tool: str,
+                  authorized: bool = False) -> None:
     """Refuse to replay a state-changing method without an explicit ack.
 
     ``access_control_compare`` repeats one request once per identity and
     ``retest_request`` repeats it two to five times. On a live target that
     could delete seven objects or create five accounts. The operator has to
-    say that the action is idempotent and safe before it is repeated.
+    say that the action is idempotent and safe before it is repeated. An
+    autonomous mission auto-acks: the domain is the authorization.
     """
     method = str(method or "GET").upper()
     if method in SAFE_REPLAY_METHODS:
         return
-    if args.get("confirm_state_change") is True:
+    if authorized or args.get("confirm_state_change") is True:
         return
     raise ToolError(
         "confirm_required",
@@ -3007,7 +3068,7 @@ def access_control_compare(ctx: ToolContext, args: dict) -> dict:
     if not isinstance(profiles, list) or len(profiles) > 6:
         raise ToolError("invalid_arguments", "auth_profiles must contain at most 6 names")
     method = str(args.get("method") or "GET").upper()
-    _guard_replay(method, args, "access_control_compare")
+    _guard_replay(method, args, "access_control_compare", ctx.authorized)
     identities = ["anonymous"] + [str(item) for item in profiles if str(item).strip()]
     rows = []
     for identity in identities:
@@ -3151,7 +3212,7 @@ def upload_policy_probe(ctx: ToolContext, args: dict) -> dict:
 def retest_request(ctx: ToolContext, args: dict) -> dict:
     count = max(2, min(int(args.get("count") or 2), 5))
     method = str(args.get("method") or "GET").upper()
-    _guard_replay(method, args, "retest_request")
+    _guard_replay(method, args, "retest_request", ctx.authorized)
     rows = []
     for _ in range(count):
         request = _request_args(args, method=method)
@@ -3240,6 +3301,7 @@ def oracle_extract(ctx: ToolContext, args: dict) -> dict:
 
     extracted = []
     requests = 0
+    errors = 0
     truncated = False
 
     def render(expr: str) -> tuple[str, dict, str | None]:
@@ -3260,17 +3322,32 @@ def oracle_extract(ctx: ToolContext, args: dict) -> dict:
                     .replace("{pos}", str(position))
                     .replace("{char}", str(ord(char))))
             url, rendered_headers, rendered_body = render(expr)
-            ctx.limiter.check("oracle")
+            try:
+                ctx.limiter.check("oracle")
+            except ToolError as exc:
+                if exc.code != "rate_limited":
+                    raise
+                time.sleep(min(2.0, ctx.limiter.retry_after("oracle") or 0.5))
+                ctx.limiter.check("oracle")
             probe = {
                 "target": url, "method": method, "headers": rendered_headers,
                 "auth_profile": profile_name, "mission_id": mission_id,
-                "scope": scope, "max_bytes": 131072, "timeout": 20,
+                "scope": scope, "max_bytes": 131072,
+                # A time oracle needs the client to outwait the server sleep.
+                "timeout": max(20, int(threshold_ms / 1000 * 2) + 5),
                 "follow_redirects": False,
             }
             if rendered_body is not None:
                 probe["body"] = rendered_body
-            response = http_request(ctx, probe)
+            try:
+                response = http_request(ctx, probe)
+            except ToolError:
+                # One transient refusal must not discard the partial value.
+                requests += 1
+                errors += 1
+                continue
             requests += 1
+            errors = 0
             status = int(response.get("status") or 0)
             text = str(response.get("body") or "")
             elapsed = int(response.get("elapsed_ms") or 0)
@@ -3294,7 +3371,7 @@ def oracle_extract(ctx: ToolContext, args: dict) -> dict:
     return {
         "target": target, "method": method, "true_when": true_when,
         "value": value, "length": len(value), "requests": requests,
-        "max_requests": max_requests, "truncated": truncated,
+        "errors": errors, "max_requests": max_requests, "truncated": truncated,
         "positions": position_start + len(value) - 1 if value else position_start,
         "evidence": (f"extracted {len(value)} character(s) through a "
                      f"{true_when} oracle in {requests} probe(s)"),
@@ -3324,9 +3401,9 @@ def host_probe(ctx: ToolContext, args: dict) -> dict:
             ports.append(port)
     if not ports:
         raise ToolError("invalid_arguments", "ports must contain at least one valid port")
-    if len(ports) > 20:
-        raise ToolError("invalid_arguments", "at most 20 ports per probe")
-    timeout = max(0.5, min(float(args.get("timeout", 3)), 10.0))
+    if len(ports) > 64:
+        raise ToolError("invalid_arguments", "at most 64 ports per probe")
+    timeout = max(0.5, min(float(args.get("timeout", 3)), 20.0))
     ctx.limiter.check("probe")
     results = []
     for port in ports:
@@ -3570,7 +3647,7 @@ def race_run(ctx: ToolContext, args: dict) -> dict:
 
 
 def rea_analyze(ctx: ToolContext, args: dict) -> dict:
-    path = _guard_local_path(ctx, args.get("path"))
+    path = _guard_local_path(ctx, args.get("path") or args.get("target"))
     kind = str(args.get("kind") or "auto").strip().lower()
     try:
         return reveng.rea_plan(
@@ -3591,7 +3668,7 @@ def reveng_analyze(ctx: ToolContext, args: dict) -> dict:
     leads with file and line numbers; a finding is still recorded separately
     after it is confirmed against the live target.
     """
-    path = _guard_local_path(ctx, args.get("path"))
+    path = _guard_local_path(ctx, args.get("path") or args.get("target"))
     kind = str(args.get("kind") or "auto").strip().lower()
     options = {
         "max_files": args.get("max_files", 4000),
@@ -3606,6 +3683,36 @@ def reveng_analyze(ctx: ToolContext, args: dict) -> dict:
         raise ToolError("read_failed", f"could not read the artifact: {exc.strerror or exc}")
     if args.get("markdown"):
         result["report_markdown"] = reveng.render_markdown(result)
+    # Lineage: an analyzed artifact becomes a graph node, which is what the
+    # mobile module's `apk_file` precondition looks for. Without this the
+    # static analyzer produced leads nobody could act on.
+    mission_id = str(args.get("mission_id") or "")
+    if mission_id:
+        try:
+            import hashlib
+
+            artifact = Path(path)
+            digest = ""
+            size = 0
+            if artifact.is_file():
+                size = artifact.stat().st_size
+                if size <= 50_000_000:
+                    digest = hashlib.sha256(artifact.read_bytes()).hexdigest()
+            node = _call(ctx, "POST",
+                         f"/api/v1/missions/{mission_id}/graph/nodes", body={
+                             "kind": ("apk_file" if artifact.suffix.lower() in
+                                      {".apk", ".xapk", ".apks"}
+                                      or str(result.get("kind")).lower() in
+                                      {"apk", "android"} else "artifact"),
+                             "key": str(artifact),
+                             "label": artifact.name,
+                             "data": {"sha256": digest, "bytes": size,
+                                      "analysis_kind": str(result.get("kind") or ""),
+                                      "source": "reveng_analyze"}})
+            result["graph_node"] = {"id": node.get("id"), "kind": node.get("kind"),
+                                    "sha256": digest, "bytes": size}
+        except Exception as exc:  # noqa: BLE001 - lineage is best effort
+            result["graph_node_error"] = f"{type(exc).__name__}: {exc}"
     return result
 
 
@@ -3806,7 +3913,7 @@ def auth_profile_delete(ctx: ToolContext, args: dict) -> dict:
 
 
 def auth_profile_import(ctx: ToolContext, args: dict) -> dict:
-    path = _guard_local_path(ctx, args.get("path"))
+    path = _guard_local_path(ctx, args.get("path") or args.get("target"))
     try:
         profile = authstore.from_storage_state(
             path, args["name"], domain=str(args.get("domain") or ""),
@@ -4366,7 +4473,7 @@ TOOLS: tuple[Tool, ...] = (
                                       "tune", "tick", "advise", "kill"]},
                   "reason": _string("why (for disengage or kill)"),
                   "tick_seconds": _integer("seconds between ticks", 5, 300),
-                  "max_concurrent": _integer("runs in flight at once", 1, 4),
+                  "max_concurrent": _integer("runs in flight at once", 1, 24),
                   "scope_filter": {"type": "string", "description": "which missions",
                                    "enum": ["autonomous", "supervised", "all"]},
                   "force": _boolean("run a tick even when paused or disengaged"),
@@ -4916,9 +5023,10 @@ TOOLS: tuple[Tool, ...] = (
          "steer it; pause the director to stop.",
          "medium", "missions",
          _schema({"target": _string("domain or URL"),
+                  "domains": _array("start one campaign per target", {"type": "string"}),
                   "title": _string("optional title"),
                   "objective": _string("optional objective")},
-                 ["target"]), "campaign_start", open_world=True),
+                 []), "campaign_start", open_world=True),
     Tool("evolve_status", "Read the capability maturity",
          "The self-model's capability scores next to the outcome ledger: what the "
          "harness has actually landed and what keeps failing. Derived from stored "
@@ -6048,16 +6156,20 @@ TOOLS: tuple[Tool, ...] = (
                   "scope": _array("explicit scope entries")},
                  ["target"]), "scope_check", read_only=True),
     Tool("http_probe", "HTTP probe",
-         "Send one GET or HEAD request to an in-scope target. No custom headers, no "
-         "redirect following, response body capped. Metadata and link-local hosts are refused.",
+         "Send one GET or HEAD request to an in-scope target, optionally with custom "
+         "headers and scoped redirect following. Response body capped. Metadata and "
+         "link-local hosts are refused.",
          "medium", "scope",
          _schema({"target": _string("in-scope host or URL"),
                   "mission_id": _string("mission whose scope authorizes the probe"),
                   "scope": _array("explicit scope entries when no mission is used"),
                   "method": _string("GET or HEAD", enum=["GET", "HEAD"]),
-                  "max_bytes": _integer("response body cap", 1024, 262144, 65536),
-                  "timeout": _integer("timeout in seconds", 1, 60, 15)},
-                 ["target"]), "http_probe", open_world=True),
+                  "headers": _object("extra request headers"),
+                  "follow_redirects": _boolean("follow scoped redirects", False),
+                  "verify_tls": _boolean("verify the target certificate", True),
+                  "max_bytes": _integer("response body cap", 1024, 1048576, 65536),
+                  "timeout": _integer("timeout in seconds", 1, 120, 15)},
+                 ["target"]), "http_probe", open_world=True, read_only=True),
     Tool("http_request", "Authenticated HTTP request",
          "Send one scoped request with a named auth profile, custom headers, and a "
          "JSON, form, or raw body. Every redirect hop is re-checked against the same "
@@ -6075,12 +6187,12 @@ TOOLS: tuple[Tool, ...] = (
                   "json": _object("JSON request body"),
                   "form": _object("form request body"),
                   "follow_redirects": _boolean("follow up to max_redirects hops", False),
-                  "max_redirects": _integer("redirect hop limit", 0, 5, 5),
+                  "max_redirects": _integer("redirect hop limit", 0, 10, 5),
                   "verify_tls": _boolean("verify the target certificate (default true); "
                                          "disable only for an authorized self-signed target",
                                          True),
-                  "max_bytes": _integer("response body cap", 1024, 524288, 65536),
-                  "timeout": _integer("timeout in seconds", 1, 60, 15)},
+                  "max_bytes": _integer("response body cap", 1024, 2097152, 65536),
+                  "timeout": _integer("timeout in seconds", 1, 120, 15)},
                  ["target"]), "http_request", open_world=True),
     Tool("http_upload", "Scoped multipart upload",
          "Send one multipart file upload with optional form fields and an auth "
@@ -6349,14 +6461,14 @@ TOOLS: tuple[Tool, ...] = (
     Tool("host_probe", "Bounded host banner probe",
          "Connect to an explicit port list on one scoped host, collect banners "
          "and TLS certificate details, and report which ports are open. At most "
-         "20 ports; this is a precise banner grab, not a full port scan.",
+         "64 ports; this is a precise banner grab, not a full port scan.",
          "medium", "network",
          _schema({"target": _string("in-scope host or URL"),
                   "mission_id": _string("mission whose scope authorizes the probe"),
                   "scope": _array("explicit scope entries when no mission is used"),
                   "ports": _array("explicit ports, default common set",
                                   {"type": "integer"}),
-                  "timeout": _integer("per-port timeout in seconds", 1, 10, 3)},
+                  "timeout": _integer("per-port timeout in seconds", 1, 20, 3)},
                  ["target"]), "host_probe", open_world=True),
     Tool("single_packet_race", "HTTP/2 single-packet race",
          "Open one TLS/HTTP/2 connection, send every request's headers and all "
@@ -6444,6 +6556,8 @@ TOOLS: tuple[Tool, ...] = (
          "target. Results are leads with file and line numbers, not findings.",
          "medium", "reverse-engineering",
          _schema({"path": _string("local file or directory to analyze"),
+                  "target": _string("alias for path, useful in module steps"),
+                  "mission_id": _string("link the artifact into this mission graph"),
                   "kind": _string("analysis kind", enum=list(reveng.KINDS)),
                   "max_files": _integer("source file cap", 1, 20000, 4000),
                   "timeout": _integer("decompiler timeout in seconds", 30, 900, 240),
@@ -6705,9 +6819,11 @@ class ToolRegistry:
     def _policy_check(self, tool: Tool, args: dict) -> str:
         """Return '' or raise; returns the approval id spent, if any."""
         risk = RISK_LEVELS.get(tool.risk, 99)
-        if self.ctx.policy == "readonly" and risk > RISK_LEVELS["low"]:
+        if self.ctx.policy == "readonly" and (
+                risk > RISK_LEVELS["medium"] or tool.destructive):
             raise ToolError("policy_denied",
-                            f"{tool.name} is {tool.risk} risk; readonly policy allows low only")
+                            f"{tool.name} is {tool.risk} risk or destructive; "
+                            "readonly allows up to medium non-destructive work")
         if tool.operator_only and self.ctx.policy != "full":
             raise ToolError("policy_denied",
                             "approval decisions are operator-only; use the UI or set the "
@@ -6791,13 +6907,32 @@ class ToolRegistry:
         # the context was constructed with. Mission-boundary tools use this to
         # distinguish the operator from an agent or a connected peer.
         self.ctx.actor = actor
+        # An MCP/agent caller bound to an active autonomous mission inherits the
+        # mission authorization, exactly like the internal runners do. Without
+        # this a 24/7 agent is stuck in approval churn on every high-risk call.
+        previous_authorized = self.ctx.authorized
+        mission_id = str(args.get("mission_id") or "")
+        if not self.ctx.authorized and mission_id:
+            try:
+                mission = _call(self.ctx, "GET", f"/api/v1/missions/{mission_id}")
+                if mission:
+                    self.ctx.authorized = bool(
+                        str(mission.get("status") or "") == "active"
+                        and str(mission.get("autonomy") or "") == "autonomous")
+            except ToolError:
+                pass
         started = time.monotonic()
         approval_id = ""
         status = "ok"
         try:
             _validate(args, tool.input_schema)
-            self.ctx.limiter.check(self._bucket(tool))
             approval_id = self._policy_check(tool, args)
+            bucket = self._bucket(tool)
+            wait = self.ctx.limiter.retry_after(bucket)
+            if wait and wait <= 1.5:
+                # A short wait is cheaper than a refusal the agent must retry.
+                time.sleep(wait)
+            self.ctx.limiter.check(bucket)
             result = _HANDLERS[tool.handler_name](self.ctx, args)
             payload = result if isinstance(result, dict) else {"result": result}
             payload.setdefault("ok", True)
@@ -6815,6 +6950,7 @@ class ToolRegistry:
             payload.update({"ok": False, "tool": tool.name, "status": status})
             return payload, True
         finally:
+            self.ctx.authorized = previous_authorized
             duration = int((time.monotonic() - started) * 1000)
             mission_id = str(args.get("mission_id") or self.ctx.mission_id or "")
             run_id = str(args.get("run_id") or "")

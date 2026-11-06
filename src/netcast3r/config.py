@@ -86,17 +86,25 @@ class RunConfig:
     timeout: float = 15.0
     depth: int = 2
     action_tier: str = "read"
-    user_agent: str = "Mozilla/5.0 (compatible; NetCast3r)"
+    user_agent: str = ("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
+                       "(KHTML, like Gecko) Chrome/124.0 Safari/537.36")
     patterns_file: str = ""
     recipes_file: str = ""
-    requests_per_second: float = 0.0
+    requests_per_second: float = 8.0
     delay: float = 0.0
     retries: int = 2
     max_response_size: int = 5_000_000
-    max_scan_bytes: int = 1_000_000
+    max_scan_bytes: int = 2_000_000
     stop_on_rate_limit: bool = True
-    random_user_agent: bool = False
-    user_agents: list[str] = field(default_factory=list)
+    random_user_agent: bool = True
+    user_agents: list[str] = field(default_factory=lambda: [
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+        "(KHTML, like Gecko) Chrome/124.0 Safari/537.36",
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 13_6) AppleWebKit/605.1.15 "
+        "(KHTML, like Gecko) Version/17.0 Safari/605.1.15",
+        "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
+        "(KHTML, like Gecko) Chrome/123.0 Safari/537.36",
+    ])
     verbosity: int = 1
     color: bool = True
     output_format: str = "markdown"

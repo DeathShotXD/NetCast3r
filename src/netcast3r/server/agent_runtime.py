@@ -320,9 +320,10 @@ class AgentRuntime:
     def _budget(self, mission: dict, options: dict) -> dict:
         recorded = mission.get("budget") or {}
         max_minutes = recorded.get("max_minutes")
-        seconds = DEFAULT_SECONDS
+        seconds = MAX_SECONDS
         if isinstance(max_minutes, (int, float)) and max_minutes > 0:
-            seconds = min(seconds, int(float(max_minutes) * 60))
+            seconds = max(DEFAULT_SECONDS,
+                          min(MAX_SECONDS, int(float(max_minutes) * 60)))
         max_tasks = _clamp(options.get("max_tasks"), MIN_TASKS, MAX_TASKS, DEFAULT_TASKS)
         max_seconds = _clamp(options.get("max_seconds"), MIN_SECONDS, MAX_SECONDS, seconds)
         max_model_calls = _clamp(options.get("max_model_calls"), 0, MAX_MODEL_CALLS,
@@ -444,6 +445,7 @@ class AgentRuntime:
                 self.index.patch_agent_state(
                     mission_id, status="running", phase="execute")
             started = time.monotonic()
+            failures = 0
             while True:
                 state = self.index.get_agent_state(mission_id) or {}
                 if int(state.get("stop_requested") or 0):
@@ -472,7 +474,14 @@ class AgentRuntime:
                     self._sync_counts(mission_id)
                     continue
                 failed = self._execute_task(mission_id, pending)
-                if failed:
+                if not failed:
+                    failures = 0
+                    continue
+                # One bad probe must not end a 20-task plan. Continue and only
+                # stop after three consecutive failures, so a weak target or a
+                # refused call cannot kill the run.
+                failures += 1
+                if failures >= 3:
                     self._finish(mission_id, "error", failed)
                     return
         except Exception as exc:  # noqa: BLE001 - the state row must record a crash
@@ -908,8 +917,11 @@ class AgentRuntime:
                    .get("options", {}).get("role") or "recon")
         # Training missions burn th-learn-* keys; hunt roles stay on th-hunt-*.
         agent_lane = "training" if role == "training" else "sentinel"
-        completion = ProviderBus(config, timeout=30.0).complete(
-            agent_lane, messages, timeout=30.0)
+        from ..agents import _first_json
+
+        completion = ProviderBus(config, timeout=45.0).complete(
+            agent_lane, messages, timeout=45.0,
+            validate=lambda text: isinstance(_first_json(text), dict))
         usage = completion.usage or {}
         prompt_chars = sum(len(str(item.get("content", ""))) for item in messages)
         err = str(completion.error or "")

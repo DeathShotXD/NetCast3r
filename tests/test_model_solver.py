@@ -60,10 +60,15 @@ class SolverLoopTests(unittest.TestCase):
         solver = self.make(scripted(
             reply("runs_delete", {"run_id": "run_x"}),
             reply("runs_delete", {"run_id": "run_x"}),
+            reply("runs_delete", {"run_id": "run_x"}),
         ))
         result = solver.run()
         self.assertIn("allow-list", result["stop"])
-        self.assertEqual(self.registry.calls, [])
+        # Nothing was executed, so the deterministic opening ran instead of
+        # leaving an empty slice.
+        self.assertEqual([call[0] for call in self.registry.calls],
+                         ["scope_check", "http_probe", "http_path_diff",
+                          "technique_plan"])
         self.assertEqual(result["findings"], 0)
 
     def test_a_failed_model_call_is_retried(self):
@@ -72,7 +77,9 @@ class SolverLoopTests(unittest.TestCase):
             reply("done", {"summary": "recovered after one retry"}),
         ))
         result = solver.run()
-        self.assertEqual(result["stop"], "model finished")
+        self.assertIn("model finished", result["stop"])
+        # Two attempts were made; the soft failure was refunded from the call
+        # budget (self.model_calls), so only the successful reply counts there.
         self.assertEqual(result["model_calls"], 2)
         self.assertEqual(result["findings"], 0)
 
@@ -80,6 +87,7 @@ class SolverLoopTests(unittest.TestCase):
         solver = self.make(scripted(
             {"text": "I will poke the target.", "provider": "fake", "model": "free"},
             {"text": "still prose", "provider": "fake", "model": "free"},
+            {"text": "prose again", "provider": "fake", "model": "free"},
         ))
         result = solver.run()
         self.assertIn("action schema", result["stop"])
@@ -107,6 +115,8 @@ class SolverLoopTests(unittest.TestCase):
         solver = self.make(dead)
         result = solver.run()
         self.assertIn("model unavailable", result["stop"])
+        self.assertIn("deterministic baseline", result["stop"])
+        self.assertGreaterEqual(len(self.registry.calls), 1)
         self.assertEqual(result["findings"], 0)
 
     def test_approval_fields_are_stripped(self):

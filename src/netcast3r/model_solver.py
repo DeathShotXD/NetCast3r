@@ -37,10 +37,10 @@ ACTIONS = {
     "research_sources": "list the curated public sources",
 }
 
-DEFAULT_STEPS = 3
-MAX_STEPS = 6
+DEFAULT_STEPS = 8
+MAX_STEPS = 24
 DEFAULT_SECONDS = 240.0
-MAX_SECONDS = 600.0
+MAX_SECONDS = 900.0
 MAX_RESULT_CHARS = 1600
 
 # Actions that act on the mission target when the model omits one. A weak model
@@ -195,6 +195,23 @@ class Solver:
             return {"text": str(completion), "error": "", "provider": "", "model": ""}
         return completion
 
+    def _baseline(self, history: list) -> None:
+        """Deterministic opening when every model call fails."""
+        for action in ("scope_check", "http_probe", "http_path_diff",
+                       "technique_plan"):
+            args: dict = {"mission_id": self.mission_id}
+            if self.target:
+                args["target"] = self.target
+            try:
+                payload, is_error = self.registry.call(
+                    action, args, actor="agent:solver")
+                note = "" if not is_error else str(payload.get("error", {}).get("message") or "")
+            except Exception as exc:  # noqa: BLE001
+                is_error, note = True, f"{type(exc).__name__}: {exc}"
+            history.append({"action": action, "ok": not is_error, "note": note[:160]})
+            self._emit("act", {"tool": action,
+                               "text": f"deterministic baseline: {action}"})
+
     def run(self) -> dict:
         started = time.monotonic()
         history: list[dict] = []
@@ -206,6 +223,7 @@ class Solver:
         last_signature = ""
         seen: dict[str, int] = {}
         failures = 0
+        acted = False
         for step in range(self.max_steps):
             if self.should_stop is not None and self.should_stop():
                 stop = "cancelled"
@@ -218,10 +236,15 @@ class Solver:
             text = str(completion.get("text") or "")
             if not text:
                 failures += 1
-                if failures < 2:
+                if failures < 3:
                     self._emit("reason", {"text": "model call failed; retrying"})
                     continue
-                stop = "model unavailable: " + str(completion.get("error") or "empty reply")
+                # The model plane is dead. Run a deterministic opening so the
+                # run is never an empty slice of the campaign.
+                self._baseline(history)
+                stop = ("model unavailable: "
+                        + str(completion.get("error") or "empty reply")
+                        + "; deterministic baseline ran")
                 break
             failures = 0
             data = _first_json(text)
@@ -236,7 +259,7 @@ class Solver:
                 history.append({"action": "(invalid)", "ok": False,
                                 "note": "reply was not the required JSON object"})
                 self._emit("decide", {"text": "reply was not the required JSON shape"})
-                if invalid >= 2:
+                if invalid >= 3:
                     stop = "model did not follow the action schema"
                     break
                 continue
@@ -252,7 +275,7 @@ class Solver:
                 history.append({"action": action, "ok": False,
                                 "note": "action is not on the allow-list"})
                 self._emit("decide", {"text": f"refused non-allowlisted action: {action}"})
-                if invalid >= 2:
+                if invalid >= 3:
                     stop = "model chose actions outside the allow-list"
                     break
                 continue
@@ -281,6 +304,7 @@ class Solver:
                 continue
 
             self._emit("act", {"tool": action, "text": f"calling {action}"})
+            acted = True
             try:
                 payload, is_error = self.registry.call(
                     action, self._args_for(action, args), actor="agent:solver")
@@ -302,6 +326,12 @@ class Solver:
             })
         else:
             stop = "step budget reached"
+
+        if not acted:
+            # Every model call failed and no action was attempted: run the
+            # deterministic opening so the slice is never empty.
+            self._baseline(history)
+            stop = f"{stop}; deterministic baseline ran"
 
         self._emit("decide", {"text": stop})
         return {

@@ -48,6 +48,22 @@ Guarantees, enforced in code rather than promised in prose:
 (think now, non-blocking). The pause flag is persisted, so a restart resumes the
 operator's choice.
 
+## Model rotation
+
+Every model answer is a candidate, not an oracle. A prose-only reply, an empty
+body, a refusal, or JSON that does not match the required shape is a failed
+candidate: the provider bus moves to the next provider and model. The solver,
+mesh, autopilot, brain, analysis, path and exploit verifiers all supply a
+validator, so a censored or weak model cannot stop the loop.
+
+When every candidate fails, the deterministic engines keep the campaign moving:
+
+- the solver runs a scope, probe, path-diff, and technique baseline;
+- the mesh seeds context objectives and its baseline rounds;
+- the autopilot re-seeds its deterministic plan;
+- the director downgrades to the deterministic hunt;
+- the brain still steers the focus mission and reports live progress.
+
 ## Coverage and training
 
 The snapshot also carries the focus mission's **coverage** (the 98-item checklist

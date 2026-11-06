@@ -471,7 +471,8 @@ class ProviderBus:
             on_chunk(Chunk("error", last_error))
         return "", "", ""
     def complete(self, agent: str, messages: list[dict], timeout: float = 45.0,
-                 exclude_providers=None, max_candidates: int | None = None) -> Completion:
+                 exclude_providers=None, max_candidates: int | None = None,
+                 validate=None) -> Completion:
         """One non-streaming call that keeps the provider's usage block.
 
         The mission runtime needs a bounded call that cannot stream forever and
@@ -587,6 +588,25 @@ class ProviderBus:
                                        "error": last_error[:140]})
                         continue
                     usage = data.get("usage")
+                    # A censored, confused, or prose-only model is a failed
+                    # candidate, not an answer. When the caller needs a shape,
+                    # an invalid reply rotates to the next provider/model
+                    # instead of stopping the run.
+                    if validate is not None:
+                        try:
+                            valid = bool(validate(text))
+                        except Exception:  # noqa: BLE001 - a bad validator rotates
+                            valid = False
+                        if not valid:
+                            last_error = (f"{provider.name}/{model} reply failed "
+                                          "validation")
+                            self._strike(provider.name, model)
+                            self._observe({"kind": "done", "agent": agent,
+                                           "provider": provider.name,
+                                           "model": model, "ok": False,
+                                           "ms": _ms(attempt),
+                                           "error": "invalid reply"})
+                            continue
                     # Cool other providers that 429'd; the one that answered
                     # settles so a working catalogue is not locked out.
                     for name in rate_limited:

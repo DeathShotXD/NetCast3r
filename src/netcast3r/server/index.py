@@ -149,6 +149,10 @@ CREATE TABLE IF NOT EXISTS lessons (
 CREATE INDEX IF NOT EXISTS idx_lessons_created ON lessons(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_lessons_mission ON lessons(mission_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_lessons_outcome ON lessons(outcome, created_at DESC);
+-- One lesson per reflected tool call; the learn window is bounded, so without
+-- this a busy mission re-reflects the same call once it falls out of the window.
+CREATE UNIQUE INDEX IF NOT EXISTS idx_lessons_tool_source
+    ON lessons(source) WHERE source LIKE 'tool_call:%';
 
 CREATE TABLE IF NOT EXISTS skills (
     id TEXT PRIMARY KEY,
@@ -380,7 +384,7 @@ CREATE TABLE IF NOT EXISTS director_state (
     paused INTEGER DEFAULT 0,
     scope_filter TEXT DEFAULT 'autonomous',
     tick_seconds INTEGER DEFAULT 15,
-    max_concurrent INTEGER DEFAULT 1,
+    max_concurrent INTEGER DEFAULT 8,
     cycles INTEGER DEFAULT 0,
     runs_started INTEGER DEFAULT 0,
     stop_reason TEXT DEFAULT '',
@@ -739,6 +743,19 @@ class Index:
                 "WHERE h.finding_id = findings.id) "
                 "WHERE mission_id IS NULL AND EXISTS (SELECT 1 FROM hypotheses h "
                 "WHERE h.finding_id = findings.id)")
+        indexes = {row["name"] for row in self.conn.execute(
+            "SELECT name FROM sqlite_master WHERE type = 'index'")}
+        if findings and "idx_find_fp_unique" not in indexes:
+            # A rerun used to append a duplicate row for the same fingerprint.
+            # Only value-bearing findings are deduped; empty-value rows are
+            # distinct findings and keep their own titles.
+            self.conn.execute(
+                "DELETE FROM findings WHERE value != '' AND rowid NOT IN "
+                "(SELECT MAX(rowid) FROM findings WHERE value != '' "
+                "GROUP BY fingerprint)")
+            self.conn.execute(
+                "CREATE UNIQUE INDEX IF NOT EXISTS idx_find_fp_unique "
+                "ON findings(fingerprint) WHERE value != ''")
 
     def close(self) -> None:
         with self._lock:
@@ -1601,16 +1618,24 @@ class Index:
                 tags.append("provisional=true")
         lesson_id = _new_id("lsn")
         now = _now()
+        source_value = source.strip()
         with self._lock:
-            self.conn.execute(
-                "INSERT INTO lessons (id, mission_id, run_id, task_id, title, technique, "
-                "context, outcome, lesson, next_step, tags_json, source, confidence, "
-                "created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            cursor = self.conn.execute(
+                "INSERT OR IGNORE INTO lessons (id, mission_id, run_id, task_id, title, "
+                "technique, context, outcome, lesson, next_step, tags_json, source, "
+                "confidence, created_at, updated_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (lesson_id, mission_id, run_id, task_id, title, technique.strip(),
                  context.strip(), outcome, lesson, next_step.strip(), json.dumps(tags),
-                 source.strip(), confidence, now, now),
+                 source_value, confidence, now, now),
             )
             self.conn.commit()
+            if cursor.rowcount == 0 and source_value:
+                row = self.conn.execute(
+                    "SELECT id FROM lessons WHERE source = ? LIMIT 1",
+                    (source_value,)).fetchone()
+                if row:
+                    return self.get_lesson(row["id"])
         self.bump_expertise(tags, outcome)
         return self.get_lesson(lesson_id)
 
@@ -1937,10 +1962,19 @@ class Index:
     def _fingerprint(finding: dict) -> str:
         import hashlib
         # Hash the whole value: JWTs often share a header, so truncating at 64
-        # characters made different tokens inherit one another's triage.
-        raw = "|".join([
-            str(finding.get("secret_type", "")), str(finding.get("value", "")),
-        ])
+        # characters made different tokens inherit one another's triage. When
+        # there is no value, the title/source identify the finding; otherwise
+        # every empty-value finding collides on one fingerprint.
+        value = str(finding.get("value", "") or "")
+        if value.strip():
+            raw = "|".join([str(finding.get("secret_type", "")), value])
+        else:
+            raw = "|".join([
+                str(finding.get("secret_type", "")),
+                str(finding.get("title", "")),
+                str(finding.get("source", "")),
+                str(finding.get("impact", "")),
+            ])
         return hashlib.sha256(raw.encode("utf-8", "ignore")).hexdigest()
 
     def list_findings(self, run_id: str = "", severity: str = "", status: str = "",

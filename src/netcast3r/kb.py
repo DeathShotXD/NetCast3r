@@ -149,7 +149,7 @@ def digest(index, mission_id: str, limit: int = 12) -> list[dict]:
     # Ensure the shared technique corpus is present for every provider.
     try:
         existing = index.list_kb_entries(scope="global", kind="technique",
-                                         limit=5)
+                                         limit=8)
         if len(existing) < 8:
             seed_technique_corpus(index)
     except Exception:  # noqa: BLE001 - digest must never raise
@@ -214,18 +214,27 @@ def digest(index, mission_id: str, limit: int = 12) -> list[dict]:
         except Exception:  # noqa: BLE001
             pass
     corpus_rows.sort(key=_impact_rank)
-    other_rows.sort(key=lambda row: (-int(row.get("hits") or 0),
+    # hits desc, then newest. The old tuple used -hits AND reverse=True, which
+    # inverted the proven-first ordering and pushed old knowledge out.
+    other_rows.sort(key=lambda row: (int(row.get("hits") or 0),
                                      str(row.get("updated_at") or "")),
                     reverse=True)
     # Split the brief: half critical/high corpus, half lived observations so
     # agents keep both modern exploit knowledge and mission-specific memory.
-    corpus_slots = min(len(corpus_rows), max(4, limit // 2))
+    half = max(0, limit // 2)
+    corpus_slots = min(len(corpus_rows), half)
     other_slots = limit - corpus_slots
     if len(other_rows) < other_slots:
-        corpus_slots = min(len(corpus_rows), limit - len(other_rows))
+        corpus_slots = min(len(corpus_rows),
+                           corpus_slots + (other_slots - len(other_rows)))
         other_slots = limit - corpus_slots
-    out = [_pack(row) for row in corpus_rows[:corpus_slots]]
-    out.extend(_pack(row) for row in other_rows[:other_slots])
+    selected = [*corpus_rows[:corpus_slots], *other_rows[:other_slots]]
+    out = [_pack(row) for row in selected]
+    for row in selected:
+        try:
+            index.bump_kb_hit(row["id"])
+        except Exception:  # noqa: BLE001 - a hit count must never raise
+            pass
     return out
 
 
@@ -281,11 +290,13 @@ def learn_from_mission(index, mission_id: str) -> dict:
 
     for hyp in index.list_hypotheses(mission_id=mission_id, limit=200)[0]:
         status = str(hyp.get("status") or "open")
-        if status == "open":
+        if status in {"open", "archived", "inconclusive"}:
             continue
         technique = str(hyp.get("technique") or "").strip() or "general"
         title = str(hyp.get("title") or technique)
-        key = f"{technique}:{status}:{host}:{title}".lower()[:200]
+        hyp_id = str(hyp.get("id") or "")
+        key = (f"{technique}:{status}:{host}:{title}:{hyp_id[-6:]}"
+               .lower()[:200])
         if status == "refuted":
             kind, body = "dead-end", (
                 f"Refuted on {host}: {title}. Expected: "

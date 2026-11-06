@@ -303,10 +303,11 @@ class HuntHelperTests(unittest.TestCase):
         # Too few samples cannot establish a shell.
         self.assertFalse(_detect_spa_shell(
             [{"path": "/a", "status": 200, "bytes": 531}])[0])
-        # A large common body is a real page, not a tiny SPA shell.
+        # A large common body is also a shell: modern bundlers inline state
+        # and push shells tens of KB.
         big = [{"path": f"/{i}", "status": 200, "bytes": 40000}
                for i in range(5)]
-        self.assertFalse(_detect_spa_shell(big)[0])
+        self.assertTrue(_detect_spa_shell(big)[0])
 
 
 class LfiHandler(BaseHTTPRequestHandler):

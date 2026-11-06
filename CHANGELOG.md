@@ -4,6 +4,53 @@ Notable changes to NetCast3r, newest first.
 
 ## Unreleased
 
+### Autonomy and throughput
+
+- **Model rotation on bad replies**: a prose-only, empty, refused, or
+  schema-invalid model reply is now a failed candidate. The provider bus walks
+  to the next provider and model instead of ending the run. Solver, mesh,
+  autopilot, brain, agent analysis, path and exploit verifiers all pass a
+  validator.
+- **Deterministic fallbacks everywhere**: model_solver runs a
+  scope/probe/path-diff/technique baseline after repeated model failure; swarm
+  continues deterministic objectives after the call budget is spent; autopilot
+  re-seeds the baseline instead of ending on a bad reflection; the brain steers
+  the focus mission even when no priority is locked.
+- **Soft failures no longer burn budgets**: 429/empty/timeout calls are refunded
+  in the mesh and counted separately in the solver; duplicate-move and
+  consecutive-error thresholds are raised so one WAF response does not end a
+  run.
+- **Director**: concurrency defaults to 8 (schema max 24), fills free slots per
+  tick, ranks the full portfolio window, corrects the model-health gate
+  (helix successes, newest-success ordering, soft-token set), re-engages on
+  resume, and enforces `budget.max_usd` alongside `max_runs`.
+- **Direct HTTP**: default pacing and browser user agents, rolling-window
+  stop condition instead of a lifetime 95 percent ratio, higher limiter buckets
+  checked after policy, short waits on a nearly-free slot, 120 s / 2 MiB / 10-hop
+  request caps, partial oracle extraction, and 64-port host probes.
+- **Hunt coverage**: graph endpoints are merged into the surface pass,
+  hypotheses cap raised to 8, wildcard DNS no longer disables brute force and
+  results are ranked before truncation, large SPA shells are detected,
+  program exclusions survive the asset cap, and inconclusive module runs no
+  longer mark checklist items covered.
+
+### Memory and trust
+
+- **Compounding memory**: KB digest no longer reseeds on every read and now
+  sorts proven entries first with live hit counts; reflected tool calls are
+  unique per source; archived/inconclusive hypotheses no longer pollute the
+  technique ledger; host matching is exact for short labels; expertise is
+  matured once per run.
+
+### Data and evidence
+
+- HTTP audit keeps a 4,000-character body sample and `set_cookie` list, so a
+  proof or dumped record is not lost to the 900-character cap.
+- Static reverse-engineering records an `apk_file`/`artifact` graph node with
+  sha256 and size, giving the mobile module real lineage.
+- Findings dedupe on a value-bearing fingerprint (partial unique index) and
+  keep the mission link added earlier.
+
 ### Security
 
 - **Malformed scope fails closed**: a scope that declares positive entries but

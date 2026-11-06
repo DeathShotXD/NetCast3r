@@ -359,13 +359,15 @@ class HuntRunner:
             "/apply", "/account", "/profile", "/admin",
             "/forgot-password", "/reset-password", "/upload",
         ]
-        # Rotate a few graph endpoints into the safe surface pass.
+        # Merge discovered graph endpoints, not only when the static list is
+        # short (it never is). Endpoints from web2root/JS were previously
+        # excluded from every surface pass.
         for path in graph_paths:
             if path.startswith("http"):
                 continue
             if not path.startswith("/"):
                 path = "/" + path
-            if path not in safe_paths and len(safe_paths) < 18:
+            if path not in safe_paths and len(safe_paths) < 40:
                 safe_paths.append(path.split("?", 1)[0][:120])
         surface = []
         # surface_map holds the live auth/api/object anchors (host + path +
@@ -553,7 +555,7 @@ class HuntRunner:
 
         def _open_lead(title: str, tech_id: str, rationale: str, expected: str,
                        lead_target: str = "") -> None:
-            if cancel.is_set() or len(hypotheses) >= 5:
+            if cancel.is_set() or len(hypotheses) >= 8:
                 return
             if title.casefold() in open_titles:
                 return
@@ -711,7 +713,7 @@ class HuntRunner:
                 f"https://{host}/")
 
         for item in ranked:
-            if cancel.is_set() or len(hypotheses) >= 5:
+            if cancel.is_set() or len(hypotheses) >= 8:
                 break
             title = f"Test {item['title']} on {host}"
             tech_id = str(item.get("id") or "")
@@ -883,7 +885,9 @@ def _detect_spa_shell(surface: list) -> tuple[bool, int]:
     if len(sizes) < 4:
         return False, 0
     size, freq = Counter(sizes).most_common(1)[0]
-    if freq >= 4 and size <= 8192:
+    # Modern SPA shells (Next/Nuxt inlined data) run tens of KB. A tight 8 KB
+    # cap made every large shell look like a real backend.
+    if freq >= 4 and size <= 200_000:
         return True, int(size)
     return False, 0
 

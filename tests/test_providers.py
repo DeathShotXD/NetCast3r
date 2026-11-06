@@ -275,5 +275,51 @@ class ProviderBusTests(unittest.TestCase):
             server.shutdown()
 
 
+class ValidateHandler(BaseHTTPRequestHandler):
+    def do_POST(self):
+        self.rfile.read(int(self.headers.get("Content-Length", 0)))
+        payload = json.loads(self.headers.get("x-test-body") or "{}") if False else None
+        content = "just prose" if self.path.startswith("/prose") else '{"ok": 1}'
+        body = json.dumps({"choices": [{"message": {"content": content}}],
+                           "usage": {}}).encode()
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def log_message(self, *args):
+        pass
+
+
+class ProviderValidateTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.server = ThreadingHTTPServer(("127.0.0.1", 0), ValidateHandler)
+        cls.port = cls.server.server_address[1]
+        threading.Thread(target=cls.server.serve_forever, daemon=True).start()
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.server.shutdown()
+
+    def test_an_invalid_reply_rotates_to_the_next_candidate(self):
+        base = f"http://127.0.0.1:{self.port}"
+        config = Config(
+            providers=[
+                ProviderConfig(name="prose", base_url=f"{base}/prose",
+                               api_key="x", priority=10, models=["m"]),
+                ProviderConfig(name="json", base_url=f"{base}/json",
+                               api_key="x", priority=20, models=["m"]),
+            ],
+            routes=[RouteConfig(agent="scribe", model="m", provider="")],
+        )
+        bus = ProviderBus(config)
+        result = bus.complete("scribe", [{"role": "user", "content": "hi"}],
+                              validate=lambda text: text.strip().startswith("{"))
+        self.assertEqual(result.provider, "json")
+        self.assertIn('"ok"', result.text)
+
+
 if __name__ == "__main__":
     unittest.main()

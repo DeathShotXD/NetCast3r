@@ -213,8 +213,13 @@ def diagnose(index, mission_id: str = "", limit: int = 8) -> dict:
     }
 
 
-def learn_tick(index, mission_id: str = "", limit: int = LEARN_CALL_LIMIT) -> dict:
-    """Real-time learning: reflect unreflected failures and mature outcomes."""
+def learn_tick(index, mission_id: str = "", limit: int = LEARN_CALL_LIMIT,
+               outcomes: bool = True) -> dict:
+    """Real-time learning: reflect unreflected failures and mature outcomes.
+
+    ``outcomes=False`` skips the expertise bump when the caller already ran it
+    for the same mature cycle. Double-counting inflated every success rate.
+    """
     limit = max(5, min(int(limit or LEARN_CALL_LIMIT), 100))
     calls, _ = index.list_tool_calls(mission_id=mission_id, limit=limit)
     existing, _ = index.list_lessons(mission_id=mission_id, limit=200)
@@ -243,7 +248,7 @@ def learn_tick(index, mission_id: str = "", limit: int = LEARN_CALL_LIMIT) -> di
         seen_sources.add(source)
 
     matured = None
-    if mission_id:
+    if mission_id and outcomes:
         try:
             matured = evolve.mature_outcomes(index, mission_id)
         except ValueError:

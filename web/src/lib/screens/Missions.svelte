@@ -749,7 +749,7 @@
   }
 
   function resetForm() {
-    form = { title: '', target: '', objective: '', autonomy: 'supervised', budget: '', scope: '' };
+    form = { title: '', target: '', objective: '', autonomy: 'autonomous', budget: '', scope: '' };
   }
 
   function startComposer() {
@@ -770,7 +770,7 @@
         target: form.target.trim(),
         objective: form.objective.trim(),
         autonomy: form.autonomy,
-        status: 'draft',
+        status: 'active',
         budget: Number.isFinite(cap) && cap > 0 ? { max_usd: cap } : {},
         scope: form.scope
           .split(/[\n,]/)

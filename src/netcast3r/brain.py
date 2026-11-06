@@ -757,7 +757,7 @@ def _first_json(text: str):
 
 
 _PROVIDER_FAILS: dict[str, float] = {}
-_PROVIDER_FAIL_TTL = 900.0
+_PROVIDER_FAIL_TTL = 300.0
 _PROVIDER_SOFT_TTL = 180.0
 
 
@@ -797,7 +797,8 @@ def _remember_provider(provider: str, error: str) -> None:
 
 
 def _ask(server, index, messages: list, complete=None,
-         timeout: float = 60.0, max_candidates: int | None = None
+         timeout: float = 60.0, max_candidates: int | None = None,
+         require_json: bool = False
          ) -> tuple[str, str, str, str]:
     """One model call for the brain, with the tokenharbor prime route and the
     provider bus as the fallback. Returns (text, provider, model, error)."""
@@ -816,7 +817,9 @@ def _ask(server, index, messages: list, complete=None,
         completion = ProviderBus(config, timeout=timeout).complete(
             "prime", messages, timeout=timeout,
             exclude_providers=_excluded_providers() or None,
-            max_candidates=max_candidates)
+            max_candidates=max_candidates,
+            validate=(lambda text: _first_json(text) is not None)
+            if require_json else None)
     if hasattr(completion, "text"):
         text = completion.text or ""
         provider = getattr(completion, "provider", "") or ""
@@ -1055,7 +1058,7 @@ def chat(server, index, director, message: str, history: list | None = None,
     focus = str(data.get("focus") or "")[:400]
     applied = []
     if act:
-        for action in (data.get("actions") or [])[:5]:
+        for action in (data.get("actions") or [])[:10]:
             applied.append(_apply(index, director, action, mission_id))
     applied = [a for a in applied if a]
     try:
@@ -1183,7 +1186,7 @@ def cognition(server, index, director, mission_id: str = "", complete=None,
         {"role": "user", "content": json.dumps(turn, default=str)[:60000]},
     ]
     text, provider, model, error = _ask(server, index, messages, complete, timeout,
-                                        max_candidates=6)
+                                        max_candidates=12, require_json=True)
     data = _first_json(text) or {}
     reply = str(data.get("reply") or text or "")[:4000]
     focus = str(data.get("focus") or "")[:400]
@@ -1191,7 +1194,7 @@ def cognition(server, index, director, mission_id: str = "", complete=None,
     applied = []
     locked = operator_priority(index)
     locked_id = str(locked.get("mission_id") or "")
-    for action in (data.get("actions") or [])[:3]:
+    for action in (data.get("actions") or [])[:6]:
         kind = str(action.get("kind") or "").lower() if isinstance(action, dict) else ""
         if kind == "run_module" and not autonomous:
             applied.append({"kind": "run_module", "applied": False,
@@ -1209,25 +1212,27 @@ def cognition(server, index, director, mission_id: str = "", complete=None,
         applied.append(_apply(index, director, action, mission_id))
     applied = [a for a in applied if a]
     # A quiet or rate-limited model must not leave the locked mission idle.
-    # Spend the tick on critical_ready evidence instead of a lab or a park.
-    if locked_id and not any(row.get("applied") for row in applied):
-        steer_id = locked_id
-        steer = critical_ready_directive(index, steer_id) or {
-            "kind": "directive",
-            "mission_id": steer_id,
-            "body": (
-                "Operator priority stays locked on this mission. "
-                "Keep falsifiable tests moving. Do not start labs or park the hunt."
-            ),
-        }
-        applied.append(_apply(index, director, steer, steer_id))
-        applied = [a for a in applied if a]
-        if not reply.strip():
-            reply, progress_focus = _progress_reply(index, steer_id)
-            if not focus:
-                focus = progress_focus
-        if not focus:
-            focus = "critical_ready on the locked mission"
+    # A dead or quiet model must not leave the focus mission idle either. Spend
+    # the tick on critical_ready evidence for whatever mission is in focus.
+    if not any(row.get("applied") for row in applied):
+        steer_id = locked_id or mission_id
+        if steer_id:
+            steer = critical_ready_directive(index, steer_id) or {
+                "kind": "directive",
+                "mission_id": steer_id,
+                "body": (
+                    "Operator priority stays locked on this mission. "
+                    "Keep falsifiable tests moving. Do not start labs or park the hunt."
+                ),
+            }
+            applied.append(_apply(index, director, steer, steer_id))
+            applied = [a for a in applied if a]
+            if not reply.strip():
+                reply, progress_focus = _progress_reply(index, steer_id)
+                if not focus:
+                    focus = progress_focus
+    if not focus:
+        focus = "critical_ready on the locked mission"
     result = {"reply": reply, "reasoning": reasoning, "focus": focus,
               "actions": applied, "provider": provider, "model": model,
               "mission_id": mission_id, "error": error}
@@ -1267,7 +1272,7 @@ def _apply(index, director, action, default_mission: str = "") -> dict:
                 return {"kind": kind, "applied": False,
                         "reason": "directive needs mission_id and body"}
             from .server import _parse_mentions
-            existing = index.list_directions(mission_id, limit=50)
+            existing = index.list_directions(mission_id, status="queued", limit=50)
             if any(str(d.get("body") or "").strip() == body for d in existing):
                 return {"kind": kind, "applied": False,
                         "reason": "the same direction is already queued or done"}

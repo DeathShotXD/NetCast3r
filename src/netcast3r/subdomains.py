@@ -160,8 +160,11 @@ class SubdomainFinder:
         return bool(self.resolve(f"{probe}.{domain}"))
 
     def _brute(self, domain: str) -> set[str]:
+        # A wildcard DNS answer does not mean brute force is useless: every
+        # name resolves, but the real ones are exactly what we want. Only a
+        # missing wordlist skips the pass.
         words = self._words()
-        if not words or self._wildcard(domain):
+        if not words:
             return set()
         names: set[str] = set()
         workers = min(BRUTE_WORKERS, max(1, len(words)))
@@ -176,6 +179,18 @@ class SubdomainFinder:
                     continue
         return names
 
+    @staticmethod
+    def _rank(name: str) -> tuple:
+        priority = ("www", "api", "app", "admin", "portal", "auth", "sso",
+                    "login", "dashboard", "dev", "staging", "stage", "test",
+                    "uat", "mail", "webmail", "vpn", "cdn", "docs")
+        head = name.split(".", 1)[0]
+        try:
+            weight = priority.index(head)
+        except ValueError:
+            weight = 50
+        return (0 if head == "www" else 1, weight, len(name), name)
+
     def find(self, seeds) -> list[str]:
         hosts = self.domains(seeds)
         names: set[str] = set()
@@ -185,7 +200,8 @@ class SubdomainFinder:
         for domain in hosts:
             names |= self._brute(domain)
         ordered = sorted(
-            name for name in names
-            if name not in hosts and self.scope.is_in_scope("https://" + name)
+            (name for name in names
+             if name not in hosts and self.scope.is_in_scope("https://" + name)),
+            key=self._rank,
         )
         return ordered[: self.limit]
