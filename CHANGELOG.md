@@ -49,6 +49,11 @@ Notable changes to NetCast3r, newest first.
 - **Certificate-transparency retry**: a transient `crt.sh` gateway error no
   longer reports an empty surface. The lookup uses a browser-shaped request,
   a longer timeout, and a second attempt.
+- **Findings belong to a mission**: a finding promoted from a hypothesis had no
+  mission link, so the mission page counted zero findings even when the ledger
+  held one. Findings now store `mission_id`, the startup migration backfills it
+  from the promoted hypothesis, `GET /api/v1/findings?mission_id=...` filters by
+  it, and the mission count includes it.
 - **Cursor reticle on focus shifts**: the custom cursor hid on window blur,
   leaving `cursor: none` with no reticle after a native select or dialog. It
   now parks only when the tab is actually hidden.

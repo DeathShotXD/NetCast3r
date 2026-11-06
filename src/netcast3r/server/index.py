@@ -48,6 +48,7 @@ CREATE INDEX IF NOT EXISTS idx_events_run ON events(run_id, seq);
 CREATE TABLE IF NOT EXISTS findings (
     id TEXT PRIMARY KEY,
     run_id TEXT,
+    mission_id TEXT,
     fingerprint TEXT,
     severity TEXT,
     title TEXT,
@@ -728,6 +729,16 @@ class Index:
             # Rows created before packs existed are Academy labs.
             self.conn.execute(
                 "UPDATE training_progress SET source = 'portswigger' WHERE source IS NULL OR source = ''")
+        findings = {row["name"] for row in self.conn.execute("PRAGMA table_info(findings)")}
+        if findings and "mission_id" not in findings:
+            # Findings promoted from a hypothesis had no mission link, so the
+            # mission page counted zero findings even when the ledger held one.
+            self.conn.execute("ALTER TABLE findings ADD COLUMN mission_id TEXT")
+            self.conn.execute(
+                "UPDATE findings SET mission_id = (SELECT h.mission_id FROM hypotheses h "
+                "WHERE h.finding_id = findings.id) "
+                "WHERE mission_id IS NULL AND EXISTS (SELECT 1 FROM hypotheses h "
+                "WHERE h.finding_id = findings.id)")
 
     def close(self) -> None:
         with self._lock:
@@ -918,7 +929,7 @@ class Index:
                        secret_type: str = "manual", value: str = "",
                        confidence: float = 0.0, tags: list | None = None,
                        notes: str = "", fingerprint: str = "",
-                       hypothesis_id: str = "",
+                       hypothesis_id: str = "", mission_id: str = "",
                        require_evidence: bool = True) -> dict:
         """Record a finding an operator or agent actually validated.
 
@@ -938,6 +949,9 @@ class Index:
         run_id = (run_id or "").strip()
         if run_id and not self.get_run(run_id):
             raise ValueError(f"unknown run: {run_id}")
+        mission_id = (mission_id or "").strip()
+        if mission_id and not self.get_mission(mission_id):
+            raise ValueError(f"unknown mission: {mission_id}")
         evidence = (evidence or "").strip()
         hypothesis_id = (hypothesis_id or "").strip()
         if require_evidence:
@@ -948,6 +962,8 @@ class Index:
                 if hypothesis.get("status") not in {"supported", "promoted"}:
                     raise ValueError(
                         "hypothesis_id must reference a supported hypothesis")
+                if not mission_id:
+                    mission_id = str(hypothesis.get("mission_id") or "")
                 if not evidence:
                     evidence = str(hypothesis.get("expected")
                                    or hypothesis.get("rationale") or "").strip()
@@ -977,11 +993,11 @@ class Index:
         now = _now()
         with self._lock:
             self.conn.execute(
-                "INSERT INTO findings (id, run_id, fingerprint, severity, title, secret_type, "
-                "status, value, impact, evidence, source, confidence, created_at, "
+                "INSERT INTO findings (id, run_id, mission_id, fingerprint, severity, title, "
+                "secret_type, status, value, impact, evidence, source, confidence, created_at, "
                 "triage_status, severity_override, tags_json, notes) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                (finding_id, run_id, fingerprint, severity, title, secret_type,
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (finding_id, run_id, mission_id, fingerprint, severity, title, secret_type,
                  "", mask(raw_value), impact.strip(), evidence, source.strip(),
                  confidence, now, "new", None, json.dumps(tags), notes.strip()),
             )
@@ -1261,7 +1277,8 @@ class Index:
             secret_type=str(hypothesis.get("technique") or "manual"),
             confidence=0.9, tags=tags,
             notes=f"Promoted from {hypothesis_id}; target {hypothesis.get('target')}.",
-            hypothesis_id=hypothesis_id)
+            hypothesis_id=hypothesis_id,
+            mission_id=str(hypothesis.get("mission_id") or ""))
         payload = json.dumps({
             "hypothesis": hypothesis, "test_result": result,
         }, indent=2, sort_keys=True).encode("utf-8")
@@ -1928,11 +1945,15 @@ class Index:
 
     def list_findings(self, run_id: str = "", severity: str = "", status: str = "",
                       q: str = "", sort: str = "created_at", limit: int = 50,
-                      offset: int = 0) -> tuple[list[dict], int]:
+                      offset: int = 0, mission_id: str = "") -> tuple[list[dict], int]:
         where, params = [], []
         if run_id:
             where.append("run_id = ?")
             params.append(run_id)
+        if mission_id:
+            where.append("(mission_id = ? OR run_id IN "
+                         "(SELECT run_id FROM mission_runs WHERE mission_id = ?))")
+            params.extend([mission_id, mission_id])
         if severity:
             where.append("COALESCE(severity_override, severity) = ?")
             params.append(severity)
@@ -2083,8 +2104,8 @@ class Index:
             rows = self.conn.execute(
                 f"""SELECT m.*,
                     (SELECT COUNT(*) FROM mission_runs mr WHERE mr.mission_id = m.id) AS run_count,
-                    (SELECT COUNT(*) FROM findings f JOIN mission_runs mr ON mr.run_id = f.run_id
-                     WHERE mr.mission_id = m.id) AS finding_count,
+                    (SELECT COUNT(*) FROM findings f WHERE f.mission_id = m.id OR f.run_id IN
+                     (SELECT mr2.run_id FROM mission_runs mr2 WHERE mr2.mission_id = m.id)) AS finding_count,
                     (SELECT COUNT(*) FROM approvals a WHERE a.mission_id = m.id
                      AND a.status = 'pending') AS pending_approvals
                     FROM missions m {clause}
@@ -2098,8 +2119,8 @@ class Index:
             row = self.conn.execute(
                 """SELECT m.*,
                    (SELECT COUNT(*) FROM mission_runs mr WHERE mr.mission_id = m.id) AS run_count,
-                   (SELECT COUNT(*) FROM findings f JOIN mission_runs mr ON mr.run_id = f.run_id
-                    WHERE mr.mission_id = m.id) AS finding_count,
+                   (SELECT COUNT(*) FROM findings f WHERE f.mission_id = m.id OR f.run_id IN
+                    (SELECT mr2.run_id FROM mission_runs mr2 WHERE mr2.mission_id = m.id)) AS finding_count,
                    (SELECT COUNT(*) FROM approvals a WHERE a.mission_id = m.id
                     AND a.status = 'pending') AS pending_approvals
                    FROM missions m WHERE m.id = ?""",

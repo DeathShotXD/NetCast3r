@@ -597,7 +597,8 @@ class Server:
             items, total = self.index.list_findings(
                 run_id=ctx.query.get("run_id", ""), severity=ctx.query.get("severity", ""),
                 status=ctx.query.get("status", ""), q=ctx.query.get("q", ""),
-                sort=ctx.query.get("sort", "created_at"), limit=ctx.limit, offset=ctx.offset)
+                sort=ctx.query.get("sort", "created_at"), limit=ctx.limit, offset=ctx.offset,
+                mission_id=ctx.query.get("mission_id", ""))
             return _json({"items": items, "total": total, "page": ctx.page, "size": ctx.limit})
 
         @add("GET", r"/api/v1/findings/(?P<id>[A-Za-z0-9_]+)")
@@ -626,6 +627,7 @@ class Server:
                     notes=str(body.get("notes", "")),
                     fingerprint=str(body.get("fingerprint", "")),
                     hypothesis_id=str(body.get("hypothesis_id", "")),
+                    mission_id=str(body.get("mission_id", "")),
                 )
             except (TypeError, ValueError) as exc:
                 return _problem(400, str(exc))
