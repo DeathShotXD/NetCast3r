@@ -141,7 +141,10 @@ class HuntRunner:
             ranked.append((0 if status in (200, 301, 302, 401, 403) else 1, key))
         ranked.sort()
         if ranked:
-            return ranked[0][1]
+            # Rotate the seed across runs so a wildcard programme is not
+            # hammered through the same first host every time.
+            offset = int(mission.get("run_count") or 0) % len(ranked)
+            return (ranked[offset:] + ranked[:offset])[0][1]
         try:
             hosts = self.server.index.list_graph_nodes(mission_id, kind="host")
         except Exception:  # noqa: BLE001

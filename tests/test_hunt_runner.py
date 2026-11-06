@@ -42,6 +42,22 @@ class HuntRunnerTests(unittest.TestCase):
         self.server.jobs.shutdown(wait=False)
         self.server.index.close()
 
+    def test_fallback_rotates_the_seed_across_runs(self):
+        mission = self.server.index.create_mission(
+            "Wildcard rotate", "http://127.0.0.1:9/", status="active",
+            scope=["127.0.0.1"])
+        for name in ("alpha", "beta", "gamma"):
+            self.server.index.upsert_graph_node(
+                mission["id"], "endpoint", f"http://127.0.0.1/{name}",
+                label=name, data={"status": 200})
+        runner = self.server._hunts()
+        first = runner._fallback_target(mission["id"])
+        run = self.server.index.create_run(
+            "http://127.0.0.1:9/", {"mode": "hunt", "mission_id": mission["id"]})
+        self.server.index.add_mission_run(mission["id"], run["id"])
+        second = runner._fallback_target(mission["id"])
+        self.assertNotEqual(first, second)
+
     def test_fallback_never_picks_an_out_of_scope_endpoint(self):
         mission = self.server.index.create_mission(
             "Wildcard skip", "http://127.0.0.1:9/", status="active",
