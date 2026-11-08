@@ -19,12 +19,88 @@
   import Backdrop from './lib/ui/Backdrop.svelte';
   import BrandMark from './lib/ui/BrandMark.svelte';
   import Palette from './lib/ui/Palette.svelte';
+  import RadialMenu from './lib/ui/RadialMenu.svelte';
   import ToastHost from './lib/ui/ToastHost.svelte';
   import Unlock from './lib/ui/Unlock.svelte';
   import Symbols from './lib/ui/Symbols.svelte';
   import BrainDock from './lib/shell/BrainDock.svelte';
+  import type { RadialItem } from './lib/types';
 
   let railOpen = $state(false);
+  let radial = $state<{ x: number; y: number; items: RadialItem[] } | null>(null);
+
+  async function copyText(text: string, note: string): Promise<void> {
+    try {
+      await navigator.clipboard.writeText(text);
+      store.toast('ok', note);
+    } catch {
+      store.toast('warn', 'the browser blocked clipboard access');
+    }
+  }
+
+  function radialItems(target: EventTarget | null): RadialItem[] {
+    const el = target instanceof HTMLElement ? target : null;
+    const items: RadialItem[] = [];
+    const selection = window.getSelection()?.toString().trim() ?? '';
+
+    const link = el?.closest('a[href]') as HTMLAnchorElement | null;
+    if (link?.href) {
+      const href = link.href;
+      items.push({ icon: 'external', label: 'open link', action: () => window.open(href, '_blank', 'noopener') });
+      items.push({ icon: 'link', label: 'copy link', action: () => void copyText(href, 'link copied') });
+      const text = (link.textContent ?? '').trim();
+      if (text) items.push({ icon: 'copy', label: 'copy text', action: () => void copyText(text, 'text copied') });
+    }
+
+    const img = el?.closest('img') as HTMLImageElement | null;
+    if (img?.src) {
+      const src = img.src;
+      items.push({ icon: 'image', label: 'open image', action: () => window.open(src, '_blank', 'noopener') });
+      items.push({ icon: 'copy', label: 'copy image url', action: () => void copyText(src, 'image url copied') });
+      items.push({
+        icon: 'download',
+        label: 'download',
+        action: () => {
+          const a = document.createElement('a');
+          a.href = src;
+          a.download = '';
+          document.body.appendChild(a);
+          a.click();
+          a.remove();
+        }
+      });
+    }
+
+    const code = el?.closest('pre, code') as HTMLElement | null;
+    if (code) {
+      items.push({ icon: 'code', label: 'copy code', action: () => void copyText(code.innerText, 'code copied') });
+    }
+
+    const tagged = el?.closest(
+      '[data-run-id],[data-finding-id],[data-mission-id],[data-id]'
+    ) as HTMLElement | null;
+    const id =
+      tagged?.dataset.runId || tagged?.dataset.findingId || tagged?.dataset.missionId || tagged?.dataset.id;
+    if (id) {
+      items.push({ icon: 'pin', label: 'copy id', action: () => void copyText(id, 'id copied') });
+    }
+
+    if (selection) {
+      items.push({ icon: 'copy', label: 'copy selection', action: () => void copyText(selection, 'selection copied') });
+    }
+
+    items.push({
+      icon: 'bot',
+      label: 'ask helix',
+      action: () => {
+        store.brainDock = true;
+      }
+    });
+    items.push({ icon: 'link', label: 'copy page url', action: () => void copyText(window.location.href, 'page url copied') });
+    items.push({ icon: 'arrow-up', label: 'to top', action: () => window.scrollTo({ top: 0, behavior: 'smooth' }) });
+
+    return items.slice(0, 8);
+  }
 
   onMount(() => {
     void store.boot().then(() => store.startHeartbeat());
@@ -43,6 +119,10 @@
         return;
       }
       if (event.key === 'Escape') {
+        if (radial) {
+          radial = null;
+          return;
+        }
         if (store.palette) {
           store.palette = false;
           return;
@@ -69,8 +149,18 @@
     };
 
     window.addEventListener('keydown', onKey);
+
+    const onContext = (event: MouseEvent) => {
+      if (!(event.ctrlKey || event.metaKey)) return;
+      if (event.target instanceof HTMLElement && event.target.closest('.obs-radial')) return;
+      event.preventDefault();
+      radial = { x: event.clientX, y: event.clientY, items: radialItems(event.target) };
+    };
+    window.addEventListener('contextmenu', onContext);
+
     return () => {
       window.removeEventListener('keydown', onKey);
+      window.removeEventListener('contextmenu', onContext);
       store.stopHeartbeat();
     };
   });
@@ -152,4 +242,16 @@
   <ToastHost />
   <Palette />
   <BrainDock />
+  {#if radial}
+    <RadialMenu
+      x={radial.x}
+      y={radial.y}
+      items={radial.items}
+      onpick={(item) => {
+        radial = null;
+        item.action();
+      }}
+      onclose={() => (radial = null)}
+    />
+  {/if}
 {/if}

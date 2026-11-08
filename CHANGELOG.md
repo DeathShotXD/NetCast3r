@@ -4,6 +4,20 @@ Notable changes to NetCast3r, newest first.
 
 ## Unreleased
 
+### Radial context menu
+
+- **Ctrl+Right-Click actions**: the shell now opens a cursor-anchored radial
+  menu on Ctrl+Right-Click (or Cmd on macOS). It reads the element under the
+  cursor and offers only relevant actions: over a link it offers open / copy
+  link / copy text; over an image open / copy url / download; over a code block
+  copy code; over an element tagged with a run, mission, or finding id it offers
+  copy id; an active text selection adds copy selection; every menu also offers
+  ask Helix, copy page url, and to top.
+- **Bounded and dismissible**: the ring clamps to the viewport near edges,
+  animates in, honours `prefers-reduced-motion`, and closes on Escape, a scrim
+  click, or after the chosen action. Copy actions confirm through the toast
+  host.
+
 ### Operator channel and mission control
 
 - **Live steering**: a running swarm or autopilot now accepts an operator

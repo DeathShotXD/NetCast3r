@@ -1017,6 +1017,13 @@ export interface Toast {
   leaving?: boolean;
 }
 
+/** One action in the Ctrl+Right-Click radial menu. */
+export interface RadialItem {
+  icon: string;
+  label: string;
+  action: () => void;
+}
+
 
 export interface Harness {
   id: string;
