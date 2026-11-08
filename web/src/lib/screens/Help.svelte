@@ -33,7 +33,7 @@
     <p class="eyebrow">help</p>
     <h1 class="mt-1 text-xl text-bone">What every word on screen means</h1>
     <p class="mt-2 max-w-[70ch] text-sm leading-relaxed text-bone-dust">
-      NetCast3r is an authorized-testing tool. It crawls a target you are allowed to test, reads
+      NetCast3r is an authorized-testing tool. It maps a target you are allowed to test, reasons over
       the JavaScript it loads, matches credentials against 310 patterns, and validates what it
       catches against 135 read-only provider checks. It does not scan the internet at large, does
       not store your keys anywhere but your machine, and does not upload results.

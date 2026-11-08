@@ -403,7 +403,7 @@
     <p class="eyebrow">providers and keys</p>
     <h1 class="mt-1 text-xl text-bone">Bring your own model</h1>
     <p class="mt-2 max-w-[70ch] text-sm leading-relaxed text-bone-dust">
-      A model is optional. Without one NetCast3r still crawls, reads JavaScript, matches 310
+      A model is optional. Without one NetCast3r still maps the surface, reasons over JavaScript, matches 310
       patterns, and validates 135 credential types against read-only provider endpoints - it just
       ranks candidates deterministically instead of asking a model. Pick a provider below, paste a
       key, and the connect step saves it, probes the endpoint, and hands you the model list. Every

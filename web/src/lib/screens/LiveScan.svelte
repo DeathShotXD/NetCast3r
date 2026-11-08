@@ -1151,7 +1151,7 @@
             class="mono text-[10px] tracking-[0.14em]"
             style="color:{running ? 'var(--nc-acid)' : 'var(--nc-ash)'}"
           >
-            {running ? `${(currentStage || displayStages[0]?.key || 'crawl').toLowerCase()} // live` : statusLabel(run.status)}
+            {running ? `${(displayStages.find((s) => s.key === currentStage)?.label || displayStages[0]?.label || 'live').toLowerCase()} // live` : statusLabel(run.status)}
           </span>
         </div>
         <StageSignal stages={displayStages} counts={stageCount} current={currentStage} {running} />
@@ -1686,7 +1686,7 @@
             {#if !loadedInv.pages}
               <p class="px-4 pb-4 text-xs text-slate">reading...</p>
             {:else if (inv.pages ?? []).length === 0}
-              <p class="px-4 pb-4 text-sm text-bone-dust">No pages were crawled on this run.</p>
+              <p class="px-4 pb-4 text-sm text-bone-dust">No pages were mapped on this run.</p>
             {:else}
               <ul class="max-h-[420px] overflow-y-auto" data-pages="1">
                 {#each inv.pages as row (row.url)}

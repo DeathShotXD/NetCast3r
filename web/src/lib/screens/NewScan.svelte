@@ -19,7 +19,7 @@
       icon: 'target',
       stage: 'scout',
       title: 'Scout mesh',
-      detail: 'Fingerprint stacks, crawl routes, inventory APIs and JS surfaces.'
+      detail: 'Fingerprint stacks, map routes, inventory APIs and JS surfaces.'
     },
     {
       id: 'auth',

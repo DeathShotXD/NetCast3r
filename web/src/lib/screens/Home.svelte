@@ -482,7 +482,7 @@
   });
   const surface = $derived.by(() => {
     const rows = [
-      { key: 'pages', label: 'pages', value: viewCounts.pages ?? 0, note: 'crawled', color: 'var(--obs-text-2)' },
+      { key: 'pages', label: 'pages', value: viewCounts.pages ?? 0, note: 'mapped', color: 'var(--obs-text-2)' },
       { key: 'scripts', label: 'scripts', value: viewCounts.js_files ?? 0, note: 'read', color: 'var(--obs-violet)' },
       { key: 'endpoints', label: 'endpoints', value: viewCounts.endpoints ?? 0, note: 'mapped', color: 'var(--obs-acid)' },
       { key: 'signals', label: 'candidates', value: rawSignals, note: 'surfaced', color: 'var(--obs-gold)' },
@@ -1384,7 +1384,7 @@
                 <p class="obs-empty-copy">
                   {live
                     ? stageNow === 'crawl'
-                      ? 'The crawl is still reading the surface. The first model call will narrate what it reads and where it stops.'
+                      ? 'The mesh is still mapping the surface. The first model call will narrate what it reads and where it pivots.'
                       : 'The agents are between calls. Their reasoning will land here as soon as the next call returns.'
                     : 'This run left events but no model reasoning. Check the model calls and logs for what the agents were doing.'}
                 </p>

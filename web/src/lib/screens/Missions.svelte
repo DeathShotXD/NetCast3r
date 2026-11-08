@@ -1246,7 +1246,7 @@
                 <h3>Plan</h3>
                 <p>
                   {selected.training
-                    ? 'This is a training mission. Starting it selects the next labs, matches public-research techniques, reads capability gaps, and verifies the session. It does not crawl the target or mark a lab solved; solved labs still need evidence and a lesson.'
+                    ? 'This is a training mission. Starting it selects the next labs, matches public-research techniques, reads capability gaps, and verifies the session. It does not touch the target or mark a lab solved; solved labs still need evidence and a lesson.'
                     : selected.plan.length
                       ? 'A plan is attached to this mission. Starting the agent stores its own bounded task plan and verifier alongside it.'
                       : 'The agent builds the plan when you start it: scope check, one live probe, a read-only inventory, an optional advisory analysis, and an independent verifier. The tasks and their evidence are kept on the mission.'}
@@ -1287,7 +1287,7 @@
                   <div class="obs-empty-title">{selected.training ? 'No training session yet' : 'No run attached'}</div>
                   <p class="obs-empty-copy">
                     {selected.training
-                      ? 'A training session selects the next labs, matches research techniques, and reads the capability gaps. It does not crawl the target.'
+                      ? 'A training session selects the next labs, matches research techniques, and reads the capability gaps. It does not touch the target.'
                       : "Launching a cast starts a real scan with this mission's target and links it here."}
                   </p>
                   <button class="obs-btn" type="button" onclick={() => selected?.training ? void startAgent() : void launch()}>
