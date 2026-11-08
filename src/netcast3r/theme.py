@@ -69,12 +69,12 @@ SEVERITIES: dict[str, str] = {
 
 # Six stages, in order, exactly as the banner lays them out.
 STAGES: list[dict[str, str]] = [
-    {"key": "crawl", "label": "CRAWL", "detail": "Target & Endpoints", "glyph": "@", "agent": "recon"},
-    {"key": "readjs", "label": "READ JS", "detail": "Map Logic & Weak Spots", "glyph": "<>", "agent": "exegete"},
-    {"key": "hunt", "label": "HUNT", "detail": "Secrets & Credentials", "glyph": "*", "agent": "prospector"},
-    {"key": "validate", "label": "VALIDATE", "detail": "Check Access & Impact", "glyph": "^", "agent": "assayer"},
-    {"key": "escalate", "label": "ESCALATE", "detail": "Find Highest Provable", "glyph": "^^", "agent": "chainer"},
-    {"key": "report", "label": "REPORT", "detail": "Ready for Submission", "glyph": "#", "agent": "scribe"},
+    {"key": "crawl", "label": "SCOPE", "detail": "Attack surface & assets", "glyph": "@", "agent": "recon"},
+    {"key": "readjs", "label": "REASON", "detail": "Code, logic & weak spots", "glyph": "<>", "agent": "exegete"},
+    {"key": "hunt", "label": "HUNT", "detail": "Test hypotheses", "glyph": "*", "agent": "prospector"},
+    {"key": "validate", "label": "VALIDATE", "detail": "Independent proof", "glyph": "^", "agent": "assayer"},
+    {"key": "escalate", "label": "CHAIN", "detail": "Escalate impact", "glyph": "^^", "agent": "chainer"},
+    {"key": "report", "label": "REPORT", "detail": "Ready to submit", "glyph": "#", "agent": "scribe"},
 ]
 
 # Which pipeline stage each agent belongs to, so a log line lights its stage.

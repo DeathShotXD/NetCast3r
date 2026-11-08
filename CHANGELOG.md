@@ -4,6 +4,43 @@ Notable changes to NetCast3r, newest first.
 
 ## Unreleased
 
+### Endless autonomous runs
+
+- **No early stop**: a swarm or autopilot started without an explicit cap is
+  now endless. The step, time, and round budgets are effectively unbounded, and
+  the UI buttons and director start runs with `endless: true`. A run ends only
+  when the operator stops it.
+- **Never idle**: when the strategist says `done`, returns an empty plan, or
+  repeats work, the mesh seeds a fresh batch from a 24-family technique
+  rotation (IDOR, access control, auth flows, CORS, injection, reflection,
+  upload, traversal, source disclosure, oracles, races, single-packet and
+  last-byte races, host probes, chain planning, evidence packs, and more).
+  Tool errors back off and rotate instead of ending the run.
+- **Owner normalisation**: a model that names owners `auth-tester` or
+  `Recon Analyst` now maps them onto scout or attacker instead of losing the
+  whole plan; validator and scribe owners are still rejected.
+- **Fixed a provider-priority bug**: priority `0` was read back as `100`, so a
+  deliberately-first provider could not lead.
+
+### b.ai primary brain
+
+- **Paid primary**: `bai` / `deepseek-v4.1-flash` at `https://api.b.ai/v1` is
+  the first provider for the brain and every mesh role, with TokenHarbor and
+  OpenRouter kept as side agents and fallbacks.
+- **Reasoning-aware budgets**: route token caps were raised (prime 8192,
+  strategist/scout/attacker 6144, validator/verifier/sentinel/scribe 4096)
+  because DeepSeek spends the cap on reasoning and returns empty content when
+  it is too small.
+- **Always retried**: a transient failure on the paid `bai` provider no longer
+  parks it for the brain's next turns.
+
+### Agentic stage language
+
+- **No crawler vocabulary**: the shared pipeline stages now read SCOPE, REASON,
+  HUNT, VALIDATE, CHAIN, and REPORT (keys unchanged for event mapping), and the
+  HTML report template matches. A mesh run shows the agentic loop
+  (Strategise, Act, Validate, Remember).
+
 ### Dashboard sign-in
 
 - **Username and password by default**: the dashboard now signs in with a

@@ -85,6 +85,11 @@ ACTIONS = {
 
 DEFAULT_STEPS = 8
 MAX_STEPS = 30
+# `endless` runs treat the budget as effectively infinite; they stop only when
+# the operator cancels or the process exits.
+UNLIMITED_STEPS = 1_000_000_000
+UNLIMITED_SECONDS = 1_000_000_000.0
+UNLIMITED_MODEL_CALLS = 1_000_000
 DEFAULT_SECONDS = 600.0
 MAX_SECONDS = 1800.0
 DEFAULT_MODEL_CALLS = 4
@@ -248,24 +253,32 @@ class Autopilot:
     def __init__(self, registry, complete, mission: dict, max_steps: int = DEFAULT_STEPS,
                  max_seconds: float = DEFAULT_SECONDS,
                  max_model_calls: int = DEFAULT_MODEL_CALLS, run_id: str = "",
-                 on_step=None, should_stop=None, directive_source=None):
+                 on_step=None, should_stop=None, directive_source=None,
+                 endless: bool = False):
         self.registry = registry
         self.complete = complete
         self.mission = mission or {}
         self.mission_id = str(self.mission.get("id") or "")
         self.target = str(self.mission.get("target") or "").strip()
         self.goal = str(self.mission.get("objective") or "").strip()
-        self.max_steps = max(1, min(int(max_steps or DEFAULT_STEPS), MAX_STEPS))
-        self.max_seconds = max(10.0, min(float(max_seconds or DEFAULT_SECONDS),
-                                         MAX_SECONDS))
-        self.max_model_calls = max(0, min(int(max_model_calls or DEFAULT_MODEL_CALLS),
-                                          MAX_MODEL_CALLS))
+        self.endless = bool(endless)
+        if self.endless:
+            self.max_steps = UNLIMITED_STEPS
+            self.max_seconds = UNLIMITED_SECONDS
+            self.max_model_calls = UNLIMITED_MODEL_CALLS
+        else:
+            self.max_steps = max(1, min(int(max_steps or DEFAULT_STEPS), MAX_STEPS))
+            self.max_seconds = max(10.0, min(float(max_seconds or DEFAULT_SECONDS),
+                                             MAX_SECONDS))
+            self.max_model_calls = max(0, min(int(max_model_calls or DEFAULT_MODEL_CALLS),
+                                              MAX_MODEL_CALLS))
         self.run_id = run_id
         self.on_step = on_step
         self.should_stop = should_stop
         self.actor = "agent:autopilot"
         self.model_calls = 0
         self.hypotheses_recorded = 0
+        self.rotation = 0
         # Operator directives: skip rules persist for the run; focus notes go
         # into the next plan prompt as the highest-priority instruction.
         self.directive_source = directive_source
@@ -504,6 +517,31 @@ class Autopilot:
                 "require falsifiable hypotheses and raw HTTP PoC.")
         return brief
 
+    ROTATION_ACTIONS = [
+        "web_surface_inventory", "auth_flow_inventory", "reset_flow_inventory",
+        "session_cookie_audit", "security_headers_audit", "cors_policy_audit",
+        "access_control_compare", "idor_sequence_probe", "input_reflection_probe",
+        "injection_differential_probe", "upload_policy_probe", "retest_request",
+        "path_traversal_probe", "source_disclosure_scan", "auth_cookie_probe",
+        "oracle_extract", "race_run", "single_packet_race", "last_byte_race",
+        "host_probe", "technique_plan", "chain_plan", "evidence_pack",
+    ]
+
+    def _rotation_plan(self) -> list[dict]:
+        """Deterministically walk technique families.
+
+        An endless run must never stall on a quiet model or a repeated
+        objective. This walks a fixed catalogue and advances the cursor, so each
+        seeded batch is different from the last.
+        """
+        picks: list[dict] = []
+        for offset in range(3):
+            action = self.ROTATION_ACTIONS[(self.rotation + offset) % len(self.ROTATION_ACTIONS)]
+            picks.append({"action": action, "args": {"target": self.target},
+                          "why": f"rotation: {ACTIONS.get(action, action)}"})
+        self.rotation += len(picks)
+        return picks
+
     def _fallback_plan(self) -> tuple[list[dict], str]:
         moves = [
             {"action": "scope_check", "args": {"target": self.target},
@@ -630,7 +668,17 @@ class Autopilot:
             for move in plan:
                 self._task_event(move, "assigned")
 
-        while plan and len(executed) < self.max_steps:
+        while len(executed) < self.max_steps:
+            if not plan:
+                if not self.endless:
+                    break
+                plan = self._take_priority() + self._skip_filter(self._rotation_plan())
+                if not plan:
+                    break
+                self._emit("decide", {
+                    "text": "rotation: seeding a fresh technique batch to keep the hunt moving"})
+                for move in plan:
+                    self._task_event(move, "assigned")
             if self.should_stop is not None and self.should_stop():
                 stop = "cancelled"
                 break
@@ -649,6 +697,15 @@ class Autopilot:
             repeated = repeated + 1 if signature == last_signature else 0
             last_signature = signature
             if repeated >= 2:
+                if self.endless:
+                    # Repeating the same request teaches nothing. Drop it and
+                    # let the loop seed a different technique instead of ending.
+                    self._emit("decide", {
+                        "text": "duplicate move skipped; rotating to a different technique"})
+                    plan = self._take_priority() + self._skip_filter(self._rotation_plan())
+                    repeated = 0
+                    last_signature = ""
+                    continue
                 stop = "operator repeated the same move"
                 self._emit("decide", {"text": stop})
                 break
@@ -679,6 +736,18 @@ class Autopilot:
                 "status": payload.get("status"),
             })
             if errors >= 5:
+                if self.endless:
+                    # A run of failures means the surface is pushing back, not
+                    # that the hunt is over. Pause, then change technique.
+                    self._emit("decide", {
+                        "text": f"five consecutive tool errors; backing off for "
+                                f"{min(30, 2 + self.rotation)}s and rotating"})
+                    errors = 0
+                    time.sleep(min(30, 2 + self.rotation))
+                    plan = self._take_priority() + self._skip_filter(self._rotation_plan())
+                    for move in plan:
+                        self._task_event(move, "assigned")
+                    continue
                 stop = "five consecutive tool errors"
                 self._emit("decide", {"text": stop})
                 break
@@ -690,9 +759,15 @@ class Autopilot:
                 self._note("reflection", f"Reflection after step {len(executed)}",
                            reflect_note)
                 if done:
-                    stop = "operator finished"
-                    summary = reflect_note
-                    break
+                    if self.endless:
+                        self._emit("decide", {
+                            "text": "the model says done; endless mode keeps hunting "
+                                    "with a different technique"})
+                        nxt = self._rotation_plan()
+                    else:
+                        stop = "operator finished"
+                        summary = reflect_note
+                        break
                 plan = self._take_priority() + self._skip_filter(nxt)
                 if plan:
                     self._note("plan", f"Revised plan after step {len(executed)}",

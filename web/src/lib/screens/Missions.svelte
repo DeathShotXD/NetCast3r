@@ -252,12 +252,8 @@
     if (!selected) return;
     busy = 'autopilot';
     try {
-      const run = await api.startMissionAutopilot(selected.id, {
-        max_steps: 8,
-        max_seconds: 600,
-        max_model_calls: 4
-      });
-      store.toast('ok', 'native operator started: it will plan, act, and reflect on its own');
+      const run = await api.startMissionAutopilot(selected.id, { endless: true });
+      store.toast('ok', 'endless operator started: it plans, acts, and rotates techniques until you stop it');
       store.watch(run.id);
     } catch (exc) {
       store.fail(exc instanceof Error ? exc.message : 'could not start the native operator');
@@ -270,12 +266,8 @@
     if (!selected) return;
     busy = 'swarm';
     try {
-      const run = await api.startMissionSwarm(selected.id, {
-        max_steps: 10,
-        max_seconds: 600,
-        max_model_calls: 12
-      });
-      store.toast('ok', 'intelligence mesh started: five roles will plan, act, validate, and remember');
+      const run = await api.startMissionSwarm(selected.id, { endless: true });
+      store.toast('ok', 'endless intelligence mesh started: five roles plan, act, validate, and rotate techniques until you stop it');
       store.watch(run.id);
     } catch (exc) {
       store.fail(exc instanceof Error ? exc.message : 'could not convene the intelligence mesh');

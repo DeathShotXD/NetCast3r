@@ -66,8 +66,8 @@ MODEL_GATE_FAILURES = 8
 # Per-mode budgets. Deliberately small: the director prefers many short,
 # observable runs over one long run that hides its work.
 MODE_BUDGETS = {
-    "autopilot": {"max_steps": 8, "max_seconds": 420, "max_model_calls": 8},
-    "swarm": {"max_steps": 8, "max_seconds": 600, "max_model_calls": 12},
+    "autopilot": {"endless": True},
+    "swarm": {"endless": True},
 }
 
 DIRECTOR_NOTE = (

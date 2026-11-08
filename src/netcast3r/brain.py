@@ -811,6 +811,10 @@ def _remember_provider(provider: str, error: str) -> None:
     name = str(provider or "").strip()
     if not name:
         return
+    if name == "bai":
+        # The paid primary is always retried; the bus rotates per call on its
+        # own, so a single transient error must not silence the brain.
+        return
     text = str(error or "")
     if _soft_model_error(text):
         return
@@ -1528,10 +1532,7 @@ def _apply(index, director, action, default_mission: str = "") -> dict:
                 return {"kind": kind, "applied": False,
                         "reason": f"operator priority locked on {locked['mission_id']}"}
             run = server._solvers().start(mission_id, {
-                "mode": "swarm",
-                "max_steps": int(action.get("max_steps") or 12),
-                "max_seconds": int(action.get("max_seconds") or 900),
-                "max_model_calls": int(action.get("max_model_calls") or 16),
+                "mode": "swarm", "endless": True,
             })
             return {"kind": kind, "applied": True, "run_id": run.get("id"),
                     "mission_id": mission_id}
@@ -1933,8 +1934,7 @@ def start_campaign(server, index, target: str, title: str = "",
             boot["errors"].append(f"cast: {type(exc).__name__}: {exc}")
         try:
             swarm_run = server._solvers().start(mission_id, {
-                "mode": "swarm", "max_steps": 12, "max_seconds": 900,
-                "max_model_calls": 16,
+                "mode": "swarm", "endless": True,
             })
             boot["swarm"] = {"id": swarm_run.get("id"),
                              "status": swarm_run.get("status")}

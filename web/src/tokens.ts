@@ -41,43 +41,43 @@ export const SEVERITIES = {
 export const STAGES = [
     {
       "key": "crawl",
-      "label": "CRAWL",
-      "detail": "Target & Endpoints",
+      "label": "SCOPE",
+      "detail": "Attack surface & assets",
       "glyph": "@",
       "agent": "recon"
     },
     {
       "key": "readjs",
-      "label": "READ JS",
-      "detail": "Map Logic & Weak Spots",
+      "label": "REASON",
+      "detail": "Code, logic & weak spots",
       "glyph": "<>",
       "agent": "exegete"
     },
     {
       "key": "hunt",
       "label": "HUNT",
-      "detail": "Secrets & Credentials",
+      "detail": "Test hypotheses",
       "glyph": "*",
       "agent": "prospector"
     },
     {
       "key": "validate",
       "label": "VALIDATE",
-      "detail": "Check Access & Impact",
+      "detail": "Independent proof",
       "glyph": "^",
       "agent": "assayer"
     },
     {
       "key": "escalate",
-      "label": "ESCALATE",
-      "detail": "Find Highest Provable",
+      "label": "CHAIN",
+      "detail": "Escalate impact",
       "glyph": "^^",
       "agent": "chainer"
     },
     {
       "key": "report",
       "label": "REPORT",
-      "detail": "Ready for Submission",
+      "detail": "Ready to submit",
       "glyph": "#",
       "agent": "scribe"
     }

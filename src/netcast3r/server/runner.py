@@ -144,7 +144,8 @@ class DashboardBridge:
             if not models and row.get("model"):
                 models = [str(row["model"])]
             key = provider_key(self.keys, row)
-            priority = int(row.get("priority") or 100)
+            raw_priority = row.get("priority")
+            priority = int(raw_priority) if raw_priority is not None else 100
             existing = config.provider(name)
             if existing:
                 existing.base_url = base_url

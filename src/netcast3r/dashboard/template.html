@@ -540,12 +540,12 @@ var STATE_COLOR = {confirmed:"#C8F81A",corroborated:"#EFE4B1",inferred:"#9F23DD"
 var SEV_COLOR = {critical:"#C8F81A",high:"#F5F87D",medium:"#EFE4B1",low:"#A89591",info:"#9698A2"};
 
 var STAGE_DEF = [
-  {k:"crawl",   g:"@",  l:"CRAWL",    d:"Target & Endpoints"},
-  {k:"readjs",  g:"<>", l:"READ JS",  d:"Map Logic & Weak Spots"},
-  {k:"hunt",    g:"*",  l:"HUNT",     d:"Secrets & Credentials"},
-  {k:"validate",g:"^",  l:"VALIDATE", d:"Check Access & Impact"},
-  {k:"escalate",g:"^^", l:"ESCALATE", d:"Find Highest Provable"},
-  {k:"report",  g:"#",  l:"REPORT",   d:"Ready for Submission"}
+  {k:"crawl",   g:"@",  l:"SCOPE",    d:"Attack surface & assets"},
+  {k:"readjs",  g:"<>", l:"REASON",   d:"Code, logic & weak spots"},
+  {k:"hunt",    g:"*",  l:"HUNT",     d:"Test hypotheses"},
+  {k:"validate",g:"^",  l:"VALIDATE", d:"Independent proof"},
+  {k:"escalate",g:"^^", l:"CHAIN",    d:"Escalate impact"},
+  {k:"report",  g:"#",  l:"REPORT",   d:"Ready to submit"}
 ];
 
 function el(id){ return document.getElementById(id); }

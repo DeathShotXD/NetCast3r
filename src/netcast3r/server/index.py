@@ -3746,7 +3746,8 @@ class Index:
             item["models"] = []
         if not item["models"] and item.get("model"):
             item["models"] = [item["model"]]
-        item["priority"] = int(item.get("priority") or 100)
+        item["priority"] = (int(item["priority"])
+                            if item.get("priority") is not None else 100)
         item["enabled"] = int(item.get("enabled", 1) or 0)
         return item
 

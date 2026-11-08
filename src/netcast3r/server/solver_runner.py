@@ -66,9 +66,17 @@ class SolverRunner:
         seconds = {"solve": model_solver.DEFAULT_SECONDS,
                    "autopilot": autopilot.DEFAULT_SECONDS,
                    "swarm": swarm.DEFAULT_SECONDS}[mode]
+        # A live hunt is endless by default: the mesh keeps seeding new
+        # techniques until the operator stops it. Unit tests and scripts that
+        # name an explicit step or time cap keep their bounded run.
+        explicit_cap = ("max_steps" in options) or ("max_seconds" in options)
+        endless = bool(options.get("endless",
+                                   (not explicit_cap) and mode in ("swarm", "autopilot")))
+        options["endless"] = endless
         run = self.server.index.create_run(target, {
             "mode": mode, "mission_id": mission_id,
-            "max_steps": options.get("max_steps", defaults),
+            "max_steps": 0 if endless else options.get("max_steps", defaults),
+            "endless": endless,
             "goal": str(options.get("goal") or mission.get("objective") or "")[:400],
             "policy": str(options.get("policy") or "supervised"),
         })
@@ -229,6 +237,7 @@ class SolverRunner:
                            payload=payload))
 
             if mode == "autopilot":
+                endless = bool(options.get("endless", False))
                 operator = autopilot.Autopilot(
                     registry, self._completion, brain_mission,
                     max_steps=options.get("max_steps", autopilot.DEFAULT_STEPS),
@@ -236,9 +245,11 @@ class SolverRunner:
                     max_model_calls=options.get("max_model_calls",
                                                 autopilot.DEFAULT_MODEL_CALLS),
                     run_id=run_id, on_step=on_step, should_stop=cancel.is_set,
-                    directive_source=directives.drain if directives else None)
+                    directive_source=directives.drain if directives else None,
+                    endless=endless)
                 result = operator.run()
             elif mode == "swarm":
+                endless = bool(options.get("endless", False))
                 mesh = swarm.Swarm(
                     registry, self._completion_for, brain_mission,
                     max_steps=options.get("max_steps", swarm.DEFAULT_STEPS),
@@ -246,7 +257,8 @@ class SolverRunner:
                     max_model_calls=options.get("max_model_calls",
                                                 swarm.DEFAULT_MODEL_CALLS),
                     run_id=run_id, on_step=on_step, should_stop=cancel.is_set,
-                    directive_source=directives.drain if directives else None)
+                    directive_source=directives.drain if directives else None,
+                    endless=endless)
                 result = mesh.run()
             else:
                 solver = model_solver.Solver(

@@ -1091,7 +1091,7 @@ class Server:
             body = ctx.json()
             body = body if isinstance(body, dict) else {}
             options = {key: body[key] for key in
-                       ("max_steps", "max_seconds", "goal", "mode", "max_model_calls")
+                       ("max_steps", "max_seconds", "goal", "mode", "max_model_calls", "endless")
                        if key in body}
             try:
                 run = self._solvers().start(ctx.params["id"], options)
@@ -1104,7 +1104,7 @@ class Server:
             body = ctx.json()
             body = body if isinstance(body, dict) else {}
             options = {key: body[key] for key in
-                       ("max_steps", "max_seconds", "goal", "max_model_calls")
+                       ("max_steps", "max_seconds", "goal", "max_model_calls", "endless")
                        if key in body}
             options["mode"] = "autopilot"
             try:
@@ -1118,7 +1118,7 @@ class Server:
             body = ctx.json()
             body = body if isinstance(body, dict) else {}
             options = {key: body[key] for key in
-                       ("max_steps", "max_seconds", "goal", "max_model_calls")
+                       ("max_steps", "max_seconds", "goal", "max_model_calls", "endless")
                        if key in body}
             options["mode"] = "swarm"
             try:

@@ -31,7 +31,8 @@ from concurrent.futures import ThreadPoolExecutor
 
 from .agents import _first_json
 from .autopilot import ACTIONS as OPERATOR_ACTIONS
-from .autopilot import Autopilot, _compact
+from .autopilot import (Autopilot, _compact, UNLIMITED_MODEL_CALLS,
+                        UNLIMITED_SECONDS, UNLIMITED_STEPS)
 from .directives import matches_enough, terms_for
 
 DEFAULT_STEPS = 10
@@ -269,18 +270,22 @@ class Swarm(Autopilot):
                  max_seconds: float = DEFAULT_SECONDS,
                  max_model_calls: int = DEFAULT_MODEL_CALLS,
                  run_id: str = "", on_step=None, should_stop=None,
-                 directive_source=None):
+                 directive_source=None, endless: bool = False):
         super().__init__(registry, lambda messages: {}, mission,
                          max_steps=max_steps, max_seconds=max_seconds,
                          max_model_calls=max_model_calls, run_id=run_id,
-                         on_step=on_step, should_stop=should_stop)
+                         on_step=on_step, should_stop=should_stop,
+                         endless=endless)
         self.complete_for = complete_for
         self.actor = "agent:swarm"
-        # The base constructor clamps to the single-operator budgets, which are
-        # smaller than a mesh round needs. Apply the mesh budgets explicitly.
-        self.max_steps = max(1, min(int(max_steps or DEFAULT_STEPS), MAX_STEPS))
-        self.max_model_calls = max(0, min(int(max_model_calls or DEFAULT_MODEL_CALLS),
-                                          MAX_MODEL_CALLS))
+        # The base constructor already applied the mesh budgets when endless is
+        # set; otherwise clamp to the mesh caps.
+        if not self.endless:
+            self.max_steps = max(1, min(int(max_steps or DEFAULT_STEPS), MAX_STEPS))
+            self.max_seconds = max(10.0, min(float(max_seconds or DEFAULT_SECONDS),
+                                             MAX_SECONDS))
+            self.max_model_calls = max(
+                0, min(int(max_model_calls or DEFAULT_MODEL_CALLS), MAX_MODEL_CALLS))
         self._lock = threading.Lock()
         self._emit_lock = threading.Lock()
         self._observations: list[dict] = []
@@ -555,6 +560,26 @@ class Swarm(Autopilot):
         return payload
 
     # -- planning ----------------------------------------------------------
+    @staticmethod
+    def _owner_role(raw: str) -> str:
+        """Map a model's free-form owner name onto a real mesh role.
+
+        The two specialists are scout and attacker. A validator, scribe, or
+        strategist may not be handed work, so those names are rejected; any
+        other creative label (``auth-tester``, ``Recon Analyst``) is routed to
+        the specialist that fits.
+        """
+        owner = str(raw or "").strip().lower()
+        if owner in ("scout", "attacker"):
+            return owner
+        if owner in ("validator", "scribe", "strategist", "verifier", "sentinel",
+                     "operator", "brain", "helix"):
+            return ""
+        scout_terms = ("scout", "recon", "map", "discover", "enumer", "inventory",
+                       "surface", "scope", "osint", "fingerprint", "survey",
+                       "reconnaissance", "asset")
+        return "scout" if any(term in owner for term in scout_terms) else "attacker"
+
     def _clean_objectives(self, value) -> list[dict]:
         if not isinstance(value, list):
             return []
@@ -563,9 +588,9 @@ class Swarm(Autopilot):
         for row in value:
             if not isinstance(row, dict):
                 continue
-            owner = str(row.get("owner") or "").strip().lower()
+            owner = self._owner_role(row.get("owner"))
             goal = str(row.get("goal") or "").strip()
-            if owner not in ("scout", "attacker") or not goal:
+            if not owner or not goal:
                 continue
             key = re.sub(r"[^a-z0-9]+", " ", goal.lower()).strip()
             if key in seen:
@@ -585,6 +610,150 @@ class Swarm(Autopilot):
             if len(clean) >= MAX_OBJECTIVES:
                 break
         return clean
+
+    # An endless mesh must keep producing new questions even when the model is
+    # quiet. This catalogue walks technique families; each entry names the
+    # deterministic tool the specialist should reach for.
+    ROTATION = [
+        ("Test every mapped object id for broken object-level authorization",
+         "swapping an id returns another principal's object",
+         "a different object body or status for a controlled id",
+         "the same 403/404 for every id",
+         "attacker", "idor_sequence_probe"),
+        ("Compare the same request anonymously and as a low-privilege identity",
+         "the response changes when the identity changes",
+         "a raw authorization differential with status and body",
+         "identical responses across identities",
+         "attacker", "access_control_compare"),
+        ("Map login, reset, MFA, and registration entry points",
+         "one flow is weaker than the others",
+         "a complete map of auth entry points and inputs",
+         "no distinct auth surface",
+         "scout", "auth_flow_inventory"),
+        ("Map password reset forms and token inputs without requesting a reset",
+         "reset tokens are predictable or leaked",
+         "a reset flow with token inputs and host handling",
+         "no reset surface",
+         "scout", "reset_flow_inventory"),
+        ("Audit session cookie flags and fixation",
+         "a session cookie lacks Secure, HttpOnly, or SameSite",
+         "cookie names and security attributes",
+         "all cookies set every flag",
+         "scout", "session_cookie_audit"),
+        ("Audit response security and cache headers",
+         "a cacheable response carries private data",
+         "cache-control, vary, and security headers per endpoint",
+         "private responses are no-store",
+         "scout", "security_headers_audit"),
+        ("Compare the CORS policy for explicit untrusted origins",
+         "an untrusted origin is reflected with credentials",
+         "access-control-allow-origin echoing the test origin",
+         "a fixed allow-list",
+         "attacker", "cors_policy_audit"),
+        ("Compare safe syntax-character variants on each discovered parameter",
+         "a parser handles a character inconsistently",
+         "a status, body, or timing differential for one variant",
+         "identical responses for every variant",
+         "attacker", "injection_differential_probe"),
+        ("Place an inert marker into every discovered query parameter",
+         "a parameter is reflected without encoding",
+         "the marker appears unencoded in the response",
+         "the marker is encoded or absent",
+         "attacker", "input_reflection_probe"),
+        ("Compare inert upload canaries by extension and MIME",
+         "one extension or MIME passes the upload policy",
+         "an accepted canary with its stored content type",
+         "every canary is rejected",
+         "attacker", "upload_policy_probe"),
+        ("Test each file parameter for traversal depth and encodings",
+         "a file parameter escapes its directory",
+         "a known file's content through the parameter",
+         "every encoding returns the same error",
+         "attacker", "path_traversal_probe"),
+        ("Read application source through a confirmed file read",
+         "source discloses credentials or logic",
+         "server-side source with a secret or an auth branch",
+         "no readable source",
+         "attacker", "source_disclosure_scan"),
+        ("Extract a value through a boolean, status, or time oracle",
+         "a blind parameter can be resolved one bit at a time",
+         "a reproducible oracle differential",
+         "the response is constant across inputs",
+         "attacker", "oracle_extract"),
+        ("Run a small concurrent burst against one state-changing endpoint",
+         "the endpoint enforces its invariant after the check",
+         "a duplicate success beyond the allowed count",
+         "the limit holds under concurrency",
+         "attacker", "race_run"),
+        ("Send a last-byte-synchronised HTTP/2 race",
+         "the server processes requests that should be serialised",
+         "two successes or a state leak from one burst",
+         "only one request succeeds",
+         "attacker", "single_packet_race"),
+        ("Release every request's final byte together over HTTP/1.1",
+         "a single-packet window reorders server processing",
+         "a state change that contradicts the sequential result",
+         "the sequential result holds",
+         "attacker", "last_byte_race"),
+        ("Resolve a host and inspect its TLS and HTTP surface",
+         "a sibling host exposes a different service",
+         "a certificate, server header, and status",
+         "the host does not resolve",
+         "scout", "host_probe"),
+        ("Compare encoded, cased, and slashed path variants",
+         "a normalization difference reaches a hidden route",
+         "a variant with a different status or body",
+         "every variant matches the baseline",
+         "scout", "http_path_diff"),
+        ("Map forms, parameters, scripts, and object ids on the surface",
+         "the mapped surface hides an object or input",
+         "a complete inventory of inputs and ids",
+         "no additional surface",
+         "scout", "web_surface_inventory"),
+        ("Repeat a prior request and record response consistency",
+         "a response changes between identical requests",
+         "a measured difference across repeats",
+         "the response is stable",
+         "attacker", "retest_request"),
+        ("Test whether identity cookies authenticate without validation",
+         "a tampered cookie is trusted",
+         "an authenticated response from a modified cookie",
+         "the tampered cookie is rejected",
+         "attacker", "auth_cookie_probe"),
+        ("Rank techniques for the current surface before spending a request",
+         "the ranked list contains an untested high-value family",
+         "a ranked technique with a first test",
+         "no technique fits",
+         "attacker", "technique_plan"),
+        ("Rank multi-step chains for the current surface",
+         "a chain links a read to an escalation",
+         "a ranked chain with a proof requirement",
+         "no chain fits",
+         "attacker", "chain_plan"),
+        ("Write redacted observations as a durable evidence pack",
+         "the current evidence is enough to file",
+         "an evidence pack with redacted requests and responses",
+         "the evidence is insufficient",
+         "attacker", "evidence_pack"),
+    ]
+
+    def _rotation_objectives(self, round_no: int) -> list[dict]:
+        """Three fresh, deterministic objectives from the technique catalogue."""
+        found: list[dict] = []
+        for offset in range(3):
+            goal, hyp, exp, fal, owner, tool = self.ROTATION[
+                (self.rotation + offset) % len(self.ROTATION)]
+            found.append({
+                "owner": owner,
+                "goal": goal,
+                "hypothesis": hyp,
+                "expected": exp,
+                "falsifier": fal,
+                "critical": False,
+                "suggested_tool": tool,
+            })
+        self.rotation += len(found)
+        return found
 
     def _baseline_objectives(self, round_no: int) -> list[dict]:
         if round_no == 1:
@@ -757,6 +926,12 @@ class Swarm(Autopilot):
     def _baseline_move(self, role: str, objective: dict, round_no: int,
                        index: int) -> dict | None:
         target = self.target
+        suggested = str(objective.get("suggested_tool") or "").strip()
+        if suggested and suggested in OPERATOR_ACTIONS:
+            return {"action": suggested, "args": {"target": target},
+                    "why": f"deterministic rotation: {OPERATOR_ACTIONS[suggested]}",
+                    "expects": str(objective.get("expected")
+                                  or "a differential observation")}
         if role == "scout":
             if round_no == 1 and index == 0:
                 return {"action": "scope_check", "args": {"target": target},
@@ -1071,7 +1246,7 @@ class Swarm(Autopilot):
             if time.monotonic() - started > self.max_seconds:
                 stop = "time budget reached"
                 break
-            if self.rounds >= MAX_ROUNDS:
+            if not self.endless and self.rounds >= MAX_ROUNDS:
                 stop = "round budget reached"
                 break
             next_round = self.rounds + 1
@@ -1104,9 +1279,17 @@ class Swarm(Autopilot):
                     "matched_task": str(objective.get("id") or ""),
                     "goal": str(objective.get("goal") or "")[:300]})
             if not objectives:
-                stop = plan_note if finished else "strategist finished"
-                summary = plan_note
-                break
+                if self.endless:
+                    objectives = self._rotation_objectives(next_round)
+                    self._emit("reason", {
+                        "agent": "strategist",
+                        "text": ("no fresh plan; rotating to a new technique batch "
+                                 f"({len(objectives)})")})
+                    self._ensure_task_ids(objectives, next_round)
+                if not objectives:
+                    stop = plan_note if finished else "strategist finished"
+                    summary = plan_note
+                    break
             self.rounds = next_round
             self._emit("plan", self._plan_payload(
                 objectives, self.rounds, skipped=len(skipped), focus=len(focus),
@@ -1116,6 +1299,13 @@ class Swarm(Autopilot):
 
             proposals = self._propose_all(objectives, self.rounds)
             if not proposals:
+                if self.endless:
+                    self._emit("decide", {
+                        "agent": "strategist",
+                        "text": "no specialist proposed a move; rotating technique families"})
+                    self.rotation += 3
+                    time.sleep(min(10, 1 + self.rounds % 5))
+                    continue
                 stop = "no specialist proposed a usable move"
                 break
 
@@ -1233,10 +1423,23 @@ class Swarm(Autopilot):
                     "result": str(record.get("result") or "")[:1200],
                 })
                 if errors >= 5:
+                    if self.endless:
+                        self._emit("decide", {
+                            "agent": "attacker",
+                            "text": "five consecutive tool errors; ending this batch"})
+                        break
                     stop = "three consecutive tool errors"
                     break
             self._scribe(self.rounds, rows)
             if errors >= 5:
+                if self.endless:
+                    errors = 0
+                    self.rotation += 3
+                    self._emit("decide", {
+                        "agent": "strategist",
+                        "text": "the surface is pushing back; backing off and rotating"})
+                    time.sleep(min(20, 2 + self.rounds % 6))
+                    continue
                 break
             # A round that ran nothing is a wasted round. One can happen when a
             # duplicate proposal is skipped; two in a row means the strategist
@@ -1244,6 +1447,14 @@ class Swarm(Autopilot):
             # spending the rest of the model budget on the same loop.
             empty_rounds = empty_rounds + 1 if not rows else 0
             if empty_rounds >= 3:
+                if self.endless:
+                    self._emit("decide", {
+                        "agent": "strategist",
+                        "text": "three empty rounds; forcing a new technique batch"})
+                    self.rotation += 3
+                    empty_rounds = 0
+                    time.sleep(min(10, 1 + self.rounds % 5))
+                    continue
                 stop = "three rounds with no executed move"
                 summary = ("the strategist repeated work the mesh had already "
                            "done; stopped before spending the model budget")
