@@ -3280,11 +3280,46 @@ class Server:
 
         @add("POST", r"/api/v1/session")
         def session(ctx):
-            supplied = str(ctx.json().get("token") or "")
-            if not self._matches(supplied, self.token):
-                return _problem(401, "bad token", "that session token was not accepted")
-            return Response(body=json.dumps({"ok": True}).encode(),
-                            headers={"Set-Cookie": _set_cookie(self.token)})
+            from .. import dashauth
+
+            body = ctx.json()
+            body = body if isinstance(body, dict) else {}
+            supplied = str(body.get("token") or "")
+            if supplied and self._matches(supplied, self.token):
+                return Response(body=json.dumps({"ok": True, "mode": "token"}).encode(),
+                                headers={"Set-Cookie": _set_cookie(self.token)})
+            username = str(body.get("username") or "")
+            password = str(body.get("password") or "")
+            if username and dashauth.verify(self.base, username, password):
+                return Response(body=json.dumps({"ok": True, "mode": "password"}).encode(),
+                                headers={"Set-Cookie": _set_cookie(self.token)})
+            return _problem(401, "bad credentials",
+                            "that username and password were not accepted")
+
+        @add("GET", r"/api/v1/auth")
+        def auth_state(ctx):
+            from .. import dashauth
+
+            try:
+                return _json(dashauth.public(self.base))
+            except Exception as exc:  # noqa: BLE001 - report, do not crash the API
+                return _problem(500, f"auth state unavailable: {type(exc).__name__}")
+
+        @add("POST", r"/api/v1/auth/credentials")
+        def auth_change(ctx):
+            from .. import dashauth
+
+            body = ctx.json()
+            body = body if isinstance(body, dict) else {}
+            if not self.auth_required:
+                return _problem(409, "auth is disabled")
+            try:
+                result = dashauth.update_credentials(
+                    self.base, str(body.get("username") or ""),
+                    str(body.get("password") or ""))
+            except ValueError as exc:
+                return _problem(400, str(exc))
+            return _json({**result, "changed": True})
 
         return routes
 
@@ -3510,7 +3545,35 @@ class Server:
                 if name == TOKEN_COOKIE:
                     supplied = value
                     break
-        return self._matches(supplied, self.token)
+        if supplied and self._matches(supplied, self.token):
+            return True
+        return self._basic_ok(headers)
+
+    def _basic_ok(self, headers: dict) -> bool:
+        """HTTP Basic with the dashboard username and password.
+
+        The session token stays the fast path for the cookie and the MCP
+        client; Basic exists so ``curl -u admin:123`` and a first login work
+        without copying a 32-character token.
+        """
+        raw = str(headers.get("authorization", ""))
+        if not raw.lower().startswith("basic "):
+            return False
+        import base64
+
+        from .. import dashauth
+
+        try:
+            decoded = base64.b64decode(raw.split(" ", 1)[1]).decode("utf-8")
+            username, _, password = decoded.partition(":")
+        except (ValueError, UnicodeDecodeError):
+            return False
+        if not username:
+            return False
+        try:
+            return dashauth.verify(self.base, username, password)
+        except Exception:  # noqa: BLE001 - a bad credential file must not 500
+            return False
 
     def _publish_brain_turn(self, result: dict, role: str = "brain") -> None:
         """Push a brain turn onto the live SSE bus for spectators."""
@@ -3820,6 +3883,12 @@ def build_server(results_dir: str | Path = "results", base: Path | None = None,
     from .runner import DashboardBridge, run_scan
 
     base = Path(base) if base else Path.home() / ".netcast3r"
+    try:
+        from .. import dashauth
+
+        dashauth.ensure_credentials(base)
+    except Exception:  # noqa: BLE001 - a bad credential file must not block boot
+        pass
     if config is None:
         config = SimpleNamespace(results_dir=str(results_dir))
     index = Index(base / "netcast3r.db")
@@ -3849,8 +3918,20 @@ def serve(host: str = "127.0.0.1", port: int = 7857, *, open_browser: bool = Tru
     httpd = ThreadingHTTPServer((host, port), _Handler)
     httpd.app = server  # type: ignore[attr-defined]
     httpd.daemon_threads = True
-    url = f"http://{host}:{httpd.server_address[1]}/?token={server.token}"
-    print(f"NetCast3r API on {url}")
+    url = f"http://{host}:{httpd.server_address[1]}/"
+    print(f"NetCast3r UI on {url}")
+    if auth_required:
+        from .. import dashauth
+
+        try:
+            creds = dashauth.public(server.base)
+        except Exception:  # noqa: BLE001 - the login hint is best effort
+            creds = {}
+        if creds.get("default"):
+            print(f"login: {dashauth.DEFAULT_USERNAME} / {dashauth.DEFAULT_PASSWORD}"
+                  "  (default - change it in the dashboard)")
+        elif creds.get("username"):
+            print(f"login: {creds['username']}  (password set in the dashboard)")
     control.write_control_plane(server.base, {
         "schema": 1,
         "pid": os.getpid(),

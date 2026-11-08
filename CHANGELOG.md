@@ -4,6 +4,28 @@ Notable changes to NetCast3r, newest first.
 
 ## Unreleased
 
+### Dashboard sign-in
+
+- **Username and password by default**: the dashboard now signs in with a
+  local username and password instead of a 32-character session token. First
+  run creates `admin` / `123` in a `0600` credentials file under the base
+  directory, stored as a salted PBKDF2 hash (never plain text), and the server
+  prints the login on startup.
+- **Change it in the dashboard**: Connect gains a Dashboard access card that
+  shows the current username, flags the default login, and lets the operator
+  set a new username and password. Backed by `GET /api/v1/auth` and
+  `POST /api/v1/auth/credentials`.
+- **Still scriptable**: HTTP Basic (`curl -u admin:123`) authenticates the API,
+  and the session-token header, query, and cookie still work for MCP clients
+  and automation.
+
+### Report markdown preview
+
+- **Rendered PoC reports**: the submission PoC modal renders the finalized
+  report as formatted markdown (headings, lists, code, links) through the
+  escaping renderer, with a rendered / markdown toggle alongside the existing
+  copy and download actions.
+
 ### Radial context menu
 
 - **Ctrl+Right-Click actions**: the shell now opens a cursor-anchored radial

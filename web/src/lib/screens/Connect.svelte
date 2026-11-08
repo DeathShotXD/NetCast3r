@@ -12,11 +12,57 @@
   let toolQuery = $state('');
   let copied = $state('');
 
+  let auth = $state<{ username: string; default: boolean; source: string } | null>(null);
+  let credUser = $state('');
+  let credPass = $state('');
+  let credConfirm = $state('');
+  let credBusy = $state(false);
+  let credError = $state('');
+  let credNote = $state('');
+
+  async function saveCredentials(event: SubmitEvent) {
+    event.preventDefault();
+    if (credBusy) return;
+    credError = '';
+    credNote = '';
+    if (!credUser.trim()) {
+      credError = 'choose a username';
+      return;
+    }
+    if (!credPass) {
+      credError = 'choose a password';
+      return;
+    }
+    if (credPass !== credConfirm) {
+      credError = 'the two passwords do not match';
+      return;
+    }
+    credBusy = true;
+    try {
+      const res = await api.changeCredentials(credUser.trim(), credPass);
+      auth = { username: res.username, default: res.default, source: auth?.source ?? '' };
+      credPass = '';
+      credConfirm = '';
+      credNote = `saved. sign in as ${res.username} from now on.`;
+      store.toast('ok', 'dashboard login updated');
+    } catch (exc) {
+      credError = exc instanceof Error ? exc.message : 'could not update the login';
+    } finally {
+      credBusy = false;
+    }
+  }
+
   async function load() {
     loading = true;
     error = '';
     try {
       info = await api.connect();
+      try {
+        auth = await api.authInfo();
+        credUser = auth.username;
+      } catch {
+        auth = null;
+      }
     } catch (exc) {
       error = exc instanceof Error ? exc.message : 'could not read the connection info';
     } finally {
@@ -113,9 +159,72 @@
       </div>
       <div class="obs-hist-kpi">
         <p class="eyebrow">auth</p>
-        <p class="obs-connect-value obs-connect-mono">{info.workspace.token_header}</p>
-        <p class="obs-hist-kpi-note">token in the 0600 state file</p>
+        <p class="obs-connect-value obs-connect-mono">{auth?.username ?? 'admin'}</p>
+        <p class="obs-hist-kpi-note">{auth?.default ? 'default login - change it' : 'username + password'}</p>
       </div>
+    </section>
+
+    <section class="panel obs-access" aria-label="dashboard access">
+      <header class="obs-access-head">
+        <div>
+          <p class="eyebrow">dashboard access</p>
+          <h2 class="obs-connect-name">Sign-in</h2>
+        </div>
+        {#if auth}
+          <span class="obs-access-badge" class:is-default={auth.default}>
+            {auth.default ? 'default login' : 'custom'}
+          </span>
+        {/if}
+      </header>
+      <p class="obs-access-copy">
+        Signed in as <strong>{auth?.username ?? 'unknown'}</strong>.
+        {#if auth?.default}
+          The default login is <code>admin</code> / <code>123</code> - change it before you leave
+          the dashboard open.
+        {:else}
+          A custom username and password protect this dashboard.
+        {/if}
+      </p>
+      <form class="obs-access-form" onsubmit={saveCredentials}>
+        <div class="obs-access-field">
+          <label class="eyebrow" for="cred-user">username</label>
+          <input
+            id="cred-user"
+            class="obs-field"
+            type="text"
+            autocomplete="username"
+            spellcheck="false"
+            bind:value={credUser}
+          />
+        </div>
+        <div class="obs-access-field">
+          <label class="eyebrow" for="cred-pass">new password</label>
+          <input
+            id="cred-pass"
+            class="obs-field"
+            type="password"
+            autocomplete="new-password"
+            bind:value={credPass}
+          />
+        </div>
+        <div class="obs-access-field">
+          <label class="eyebrow" for="cred-confirm">confirm password</label>
+          <input
+            id="cred-confirm"
+            class="obs-field"
+            type="password"
+            autocomplete="new-password"
+            bind:value={credConfirm}
+          />
+        </div>
+        <div class="obs-access-actions">
+          <button class="obs-btn obs-btn-primary" type="submit" disabled={credBusy}>
+            {credBusy ? 'saving...' : 'save login'}
+          </button>
+          {#if credNote}<span class="obs-access-note">{credNote}</span>{/if}
+          {#if credError}<span class="obs-access-error" role="alert">{credError}</span>{/if}
+        </div>
+      </form>
     </section>
 
     <section class="panel obs-connect-note">

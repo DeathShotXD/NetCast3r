@@ -79,6 +79,12 @@ async function requestText(path: string, timeoutMs = DEFAULT_TIMEOUT_MS): Promis
 
 export const api = {
   meta: () => request<Meta>('GET', '/meta'),
+  authInfo: () => request<{ username: string; default: boolean; source: string }>('GET', '/auth'),
+  changeCredentials: (username: string, password: string) =>
+    request<{ username: string; default: boolean; changed: boolean }>('POST', '/auth/credentials', {
+      username,
+      password
+    }),
   totals: () => request<Totals>('GET', '/summary'),
   connect: () => request<ConnectInfo>('GET', '/connect'),
   runs: (q = '') => request<Paged<Run>>('GET', `/runs${q}`),

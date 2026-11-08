@@ -14,6 +14,7 @@
   import Buffering from '../ui/Buffering.svelte';
   import Confirm from '../ui/Confirm.svelte';
   import Icon from '../ui/Icon.svelte';
+  import { renderMarkdown } from '../markdown';
 
   type Filter = 'all' | 'open' | 'review' | 'accepted' | 'closed';
 
@@ -105,6 +106,7 @@
   let pocLoading = $state(false);
   let pocError = $state('');
   let pocCopied = $state(false);
+  let pocRendered = $state(true);
   let form = $state({
     title: '',
     target: '',
@@ -236,6 +238,7 @@
     pocText = '';
     pocError = '';
     pocCopied = false;
+    pocRendered = true;
     pocLoading = true;
     try {
       pocText = (await api.submissionPoc(item.id)).markdown;
@@ -834,7 +837,38 @@
         {:else if pocError}
           <div class="obs-agent-note is-warn" role="status">{pocError}</div>
         {:else}
-          <pre class="obs-poc-pre">{pocText}</pre>
+          <div class="obs-poc-view">
+            <div class="obs-poc-viewbar">
+              <div class="obs-poc-seg" role="tablist" aria-label="PoC view">
+                <button
+                  class="obs-poc-segbtn"
+                  class:on={pocRendered}
+                  type="button"
+                  role="tab"
+                  aria-selected={pocRendered}
+                  onclick={() => (pocRendered = true)}
+                >
+                  rendered
+                </button>
+                <button
+                  class="obs-poc-segbtn"
+                  class:on={!pocRendered}
+                  type="button"
+                  role="tab"
+                  aria-selected={!pocRendered}
+                  onclick={() => (pocRendered = false)}
+                >
+                  markdown
+                </button>
+              </div>
+              <span class="obs-modal-note">Read-only preview of the finalized report</span>
+            </div>
+            {#if pocRendered}
+              <article class="report-prose obs-poc-rendered">{@html renderMarkdown(pocText)}</article><!-- codeaudit: ignore svelte-html -- renderMarkdown escapes every character before rebuilding markup -->
+            {:else}
+              <pre class="obs-poc-pre">{pocText}</pre>
+            {/if}
+          </div>
         {/if}
       </div>
 

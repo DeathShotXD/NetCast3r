@@ -8146,6 +8146,37 @@ html.nc-native .nc-tag {
   margin-top: 18px;
 }
 
+.obs-unlock-pass {
+  position: relative;
+  display: flex;
+}
+
+.obs-unlock-pass .obs-field {
+  padding-right: 60px;
+}
+
+.obs-unlock-reveal {
+  position: absolute;
+  top: 50%;
+  right: 8px;
+  transform: translateY(-50%);
+  border: 1px solid var(--obs-line);
+  background: var(--obs-panel-2);
+  color: var(--obs-muted);
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  border-radius: 6px;
+  padding: 4px 8px;
+  cursor: pointer;
+}
+
+.obs-unlock-reveal:hover {
+  color: var(--obs-acid);
+  border-color: var(--obs-line-acid);
+}
+
 .obs-field {
   width: 100%;
   border: 1px solid var(--obs-line);
@@ -9159,3 +9190,27 @@ html { scroll-behavior:smooth; }
 @keyframes obs-radial-pop { from { transform:scale(.72); opacity:0; } }
 @keyframes obs-radial-item { from { opacity:0; transform:rotate(var(--a)) translate(calc(var(--r) - 18px)) rotate(calc(-1 * var(--a))); } }
 @media (prefers-reduced-motion: reduce) { .obs-radial-scrim, .obs-radial-ring, .obs-radial-item { animation:none; } }
+
+/* -- PoC markdown preview --------------------------------------------- */
+.obs-poc-view { display:flex; flex-direction:column; gap:10px; }
+.obs-poc-viewbar { display:flex; align-items:center; justify-content:space-between; gap:10px; }
+.obs-poc-seg { display:inline-flex; border:1px solid var(--obs-line); border-radius:8px; overflow:hidden; background:var(--obs-bg-2); }
+.obs-poc-segbtn { border:0; border-right:1px solid var(--obs-line); background:transparent; color:var(--obs-muted); font-family:var(--mono); font-size:9px; letter-spacing:.1em; text-transform:uppercase; padding:5px 11px; cursor:pointer; }
+.obs-poc-segbtn:last-child { border-right:0; }
+.obs-poc-segbtn.on { background:color-mix(in srgb, var(--obs-acid) 14%, transparent); color:var(--obs-acid); }
+.obs-poc-segbtn:hover { color:var(--obs-text); }
+.obs-poc-rendered { max-height:62vh; overflow:auto; padding:16px 18px; border:1px solid var(--obs-line); border-radius:9px; background:var(--obs-bg-2); }
+
+/* -- Dashboard access card -------------------------------------------- */
+.obs-access { display:flex; flex-direction:column; gap:12px; padding:16px 18px; }
+.obs-access-head { display:flex; align-items:flex-start; justify-content:space-between; gap:12px; }
+.obs-access-badge { font-family:var(--mono); font-size:9px; letter-spacing:.12em; text-transform:uppercase; border:1px solid var(--obs-line-strong); color:var(--obs-muted); border-radius:999px; padding:3px 9px; }
+.obs-access-badge.is-default { color:var(--obs-orange,#f0c26b); border-color:rgba(240,194,107,.4); background:rgba(240,194,107,.08); }
+.obs-access-copy { margin:0; color:var(--obs-muted); font-size:12px; line-height:1.55; }
+.obs-access-copy code { font-family:var(--mono); color:var(--obs-acid); background:color-mix(in srgb, var(--obs-acid) 8%, transparent); border:1px solid var(--obs-line); border-radius:4px; padding:1px 5px; }
+.obs-access-form { display:grid; grid-template-columns:repeat(3, minmax(0,1fr)); gap:10px 14px; }
+.obs-access-field { display:flex; flex-direction:column; gap:5px; min-width:0; }
+.obs-access-actions { grid-column:1/-1; display:flex; align-items:center; gap:12px; flex-wrap:wrap; }
+.obs-access-note { color:var(--obs-acid); font-size:11px; }
+.obs-access-error { color:var(--obs-red); font-size:11px; }
+@media (max-width:820px) { .obs-access-form { grid-template-columns:1fr; } }
