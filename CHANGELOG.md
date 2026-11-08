@@ -4,6 +4,82 @@ Notable changes to NetCast3r, newest first.
 
 ## Unreleased
 
+### Operator channel and mission control
+
+- **Live steering**: a running swarm or autopilot now accepts an operator
+  instruction through `POST /api/v1/runs/<id>/directive`. The queue is
+  run-scoped and thread-safe, so the HTTP thread can write while the solver
+  thread plans or executes.
+- **Deterministic intent**: each instruction is classified as `skip` or
+  `focus` from plain words unless the operator names the kind. Subject terms are
+  extracted and singularised, so a weak or unavailable model can never drop an
+  instruction on the floor.
+- **Skip is a live constraint**: a skip becomes a persistent subject filter that
+  removes matching tasks before and during a round, or a one-shot skip of the
+  next task when no subject was named. A skip aimed at one board task is exact:
+  it drops that task only and never widens into a filter over tasks that share a
+  word with it.
+- **Focus runs first**: a focus instruction becomes a highest-priority objective
+  owned by the specialist that fits it (scout for mapping, attacker otherwise)
+  and is prepended to the next plan.
+- **Mission control board**: the Live Run screen shows the brain plan, the task
+  board with owner/status/critical/operator tags, the task now running, and each
+  agent lane's current goal. The operator composer sends auto/skip/focus
+  instructions and keeps a queued/accepted/applied timeline.
+- **Directive history survives reload**: the runner mirrors accepted and applied
+  states into the run's directive history as the stream events fire.
+- **Helix always answers**: when every model lane fails, the brain now replies
+  from the live ledger instead of reporting provider health. The reply names the
+  focus target, run status, pages/leads/findings, and the first open leads, and a
+  deterministic intent pass still applies obvious pause, resume, kill, focus,
+  campaign, hunt, and swarm commands.
+
+### Live run transmission
+
+- **One chronological trace**: the Live Run screen merges reasoning, tool calls,
+  tool results, HTTP fetches, model receipts, decisions, and proof into a single
+  readable stream. Reasoning fragments from the same agent fuse within five
+  seconds so a burst of thinking reads as prose instead of one line per token.
+- **Model receipts**: the provider bus observers and the mesh now surface every
+  logical model call as a row with provider, model, latency, and OK/failed. The
+  per-agent lane shows its model and call count.
+- **Failure bursts collapse**: a dead provider set makes one logical call walk
+  dozens of candidates; consecutive failures for the same agent fuse into a
+  single counted row (`FAILED x173`) instead of flooding the feed.
+- **Heartbeat pings stay out of the stream**: "Scout is reasoning" status pings
+  feed the live-agent lane but are not reasoning content.
+- **KPI fallbacks**: moves, model calls, agents, and findings fall back to what
+  the live stream already proves while the control plane reports its final
+  counts only at run end.
+
+### Reliability and speed
+
+- **One 429 covers a catalogue**: after the first 429 the bus tries exactly one
+  sibling model on the same provider, then skips the rest and moves on. A free
+  key with two real models still rotates; twenty aliases no longer flood the
+  stream with identical failures.
+- **The bus survives a run**: the solver runner reuses one provider bus so a
+  retired (provider, model) pair stays retired across a run's many calls.
+- **A turn is bounded end to end**: `complete()` accepts a total `max_seconds`
+  budget and a `min_providers` floor. The brain uses a 30 s call timeout inside
+  a 45 s walk, so a slow catalogue can no longer consume the whole turn.
+- **Independent catalogues get a turn**: with `diversify` the brain tries the
+  first two hunt lanes, then every shared catalogue (nvidia, openrouter, local
+  routes), then the rest of the hunt wall. Twenty exhausted tokenharbor keys no
+  longer hide a healthy provider behind them.
+- **Cooldowns outlive a turn**: `shared_bus()` keeps one bus while the provider
+  fingerprint is unchanged, so a 429 learned in one brain turn is still known in
+  the next instead of being forgotten and re-probed.
+- **Truncated JSON is salvaged**: a reply that hits the token cap mid-object
+  still yields its complete `reply`, `focus`, and `reasoning` fields, and raw
+  JSON is never shown to the operator as prose.
+- **Secret scan scales linearly**: the catalog locates every keyword in one
+  case-insensitive pass per segment instead of re-running a substring search per
+  keyword, shrinking the hostile-blob scan from ~14 s to under 2 s.
+- **Weak-model arguments are repaired**: out-of-range numbers (for example
+  `max_bytes=512`) are clamped to the declared schema bounds before a tool call,
+  so a near-miss becomes a real request instead of a wasted validation error.
+
 ### Autonomy and throughput
 
 - **Unrestricted is the default**: every mission is created `unrestricted`, so
@@ -53,6 +129,13 @@ Notable changes to NetCast3r, newest first.
 
 ### Data and evidence
 
+- **Humanized PoC report**: every submission linked to a finding now gets a
+  ready-to-read markdown report under `<base>/reports/submissions/`. It carries
+  the summary, affected asset, numbered reproduction steps with the exact
+  request/response, copy-paste `curl` commands, observed impact, and remediation
+  built from the recorded evidence. `GET /api/v1/findings/{id}/poc` and
+  `GET /api/v1/submissions/{id}/poc` preview it; `?download=1` returns it as an
+  attachment. Reports opens it from the submission editor with copy and download.
 - HTTP audit keeps a 4,000-character body sample and `set_cookie` list, so a
   proof or dumped record is not lost to the 900-character cap.
 - Static reverse-engineering records an `apk_file`/`artifact` graph node with
@@ -119,6 +202,11 @@ Notable changes to NetCast3r, newest first.
 
 ### Fixed
 
+- **Modals were trapped by the screen transition**: `.screen-in` held a
+  `transform` after its enter animation (`fill-mode: both`), which made the page
+  the containing block for fixed-position dialogs. The animation now uses
+  `backwards`, so the transform is released when the animation ends and every
+  modal centers against the viewport.
 - **Credential redaction by name**: a custom header such as `X-CSRF`,
   `X-Amz-Security-Token`, or `X-Goog-Signature` reached the tool-call audit
   table verbatim because only a fixed allow-list was checked. Any field whose

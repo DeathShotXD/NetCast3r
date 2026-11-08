@@ -14,6 +14,7 @@
   let runs = $state<Run[]>([]);
   let total = $state(0);
   let loading = $state(true);
+  let error = $state('');
   let query = $state('');
   let statusFilter = $state('all');
   let sortBy = $state('newest');
@@ -77,12 +78,24 @@
 
   async function load() {
     loading = true;
+    error = '';
     try {
-      const page = await api.runs('?size=200');
-      runs = page.items;
-      total = page.total ?? page.items.length;
+      // The KPI row and the 14-day activity chart must describe the whole
+      // history, not just the first page, so walk every page the control plane
+      // reports. A generous guard keeps a runaway total from looping forever.
+      const first = await api.runs('?size=200');
+      const all = [...first.items];
+      total = first.total ?? first.items.length;
+      let guard = 0;
+      while (all.length < total && guard < 40) {
+        const next = await api.runs(`?size=200&offset=${all.length}`);
+        if (!next.items.length) break;
+        all.push(...next.items);
+        guard += 1;
+      }
+      runs = all;
     } catch (exc) {
-      store.fail(exc instanceof Error ? exc.message : 'could not load the cast history');
+      error = exc instanceof Error ? exc.message : 'could not load the cast history';
     } finally {
       loading = false;
     }
@@ -234,7 +247,7 @@
       <p class="num mt-1 text-xl" style="color:{findingTotal > 0 ? 'var(--obs-acid)' : 'var(--obs-text)'}">
         {findingTotal}
       </p>
-      <p class="obs-hist-kpi-note">across the loaded casts</p>
+      <p class="obs-hist-kpi-note">across all casts</p>
     </div>
     <div class="obs-hist-kpi">
       <p class="eyebrow">endpoints</p>
@@ -246,19 +259,29 @@
   <section class="panel obs-hist-band">
     <div class="obs-hist-band-head">
       <p class="eyebrow">activity &middot; last 14 days</p>
-      <span class="obs-hist-band-total">{activity.reduce((n, day) => n + day.count, 0)} casts</span>
+      <span class="obs-hist-band-total">
+        {activity.reduce((n, day) => n + day.count, 0)} casts &middot; peak {activityMax}/day
+      </span>
     </div>
-    <div class="obs-hist-bars" role="img" aria-label="casts per day over the last 14 days">
-      {#each activity as day (day.label)}
-        <div
-          class="obs-hist-bar"
-          class:has-runs={day.count > 0}
-          title="{day.label}: {day.count} casts, {day.findings} findings"
-        >
-          <span class="obs-hist-bar-fill" style="height:{day.count ? Math.max(8, (day.count / activityMax) * 100) : 3}%"></span>
-          <span class="obs-hist-bar-day">{day.short}</span>
-        </div>
-      {/each}
+    <div class="obs-hist-chart">
+      <div class="obs-hist-grid" aria-hidden="true">
+        <span></span><span></span><span></span><span></span>
+      </div>
+      <div class="obs-hist-bars" role="img" aria-label="casts per day over the last 14 days">
+        {#each activity as day, i (day.label)}
+          <div
+            class="obs-hist-bar"
+            class:has-runs={day.count > 0}
+            class:is-today={i === activity.length - 1}
+            title="{day.label}: {day.count} casts, {day.findings} findings"
+          >
+            <span class="obs-hist-bar-fill" style="height:{day.count ? Math.max(10, (day.count / activityMax) * 100) : 4}%">
+              <i aria-hidden="true"></i>
+            </span>
+            <span class="obs-hist-bar-day">{day.short}</span>
+          </div>
+        {/each}
+      </div>
     </div>
     <div class="obs-hist-mix">
       {#if mix.length}
@@ -319,6 +342,13 @@
     </label>
   </section>
 
+  {#if error && runs.length > 0}
+    <p class="obs-alert" role="alert">
+      {error} - showing the last history the control plane returned.
+      <button class="obs-link" type="button" onclick={() => void load()}>Retry</button>
+    </p>
+  {/if}
+
   {#if loading && runs.length === 0}
     <section class="obs-card obs-empty" style="min-height:280px; gap:14px">
       <Buffering
@@ -326,6 +356,19 @@
         tone="quiet"
         label="Loading casts"
         detail="Reading operation history from the control plane."
+      />
+    </section>
+  {:else if error && runs.length === 0}
+    <section class="panel">
+      <EmptyState
+        eyebrow="control plane"
+        tone="error"
+        title="Could not load the cast history"
+        body={error}
+        action="Try again"
+        onAction={() => void load()}
+        secondaryAction="Engage a target"
+        onSecondaryAction={() => store.go('new')}
       />
     </section>
   {:else if runs.length === 0}

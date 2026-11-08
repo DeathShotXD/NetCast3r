@@ -22,6 +22,7 @@ it runs a deterministic baseline and says so.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 import threading
@@ -31,6 +32,7 @@ from concurrent.futures import ThreadPoolExecutor
 from .agents import _first_json
 from .autopilot import ACTIONS as OPERATOR_ACTIONS
 from .autopilot import Autopilot, _compact
+from .directives import matches_enough, terms_for
 
 DEFAULT_STEPS = 10
 MAX_STEPS = 36
@@ -216,6 +218,22 @@ def _objective_critical(objective: dict) -> bool:
     return "critical" in blob
 
 
+def _task_id(goal: str) -> str:
+    """Stable id for one objective so the live board can follow it."""
+    digest = hashlib.sha1(str(goal or "").encode("utf-8")).hexdigest()
+    return "obj_" + digest[:10]
+
+
+def _owner_for(text: str) -> str:
+    """Pick the specialist an operator focus directive belongs to."""
+    blob = str(text or "").lower()
+    if re.search(r"\b(recon|map|crawl|enumerat|discover|fingerprint|scan|"
+                 r"surface|subdomain|header|robots|sitemap|certificate|dns|"
+                 r"technique|chain|research|inventory|review)\b", blob):
+        return "scout"
+    return "attacker"
+
+
 def _prompt(template: str, role: str) -> str:
     return (template.replace("<<ROLE>>", ROLE_TITLES.get(role, role))
             .replace("<<ACTIONS>>", _role_menu(role)))
@@ -250,7 +268,8 @@ class Swarm(Autopilot):
                  max_steps: int = DEFAULT_STEPS,
                  max_seconds: float = DEFAULT_SECONDS,
                  max_model_calls: int = DEFAULT_MODEL_CALLS,
-                 run_id: str = "", on_step=None, should_stop=None):
+                 run_id: str = "", on_step=None, should_stop=None,
+                 directive_source=None):
         super().__init__(registry, lambda messages: {}, mission,
                          max_steps=max_steps, max_seconds=max_seconds,
                          max_model_calls=max_model_calls, run_id=run_id,
@@ -271,6 +290,17 @@ class Swarm(Autopilot):
         self.corroborated = 0
         self.contested = 0
         self.rounds = 0
+        # Operator directives arrive from the HTTP thread while this thread is
+        # planning or executing. The source is a drain callable; every item is
+        # consumed once and then becomes a permanent skip rule or a focus
+        # objective with the highest priority.
+        self.directive_source = directive_source
+        self._directive_seen: set[str] = set()
+        self._skip_rules: list[dict] = []
+        self._skip_ids: dict[str, dict] = {}
+        self._skip_next: list[dict] = []
+        self._focus: list[dict] = []
+        self.directives_applied = 0
         # Cached (host, path) anchors parsed once from the latest hunt.map so a
         # no-model round can still aim a raw-capture move at a real surface.
         self._portal_anchor_cache: list[str] | None = None
@@ -287,7 +317,7 @@ class Swarm(Autopilot):
                 return None, "model budget spent", ""
             self.model_calls += 1
             self.role_calls[role] = self.role_calls.get(role, 0) + 1
-        self._emit("reason", {"agent": role,
+        self._emit("reason", {"agent": role, "heartbeat": True,
                               "text": f"{ROLE_TITLES.get(role, role)} is reasoning"})
         messages = [
             {"role": "system", "content": _prompt(
@@ -298,27 +328,231 @@ class Swarm(Autopilot):
                     "<<OBJECTIVES>>", str(MAX_OBJECTIVES))},
             {"role": "user", "content": json.dumps(payload, default=str)[:14000]},
         ]
+        started = time.monotonic()
         try:
             completion = self.complete_for(role, messages, exclude) or {}
         except Exception as exc:  # noqa: BLE001 - a dead provider is an observation
             self._refund_call()
+            self._emit("model", {"agent": role, "kind": "done", "ok": False,
+                                 "ms": int((time.monotonic() - started) * 1000),
+                                 "text": f"{type(exc).__name__}: {exc}"[:200]})
             return None, f"{type(exc).__name__}: {exc}", ""
         if not isinstance(completion, dict):
             completion = {"text": str(completion)}
         text = str(completion.get("text") or "")
         provider = str(completion.get("provider") or "")
+        model = str(completion.get("model") or "")
         error = str(completion.get("error") or "")
+        usage = completion.get("usage") if isinstance(completion.get("usage"), dict) else {}
         data = _first_json(text) if text else None
         if not isinstance(data, dict):
             # A 429/empty/schema miss must not burn the hard call budget; a dead
             # model would otherwise stop the mesh after 12-16 soft failures.
             self._refund_call()
+            self._emit("model", {"agent": role, "kind": "done", "ok": False,
+                                 "provider": provider, "model": model,
+                                 "ms": int((time.monotonic() - started) * 1000),
+                                 "tokens": int(usage.get("total_tokens") or 0),
+                                 "text": (error or "reply was not a JSON object")[:200]})
             return None, (error or "reply was not a JSON object"), provider
+        # One compact receipt per call so the live cast shows provider, model,
+        # latency and tokens instead of a silent gap.
+        self._emit("model", {"agent": role, "kind": "done", "ok": True,
+                             "provider": provider, "model": model,
+                             "ms": int((time.monotonic() - started) * 1000),
+                             "tokens": int(usage.get("total_tokens") or 0),
+                             "text": (f"{provider}/{model}".strip("/") or "model")})
+        # Surface the model's own words so the live cast shows reasoning, not
+        # only the parsed move. Keep it a single compact line.
+        thought = str(data.get("thought") or data.get("reasoning") or "").strip()
+        if thought:
+            self._emit("reason", {"agent": role,
+                                  "text": " ".join(thought.split())[:600]})
         return data, error, provider
 
     def _refund_call(self) -> None:
         with self._lock:
             self.model_calls = max(0, self.model_calls - 1)
+
+    # -- operator channel --------------------------------------------------
+    def _drain_directives(self) -> int:
+        """Consume operator instructions and turn them into live constraints.
+
+        A skip becomes a persistent subject filter (so the strategist cannot
+        re-propose it) or a one-shot skip of the next task when the operator
+        named no subject. A focus becomes a highest-priority objective owned by
+        the specialist that fits the instruction. Both are acknowledged on the
+        live stream the moment they are consumed.
+        """
+        source = self.directive_source
+        if source is None:
+            return 0
+        try:
+            rows = source() or []
+        except Exception:  # noqa: BLE001 - a broken queue must not stop the mesh
+            return 0
+        applied = 0
+        for item in rows:
+            if not isinstance(item, dict):
+                continue
+            did = str(item.get("id") or "")
+            if did and did in self._directive_seen:
+                continue
+            if did:
+                self._directive_seen.add(did)
+            text = " ".join(str(item.get("text") or "").split())[:800]
+            if not text:
+                continue
+            kind = str(item.get("kind") or "focus").strip().lower()
+            target = str(item.get("target") or "").strip()
+            source_name = str(item.get("source") or "operator")
+            if kind == "skip":
+                terms = [str(term) for term in (item.get("terms") or [])][:12]
+                exact = target.startswith("obj_")
+                if exact:
+                    # The operator named one task in the board. Honor exactly
+                    # that task; do not turn its wording into a broad filter
+                    # that also drops unrelated tasks sharing a word.
+                    entry = {"id": did, "text": text}
+                    self._skip_ids.setdefault(target, entry)
+                    rule = {"id": did, "terms": [], "text": text}
+                else:
+                    if not terms:
+                        terms = terms_for(text, "skip")
+                    if not terms and target:
+                        terms = terms_for(target, "skip") or [target.lower()[:64]]
+                    rule = {"id": did, "terms": terms, "text": text}
+                    if terms:
+                        self._skip_rules.append(rule)
+                    else:
+                        self._skip_next.append(rule)
+                self._observations.append({
+                    "agent": "operator", "action": "directive_skip", "ok": True,
+                    "result": text, "verdict": "inconclusive",
+                    "reason": "operator asked the mesh to skip this area",
+                })
+                self._emit("directive", {
+                    "agent": "operator", "directive_id": did, "kind": "skip",
+                    "status": "accepted", "text": text, "terms": terms,
+                    "target": target, "source": source_name,
+                    "plan": ("drop the named task only" if exact else
+                             "drop tasks that mention " + ", ".join(terms)
+                             if terms else "drop the next task"),
+                })
+                self.directives_applied += 1
+                applied += 1
+                continue
+            owner = _owner_for(f"{text} {target}")
+            goal = (f"{text} [{target}]" if target and not target.startswith("obj_")
+                    else text)[:300]
+            objective = {
+                "id": _task_id(goal),
+                "owner": owner,
+                "goal": goal,
+                "hypothesis": f"operator directive: {goal}"[:240],
+                "expected": "a direct, observable answer to the operator's instruction",
+                "falsifier": "the target answers consistently with no new lead",
+                "critical": _objective_critical({"goal": goal}),
+                "source": "operator",
+            }
+            self._focus.append(objective)
+            self._observations.append({
+                "agent": "operator", "action": "directive_focus", "ok": True,
+                "result": text, "verdict": "inconclusive",
+                "reason": f"operator asked the {owner} to prioritise this next",
+            })
+            self._emit("directive", {
+                "agent": "operator", "directive_id": did, "kind": "focus",
+                "status": "accepted", "text": text, "terms": item.get("terms") or [],
+                "owner": owner, "goal": goal, "task_id": objective["id"],
+                "source": source_name,
+                "plan": f"assign to {owner} as the highest-priority objective",
+            })
+            self.directives_applied += 1
+            applied += 1
+        return applied
+
+    def _skip_rule_for(self, *texts) -> dict | None:
+        if not self._skip_rules:
+            return None
+        blob = " ".join(str(text or "") for text in texts)
+        for rule in self._skip_rules:
+            if matches_enough(blob, rule.get("terms") or []):
+                return rule
+        return None
+
+    def _ensure_task_ids(self, objectives: list[dict], round_no: int) -> None:
+        for objective in objectives:
+            if not isinstance(objective, dict):
+                continue
+            objective.setdefault("id", _task_id(str(objective.get("goal") or "")))
+            objective["round"] = round_no
+            objective.setdefault("source", "strategist")
+
+    def _filter_skipped(self, objectives: list[dict]) -> tuple[list[dict], list[dict]]:
+        kept: list[dict] = []
+        skipped: list[dict] = []
+        for objective in objectives:
+            blob = " ".join(str(objective.get(key) or "") for key in
+                            ("id", "goal", "hypothesis"))
+            rule = self._skip_rule_for(blob)
+            if rule is not None:
+                skipped.append({"objective": objective, "rule": rule})
+                continue
+            if str(objective.get("id") or "") in self._skip_ids:
+                entry = self._skip_ids[str(objective.get("id") or "")]
+                skipped.append({"objective": objective, "rule": {
+                    "id": str(entry.get("id") or ""), "terms": [],
+                    "text": str(entry.get("text") or "operator skipped this task")}})
+                continue
+            if self._skip_next:
+                skipped.append({"objective": objective,
+                                "rule": self._skip_next.pop(0)})
+                continue
+            kept.append(objective)
+        return kept, skipped
+
+    def _take_focus(self, round_no: int) -> list[dict]:
+        focus = self._focus
+        self._focus = []
+        clean = []
+        for objective in focus:
+            if not isinstance(objective, dict) or not objective.get("goal"):
+                continue
+            objective.setdefault("id", _task_id(str(objective["goal"])))
+            objective["round"] = round_no
+            objective.setdefault("source", "operator")
+            clean.append(objective)
+        return clean[:MAX_OBJECTIVES]
+
+    @staticmethod
+    def _task_payload(objective: dict, status: str, **extra) -> dict:
+        payload = {
+            "task_id": str(objective.get("id") or ""),
+            "agent": str(objective.get("owner") or ""),
+            "goal": str(objective.get("goal") or "")[:300],
+            "hypothesis": str(objective.get("hypothesis") or "")[:240],
+            "status": status,
+            "round": int(objective.get("round") or 0),
+            "critical": bool(objective.get("critical")),
+            "source": str(objective.get("source") or "strategist"),
+        }
+        payload.update(extra)
+        return payload
+
+    @staticmethod
+    def _plan_payload(objectives: list[dict], round_no: int, **extra) -> dict:
+        payload = {"agent": "strategist", "round": round_no,
+                   "objectives": [
+                       {"id": str(item.get("id") or ""),
+                        "owner": str(item.get("owner") or ""),
+                        "goal": str(item.get("goal") or "")[:300],
+                        "hypothesis": str(item.get("hypothesis") or "")[:240],
+                        "critical": bool(item.get("critical")),
+                        "source": str(item.get("source") or "strategist")}
+                       for item in objectives]}
+        payload.update(extra)
+        return payload
 
     # -- planning ----------------------------------------------------------
     def _clean_objectives(self, value) -> list[dict]:
@@ -841,14 +1075,44 @@ class Swarm(Autopilot):
                 stop = "round budget reached"
                 break
             next_round = self.rounds + 1
+            # An operator instruction sent while the last round ran takes
+            # effect before the next plan, not after the run.
+            self._drain_directives()
             objectives, plan_note, finished = self._strategise(
                 brief, self._observations, next_round)
             self._emit("reason", {"agent": "strategist", "text": plan_note})
+            objectives = objectives or []
+            self._ensure_task_ids(objectives, next_round)
+            objectives, skipped = self._filter_skipped(objectives)
+            focus = self._take_focus(next_round)
+            if focus:
+                objectives = (focus + objectives)[:MAX_OBJECTIVES]
+                self._emit("reason", {
+                    "agent": "strategist",
+                    "text": f"operator raised {len(focus)} task(s); they run first"})
+            for item in skipped:
+                objective = item["objective"]
+                rule = item.get("rule") or {}
+                self._emit("task", self._task_payload(
+                    objective, "skipped", reason="operator directive",
+                    directive_id=str(rule.get("id") or "")))
+                self._emit("directive", {
+                    "agent": "operator", "directive_id": str(rule.get("id") or ""),
+                    "kind": "skip", "status": "applied",
+                    "text": str(rule.get("text") or ""),
+                    "terms": rule.get("terms") or [],
+                    "matched_task": str(objective.get("id") or ""),
+                    "goal": str(objective.get("goal") or "")[:300]})
             if not objectives:
                 stop = plan_note if finished else "strategist finished"
                 summary = plan_note
                 break
             self.rounds = next_round
+            self._emit("plan", self._plan_payload(
+                objectives, self.rounds, skipped=len(skipped), focus=len(focus),
+                note=plan_note))
+            for objective in objectives:
+                self._emit("task", self._task_payload(objective, "assigned"))
 
             proposals = self._propose_all(objectives, self.rounds)
             if not proposals:
@@ -859,15 +1123,50 @@ class Swarm(Autopilot):
             for item in proposals:
                 if len(executed) >= self.max_steps:
                     break
+                # A directive can land while the round is executing. Honour it
+                # before the next tool call instead of waiting for a new plan.
+                self._drain_directives()
                 move = item["move"]
-                role = item["objective"]["owner"]
+                objective = item["objective"]
+                role = objective["owner"]
                 clean = self._args_for(move["action"], move.get("args") or {})
+                blob = " ".join([
+                    str(objective.get("goal") or ""),
+                    str(objective.get("hypothesis") or ""),
+                    move["action"], json.dumps(clean, default=str)])
+                rule = self._skip_rule_for(blob)
+                if rule is None and str(objective.get("id") or "") in self._skip_ids:
+                    entry = self._skip_ids[str(objective.get("id") or "")]
+                    rule = {"id": str(entry.get("id") or ""),
+                            "text": str(entry.get("text")
+                                       or "operator skipped this task")}
+                if rule is None and self._skip_next:
+                    rule = self._skip_next.pop(0)
+                if rule is not None:
+                    self._emit("task", self._task_payload(
+                        objective, "skipped", reason="operator directive",
+                        directive_id=str(rule.get("id") or "")))
+                    self._emit("directive", {
+                        "agent": "operator", "directive_id": str(rule.get("id") or ""),
+                        "kind": "skip", "status": "applied",
+                        "text": str(rule.get("text") or ""),
+                        "matched_task": str(objective.get("id") or ""),
+                        "goal": str(objective.get("goal") or "")[:300]})
+                    self._observations.append({
+                        "agent": role, "action": move["action"], "ok": False,
+                        "result": "skipped: the operator told the mesh to drop this",
+                        "verdict": "inconclusive",
+                        "reason": "operator directive",
+                    })
+                    continue
                 signature = move["action"] + json.dumps(clean, sort_keys=True,
                                                         default=str)
                 if signature in seen:
                     self._emit("decide", {
                         "agent": role,
                         "text": f"{role} repeated {move['action']}; skipping it"})
+                    self._emit("task", self._task_payload(
+                        objective, "skipped", reason="duplicate move"))
                     # Tell the next plan, not only the transcript. Without
                     # this, the strategist re-asks for the same move and the
                     # mesh burns rounds discovering it is still a duplicate.
@@ -882,7 +1181,12 @@ class Swarm(Autopilot):
                 if move["action"] in EVIDENCE_ACTIONS:
                     targets += 1
 
+                self._emit("task", self._task_payload(
+                    objective, "running", tool=move["action"]))
                 self._emit("act", {"agent": role, "tool": move["action"],
+                                   "args": clean,
+                                   "task_id": str(objective.get("id") or ""),
+                                   "goal": str(objective.get("goal") or "")[:300],
                                    "text": move.get("why") or f"calling {move['action']}"})
                 payload, is_error, clean = self._tool(move["action"],
                                                       move.get("args") or {})
@@ -890,12 +1194,14 @@ class Swarm(Autopilot):
                           "action": move["action"], "args": clean,
                           "ok": not is_error, "result": _compact(payload),
                           "why": move.get("why") or "",
+                          "task_id": str(objective.get("id") or ""),
+                          "goal": str(objective.get("goal") or "")[:300],
                           "hypothesis": move.get("hypothesis")
-                                        or item["objective"].get("hypothesis") or "",
+                                        or objective.get("hypothesis") or "",
                           "expects": move.get("expects")
-                                     or item["objective"].get("expected") or "",
+                                     or objective.get("expected") or "",
                           "falsifier": move.get("falsifier")
-                                      or item["objective"].get("falsifier") or ""}
+                                      or objective.get("falsifier") or ""}
                 if is_error:
                     error = payload.get("error") or {}
                     record["error"] = str(error.get("message") or "refused")[:300]
@@ -912,13 +1218,19 @@ class Swarm(Autopilot):
                     "reason": verdict.get("reason"),
                 })
                 rows.append(record)
+                self._emit("task", self._task_payload(
+                    objective, "done" if record["ok"] else "failed",
+                    tool=move["action"],
+                    verdict=str(verdict.get("verdict") or "")))
                 self._emit("observe", {
                     "agent": role, "tool": move["action"], "ok": not is_error,
+                    "task_id": str(objective.get("id") or ""),
                     "text": (f"{move['action']}: {record.get('error')}" if is_error
                              else f"{move['action']}: ok -> {verdict['verdict']}"),
                     "url": str(payload.get("url") or ""),
                     "status": payload.get("status"),
                     "verdict": verdict.get("verdict"),
+                    "result": str(record.get("result") or "")[:1200],
                 })
                 if errors >= 5:
                     stop = "three consecutive tool errors"
@@ -960,6 +1272,7 @@ class Swarm(Autopilot):
             "hypotheses": self.hypotheses_recorded + hypotheses,
             "model_calls": self.model_calls,
             "evidence_actions": targets,
+            "directives": self.directives_applied,
             "seconds": round(time.monotonic() - started, 2),
             "findings": 0,
             "note": ("Five role identities plan, act, validate, and remember through "

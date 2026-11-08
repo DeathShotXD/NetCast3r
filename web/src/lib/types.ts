@@ -47,6 +47,21 @@ export interface RunEvent {
   payload?: Record<string, any>;
 }
 
+export interface RunDirective {
+  id: string;
+  run_id: string;
+  text: string;
+  kind: 'skip' | 'focus' | string;
+  requested?: string;
+  terms: string[];
+  target?: string;
+  source?: string;
+  status: string;
+  detail?: string;
+  created_at: string;
+  order?: number;
+}
+
 export interface Meta {
   name: string;
   version: string;

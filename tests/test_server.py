@@ -3,6 +3,7 @@ import hashlib
 import json
 import os
 import re
+import threading
 import time
 import unittest
 from pathlib import Path
@@ -355,6 +356,49 @@ class ServerTests(unittest.TestCase):
         deleted = self.data(self.call("DELETE", f"/api/v1/submissions/{submission['id']}"))
         self.assertTrue(deleted["deleted"])
         self.assertEqual(self.call("GET", f"/api/v1/submissions/{submission['id']}").status, 404)
+
+    def test_finding_poc_and_submission_auto_write(self):
+        self.server.base = Path(self.tmp.name)
+        mission = self.data(self.call("POST", "/api/v1/missions", body={
+            "title": "PoC ledger", "target": "app.example.com"}))
+        run = self.index.create_run("https://app.example.com/")
+        self.index.add_mission_run(mission["id"], run["id"])
+        self.index.add_findings(run["id"], [{
+            "title": "Path traversal leaks the application config",
+            "severity": "critical", "secret_type": "path-traversal",
+            "value": "../web.config", "status": "verified", "confidence": 0.9,
+            "evidence": "GET /downloadPostApp.asp?file=../web.config returned 200 "
+                        "with the connection string.",
+        }])
+        finding = self.index.list_findings(run_id=run["id"])[0][0]
+        self.index.patch_finding(finding["id"], status="confirmed")
+
+        response = self.call("GET", f"/api/v1/findings/{finding['id']}/poc")
+        self.assertEqual(response.status, 200)
+        payload = self.data(response)
+        self.assertEqual(payload["finding_id"], finding["id"])
+        self.assertIn("## ", payload["markdown"])
+        self.assertIn("web.config", payload["markdown"])
+
+        created = self.data(self.call("POST", "/api/v1/submissions", body={
+            "title": "Path traversal exposes the application config",
+            "platform": "hackerone", "program": "acme",
+            "target": "app.example.com", "severity": "critical",
+            "mission_id": mission["id"], "finding_id": finding["id"]}))
+        self.assertEqual(created["finding_id"], finding["id"])
+        self.assertTrue(created["report_path"])
+        self.assertTrue(Path(created["report_path"]).is_file())
+
+        preview = self.call("GET",
+                            f"/api/v1/submissions/{created['id']}/poc")
+        self.assertEqual(preview.status, 200)
+        self.assertIn("web.config", self.data(preview)["markdown"])
+        download = self.call("GET",
+                             f"/api/v1/submissions/{created['id']}/poc",
+                             query={"download": "1"})
+        self.assertEqual(download.status, 200)
+        self.assertIn("attachment",
+                      str(download.headers.get("Content-Disposition") or ""))
 
     def test_fingerprints_do_not_collide_when_tokens_share_a_prefix(self):
         prefix = "same-header-" + "x" * 80
@@ -915,6 +959,127 @@ class KeyStoreTests(unittest.TestCase):
             self.assertEqual(store.get("openai"), "sk-abcdefghijklmnop")
             self.assertTrue(store.delete("openai"))
             self.assertEqual(store.get("openai"), "")
+
+
+class DirectiveRouteTests(unittest.TestCase):
+    """The operator channel that steers a run while it is still executing."""
+
+    def setUp(self):
+        self.tmp = TemporaryDirectory()
+        base = Path(self.tmp.name)
+        self.index = Index(base / "netcast3r.db")
+        self.bus = EventBus()
+        self.keys = KeyStore(base)
+        self.jobs = JobManager(self.index, self.bus, fake_runner, workers=1)
+        self.server = Server(self.index, self.bus, self.jobs, self.keys, token=TOKEN)
+        from netcast3r.server.solver_runner import SolverRunner
+        from netcast3r.directives import DirectiveQueue
+        self.runner = SolverRunner(self.server, workers=1)
+        self.server.solver_runner = self.runner
+        self.DirectiveQueue = DirectiveQueue
+
+    def tearDown(self):
+        self.runner.shutdown(wait=False)
+        self.jobs.shutdown()
+        self.index.close()
+        self.tmp.cleanup()
+
+    def call(self, method, path, body=None, query=None, token=TOKEN):
+        headers = {"host": "127.0.0.1:7857"}
+        if token:
+            headers["x-netcast3r-token"] = token
+        payload = json.dumps(body).encode() if body is not None else b""
+        return self.server.route(method, path, query or {}, headers, payload)
+
+    @staticmethod
+    def data(response):
+        return json.loads(response.body.decode()) if response.body else None
+
+    def live_run(self, target="https://directive.example"):
+        """A run the index knows about and the runner is actively holding."""
+        run = self.index.create_run(target, {"mode": "swarm"})
+        self.index.update_run(run["id"], status="running")
+        with self.runner._lock:
+            self.runner._handles[run["id"]] = threading.Event()
+            self.runner._directives[run["id"]] = self.DirectiveQueue(run["id"])
+        return run["id"]
+
+    def test_queueing_a_focus_directive_returns_it_and_persists_the_event(self):
+        run_id = self.live_run()
+        response = self.call("POST", f"/api/v1/runs/{run_id}/directive",
+                             body={"text": "check the login flow for auth bypass",
+                                   "kind": "auto"})
+        self.assertEqual(response.status, 201)
+        body = self.data(response)
+        self.assertTrue(body["queued"])
+        directive = body["directive"]
+        self.assertEqual(directive["kind"], "focus")
+        self.assertEqual(directive["status"], "queued")
+        self.assertIn("login", directive["terms"])
+        events = self.index.list_events(run_id)
+        queued = [item for item in events
+                  if item.get("stage") == "directive"]
+        self.assertEqual(len(queued), 1)
+        self.assertEqual(queued[0]["payload"]["status"], "queued")
+        self.assertEqual(queued[0]["payload"]["directive_id"], directive["id"])
+
+    def test_skip_directive_is_classified_when_kind_is_auto(self):
+        run_id = self.live_run()
+        response = self.call("POST", f"/api/v1/runs/{run_id}/directive",
+                             body={"text": "skip the port scan for now"})
+        self.assertEqual(response.status, 201)
+        directive = self.data(response)["directive"]
+        self.assertEqual(directive["kind"], "skip")
+        self.assertIn("port", directive["terms"])
+        self.assertNotIn("skip", directive["terms"])
+
+    def test_empty_text_is_refused(self):
+        run_id = self.live_run()
+        response = self.call("POST", f"/api/v1/runs/{run_id}/directive",
+                             body={"text": "   "})
+        self.assertEqual(response.status, 400)
+
+    def test_an_invalid_kind_is_refused(self):
+        run_id = self.live_run()
+        response = self.call("POST", f"/api/v1/runs/{run_id}/directive",
+                             body={"text": "check the login", "kind": "delete"})
+        self.assertEqual(response.status, 400)
+
+    def test_directive_on_an_inactive_run_is_a_conflict(self):
+        run = self.index.create_run("https://done.example", {"mode": "swarm"})
+        self.index.update_run(run["id"], status="done")
+        response = self.call("POST", f"/api/v1/runs/{run['id']}/directive",
+                             body={"text": "check the login flow"})
+        self.assertEqual(response.status, 409)
+
+    def test_a_solve_run_does_not_accept_directives(self):
+        run = self.index.create_run("https://solve.example", {"mode": "solve"})
+        self.index.update_run(run["id"], status="running")
+        with self.runner._lock:
+            self.runner._handles[run["id"]] = threading.Event()
+        response = self.call("POST", f"/api/v1/runs/{run['id']}/directive",
+                             body={"text": "check the login flow"})
+        self.assertEqual(response.status, 409)
+        self.assertIn("does not accept", self.data(response)["title"])
+
+    def test_directive_on_an_unknown_run_is_a_404(self):
+        response = self.call("POST", "/api/v1/runs/run_missing/directive",
+                             body={"text": "check the login flow"})
+        self.assertEqual(response.status, 404)
+
+    def test_listing_returns_the_run_history(self):
+        run_id = self.live_run()
+        first = self.data(self.call(
+            "POST", f"/api/v1/runs/{run_id}/directive",
+            body={"text": "focus on the admin panel"}))["directive"]
+        second = self.data(self.call(
+            "POST", f"/api/v1/runs/{run_id}/directive",
+            body={"text": "skip the upload test", "kind": "skip"}))["directive"]
+        listing = self.data(self.call("GET", f"/api/v1/runs/{run_id}/directives"))
+        ids = [item["id"] for item in listing["items"]]
+        self.assertEqual(ids, [first["id"], second["id"]])
+        self.assertEqual(self.call(
+            "GET", "/api/v1/runs/run_missing/directives").status, 404)
 
 
 if __name__ == "__main__":

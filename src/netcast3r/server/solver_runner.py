@@ -14,6 +14,7 @@ from concurrent.futures import ThreadPoolExecutor
 from .agent_runtime import LocalPlane
 from .events import Event
 from .. import autopilot, model_solver, swarm
+from ..directives import DirectiveQueue
 
 
 class SolverRunner:
@@ -24,6 +25,27 @@ class SolverRunner:
                                        thread_name_prefix="netcast3r-solver")
         self._handles: dict[str, threading.Event] = {}
         self._lock = threading.Lock()
+        # Run-scoped operator instructions. The HTTP thread pushes; the solver
+        # worker drains at every round so a live instruction changes the plan
+        # without restarting the run.
+        self._directives: dict[str, DirectiveQueue] = {}
+        # One bus per runner so a throttled or dead (provider, model) pair
+        # stays retired across the many calls a swarm makes, instead of being
+        # re-walked from scratch on every logical call.
+        self._bus = None
+        self._bus_timeout = 0.0
+
+    def _provider_bus(self, config, timeout: float = 60.0):
+        from ..providers import ProviderBus
+
+        bus = self._bus
+        if bus is None or self._bus_timeout != timeout:
+            bus = ProviderBus(config, timeout=timeout)
+            self._bus = bus
+            self._bus_timeout = timeout
+        else:
+            bus.config = config
+        return bus
 
     def start(self, mission_id: str, options: dict | None = None) -> dict:
         mission = self.server.index.get_mission(mission_id)
@@ -52,11 +74,49 @@ class SolverRunner:
         })
         self.server.index.add_mission_run(mission_id, run["id"])
         cancel = threading.Event()
+        # Only the mesh modes have a planner that can consume an instruction.
+        directives = (DirectiveQueue(run["id"]) if mode in ("swarm", "autopilot")
+                      else None)
         with self._lock:
             self._handles[run["id"]] = cancel
+            if directives is not None:
+                self._directives[run["id"]] = directives
+            self._trim_directives_locked()
         self.pool.submit(self._run, run["id"], mission_id, mission, options, cancel,
-                         mode, seconds)
+                         mode, seconds, directives)
         return run
+
+    def _trim_directives_locked(self) -> None:
+        """Keep the in-memory queue map bounded on a long-lived server."""
+        if len(self._directives) <= 120:
+            return
+        for run_id in list(self._directives):
+            if run_id not in self._handles and len(self._directives) > 100:
+                self._directives.pop(run_id, None)
+
+    def directive(self, run_id: str, text: str, kind: str = "auto",
+                  target: str = "", source: str = "operator") -> dict:
+        """Queue one operator instruction for a running solver.
+
+        Returns the stored directive. A run that already finished is a
+        conflict: the operator should steer a new run instead of writing into
+        a closed transcript.
+        """
+        with self._lock:
+            queue = self._directives.get(run_id)
+            active = run_id in self._handles
+        if queue is None:
+            if not self.server.index.get_run(run_id):
+                raise LookupError("run not found")
+            raise ValueError("run does not accept operator directives")
+        if not active:
+            raise ValueError("run is not active")
+        return queue.push(text, kind=kind, target=target, source=source)
+
+    def directives(self, run_id: str, limit: int = 60) -> list[dict]:
+        with self._lock:
+            queue = self._directives.get(run_id)
+        return queue.history(limit=limit) if queue is not None else []
 
     def cancel(self, run_id: str) -> bool:
         with self._lock:
@@ -87,7 +147,6 @@ class SolverRunner:
             return self._complete(messages)
         from ..agents import _first_json
         from ..config import load_config
-        from ..providers import ProviderBus
         from .runner import DashboardBridge
 
         config = load_config()
@@ -95,7 +154,7 @@ class SolverRunner:
             DashboardBridge(self.server.index, self.server.keys).apply(config)
         except Exception:  # noqa: BLE001 - a broken provider row must not stop the loop
             pass
-        completion = ProviderBus(config, timeout=60.0).complete(
+        completion = self._provider_bus(config, 60.0).complete(
             "sentinel", messages, timeout=60.0,
             validate=lambda text: _first_json(text) is not None)
         return {"text": completion.text or "", "provider": completion.provider,
@@ -114,7 +173,6 @@ class SolverRunner:
             return self._complete(messages)
         from ..agents import _first_json
         from ..config import load_config
-        from ..providers import ProviderBus
         from .runner import DashboardBridge
 
         config = load_config()
@@ -122,7 +180,7 @@ class SolverRunner:
             DashboardBridge(self.server.index, self.server.keys).apply(config)
         except Exception:  # noqa: BLE001 - a broken provider row must not stop the loop
             pass
-        completion = ProviderBus(config, timeout=60.0).complete(
+        completion = self._provider_bus(config, 60.0).complete(
             agent, messages, timeout=60.0, exclude_providers=exclude,
             validate=lambda text: _first_json(text) is not None)
         return {"text": completion.text or "", "provider": completion.provider,
@@ -131,7 +189,8 @@ class SolverRunner:
 
     def _run(self, run_id: str, mission_id: str, mission: dict,
              options: dict, cancel: threading.Event, mode: str = "solve",
-             default_seconds: float = model_solver.DEFAULT_SECONDS) -> None:
+             default_seconds: float = model_solver.DEFAULT_SECONDS,
+             directives: DirectiveQueue | None = None) -> None:
         emit = self._emit(run_id)
         self.server.index.update_run(run_id, status="running", started_at=_now())
         emit(Event(type="run.state", stage="reason", payload={"status": "running"}))
@@ -156,6 +215,15 @@ class SolverRunner:
             brain_mission = {**mission, "objective": goal} if goal else mission
 
             def on_step(stage: str, payload: dict) -> None:
+                # Keep the run's directive history in step with the stream so a
+                # reload shows accepted/applied instructions, not just queued.
+                if directives is not None and stage == "directive":
+                    directive_id = str(payload.get("directive_id") or "")
+                    status = str(payload.get("status") or "")
+                    if directive_id and status:
+                        detail = str(payload.get("matched_task")
+                                     or payload.get("plan") or "")
+                        directives.mark(directive_id, status, detail)
                 emit(Event(type="log", stage=stage,
                            agent=str(payload.get("agent") or ""),
                            payload=payload))
@@ -167,7 +235,8 @@ class SolverRunner:
                     max_seconds=options.get("max_seconds", default_seconds),
                     max_model_calls=options.get("max_model_calls",
                                                 autopilot.DEFAULT_MODEL_CALLS),
-                    run_id=run_id, on_step=on_step, should_stop=cancel.is_set)
+                    run_id=run_id, on_step=on_step, should_stop=cancel.is_set,
+                    directive_source=directives.drain if directives else None)
                 result = operator.run()
             elif mode == "swarm":
                 mesh = swarm.Swarm(
@@ -176,7 +245,8 @@ class SolverRunner:
                     max_seconds=options.get("max_seconds", default_seconds),
                     max_model_calls=options.get("max_model_calls",
                                                 swarm.DEFAULT_MODEL_CALLS),
-                    run_id=run_id, on_step=on_step, should_stop=cancel.is_set)
+                    run_id=run_id, on_step=on_step, should_stop=cancel.is_set,
+                    directive_source=directives.drain if directives else None)
                 result = mesh.run()
             else:
                 solver = model_solver.Solver(

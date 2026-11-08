@@ -25,8 +25,79 @@
   let retesting = $state(false);
   let error = $state('');
   let pendingReject = $state<Finding | null>(null);
+  let picked = $state<Set<string>>(new Set());
+  let bulkBusy = $state('');
   let seq = 0;
   let searchTimer: number | undefined;
+
+  const pickedList = $derived(items.filter((item) => picked.has(item.id)));
+  const allPicked = $derived(items.length > 0 && picked.size === items.length);
+
+  function togglePick(id: string, on?: boolean) {
+    const next = new Set(picked);
+    const value = on ?? !next.has(id);
+    if (value) next.add(id);
+    else next.delete(id);
+    picked = next;
+  }
+
+  function toggleAll() {
+    picked = allPicked ? new Set() : new Set(items.map((item) => item.id));
+  }
+
+  async function bulk(status: string, message: string) {
+    const targets = pickedList;
+    if (targets.length === 0 || bulkBusy) return;
+    bulkBusy = status;
+    let done = 0;
+    const failures: string[] = [];
+    for (const finding of targets) {
+      try {
+        await api.patchFinding(finding.id, { status } as Partial<Finding>);
+        done += 1;
+      } catch (exc) {
+        failures.push(`${finding.title.slice(0, 40)}: ${exc instanceof Error ? exc.message : 'failed'}`);
+      }
+    }
+    bulkBusy = '';
+    picked = new Set();
+    store.toast(failures.length ? 'warn' : 'ok',
+      `${done} finding(s) ${message}${failures.length ? ` - ${failures.length} failed` : ''}`);
+    if (selected && targets.some((item) => item.id === selected?.id)) {
+      selected = (await api.finding(selected.id).catch(() => selected)) as Finding;
+    }
+    await load();
+    void store.refreshTotals();
+  }
+
+  function exportRows(rows: Finding[]) {
+    if (rows.length === 0) {
+      store.toast('warn', 'nothing to export');
+      return;
+    }
+    const header = ['id', 'severity', 'title', 'secret_type', 'status', 'triage_status',
+      'confidence', 'source', 'run_id', 'created_at'];
+    const escape = (value: unknown) => {
+      const text = String(value ?? '');
+      return /[",\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+    };
+    const lines = [header.join(',')];
+    for (const row of rows) {
+      lines.push([row.id, row.severity_override || row.severity, row.title, row.secret_type,
+        row.status, row.triage_status, row.confidence, row.source, row.run_id, row.created_at]
+        .map(escape).join(','));
+    }
+    const blob = new Blob([lines.join('\n')], { type: 'text/csv;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `netcast3r-findings-${new Date().toISOString().slice(0, 10)}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+    store.toast('ok', `exported ${rows.length} finding(s) to CSV`);
+  }
 
   function onWindowKey(event: KeyboardEvent) {
     if (event.key !== 'Escape') return;
@@ -49,6 +120,7 @@
       if (mine !== seq) return;
       items = page.items;
       total = page.total;
+      picked = new Set([...picked].filter((id) => items.some((item) => item.id === id)));
       error = '';
       store.query = q;
     } catch (exc) {
@@ -190,6 +262,27 @@
         <option value="rejected">rejected</option>
       </select>
     </label>
+    <div class="obs-findings-tools-actions">
+      {#if picked.size > 0}
+        <span class="obs-findings-picked" role="status">{picked.size} selected</span>
+        <button class="obs-btn obs-btn-swarm" type="button" disabled={!!bulkBusy} onclick={() => void bulk('confirmed', 'confirmed')}>
+          {bulkBusy === 'confirmed' ? 'confirming...' : 'confirm'}
+        </button>
+        <button class="obs-btn" type="button" disabled={!!bulkBusy} onclick={() => void bulk('escalated', 'marked escalate-ready')}>
+          {bulkBusy === 'escalated' ? 'working...' : 'escalate'}
+        </button>
+        <button class="obs-btn obs-btn-danger" type="button" disabled={!!bulkBusy} onclick={() => void bulk('rejected', 'rejected')}>
+          {bulkBusy === 'rejected' ? 'rejecting...' : 'reject'}
+        </button>
+        <button class="obs-btn obs-btn-ghost" type="button" disabled={!!bulkBusy} onclick={() => (picked = new Set())}>
+          clear
+        </button>
+      {/if}
+      <button class="obs-btn obs-btn-ghost" type="button" onclick={() => exportRows(picked.size ? pickedList : items)}>
+        <Icon name="download" size={13} />
+        export CSV
+      </button>
+    </div>
   </div>
 
   <section class="obs-card" use:pauseOffscreen>
@@ -214,6 +307,14 @@
         <table class="obs-findings-table">
           <thead>
             <tr>
+              <th class="obs-pick-col">
+                <input
+                  type="checkbox"
+                  checked={allPicked}
+                  aria-label="select all findings"
+                  onchange={toggleAll}
+                />
+              </th>
               <th>severity</th>
               <th>finding</th>
               <th>value</th>
@@ -227,10 +328,20 @@
               {@const sev = finding.severity_override || finding.severity}
               <tr
                 style="--row-accent:{sevColor(sev)}"
+                class:is-picked={picked.has(finding.id)}
                 onclick={() => open(finding)}
                 onkeydown={(event) => event.key === 'Enter' && open(finding)}
                 tabindex="0"
               >
+                <td class="obs-pick-col">
+                  <input
+                    type="checkbox"
+                    checked={picked.has(finding.id)}
+                    aria-label="select {finding.title}"
+                    onclick={(event) => event.stopPropagation()}
+                    onchange={() => togglePick(finding.id)}
+                  />
+                </td>
                 <td>
                   <Chip label={sev} color={sevColor(sev)} shape={sevShape(sev)} />
                 </td>
@@ -368,6 +479,14 @@
             aria-busy={busy}
             onclick={() => patch({ status: 'escalated' }, 'marked escalate-ready')}
           >escalate</button>
+          {#if selected.triage_status !== 'new'}
+            <button
+              class="obs-btn obs-btn-ghost"
+              type="button"
+              disabled={busy}
+              onclick={() => patch({ status: 'new' }, 'returned to the review queue')}
+            >needs review</button>
+          {/if}
           <button
             class="obs-btn obs-btn-danger"
             type="button"

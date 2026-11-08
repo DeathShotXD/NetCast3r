@@ -52,6 +52,19 @@ class ExtractorTests(unittest.TestCase):
         self.assertEqual(len(weak), 0)
         self.assertEqual(len(strong), 1)
 
+    def test_a_keyword_inside_a_longer_keyword_still_opens_a_window(self):
+        # The alternation matches "access_token" as one word. The "token"
+        # pattern must still see its own keyword inside that span.
+        short = Pattern(id="short", type="short",
+                        regex=re.compile(r'token\s*=\s*"([A-Za-z0-9]{12,64})"'),
+                        keywords=["token"])
+        long = Pattern(id="long", type="long",
+                       regex=re.compile(r'access_token\s*=\s*"([A-Za-z0-9]{12,64})"'),
+                       keywords=["access_token"])
+        extractor = Extractor(patterns=[short, long])
+        found = extractor.scan('access_token = "a8Fk2pQ9xZ7mB4n"')
+        self.assertEqual({secret.type for secret in found}, {"short", "long"})
+
 
 if __name__ == "__main__":
     unittest.main()

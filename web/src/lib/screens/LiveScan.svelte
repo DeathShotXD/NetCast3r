@@ -5,7 +5,7 @@
   import { clock, finishedThrough, isoMs, sevColor, sevShape, stageForAgent, statusColor, statusLabel } from '../format';
   import { renderMarkdown } from '../markdown';
   import { store } from '../state.svelte';
-  import type { Run, RunEvent } from '../types';
+  import type { Run, RunDirective, RunEvent } from '../types';
   import Buffering from '../ui/Buffering.svelte';
   import Chip from '../ui/Chip.svelte';
   import Confirm from '../ui/Confirm.svelte';
@@ -61,7 +61,58 @@
   const BUCKETS = 96;
   const STREAM_CAP = 700;
 
-  type StreamRow = { seq: number; ts: number; kind: string; agent: string; text: string; sub: string };
+  type StreamRow = {
+    seq: number;
+    ts: number;
+    kind: string;
+    agent: string;
+    text: string;
+    sub: string;
+    tool?: string;
+    url?: string;
+    status?: number | string;
+    ok?: boolean | null;
+    model?: string;
+    provider?: string;
+    ms?: number;
+    tokens?: number;
+    detail?: string;
+    stage?: string;
+    repeat?: number;
+  };
+
+  type PlanTask = {
+    id: string;
+    owner: string;
+    goal: string;
+    hypothesis: string;
+    status: string;
+    round: number;
+    critical: boolean;
+    source: string;
+    tool: string;
+    verdict: string;
+    reason: string;
+  };
+
+  type DirectiveRow = {
+    id: string;
+    text: string;
+    kind: string;
+    status: string;
+    ts: number;
+    owner: string;
+    terms: string[];
+    plan: string;
+    matched: string;
+    source: string;
+  };
+
+  const DIRECTIVE_KINDS: { id: 'auto' | 'skip' | 'focus'; label: string }[] = [
+    { id: 'auto', label: 'auto' },
+    { id: 'skip', label: 'skip' },
+    { id: 'focus', label: 'focus' }
+  ];
 
   const TABS: { id: string; label: string }[] = [
     { id: 'feed', label: 'transmission' },
@@ -75,11 +126,13 @@
 
   const FILTERS: { id: string; label: string }[] = [
     { id: 'all', label: 'everything' },
+    { id: 'think', label: 'reasoning' },
+    { id: 'tool', label: 'tools' },
+    { id: 'http', label: 'http' },
+    { id: 'model', label: 'models' },
     { id: 'log', label: 'logs' },
-    { id: 'think', label: 'thinking' },
-    { id: 'url', label: 'fetches' },
-    { id: 'call', label: 'model calls' },
-    { id: 'found', label: 'findings' }
+    { id: 'found', label: 'proof' },
+    { id: 'err', label: 'errors' }
   ];
 
   const TAB_KINDS: Record<string, string[]> = {
@@ -122,7 +175,19 @@
   let nowTick = $state(Date.now());
   let crawled = $state(0);
   let pending = 0;
-  let agents = $state<Record<string, { lines: number; calls: number; lastTs: number; lastText: string; lastCall: string; lastCallOk: boolean | null }>>({});
+  let agents = $state<Record<string, { lines: number; calls: number; tools: number; thoughts: number; lastTs: number; lastText: string; lastCall: string; lastCallOk: boolean | null; model: string; task: string }>>({});
+
+  // live mission control: the current plan, its task board, and the operator
+  // channel that can change both while the run is still executing.
+  let planTasks = $state<PlanTask[]>([]);
+  let planRound = $state(0);
+  let planNote = $state('');
+  let operatorDirectives = $state<DirectiveRow[]>([]);
+  let directiveText = $state('');
+  let directiveKind = $state<'auto' | 'skip' | 'focus'>('auto');
+  let directiveBusy = $state(false);
+  let directiveError = $state('');
+  let directiveBox = $state<HTMLTextAreaElement | undefined>(undefined);
 
   // per run evidence, loaded on demand
   let inv = $state<Record<string, any[]>>({});
@@ -169,53 +234,158 @@
     return next;
   });
 
-  /** One chronological stream: logs, model reasoning, fetches, calls,
-   *  findings. Reasoning fragments from the same agent within 5s fuse
-   *  into one row so the transmission reads like sentences, not tokens. */
+  const KIND_META: Record<string, { label: string; color: string; icon: string }> = {
+    think: { label: 'reason', color: 'var(--nc-bone-dust)', icon: '*' },
+    act: { label: 'call', color: 'var(--nc-acid)', icon: '>' },
+    tool: { label: 'result', color: 'var(--nc-acid)', icon: '<' },
+    http: { label: 'http', color: 'var(--nc-cyan, #19d3da)', icon: '~' },
+    model: { label: 'model', color: 'var(--nc-gold, #efe4b1)', icon: '@' },
+    note: { label: 'decide', color: 'var(--nc-slate-3, #8b8fa3)', icon: '#' },
+    plan: { label: 'plan', color: 'var(--nc-cyan, #19d3da)', icon: '#' },
+    directive: { label: 'operator', color: 'var(--nc-cyan, #19d3da)', icon: '>' },
+    log: { label: 'log', color: 'var(--nc-ash)', icon: '-' },
+    err: { label: 'error', color: 'var(--nc-violet)', icon: '!' },
+    found: { label: 'proof', color: 'var(--nc-gold, #efe4b1)', icon: '$' }
+  };
+
+  /** Heartbeat status pings emitted while a role waits on a model call. */
+  const HEARTBEAT_RE = /^\s*(strategist|scout|attacker|validator|scribe) is reasoning\s*$/i;
+
+  /** Append one model receipt. Consecutive failures for the same agent fuse
+   *  into a counted row so a dead provider set does not flood the feed. */
+  function pushModelRow(rows: StreamRow[], agent: string,
+                        payload: Record<string, unknown>, seq: number, ts: number): void {
+    const provider = String(payload.provider ?? '');
+    const model = String(payload.model ?? '');
+    const ok = !!payload.ok;
+    const ms = Number(payload.ms ?? 0);
+    const tokens = Number(payload.completion_tokens ?? payload.tokens ?? 0);
+    const last = rows[rows.length - 1];
+    if (!ok && last && last.kind === 'model' && last.agent === agent && last.ok === false) {
+      last.repeat = (last.repeat ?? 1) + 1;
+      last.seq = seq;
+      last.ts = ts;
+      last.text = `${provider}/${model}`;
+      last.provider = provider;
+      last.model = model;
+      last.ms = ms;
+      last.tokens = tokens;
+      return;
+    }
+    rows.push({ seq, ts, kind: 'model', agent: String(payload.agent || agent),
+                text: `${provider || '?'}/${model || '?'}`,
+                sub: ok ? 'ok' : 'failed',
+                provider, model, ms, tokens, ok, repeat: 1 });
+  }
+
+  /** One chronological stream: reasoning, tool calls, tool results, HTTP,
+   *  model calls, decisions, and proof. Reasoning fragments from the same
+   *  agent within 5s fuse into one row so the transmission reads as prose. */
   const streamAll = $derived.by<StreamRow[]>(() => {
     const rows: StreamRow[] = [];
     let think: StreamRow | null = null;
     for (const event of events) {
       if (event.type === 'lagged') continue;
-      const agent = event.agent || 'run';
+      const payload = (event.payload ?? {}) as Record<string, unknown>;
+      const agent = String(payload.agent || event.agent || 'run');
       if (event.type === 'log' || event.type === 'error') {
-        rows.push({
-          seq: event.seq, ts: event.ts, kind: event.type === 'error' ? 'err' : 'log', agent,
-          text: String(event.payload?.text ?? event.payload?.error ?? ''), sub: ''
-        });
+        const stage = String(event.stage || '');
+        const text = String(payload.text ?? payload.error ?? '');
+        // Heartbeat pings ("Scout is reasoning") only feed the live-agent lane;
+        // they are not reasoning content and must not pollute the stream. The
+        // flag is authoritative; the regex also cleans older recorded runs.
+        if (payload.heartbeat || HEARTBEAT_RE.test(text)) continue;
+        if (stage === 'reason' || (event.type === 'log' && !stage && payload.reasoning)) {
+          const raw = text.trim();
+          if (!raw) continue;
+          if (think && think.agent === agent && event.ts - think.ts < 5000) {
+            think.text = `${think.text} ${raw}`.replace(/\s+/g, ' ').slice(-2400);
+            think.ts = event.ts;
+            think.seq = event.seq;
+          } else {
+            think = { seq: event.seq, ts: event.ts, kind: 'think', agent,
+                      text: raw.slice(0, 1200), sub: '', stage };
+            rows.push(think);
+          }
+          continue;
+        }
         think = null;
-      } else if (event.type === 'reasoning' && event.payload?.text) {
-        const raw = String(event.payload.text).trim();
+        if (stage === 'task') {
+          // Task state feeds the mission-control board, not the transmission.
+          continue;
+        }
+        if (stage === 'model') {
+          pushModelRow(rows, agent, payload, event.seq, event.ts);
+        } else if (stage === 'act') {
+          rows.push({ seq: event.seq, ts: event.ts, kind: 'act', agent,
+                      text: text || `calling ${String(payload.tool ?? '')}`,
+                      sub: '', tool: String(payload.tool ?? ''), stage,
+                      detail: JSON.stringify(payload.args ?? {}).slice(0, 1600) });
+        } else if (stage === 'observe') {
+          rows.push({ seq: event.seq, ts: event.ts, kind: 'tool', agent,
+                      text, sub: '', tool: String(payload.tool ?? ''),
+                      url: String(payload.url ?? ''),
+                      status: (payload.status as number | string) ?? '',
+                      ok: payload.ok === undefined ? null : !!payload.ok,
+                      stage, detail: JSON.stringify(payload).slice(0, 1600) });
+        } else if (stage === 'decide') {
+          rows.push({ seq: event.seq, ts: event.ts, kind: 'note', agent,
+                      text, sub: '', stage });
+        } else if (stage === 'plan') {
+          const objectives = Array.isArray(payload.objectives) ? payload.objectives : [];
+          const skipped = Number(payload.skipped ?? 0);
+          const focus = Number(payload.focus ?? 0);
+          rows.push({ seq: event.seq, ts: event.ts, kind: 'plan',
+                      agent: 'strategist',
+                      text: `round ${payload.round ?? '?'}: ${objectives.length} task(s)`
+                        + (skipped ? `, ${skipped} skipped` : '')
+                        + (focus ? `, ${focus} from the operator` : ''),
+                      sub: '', stage, detail: JSON.stringify(payload).slice(0, 1600) });
+        } else if (stage === 'directive') {
+          rows.push({ seq: event.seq, ts: event.ts, kind: 'directive',
+                      agent: String(payload.source || 'operator'),
+                      text: String(payload.text || payload.plan || 'operator directive'),
+                      sub: `${payload.kind ?? ''} ${payload.status ?? ''}`.trim(),
+                      stage, detail: JSON.stringify(payload).slice(0, 1600) });
+        } else {
+          rows.push({ seq: event.seq, ts: event.ts,
+                      kind: event.type === 'error' ? 'err' : 'log', agent,
+                      text, sub: '', stage });
+        }
+        continue;
+      }
+      if (event.type === 'reasoning' && payload.text) {
+        const raw = String(payload.text).trim();
         if (!raw) continue;
         if (think && think.agent === agent && event.ts - think.ts < 5000) {
-          think.text = `${think.text} ${raw}`.replace(/\s+/g, ' ').slice(-1800);
+          think.text = `${think.text} ${raw}`.replace(/\s+/g, ' ').slice(-2400);
           think.ts = event.ts;
           think.seq = event.seq;
         } else {
-          think = { seq: event.seq, ts: event.ts, kind: 'think', agent, text: raw.slice(0, 900), sub: '' };
+          think = { seq: event.seq, ts: event.ts, kind: 'think', agent,
+                    text: raw.slice(0, 1200), sub: '' };
           rows.push(think);
         }
-      } else if (event.type === 'fetch' && event.payload?.url) {
-        if (String(event.payload.kind ?? '') === 'progress') continue;
-        rows.push({
-          seq: event.seq, ts: event.ts, kind: 'url', agent,
-          text: String(event.payload.url), sub: String(event.payload.status ?? '--')
-        });
+        continue;
+      }
+      if (event.type === 'fetch' && payload.url) {
+        if (String(payload.kind ?? '') === 'progress') continue;
+        rows.push({ seq: event.seq, ts: event.ts, kind: 'http', agent,
+                    text: String(payload.url), sub: '',
+                    url: String(payload.url),
+                    status: (payload.status as number | string) ?? '' });
         think = null;
-      } else if (event.type === 'model' && event.payload?.kind === 'done') {
-        const payload = event.payload;
-        rows.push({
-          seq: event.seq, ts: event.ts, kind: 'call', agent,
-          text: `${String(payload.provider ?? '?')}/${String(payload.model ?? '?')}`,
-          sub: `${payload.ok ? 'ok' : 'failed'} ${Number(payload.ms ?? 0)}ms${payload.error ? ` / ${String(payload.error)}` : ''}`
-        });
+        continue;
+      }
+      if (event.type === 'model' && payload.kind === 'done') {
+        pushModelRow(rows, agent, payload, event.seq, event.ts);
         think = null;
-      } else if (event.type === 'finding.created' && event.payload) {
-        rows.push({
-          seq: event.seq, ts: event.ts, kind: 'found', agent,
-          text: `${String(event.payload.secret_type ?? 'secret')} / ${String(event.payload.value ?? '')}`,
-          sub: String(event.payload.status ?? '')
-        });
+        continue;
+      }
+      if (event.type === 'finding.created' && event.payload) {
+        rows.push({ seq: event.seq, ts: event.ts, kind: 'found', agent,
+                    text: `${String(payload.secret_type ?? 'secret')} / ${String(payload.value ?? '')}`,
+                    sub: String(payload.status ?? '') });
         think = null;
       }
     }
@@ -223,30 +393,93 @@
   });
 
   const stream = $derived.by(() => {
-    const rows = filter === 'all'
-      ? streamAll
-      : streamAll.filter((row) => filter === 'log' ? row.kind === 'log' || row.kind === 'err' : row.kind === filter);
-    return rows.slice(-STREAM_CAP);
+    if (filter === 'all') return streamAll.slice(-STREAM_CAP);
+    const want: Record<string, string[]> = {
+      think: ['think'], tool: ['act', 'tool'], http: ['http'],
+      model: ['model'], log: ['log', 'note', 'plan', 'directive'],
+      found: ['found'], err: ['err']
+    };
+    const kinds = want[filter] ?? [filter];
+    return streamAll.filter((row) => kinds.includes(row.kind)).slice(-STREAM_CAP);
   });
   const lastSeq = $derived(stream.length ? stream[stream.length - 1].seq : 0);
   const reasoningCount = $derived(streamAll.filter((row) => row.kind === 'think').length);
+  const toolCount = $derived(streamAll.filter((row) => row.kind === 'tool').length);
+  const callCount = $derived(streamAll.filter((row) => row.kind === 'act').length);
+  const modelCount = $derived(
+    streamAll.filter((row) => row.kind === 'model')
+      .reduce((total, row) => total + (row.repeat ?? 1), 0)
+  );
   const agentList = $derived(
     Object.entries(agents)
       .map(([agent, stats]) => ({ agent, ...stats }))
       .filter((item) => item.lines > 0)
       .sort((a, b) => b.lastTs - a.lastTs)
   );
+
+  const liveTask = $derived(
+    planTasks.find((task) => task.status === 'running')
+      ?? planTasks.find((task) => task.status === 'assigned')
+      ?? null
+  );
+  const openTaskCount = $derived(
+    planTasks.filter((task) => task.status === 'assigned' || task.status === 'running').length
+  );
+  const doneTaskCount = $derived(planTasks.filter((task) => task.status === 'done').length);
+  const skippedTaskCount = $derived(planTasks.filter((task) => task.status === 'skipped').length);
+
+  /** KPI values. The control plane reports some only at run end, so fall back
+   *  to what the live stream already proves while the run is in flight. */
+  function metric(key: string): number {
+    const reported = counts[key];
+    if (typeof reported === 'number' && reported > 0) return reported;
+    if (key === 'agents') return agentList.length;
+    if (key === 'moves' || key === 'actions') return callCount || toolCount;
+    if (key === 'model_calls') return modelCount;
+    if (key === 'findings') return landed.length;
+    return 0;
+  }
   const spotlightRows = $derived(
     spotlightAgent ? streamAll.filter((row) => row.agent === spotlightAgent).slice(-400) : []
   );
 
-  function badgeOf(row: StreamRow): { text: string; color: string } {
-    if (row.kind === 'log') return { text: 'log', color: 'var(--nc-ash)' };
-    if (row.kind === 'err') return { text: 'error', color: 'var(--nc-violet)' };
-    if (row.kind === 'think') return { text: 'thinking', color: (AGENT_COLORS as Record<string, string>)[row.agent] ?? 'var(--nc-bone-dust)' };
-    if (row.kind === 'url') return { text: 'tool', color: 'var(--nc-acid)' };
-    if (row.kind === 'call') return { text: 'tool', color: 'var(--nc-bone-dust)' };
-    return { text: 'proof', color: 'var(--nc-gold, #efe4b1)' };
+  function metaOf(row: StreamRow): { label: string; color: string; icon: string } {
+    return KIND_META[row.kind] ?? KIND_META.log;
+  }
+
+  function agentColor(agent: string): string {
+    return (AGENT_COLORS as Record<string, string>)[agent] ?? 'var(--nc-bone-dust)';
+  }
+
+  function statusTone(status: number | string | undefined): string {
+    const code = Number(status);
+    if (!Number.isFinite(code) || code === 0) return 'var(--nc-ash)';
+    if (code >= 200 && code < 300) return 'var(--nc-acid)';
+    if (code >= 300 && code < 400) return 'var(--nc-cyan, #19d3da)';
+    if (code >= 400 && code < 500) return 'var(--nc-gold, #efe4b1)';
+    return 'var(--nc-violet)';
+  }
+
+  let expanded = $state<Record<number, boolean>>({});
+
+  function toggleRow(seq: number) {
+    expanded = { ...expanded, [seq]: !expanded[seq] };
+  }
+
+  /** One-line preview of a tool call's arguments so the move is readable
+   *  without expanding the row. */
+  function argPreview(row: StreamRow): string {
+    if (!row.detail) return '';
+    try {
+      const obj = JSON.parse(row.detail) as Record<string, unknown>;
+      return Object.entries(obj)
+        .filter(([, value]) => value !== null && value !== undefined && value !== '')
+        .map(([key, value]) => `${key}=${typeof value === 'string' ? value : JSON.stringify(value)}`)
+        .join(' ')
+        .slice(0, 240);
+    } catch {
+      return '';
+    }
   }
 
   // Agent theater status from recency of last activity.
@@ -268,7 +501,8 @@
   function formatText(text: string, cap = 420): string {
     // Model output occasionally arrives with a newline or a wide gap between
     // every character. Collapse it so the transmission stays readable.
-    return String(text ?? '').replace(/\s+/g, ' ').trim().slice(0, cap);
+    const clean = String(text ?? '').replace(/\s+/g, ' ').trim();
+    return clean.length > cap ? `${clean.slice(0, Math.max(0, cap - 3)).trimEnd()}...` : clean;
   }
 
   const seen = new Set<number>();
@@ -312,11 +546,20 @@
     if (progressed > crawled) crawled = progressed;
     if (event.progress) counts = { ...counts, ...event.progress };
     if (agent) {
-      const lane = agents[agent] ?? { lines: 0, calls: 0, lastTs: 0, lastText: '', lastCall: '', lastCallOk: null };
+      const lane = agents[agent] ?? { lines: 0, calls: 0, tools: 0, thoughts: 0, lastTs: 0, lastText: '', lastCall: '', lastCallOk: null, model: '', task: '' };
       const updated = { ...lane, lines: lane.lines + 1 };
       if (event.type === 'log' || event.type === 'error') {
-        updated.lastText = String(event.payload?.text ?? event.payload?.error ?? '');
+        const stage = String(event.stage || '');
+        const text = String(event.payload?.text ?? event.payload?.error ?? '');
+        updated.lastText = text;
         updated.lastTs = event.ts;
+        if (stage === 'reason' && !event.payload?.heartbeat && !HEARTBEAT_RE.test(text)) {
+          updated.thoughts = lane.thoughts + 1;
+        }
+        if (stage === 'act' || stage === 'observe') updated.tools = lane.tools + 1;
+        if (stage === 'act') {
+          updated.task = String(event.payload?.goal ?? event.payload?.task_id ?? '');
+        }
       }
       if (event.type === 'reasoning' && event.payload?.text) {
         updated.lastText = String(event.payload.text);
@@ -325,10 +568,97 @@
       if (event.type === 'model' && event.payload?.kind === 'done') {
         updated.calls = lane.calls + 1;
         updated.lastCall = String(event.payload.model ?? '');
+        updated.model = String(event.payload.model ?? '');
         updated.lastCallOk = !!event.payload.ok;
         updated.lastTs = event.ts;
       }
       agents = { ...agents, [agent]: updated };
+    }
+    if (event.type === 'log' && (stage === 'plan' || stage === 'task' || stage === 'directive')) {
+      const payload = (event.payload ?? {}) as Record<string, any>;
+      if (stage === 'plan') {
+        const round = Number(payload.round ?? planRound ?? 0);
+        planRound = round;
+        planNote = String(payload.note ?? planNote ?? '');
+        const objectives = Array.isArray(payload.objectives) ? payload.objectives
+          : Array.isArray(payload.moves) ? payload.moves.map((item: Record<string, any>) => ({
+              id: String(item.id ?? ''),
+              owner: 'operator',
+              goal: String(item.why ?? ''),
+              hypothesis: '',
+              critical: false,
+              source: 'autopilot',
+              tool: String(item.tool ?? '')
+            })) : [];
+        const planned: PlanTask[] = objectives.map((item: Record<string, any>) => ({
+          id: String(item.id ?? ''),
+          owner: String(item.owner ?? ''),
+          goal: String(item.goal ?? ''),
+          hypothesis: String(item.hypothesis ?? ''),
+          status: 'assigned',
+          round,
+          critical: !!item.critical,
+          source: String(item.source ?? 'strategist'),
+          tool: String(item.tool ?? ''),
+          verdict: '',
+          reason: ''
+        }));
+        const plannedIds = new Set(planned.map((task) => task.id));
+        const alreadySkipped = planTasks.filter(
+          (task) => task.round === round && task.status === 'skipped' && !plannedIds.has(task.id)
+        );
+        planTasks = [...alreadySkipped, ...planned].slice(-24);
+      } else if (stage === 'task') {
+        const id = String(payload.task_id ?? '');
+        if (id) {
+          const round = Number(payload.round ?? planRound ?? 0);
+          const row: PlanTask = {
+            id,
+            owner: String(payload.agent ?? ''),
+            goal: String(payload.goal ?? ''),
+            hypothesis: String(payload.hypothesis ?? ''),
+            status: String(payload.status ?? 'assigned'),
+            round,
+            critical: !!payload.critical,
+            source: String(payload.source ?? 'autopilot'),
+            tool: String(payload.tool ?? ''),
+            verdict: String(payload.verdict ?? ''),
+            reason: String(payload.reason ?? '')
+          };
+          const index = planTasks.findIndex((task) => task.id === id && task.round === round);
+          if (index >= 0) {
+            planTasks = planTasks.map((task, at) => at === index
+              ? { ...task, ...row, goal: row.goal || task.goal, hypothesis: row.hypothesis || task.hypothesis }
+              : task);
+          } else {
+            planTasks = [...planTasks, row].slice(-24);
+          }
+        }
+      } else {
+        const id = String(payload.directive_id ?? '');
+        if (id) {
+          const row: DirectiveRow = {
+            id,
+            text: String(payload.text ?? ''),
+            kind: String(payload.kind ?? 'focus'),
+            status: String(payload.status ?? 'queued'),
+            ts: event.ts,
+            owner: String(payload.owner ?? ''),
+            terms: Array.isArray(payload.terms) ? payload.terms.map(String) : [],
+            plan: String(payload.plan ?? ''),
+            matched: String(payload.matched_task ?? ''),
+            source: String(payload.source ?? 'operator')
+          };
+          const index = operatorDirectives.findIndex((item) => item.id === id);
+          if (index >= 0) {
+            operatorDirectives = operatorDirectives.map((item, at) => at === index
+              ? { ...item, ...row, text: row.text || item.text }
+              : item);
+          } else {
+            operatorDirectives = [...operatorDirectives, row].slice(-60);
+          }
+        }
+      }
     }
     if (event.type === 'fetch' && event.payload?.url) {
       const kind = String(event.payload.kind ?? '');
@@ -466,6 +796,13 @@
     inv = {};
     loadedInv = {};
     memory = [];
+    planTasks = [];
+    planRound = 0;
+    planNote = '';
+    operatorDirectives = [];
+    directiveText = '';
+    directiveError = '';
+    directiveBusy = false;
     report = '';
     reportErr = '';
     filter = 'all';
@@ -489,6 +826,11 @@
           } catch {
             /* the transcript still renders without the memory panel */
           }
+        }
+        try {
+          mergeDirectives((await api.directives(run.id)).items ?? []);
+        } catch {
+          /* the stream already carries the live directive events */
         }
       }
       if (finished) currentStage = '';
@@ -576,6 +918,77 @@
       store.fail(exc instanceof Error ? exc.message : 'could not continue the run');
     } finally {
       continuing = false;
+    }
+  }
+
+  function mergeDirectives(items: RunDirective[]) {
+    const known = new Map(operatorDirectives.map((item) => [item.id, item]));
+    for (const item of items) {
+      if (!item || !item.id) continue;
+      if (known.has(item.id)) continue;
+      const stamp = Date.parse(item.created_at || '');
+      known.set(item.id, {
+        id: item.id,
+        text: item.text || '',
+        kind: item.kind || 'focus',
+        status: item.status || 'queued',
+        ts: Number.isFinite(stamp) ? stamp / 1000 : Date.now() / 1000,
+        owner: '',
+        terms: item.terms ?? [],
+        plan: '',
+        matched: '',
+        source: item.source || 'operator'
+      });
+    }
+    operatorDirectives = [...known.values()].sort((a, b) => a.ts - b.ts).slice(-60);
+  }
+
+  async function sendDirective(kindOverride: 'auto' | 'skip' | 'focus' = directiveKind,
+                               targetOverride = '') {
+    if (!run || directiveBusy) return;
+    const text = directiveText.trim();
+    if (!text) return;
+    directiveBusy = true;
+    directiveError = '';
+    try {
+      // A target id means "this exact task". Only a board action supplies
+      // one; typed instructions stay subject-based so they cannot be
+      // misread as a narrow skip of whatever task happens to be running.
+      const result = await api.directive(run.id, text, kindOverride, targetOverride);
+      mergeDirectives([result.directive]);
+      directiveText = '';
+      directiveKind = 'auto';
+      store.toast('ok', `directive queued for ${run.target}`);
+    } catch (exc) {
+      directiveError = exc instanceof Error ? exc.message : 'could not send the directive';
+    } finally {
+      directiveBusy = false;
+    }
+  }
+
+  function skipCurrent() {
+    const goal = liveTask?.goal || '';
+    directiveText = goal ? `Skip this task: ${goal}` : 'Skip this task for now';
+    directiveKind = 'skip';
+    void sendDirective('skip', liveTask?.id || '');
+  }
+
+  function checkAuthFlow() {
+    directiveText = 'Check the login and reset flow for an authentication bypass';
+    directiveKind = 'focus';
+    directiveBox?.focus();
+  }
+
+  function wrapUp() {
+    directiveText = 'Focus on closing the strongest open lead and stop exploring side paths';
+    directiveKind = 'focus';
+    void sendDirective('focus');
+  }
+
+  function onDirectiveKey(event: KeyboardEvent) {
+    if (event.key === 'Enter' && !event.shiftKey) {
+      event.preventDefault();
+      void sendDirective();
     }
   }
 
@@ -794,7 +1207,7 @@
         {#each [['moves', 'actions'], ['model calls', 'model_calls'], ['agents', 'agents'], ['findings', 'findings']] as [label, key] (key)}
           <div class="panel kpi px-4 py-3">
             <p class="eyebrow">{label}</p>
-            <p class="num mt-1 text-xl text-bone" use:countup={counts[key] ?? 0}>0</p>
+            <p class="num mt-1 text-xl text-bone" use:countup={metric(key)}>0</p>
           </div>
         {/each}
       {:else if isOperator}
@@ -830,6 +1243,133 @@
       {/if}
     </section>
 
+    {#if isMesh || isOperator}
+      <section class="panel mc-panel" aria-label="mission control">
+        <header class="mc-head">
+          <div class="min-w-0">
+            <p class="eyebrow">mission control</p>
+            <h2 class="mc-title">{isMesh ? 'live brain loop' : 'live operator loop'}</h2>
+          </div>
+          <div class="mc-stats">
+            <span class="mc-stat"><b>{planRound}</b> round</span>
+            <span class="mc-stat"><b>{openTaskCount}</b> open</span>
+            <span class="mc-stat"><b>{doneTaskCount}</b> done</span>
+            <span class="mc-stat"><b>{skippedTaskCount}</b> skipped</span>
+            <span class="mc-live" class:on={running}><i></i>{running ? 'live' : 'idle'}</span>
+          </div>
+        </header>
+        {#if planNote}
+          <p class="mc-note"><span class="mc-note-tag">brain</span>{formatText(planNote, 380)}</p>
+        {/if}
+        {#if liveTask}
+          <p class="mc-now">
+            <span class="mc-note-tag">now</span>
+            <span class="mono" style="color:{agentColor(liveTask.owner)}">{liveTask.owner}</span>
+            <span class="mc-now-sep">::</span>
+            <span>{formatText(liveTask.goal, 300)}</span>
+          </p>
+        {/if}
+        <div class="mc-grid">
+          <div class="mc-board">
+            <div class="mc-section-head">
+              <p class="eyebrow">{isMesh ? 'plan / task board' : 'current plan'}</p>
+              <span class="num text-xs text-ash">{planTasks.length}</span>
+            </div>
+            {#if planTasks.length === 0}
+              <p class="mc-empty">
+                {running ? 'The strategist is forming the first plan.' : 'No plan was recorded on this run.'}
+              </p>
+            {:else}
+              <ul class="mc-tasks">
+                {#each planTasks as task (task.id + ':' + task.round)}
+                  <li class="mc-task" data-status={task.status} data-source={task.source}>
+                    <span class="mc-task-bar" style="background:{agentColor(task.owner)}" aria-hidden="true"></span>
+                    <div class="mc-task-body">
+                      <div class="mc-task-top">
+                        <span class="mc-owner" style="color:{agentColor(task.owner)}">{task.owner || 'operator'}</span>
+                        {#if task.source === 'operator'}<span class="mc-tag operator">operator</span>{/if}
+                        {#if task.critical}<span class="mc-tag critical">critical</span>{/if}
+                        {#if task.tool}<code class="mc-tool">{task.tool}</code>{/if}
+                        <span class="mc-status" data-status={task.status}>{task.status}</span>
+                      </div>
+                      <p class="mc-goal" title={task.goal}>{task.goal}</p>
+                      {#if task.verdict}<span class="mc-verdict">{task.verdict}</span>{/if}
+                      {#if task.reason}<span class="mc-reason">{task.reason}</span>{/if}
+                    </div>
+                  </li>
+                {/each}
+              </ul>
+            {/if}
+          </div>
+          <div class="mc-channel">
+            <div class="mc-section-head">
+              <p class="eyebrow">operator channel</p>
+              <span class="mono text-[10px] text-ash">two-way</span>
+            </div>
+            <p class="mc-help">
+              Tell the brain what to skip, or what to check next. It becomes a live task,
+              not a note on the side.
+            </p>
+            <textarea
+              bind:this={directiveBox}
+              bind:value={directiveText}
+              class="mc-input"
+              rows="3"
+              maxlength="2000"
+              aria-label="instruction to the brain"
+              placeholder="e.g. skip the port scan for now, or check the login flow for auth bypass"
+              onkeydown={onDirectiveKey}
+            ></textarea>
+            <div class="mc-actions">
+              <div class="mc-kinds" role="group" aria-label="directive kind">
+                {#each DIRECTIVE_KINDS as item (item.id)}
+                  <button
+                    class="mc-kind"
+                    class:active={directiveKind === item.id}
+                    type="button"
+                    onclick={() => (directiveKind = item.id)}
+                  >
+                    {item.label}
+                  </button>
+                {/each}
+              </div>
+              <button
+                class="btn btn-acid"
+                type="button"
+                onclick={() => sendDirective()}
+                disabled={directiveBusy || !directiveText.trim()}
+              >
+                {directiveBusy ? 'sending...' : 'send to brain'}
+              </button>
+            </div>
+            <div class="mc-quick">
+              <button type="button" onclick={skipCurrent}>skip current task</button>
+              <button type="button" onclick={checkAuthFlow}>check auth flow</button>
+              <button type="button" onclick={wrapUp}>wrap up</button>
+            </div>
+            {#if directiveError}<p class="mc-error">{directiveError}</p>{/if}
+            <div class="mc-directives">
+              {#if operatorDirectives.length === 0}
+                <p class="mc-empty">No operator instructions yet. The channel is open.</p>
+              {:else}
+                {#each operatorDirectives.slice(-8).reverse() as item (item.id)}
+                  <div class="mc-directive" data-status={item.status} data-kind={item.kind}>
+                    <div class="mc-directive-top">
+                      <span class="mc-directive-kind" data-kind={item.kind}>{item.kind}</span>
+                      <span class="mc-directive-status" data-status={item.status}>{item.status}</span>
+                      <span class="mc-directive-time">{clock(item.ts)}</span>
+                    </div>
+                    <p class="mc-directive-text" title={item.text}>{formatText(item.text, 240)}</p>
+                    {#if item.plan}<p class="mc-directive-plan">{formatText(item.plan, 170)}</p>{/if}
+                  </div>
+                {/each}
+              {/if}
+            </div>
+          </div>
+        </div>
+      </section>
+    {/if}
+
     <section class="panel overflow-hidden">
       <div class="flex flex-wrap items-center gap-1 border-b border-indigo-deep px-3 py-2" role="tablist" aria-label="run inspector">
         {#each displayTabs as item (item.id)}
@@ -850,8 +1390,8 @@
       </div>
 
       {#if tab === 'feed'}
-        <div class="grid lg:grid-cols-[1.55fr_1fr]">
-          <div class="flex min-h-[460px] flex-col border-b border-indigo-deep lg:border-b-0 lg:border-r">
+        <div class="grid min-w-0 lg:grid-cols-[1.7fr_1fr]">
+          <div class="flex min-h-[460px] min-w-0 flex-col border-b border-indigo-deep lg:border-b-0 lg:border-r">
             <div class="obs-live-filter-bar flex flex-wrap items-center gap-2 px-4 py-2">
               {#each FILTERS as item (item.id)}
                 <button
@@ -877,11 +1417,11 @@
               </button>
             </div>
             <div class="obs-live-legend" aria-label="stream legend">
-              <span class="lg-think"><i></i>thinking</span>
+              <span class="lg-think"><i></i>reasoning</span>
               <span class="lg-tool"><i></i>tool call</span>
               <span class="lg-evidence"><i></i>proof / evidence</span>
               <span class="lg-log"><i></i>log</span>
-              <span style="margin-left:auto">{stream.length} rows - {reasoningCount} thinking</span>
+              <span style="margin-left:auto">{stream.length} {stream.length === 1 ? 'row' : 'rows'} - {reasoningCount} reasoning - {toolCount} {toolCount === 1 ? 'tool' : 'tools'} - {modelCount} {modelCount === 1 ? 'call' : 'calls'}</span>
             </div>
             <div
               class="mono flex-1 overflow-y-auto px-4 pb-3 text-[12px] leading-relaxed"
@@ -898,30 +1438,71 @@
                 {/if}
               {/if}
               {#each stream as row (row.seq)}
-                {@const badge = badgeOf(row)}
-                <p
-                  class="stream-line flex items-start gap-2 py-0.5"
-                  class:line-arrive={running && row.seq === lastSeq}
-                  class:border-l-2={row.kind === 'think'}
-                  class:pl-2={row.kind === 'think'}
-                  style={row.kind === 'think' ? `border-color:${badge.color}` : ''}
+                {@const meta = metaOf(row)}
+                <div
+                  class="trace-row"
+                  class:trace-live={running && row.seq === lastSeq}
+                  class:trace-think={row.kind === 'think'}
+                  data-kind={row.kind}
                 >
-                  <span class="shrink-0 text-slate">{clock(row.ts)}</span>
-                  <span class="w-[46px] shrink-0 text-[10px] tracking-[0.08em]" style="color:{badge.color}">
-                    {badge.text}
-                  </span>
-                  {#if row.kind === 'found'}
-                    <Chip label={row.sub} color={sevColor(row.sub)} shape={sevShape(row.sub)} />
-                    <span class="min-w-0 flex-1 break-words text-bone" title={row.text}>{formatText(row.text, 900)}</span>
-                  {:else}
-                    <span class="min-w-0 flex-1 break-words" style="color:{rowColor(row)};overflow-wrap:anywhere" title={row.text}>
-                      {formatText(row.text)}
+                  <button class="trace-main" type="button" onclick={() => toggleRow(row.seq)}>
+                    <span class="trace-gutter" style="--agent:{agentColor(row.agent)}">
+                      <i class="trace-icon" style="color:{meta.color}">{meta.icon}</i>
+                      <span class="trace-time">{clock(row.ts)}</span>
                     </span>
-                    {#if row.sub}
-                      <span class="num shrink-0 text-[10px] text-ash">{row.sub}</span>
-                    {/if}
+                    <span class="trace-kind" style="color:{meta.color}">{meta.label}</span>
+                    <span class="trace-agent" style="color:{agentColor(row.agent)}">{row.agent}</span>
+                    <span class="trace-body">
+                      {#if row.kind === 'act' || row.kind === 'tool'}
+                        <code class="trace-tool">{row.tool || row.text}</code>
+                        {#if row.url}<span class="trace-url">{row.url}</span>{/if}
+                        {#if row.kind === 'tool' && row.status !== '' && row.status !== undefined}
+                          <span class="trace-status" style="color:{statusTone(row.status)}">{row.status}</span>
+                        {/if}
+                        {#if row.kind === 'tool'}
+                          <span class="trace-ok" class:no={row.ok === false}>{row.ok === false ? 'failed' : 'ok'}</span>
+                          {#if row.text}
+                            <span class="trace-note">{formatText(row.text, 220)}</span>
+                          {/if}
+                        {/if}
+                        {#if row.kind === 'act'}
+                          {@const args = argPreview(row)}
+                          {#if args}
+                            <code class="trace-args">{args}</code>
+                          {/if}
+                          {#if row.text && row.text !== `calling ${row.tool}`}
+                            <span class="trace-note">{formatText(row.text, 240)}</span>
+                          {/if}
+                        {/if}
+                      {:else if row.kind === 'model'}
+                        <code class="trace-tool">{row.text}</code>
+                        <span class="trace-ok" class:no={row.ok === false}>{row.ok === false ? 'failed' : 'ok'}</span>
+                        {#if (row.repeat ?? 1) > 1}
+                          <span class="trace-repeat">x{row.repeat}</span>
+                        {/if}
+                        <span class="trace-note">{row.ms ?? 0}ms{row.tokens ? ` - ${row.tokens} tok` : ''}</span>
+                      {:else if row.kind === 'http'}
+                        <span class="trace-url">{row.url || row.text}</span>
+                        {#if row.status !== '' && row.status !== undefined}
+                          <span class="trace-status" style="color:{statusTone(row.status)}">{row.status}</span>
+                        {/if}
+                      {:else if row.kind === 'found'}
+                        <Chip label={row.sub} color={sevColor(row.sub)} shape={sevShape(row.sub)} />
+                        <span class="trace-note">{formatText(row.text, 900)}</span>
+                      {:else if row.kind === 'directive'}
+                        <span class="trace-text">{formatText(row.text, 600)}</span>
+                        {#if row.sub}<span class="trace-note trace-directive-state">{row.sub}</span>{/if}
+                      {:else if row.kind === 'plan'}
+                        <span class="trace-text">{formatText(row.text, 300)}</span>
+                      {:else}
+                        <span class="trace-text">{formatText(row.text, row.kind === 'think' ? 1400 : 600)}</span>
+                      {/if}
+                    </span>
+                  </button>
+                  {#if expanded[row.seq] && row.detail}
+                    <pre class="trace-detail">{row.detail}</pre>
                   {/if}
-                </p>
+                </div>
               {/each}
               {#if !follow && unseen > 0}
                 <div class="obs-jump-latest"><button type="button" onclick={jumpToLatest}>{unseen} new - jump to latest</button></div>
@@ -929,7 +1510,39 @@
             </div>
           </div>
 
-          <div class="flex flex-col">
+          <div class="flex min-w-0 flex-col">
+            <div class="border-b border-indigo-deep trace-agents">
+              <div class="flex items-center justify-between px-4 py-2.5">
+                <p class="eyebrow">live agents</p>
+                <span class="num text-xs text-ash">{agentList.length}</span>
+              </div>
+              {#if agentList.length === 0}
+                <p class="px-4 pb-3 text-sm text-bone-dust">Waiting for the first agent to speak.</p>
+              {:else}
+                <ul class="max-h-[280px] overflow-y-auto">
+                  {#each agentList.slice(0, 8) as lane (lane.agent)}
+                    {@const tone = laneStatus(lane)}
+                    <li class="trace-agent-card" data-agent={lane.agent}>
+                      <div class="flex items-center gap-2">
+                        <span class="lane-led" style="--agent:{agentColor(lane.agent)}" aria-hidden="true"></span>
+                        <span class="mono text-[11px]" style="color:{agentColor(lane.agent)}">{lane.agent}</span>
+                        <span class="mono ml-auto text-[9px] uppercase tracking-[0.1em]" style="color:{tone.color}">{tone.label}</span>
+                      </div>
+                      {#if lane.task}
+                        <p class="trace-agent-task" title={lane.task}>{formatText(lane.task, 140)}</p>
+                      {/if}
+                      <p class="trace-agent-thought" title={lane.lastText}>{formatText(lane.lastText, 160)}</p>
+                      <div class="flex items-center gap-3 text-[9px] uppercase tracking-[0.1em] text-ash">
+                        {#if lane.model}<span class="truncate">model {lane.model}</span>{/if}
+                        <span>{lane.thoughts} think</span>
+                        <span>{lane.tools} tool</span>
+                        <span>{lane.calls} call</span>
+                      </div>
+                    </li>
+                  {/each}
+                </ul>
+              {/if}
+            </div>
             {#if isOperator || isMesh}
               <div class="border-b border-indigo-deep">
                 <div class="flex items-center justify-between px-4 py-2.5">
@@ -1023,6 +1636,9 @@
                         <span class="mono ml-auto shrink-0 text-[10px] text-slate">{clock(lane.lastTs)}</span>
                         <button class="shrink-0 text-[10px] tracking-[0.12em] text-acid opacity-70 transition-opacity hover:opacity-100" type="button" onclick={() => openSpotlight(lane.agent)}>WATCH &gt;</button>
                       </div>
+                      {#if lane.task}
+                        <p class="mt-1 truncate pl-[22px] text-[11px] text-bone" title={lane.task}>{formatText(lane.task, 150)}</p>
+                      {/if}
                       {#if lane.lastText}
                         <p class="mt-1 truncate pl-[22px] text-[11px] text-bone-dust" title={lane.lastText}>{formatText(lane.lastText, 160)}</p>
                       {:else if lane.lastCall}
@@ -1353,11 +1969,11 @@
           </p>
         {/if}
         {#each spotlightRows as row, i (row.seq)}
-          {@const badge = badgeOf(row)}
+          {@const badge = metaOf(row)}
           <p class="think-line obs-spot-line" style="--i:{Math.min(i, 14)}">
             <span class="obs-spot-t">{clock(row.ts)}</span>
-            <span class="obs-spot-b" style="color:{badge.color}">{badge.text}</span>
-            <span class="obs-spot-m" style="color:{rowColor(row)}"
+            <span class="obs-spot-b" style="color:{badge.color}">{badge.label}</span>
+            <span class="obs-spot-m" style="color:var(--obs-text-2)"
               >{formatText(row.text, 900)}{#if running && i === spotlightRows.length - 1}<span
                   class="caret"
                   aria-hidden="true"

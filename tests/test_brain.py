@@ -110,6 +110,49 @@ class BrainChatTests(unittest.TestCase):
         self.assertTrue(kinds.get("pause"))
         self.assertFalse(kinds.get("teleport", True))
 
+    def test_chat_answers_from_the_ledger_when_every_model_fails(self):
+        self.index.create_hypothesis(
+            "Reset token leaks in the referer",
+            target="https://lab.example.com/reset",
+            mission_id=self.mission["id"], technique="ato")
+
+        def complete(messages):
+            return {"text": "", "provider": "th-hunt-3",
+                    "error": "th-hunt-3 returned 429", "failed": []}
+
+        result = brain.chat(self.server, self.index, self.director,
+                            "What are the current leads?", complete=complete)
+        self.assertIn("cooling down", result["reply"])
+        self.assertIn("Open leads", result["reply"])
+        self.assertIn("Reset token leaks in the referer", result["reply"])
+        self.assertEqual(result["actions"], [])
+
+    def test_obvious_operator_commands_apply_when_models_fail(self):
+        self.director.engage()
+
+        def complete(messages):
+            return {"text": "", "provider": "th-hunt-3",
+                    "error": "th-hunt-3 returned 429", "failed": []}
+
+        result = brain.chat(self.server, self.index, self.director, "pause",
+                            complete=complete)
+        self.assertTrue(any(row.get("kind") == "pause" and row.get("applied")
+                            for row in result["actions"]))
+        self.assertIn("Director paused", result["reply"])
+
+    def test_a_truncated_json_reply_is_salvaged(self):
+        def complete(messages):
+            return {"text": ('{"reply": "Replaying the blocked proof on the '
+                             'right host", "reasoning": "the model hit the token '
+                             'cap before closing the object'),
+                    "provider": "nvidia", "model": "m"}
+
+        result = brain.chat(self.server, self.index, self.director, "status",
+                            complete=complete)
+        self.assertEqual(result["reply"],
+                         "Replaying the blocked proof on the right host")
+        self.assertNotIn('"reply"', result["reply"])
+
     def test_helix_can_start_campaign_and_host_shell_with_approval(self):
         from netcast3r.mcp.tools import args_digest
 

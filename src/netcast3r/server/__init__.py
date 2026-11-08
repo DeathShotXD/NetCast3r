@@ -605,6 +605,61 @@ class Server:
             run_id = ctx.params["id"]
             return Stream(self._event_frames(run_id, ctx.last_event_id))
 
+        @add("POST", r"/api/v1/runs/(?P<id>[A-Za-z0-9_]+)/directive")
+        def run_directive(ctx):
+            """Steer a live solver with one operator instruction.
+
+            The directive is queued for the run's worker and acknowledged on
+            the same stream that carries the agents, so the operator sees it
+            land before the next plan forms.
+            """
+            from .events import Event
+
+            body = ctx.json()
+            body = body if isinstance(body, dict) else {}
+            text = str(body.get("text") or body.get("message") or "").strip()
+            if not text:
+                return _problem(400, "directive text required")
+            if len(text) > 2000:
+                return _problem(400, "directive too long", "limit is 2000 characters")
+            kind = str(body.get("kind") or "auto").strip().lower()
+            if kind not in {"auto", "skip", "focus"}:
+                return _problem(400, "kind must be auto|skip|focus")
+            run_id = ctx.params["id"]
+            if not self.index.get_run(run_id):
+                return _problem(404, "run not found")
+            try:
+                directive = self._solvers().directive(
+                    run_id, text, kind=kind,
+                    target=str(body.get("target") or ""),
+                    source=self._client_source(ctx.headers) or "operator")
+            except LookupError:
+                return _problem(404, "run not found")
+            except ValueError as exc:
+                return _problem(409, str(exc),
+                                "only a running solver accepts directives")
+            event = Event(
+                type="log", run_id=run_id, stage="directive", agent="operator",
+                payload={"directive_id": directive["id"],
+                         "kind": directive["kind"], "text": directive["text"],
+                         "terms": directive["terms"], "status": "queued",
+                         "target": directive.get("target", ""),
+                         "source": directive.get("source", "operator")})
+            self.bus.publish(event)
+            try:
+                self.index.add_event(run_id, event.to_dict())
+            except Exception:  # noqa: BLE001 - the live channel already has it
+                pass
+            return _json({"queued": True, "directive": directive}, 201)
+
+        @add("GET", r"/api/v1/runs/(?P<id>[A-Za-z0-9_]+)/directives")
+        def run_directives(ctx):
+            run_id = ctx.params["id"]
+            if not self.index.get_run(run_id):
+                return _problem(404, "run not found")
+            limit = _int_or(ctx.query.get("limit"), 60)
+            return _json({"items": self._solvers().directives(run_id, limit=limit)})
+
         @add("GET", r"/api/v1/events/stream")
         def global_stream(ctx):
             return Stream(self._event_frames(None, ctx.last_event_id))
@@ -776,6 +831,26 @@ class Server:
                 return _json(quality.bounty_eligibility(self.index, ctx.params["id"]))
             except ValueError as exc:
                 return _problem(404, str(exc))
+
+        @add("GET", r"/api/v1/findings/(?P<id>[A-Za-z0-9_]+)/poc")
+        def finding_poc(ctx):
+            from .. import investigations as investigations_module
+            from .. import report as report_module
+
+            detail = investigations_module.finding_detail(self.index, ctx.params["id"])
+            if not detail:
+                return _problem(404, "finding not found")
+            mission = self.index.get_mission(str(detail.get("mission_id") or "")) or {}
+            markdown = report_module.render_finding_poc(detail, mission=mission)
+            if str(ctx.query.get("download") or "").lower() in {"1", "true", "yes"}:
+                filename = report_module.finding_poc_filename(detail)
+                return Response(status=200, body=markdown.encode("utf-8"),
+                                content_type="text/markdown; charset=utf-8",
+                                headers={"Content-Disposition":
+                                         f'attachment; filename="{filename}"'})
+            return _json({"finding_id": detail.get("id", ""),
+                          "title": detail.get("title", ""),
+                          "markdown": markdown})
 
         @add("GET", r"/api/v1/portfolio/critical")
         def portfolio_critical(ctx):
@@ -2906,11 +2981,41 @@ class Server:
                     notes=str(body.get("notes", "")))
             except ValueError as exc:
                 return _problem(400, str(exc))
+            submission = self._auto_write_poc(submission) or submission
             return _json(submission, 201)
 
         @add("GET", r"/api/v1/submissions/summary")
         def submission_summary(ctx):
             return _json(self.index.submission_summary())
+
+        @add("GET", r"/api/v1/submissions/(?P<id>[A-Za-z0-9_]+)/poc")
+        def submission_poc(ctx):
+            from .. import investigations as investigations_module
+            from .. import report as report_module
+
+            submission = self.index.get_submission(ctx.params["id"])
+            if not submission:
+                return _problem(404, "submission not found")
+            finding_id = str(submission.get("finding_id") or "")
+            if not finding_id:
+                return _problem(404, "no finding",
+                                "link this submission to a finding to build a PoC")
+            detail = investigations_module.finding_detail(self.index, finding_id)
+            if not detail:
+                return _problem(404, "finding not found")
+            mission = self.index.get_mission(str(detail.get("mission_id") or "")) or {}
+            markdown = report_module.render_finding_poc(
+                detail, mission=mission, submission=submission)
+            if str(ctx.query.get("download") or "").lower() in {"1", "true", "yes"}:
+                filename = report_module.finding_poc_filename(detail, submission)
+                return Response(status=200, body=markdown.encode("utf-8"),
+                                content_type="text/markdown; charset=utf-8",
+                                headers={"Content-Disposition":
+                                         f'attachment; filename="{filename}"'})
+            return _json({"submission_id": submission.get("id", ""),
+                          "finding_id": finding_id,
+                          "report_path": submission.get("report_path", ""),
+                          "markdown": markdown})
 
         @add("GET", r"/api/v1/submissions/(?P<id>[A-Za-z0-9_]+)")
         def get_submission(ctx):
@@ -3319,6 +3424,43 @@ class Server:
         if response.status_code == 429:
             return {"ok": False, "reason": "rate_limited", "detail": "HTTP 429"}
         return {"ok": False, "reason": "http", "detail": f"HTTP {response.status_code}"}
+
+    def _auto_write_poc(self, submission: dict | None) -> dict | None:
+        """Write a humanized PoC report for a fresh submission and link it.
+
+        Best-effort: a missing finding, an unwritable base directory, or a
+        generation error never blocks the ledger row. The report lands under
+        <base>/reports/submissions/ and its path is stored on the row so the UI
+        can preview or export it later.
+        """
+        if not submission or not self.base:
+            return submission
+        finding_id = str(submission.get("finding_id") or "")
+        if not finding_id:
+            return submission
+        try:
+            from .. import investigations as investigations_module
+            from .. import report as report_module
+
+            detail = investigations_module.finding_detail(self.index, finding_id)
+            if not detail:
+                return submission
+            mission = self.index.get_mission(str(detail.get("mission_id") or "")) or {}
+            markdown = report_module.render_finding_poc(
+                detail, mission=mission, submission=submission)
+            directory = Path(str(self.base)) / "reports" / "submissions"
+            directory.mkdir(parents=True, exist_ok=True)
+            target = directory / report_module.finding_poc_filename(detail, submission)
+            target.write_text(markdown, encoding="utf-8")
+            try:
+                os.chmod(target, 0o600)
+            except OSError:
+                pass
+            updated = self.index.patch_submission(str(submission["id"]),
+                                                  report_path=str(target))
+            return updated or submission
+        except Exception:  # noqa: BLE001 - PoC generation must never fail the ledger
+            return submission
 
     # -- dispatch ---------------------------------------------------------
     def route(self, method: str, path: str, query: dict, headers: dict,

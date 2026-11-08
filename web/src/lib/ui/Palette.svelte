@@ -122,16 +122,31 @@
     const all = [...actionItems, ...navItems];
     const needle = q.trim().toLowerCase();
     if (!needle) return all;
-    return all.filter(
+    const matches = all.filter(
       (item) =>
         item.label.toLowerCase().includes(needle) ||
         item.hint.toLowerCase().includes(needle) ||
         item.group.toLowerCase().includes(needle)
     );
+    // Free text that is not a navigation label is an instruction for Helix.
+    const looksLikeInstruction = needle.includes(' ') || matches.length === 0;
+    if (looksLikeInstruction) {
+      matches.unshift({
+        label: `Ask Helix: ${q.trim()}`,
+        hint: 'send as an operator instruction',
+        glyph: '?',
+        group: 'Ask',
+        run: () => {
+          store.brainPrefill = q.trim();
+          store.brainDock = true;
+        }
+      });
+    }
+    return matches;
   });
 
   const sections = $derived.by(() => {
-    const order = ['Actions', 'Navigate'];
+    const order = ['Ask', 'Actions', 'Navigate'];
     const grouped = new Map<string, { item: Item; index: number }[]>();
     items.forEach((item, index) => {
       const rows = grouped.get(item.group) ?? [];

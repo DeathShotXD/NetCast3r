@@ -756,6 +756,29 @@ def _first_json(text: str):
     return _first_json(text)
 
 
+def _salvage_model_text(text: str) -> dict:
+    """Recover reply/focus/reasoning from a JSON response cut off mid-string.
+
+    Free models often spend the token cap inside a long reasoning field, so
+    the JSON never closes. The complete fields before the cut are still worth
+    using, and raw JSON must never be shown to the operator as a reply.
+    """
+    stripped = str(text or "").strip()
+    if not stripped.startswith("{"):
+        return {}
+    out: dict[str, str] = {}
+    for key in ("reply", "focus", "reasoning"):
+        match = re.search(rf'"{key}"\s*:\s*("(?:[^"\\]|\\.)*")',
+                          stripped, re.DOTALL)
+        if not match:
+            continue
+        try:
+            out[key] = str(json.loads(match.group(1)))
+        except json.JSONDecodeError:
+            out[key] = match.group(1).strip('"')
+    return out
+
+
 _PROVIDER_FAILS: dict[str, float] = {}
 _PROVIDER_FAIL_TTL = 300.0
 _PROVIDER_SOFT_TTL = 180.0
@@ -806,7 +829,7 @@ def _ask(server, index, messages: list, complete=None,
         completion = complete(messages)
     else:
         from .config import load_config
-        from .providers import ProviderBus
+        from .providers import shared_bus
         from .server.runner import DashboardBridge
 
         config = load_config()
@@ -814,10 +837,13 @@ def _ask(server, index, messages: list, complete=None,
             DashboardBridge(index, server.keys).apply(config)
         except Exception:  # noqa: BLE001 - a broken provider row must not stop the brain
             pass
-        completion = ProviderBus(config, timeout=timeout).complete(
-            "prime", messages, timeout=timeout,
+        call_timeout = max(5.0, min(float(timeout), 30.0))
+        total_budget = max(call_timeout, min(float(timeout), 45.0))
+        completion = shared_bus(config, timeout=call_timeout).complete(
+            "prime", messages, timeout=call_timeout,
             exclude_providers=_excluded_providers() or None,
-            max_candidates=max_candidates,
+            max_candidates=12 if max_candidates is None else max_candidates,
+            min_providers=8, max_seconds=total_budget, diversify=True,
             validate=(lambda text: _first_json(text) is not None)
             if require_json else None)
     if hasattr(completion, "text"):
@@ -1048,19 +1074,24 @@ def chat(server, index, director, message: str, history: list | None = None,
         {"operator_message": message, "snapshot": snapshot}, default=str)[:60000]})
 
     text, provider, model, error = _ask(server, index, messages, complete, timeout,
-                                        max_candidates=6)
-    data = _first_json(text) or {}
+                                        max_candidates=12)
+    data = _first_json(text) or _salvage_model_text(text)
     reply = str(data.get("reply") or text or "").strip()
-    if not reply:
-        reply = (f"Helix's models did not answer ({error or 'empty response'}); "
-                 "the loop will retry")
-    reply = reply[:4000]
     focus = str(data.get("focus") or "")[:400]
     applied = []
     if act:
-        for action in (data.get("actions") or [])[:10]:
+        planned = data.get("actions") or []
+        for action in planned[:10]:
             applied.append(_apply(index, director, action, mission_id))
+        if not planned and message.strip():
+            for action in _fallback_intents(index, director, mission_id, message):
+                applied.append(_apply(index, director, action, mission_id))
     applied = [a for a in applied if a]
+    if not reply:
+        reply, fallback_focus = _fallback_reply(index, mission_id, error, applied)
+        if not focus:
+            focus = fallback_focus
+    reply = reply[:4000]
     try:
         index.add_brain_turn("operator", message, mission_id=mission_id,
                              provider=provider, model=model, source=source)
@@ -1162,6 +1193,153 @@ def _progress_reply(index, mission_id: str) -> tuple[str, str]:
     return reply, focus
 
 
+_CAMPAIGN_VERBS = (
+    "hunt", "scan", "recon", "enumerate", "map", "assess", "attack",
+    "go after", "look at", "start on", "target",
+)
+_DOMAIN_RE = re.compile(
+    r"(?<![@\w.-])((?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+"
+    r"[a-z]{2,24})(?![\w.-])", re.IGNORECASE)
+
+
+def _operator_target(message: str) -> str:
+    """A domain or URL the operator clearly wants turned into a campaign."""
+    text = str(message or "").strip()
+    if not text:
+        return ""
+    low = text.lower()
+    first = re.sub(r"^[!.,\s]+", "", low)
+    # "focus on api.example.com" steers the current mission, it does not
+    # silently create a second mission on a subdomain.
+    if re.match(r"^(?:please\s+)?focus\b", first):
+        return ""
+    first_word = text.split()[0].strip("()[]<>,;'\"`")
+    if "://" in first_word:
+        host = host_of(first_word)
+        if host and "." in host:
+            return first_word
+    bare = text.strip("`'\" ")
+    if " " not in bare and _DOMAIN_RE.fullmatch(bare):
+        return bare
+    if not any(verb in low for verb in _CAMPAIGN_VERBS):
+        return ""
+    match = _DOMAIN_RE.search(text)
+    return match.group(1) if match else ""
+
+
+def _fallback_intents(index, director, mission_id: str, message: str) -> list[dict]:
+    """Apply only obvious operator commands while model lanes are down.
+
+    The model remains the planner. These are the deterministic controls that
+    must work even when every catalogue is rate limited: pause, resume, kill,
+    focus, start a campaign, start a hunt.
+    """
+    text = str(message or "").strip()
+    if not text:
+        return []
+    low = text.lower()
+    first = re.sub(r"^[!.,\s]+", "", low)
+    actions: list[dict] = []
+    target = _operator_target(text)
+    if mission_id and not target:
+        focus_match = re.search(r"\bfocus(?:ed)?\s+(?:on|at)\s+(.+)$", text,
+                                re.IGNORECASE)
+        if not focus_match:
+            focus_match = re.search(r"\bfocus\s*[:\-]\s*(.+)$", text,
+                                    re.IGNORECASE)
+        if focus_match:
+            subject = focus_match.group(1).strip(" .!?")[:280]
+            if subject:
+                actions.append({
+                    "kind": "directive", "mission_id": mission_id,
+                    "body": (f"Operator focus: {subject}. Put this at the top "
+                             "of the task board and test it first.")})
+    if re.match(r"^(?:please\s+)?(pause|hold|stand down|halt)\b", first):
+        actions.append({"kind": "pause"})
+    elif re.match(r"^(?:please\s+)?(resume|unpause|continue|engage)\b", first):
+        actions.append({"kind": "engage"})
+    if re.match(r"^(?:please\s+)?(kill|stop)\s+"
+                r"(all|everything|every run|the plane|the hunt)\b", first):
+        actions.insert(0, {"kind": "kill", "all": True,
+                           "reason": "operator instruction"})
+    if target:
+        actions.append({"kind": "start_campaign", "target": target})
+    elif mission_id and re.search(r"\b(swarm|parallel agents)\b", low):
+        actions.append({"kind": "start_swarm", "mission_id": mission_id})
+    elif mission_id and re.search(
+            r"\b(start|run|launch|begin)\b[^.]{0,40}\b(hunt|scan|cast|recon)\b",
+            low):
+        actions.append({"kind": "start_hunt", "mission_id": mission_id})
+    return actions[:4]
+
+
+def _fallback_reply(index, mission_id: str, error: str,
+                    applied: list) -> tuple[str, str]:
+    """A truthful Helix reply built from the ledger, never from model text."""
+    reason = str(error or "").strip()
+    if _soft_model_error(reason):
+        reason = f"model lanes are cooling down ({reason})"
+    elif reason:
+        reason = f"model lanes are unavailable ({reason})"
+    else:
+        reason = "model lanes returned no usable text"
+    lines = [
+        f"Helix here. {reason[:220]}, so I answered from the live ledger and "
+        "kept the deterministic controls running.",
+    ]
+    focus = ""
+    if mission_id:
+        mission = index.get_mission(mission_id) or {}
+        if mission:
+            progress, progress_focus = _progress_reply(index, mission_id)
+            lines.append(progress)
+            focus = progress_focus
+            try:
+                rows, open_total = index.list_hypotheses(
+                    mission_id=mission_id, status="open", limit=3)
+            except Exception:  # noqa: BLE001 - a broken read must not silence chat
+                rows, open_total = [], 0
+            if rows:
+                lines.append(f"Open leads ({open_total}):")
+                for row in rows:
+                    title = str(row.get("title") or "untitled lead")[:160]
+                    technique = str(row.get("technique") or "unclassified")
+                    target = str(row.get("target") or "")[:180]
+                    lines.append(f"- {title} [{technique}] {target}".rstrip())
+        else:
+            lines.append("No mission is in focus yet. Give me a domain or URL "
+                         "and I will start a campaign.")
+    else:
+        lines.append("No mission is in focus yet. Give me a domain or URL and "
+                     "I will start one.")
+    for row in applied or []:
+        if not isinstance(row, dict) or not row:
+            continue
+        kind = str(row.get("kind") or "action")
+        if not row.get("applied"):
+            lines.append(f"- {kind} refused: {str(row.get('reason') or '')[:160]}")
+        elif kind == "start_campaign":
+            lines.append(f"- Campaign started on {row.get('target') or 'target'} "
+                         f"(mission {row.get('mission_id') or 'pending'}).")
+        elif kind == "directive":
+            lines.append("- Operator focus queued on the task board.")
+        elif kind in {"start_hunt", "start_swarm"}:
+            lines.append(f"- {kind.replace('_', ' ').title()} started "
+                         f"(run {row.get('run_id') or 'pending'}).")
+        elif kind == "pause":
+            lines.append("- Director paused.")
+        elif kind == "engage":
+            lines.append("- Director resumed.")
+        elif kind == "kill":
+            lines.append(f"- Stopped {int(row.get('in_flight') or 0)} in-flight run(s).")
+        else:
+            lines.append(f"- {kind} applied.")
+    lines.append("Say 'pause', 'resume', 'focus on <subject>', or paste a domain "
+                 "to steer.")
+    return "\n".join(lines)[:4000], focus
+
+
+
 def cognition(server, index, director, mission_id: str = "", complete=None,
               timeout: float = 55.0, journal: bool = True,
               previous: dict | None = None) -> dict:
@@ -1187,7 +1365,7 @@ def cognition(server, index, director, mission_id: str = "", complete=None,
     ]
     text, provider, model, error = _ask(server, index, messages, complete, timeout,
                                         max_candidates=12, require_json=True)
-    data = _first_json(text) or {}
+    data = _first_json(text) or _salvage_model_text(text)
     reply = str(data.get("reply") or text or "")[:4000]
     focus = str(data.get("focus") or "")[:400]
     reasoning = str(data.get("reasoning") or "")[:800]

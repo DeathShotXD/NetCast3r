@@ -112,13 +112,16 @@
       aria-live="polite"
       title="{running.target} - {stageName} - {elapsed}"
     >
-      <span class="obs-pulse" aria-hidden="true"></span>
-      <span class="hidden xl:inline">{running.target}</span>
-      <span class="hidden lg:inline">{elapsed}</span>
+      <span class="obs-status-live" aria-hidden="true"></span>
+      <span class="obs-status-target hidden md:inline">{running.target}</span>
+      <span class="obs-status-sep hidden md:inline" aria-hidden="true"></span>
+      <span class="obs-status-stage hidden lg:inline">{stageName}</span>
+      <span class="obs-status-sep hidden lg:inline" aria-hidden="true"></span>
+      <span class="obs-status-clock">{elapsed || '--:--'}</span>
     </span>
   {:else}
     <span class="obs-status" role="status" aria-live="polite">
-      <span class="obs-status-dot idle" style="width:5px;height:5px;box-shadow:none" aria-hidden="true"></span>
+      <span class="obs-status-dot idle" aria-hidden="true"></span>
       {status ? statusLabel(status) : 'standby'}
     </span>
   {/if}

@@ -1,19 +1,31 @@
 import type {
-  BenchResult, BrainLiveFeed, BrainReply, Campaign, Candidate, ConnectInfo, Approval, CoverageSummary, Direction, DirectorLogEntry, DirectorStatus, ExploitPlan, Finding, HarnessDiagnose, HarnessLearn, HarnessRecall, HarnessStatus, HarnessTick, HostShellResult, Hypothesis, HypothesisEvidence, Inventory, KeyEntry, McpInfo, Meta, Mission, MissionAgent, MissionGraph, Paged, ProgramImport, ProgramPreview, Provider, ProviderHealth, RevengKinds, RevengResult, Run, RunEvent, Submission, SubmissionSummary, ThreatMap, ToolCall, Totals, TrendPoint, BrainTurn, BrainLoopStatus } from './types';
+  BenchResult, BrainLiveFeed, BrainReply, Campaign, Candidate, ConnectInfo, Approval, CoverageSummary, Direction, DirectorLogEntry, DirectorStatus, ExploitPlan, Finding, HarnessDiagnose, HarnessLearn, HarnessRecall, HarnessStatus, HarnessTick, HostShellResult, Hypothesis, HypothesisEvidence, Inventory, KeyEntry, McpInfo, Meta, Mission, MissionAgent, MissionGraph, Paged, ProgramImport, ProgramPreview, Provider, ProviderHealth, RevengKinds, RevengResult, Run, RunDirective, RunEvent, Submission, SubmissionSummary, ThreatMap, ToolCall, Totals, TrendPoint, BrainTurn, BrainLoopStatus } from './types';
 
 const BASE = '/api/v1';
+const DEFAULT_TIMEOUT_MS = 60000;
 
-async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
+async function request<T>(method: string, path: string, body?: unknown,
+                          timeoutMs = DEFAULT_TIMEOUT_MS): Promise<T> {
   let res: Response;
+  const controller = new AbortController();
+  const timer = timeoutMs > 0
+    ? window.setTimeout(() => controller.abort(), timeoutMs)
+    : undefined;
   try {
     res = await fetch(BASE + path, {
       method,
       credentials: 'same-origin',
       headers: body === undefined ? {} : { 'Content-Type': 'application/json' },
-      body: body === undefined ? undefined : JSON.stringify(body)
+      body: body === undefined ? undefined : JSON.stringify(body),
+      signal: controller.signal
     });
   } catch {
+    if (controller.signal.aborted) {
+      throw new Error(`the control plane did not answer within ${Math.round(timeoutMs / 1000)}s`);
+    }
     throw new Error('the dashboard server is not reachable');
+  } finally {
+    if (timer) window.clearTimeout(timer);
   }
   if (res.status === 401) {
     window.dispatchEvent(new Event('nc:locked'));
@@ -32,12 +44,21 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
   return (await res.json()) as T;
 }
 
-async function requestText(path: string): Promise<string> {
+async function requestText(path: string, timeoutMs = DEFAULT_TIMEOUT_MS): Promise<string> {
   let res: Response;
+  const controller = new AbortController();
+  const timer = timeoutMs > 0
+    ? window.setTimeout(() => controller.abort(), timeoutMs)
+    : undefined;
   try {
-    res = await fetch(BASE + path, { credentials: 'same-origin' });
+    res = await fetch(BASE + path, { credentials: 'same-origin', signal: controller.signal });
   } catch {
+    if (controller.signal.aborted) {
+      throw new Error(`the control plane did not answer within ${Math.round(timeoutMs / 1000)}s`);
+    }
     throw new Error('the dashboard server is not reachable');
+  } finally {
+    if (timer) window.clearTimeout(timer);
   }
   if (res.status === 401) {
     window.dispatchEvent(new Event('nc:locked'));
@@ -62,7 +83,7 @@ export const api = {
   connect: () => request<ConnectInfo>('GET', '/connect'),
   runs: (q = '') => request<Paged<Run>>('GET', `/runs${q}`),
   run: (id: string) => request<Run>('GET', `/runs/${id}`),
-  runReport: (id: string) => requestText(`/runs/${id}/report`),
+  runReport: (id: string) => requestText(`/runs/${id}/report`, 90000),
   startRun: (target: string, options: Record<string, unknown>) =>
     request<Run>('POST', '/runs', { target, options }),
   stopRun: (id: string) => request<{ stopped: boolean }>('POST', `/runs/${id}/stop`),
@@ -76,6 +97,11 @@ export const api = {
     request<{ severity: Record<string, number>; triage: Record<string, number> }>(
       'GET', `/runs/${id}/summary`),
   runEvents: (id: string) => request<{ items: RunEvent[] }>('GET', `/runs/${id}/events`),
+  directive: (id: string, text: string, kind = 'auto', target = '') =>
+    request<{ queued: boolean; directive: RunDirective }>(
+      'POST', `/runs/${id}/directive`, { text, kind, target }),
+  directives: (id: string, limit = 60) =>
+    request<{ items: RunDirective[] }>('GET', `/runs/${id}/directives?limit=${limit}`),
   findings: (q = '') => request<Paged<Finding>>('GET', `/findings${q}`),
   finding: (id: string) => request<Finding>('GET', `/findings/${id}`),
   createFinding: (body: Record<string, unknown>) =>
@@ -176,16 +202,17 @@ export const api = {
     request<CoverageSummary>('GET', `/missions/${id}/coverage`),
   markCoverage: (id: string, body: Record<string, unknown>) =>
     request<Record<string, unknown>>('POST', `/missions/${id}/coverage`, body),
-  bench: () => request<BenchResult>('GET', '/bench?gate=1'),
+  bench: () => request<BenchResult>('GET', '/bench?gate=1', undefined, 240000),
   harnessStatus: () => request<HarnessStatus>('GET', '/harness'),
   harnessDiagnose: (missionId = '', limit = 8) =>
     request<HarnessDiagnose>(
       'GET',
-      `/harness/diagnose?limit=${limit}${missionId ? `&mission_id=${encodeURIComponent(missionId)}` : ''}`),
+      `/harness/diagnose?limit=${limit}${missionId ? `&mission_id=${encodeURIComponent(missionId)}` : ''}`,
+      180000),
   harnessLearn: (body: Record<string, unknown> = {}) =>
-    request<HarnessLearn>('POST', '/harness/learn', body),
+    request<HarnessLearn>('POST', '/harness/learn', body, 240000),
   harnessTick: (body: Record<string, unknown> = {}) =>
-    request<HarnessTick>('POST', '/harness/tick', body),
+    request<HarnessTick>('POST', '/harness/tick', body, 240000),
   harnessRecall: (missionId = '', goal = '') =>
     request<HarnessRecall>(
       'GET',
@@ -222,14 +249,15 @@ export const api = {
     request<{ host: string; user: string; tools: Record<string, boolean> }>(
       'GET', '/host/capabilities'),
   hostShell: (command: string, cwd = '', timeout = 60) =>
-    request<HostShellResult>('POST', '/host/shell', { command, cwd, timeout }),
+    request<HostShellResult>('POST', '/host/shell', { command, cwd, timeout },
+      Math.min(300000, (timeout + 15) * 1000)),
   hostList: (path = '.') =>
     request<{ path: string; count: number; entries: Array<Record<string, unknown>> }>(
       'GET', `/host/list?path=${encodeURIComponent(path)}`),
   missionAgent: (id: string) =>
     request<MissionAgent>('GET', `/missions/${id}/agent`),
   startMissionAgent: (id: string, body: Record<string, unknown>) =>
-    request<MissionAgent>('POST', `/missions/${id}/agent/start`, body),
+    request<MissionAgent>('POST', `/missions/${id}/agent/start`, body, 180000),
   pauseMissionAgent: (id: string) =>
     request<MissionAgent>('POST', `/missions/${id}/agent/pause`, {}),
   resumeMissionAgent: (id: string) =>
@@ -253,6 +281,13 @@ export const api = {
     request<Submission>('PATCH', `/submissions/${id}`, body),
   deleteSubmission: (id: string) =>
     request<{ deleted: boolean }>('DELETE', `/submissions/${id}`),
+  submissionPoc: (id: string) =>
+    request<{ submission_id: string; finding_id: string; report_path: string; markdown: string }>(
+      'GET',
+      `/submissions/${id}/poc`
+    ),
+  findingPoc: (id: string) =>
+    request<{ finding_id: string; title: string; markdown: string }>('GET', `/findings/${id}/poc`),
   keys: () => request<{ items: KeyEntry[] }>('GET', '/keys'),
   putKey: (name: string, value: string) =>
     request<{ name: string; masked: string }>('PUT', `/keys/${name}`, { value }),
@@ -267,11 +302,12 @@ export const api = {
   testProvider: (id: string) =>
     request<{ ok: boolean; reason: string; latency_ms?: number; models?: string[]; detail?: string }>(
       'POST', `/providers/${id}/test`),
-  settings: () => request<{ items: Record<string, unknown> }>('GET', '/settings'),  patchSettings: (patch: Record<string, unknown>) =>
+  settings: () => request<{ items: Record<string, unknown> }>('GET', '/settings'),
+  patchSettings: (patch: Record<string, unknown>) =>
     request<{ items: Record<string, unknown> }>('PATCH', '/settings', patch),
   revengKinds: () => request<RevengKinds>('GET', '/reveng/kinds'),
   revengAnalyze: (body: Record<string, unknown>) =>
-    request<RevengResult>('POST', '/reveng/analyze', body),
+    request<RevengResult>('POST', '/reveng/analyze', body, 600000),
   mcpInfo: () => request<McpInfo>('GET', '/mcp'),
   toolCalls: (q = '') => request<Paged<ToolCall>>('GET', `/tool-calls${q}`),
   toolCall: (id: string) => request<ToolCall>('GET', `/tool-calls/${id}`),

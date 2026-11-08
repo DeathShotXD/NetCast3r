@@ -4,6 +4,7 @@
   import { store } from '../state.svelte';
   import type { KeyEntry, Provider } from '../types';
   import Confirm from '../ui/Confirm.svelte';
+  import Buffering from '../ui/Buffering.svelte';
 
   const common = [
     'openai', 'anthropic', 'github', 'slack', 'stripe', 'twilio', 'sendgrid',
@@ -98,6 +99,8 @@
 
   let keys = $state<KeyEntry[]>([]);
   let providers = $state<Provider[]>([]);
+  let loading = $state(true);
+  let error = $state('');
   let keyName = $state('');
   let keyValue = $state('');
   let custom = $state({ name: '', kind: 'openai', base_url: '', model: '', key_name: '' });
@@ -137,11 +140,15 @@
   }
 
   async function load() {
+    loading = true;
     try {
       keys = (await api.keys()).items;
       providers = (await api.providers()).items;
-    } catch {
-      /* backend not reachable */
+      error = '';
+    } catch (exc) {
+      error = exc instanceof Error ? exc.message : 'could not read providers';
+    } finally {
+      loading = false;
     }
   }
 
@@ -404,6 +411,24 @@
       limits, so an NVIDIA key and an OpenRouter key work side by side.
     </p>
   </section>
+
+  {#if error && providers.length === 0}
+    <section class="panel px-5 py-4 text-sm" role="alert" style="color:var(--obs-red)">
+      Could not read the provider pool: {error}
+      <button class="obs-btn obs-btn-sm" type="button" style="margin-left:10px" onclick={() => void load()}>
+        Try again
+      </button>
+    </section>
+  {:else if loading && providers.length === 0 && keys.length === 0}
+    <section class="panel p-5">
+      <Buffering
+        variant="block"
+        tone="quiet"
+        label="Reading providers"
+        detail="Loading the model pool, stored keys, and reachability."
+      />
+    </section>
+  {/if}
 
   {#if providers.length > 0}
     <section class="grid grid-cols-2 gap-3 sm:grid-cols-4" aria-label="pool summary">

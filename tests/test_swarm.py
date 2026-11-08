@@ -700,5 +700,150 @@ class PortalEvidenceTests(unittest.TestCase):
                          "https://apply.fpsc.gov.pk/admit")
 
 
+class OperatorDirectiveTests(unittest.TestCase):
+    """A live instruction changes the plan the swarm is already executing."""
+
+    def make(self, model, registry=None):
+        self.registry = registry or FakeRegistry()
+        return swarm.Swarm(
+            self.registry, model, mission(), max_steps=10,
+            max_seconds=30, max_model_calls=12, run_id="run_mesh")
+
+    def test_focus_directive_gets_the_first_task(self):
+        def scout(messages, exclude, call_no):
+            objective = json.loads(messages[1]["content"])["objective"]
+            return move("http_probe", {
+                "target": "http://127.0.0.1:9/"
+                + ("login" if "login" in objective["goal"] else "surface")})
+
+        model = MeshModel({
+            "strategist": lambda m, e, n: (
+                objectives(("scout", "map the surface"))
+                if n == 1 else objectives(done=True)),
+            "attacker": always({"action": "http_probe",
+                                "args": {"target": "http://127.0.0.1:9/login"}}),
+            "scout": scout,
+            "validator": validator(),
+            "scribe": scribe(),
+        })
+        batches = [[{"id": "dir_focus", "kind": "focus",
+                     "text": "check the login bypass",
+                     "terms": ["login", "bypass"]}]]
+        mesh = self.make(model)
+        mesh.directive_source = lambda: batches.pop(0) if batches else []
+        seen = []
+        mesh.on_step = lambda stage, payload: seen.append((stage, dict(payload)))
+        result = mesh.run()
+
+        self.assertEqual(result["directives"], 1)
+        goals = [step.get("goal", "") for step in result["steps"]]
+        self.assertTrue(goals)
+        self.assertIn("login bypass", goals[0])
+        stages = [stage for stage, _ in seen]
+        self.assertIn("plan", stages)
+        self.assertIn("directive", stages)
+        plans = [payload for stage, payload in seen if stage == "plan"]
+        self.assertTrue(any(item["source"] == "operator"
+                            for item in plans[0]["objectives"]))
+        tasks = [payload for stage, payload in seen if stage == "task"]
+        self.assertTrue(any(item["source"] == "operator"
+                            and item["status"] == "assigned" for item in tasks))
+
+    def test_skip_directive_drops_a_matching_objective(self):
+        def scout(messages, exclude, call_no):
+            objective = json.loads(messages[1]["content"])["objective"]
+            path = "admin" if "admin" in objective["goal"] else "login"
+            return move("http_probe", {"target": f"http://127.0.0.1:9/{path}"})
+
+        model = MeshModel({
+            "strategist": lambda m, e, n: (
+                objectives(("scout", "scan the admin panel"),
+                           ("scout", "probe the login form"))
+                if n == 1 else objectives(done=True)),
+            "scout": scout,
+            "validator": validator(),
+            "scribe": scribe(),
+        })
+        batches = [[{"id": "dir_skip", "kind": "skip",
+                     "text": "skip the admin panel",
+                     "terms": ["admin", "panel"]}]]
+        mesh = self.make(model)
+        mesh.directive_source = lambda: batches.pop(0) if batches else []
+        seen = []
+        mesh.on_step = lambda stage, payload: seen.append((stage, dict(payload)))
+        result = mesh.run()
+
+        self.assertEqual(result["directives"], 1)
+        self.assertEqual(len(result["steps"]), 1)
+        self.assertIn("login", result["steps"][0]["goal"])
+        skipped = [payload for stage, payload in seen
+                   if stage == "task" and payload.get("status") == "skipped"]
+        self.assertTrue(any("admin" in item["goal"] for item in skipped))
+        applied = [payload for stage, payload in seen
+                   if stage == "directive" and payload.get("status") == "applied"]
+        self.assertTrue(any(item.get("matched_task") for item in applied))
+
+    def test_skip_landing_mid_round_aborts_the_next_move(self):
+        model = MeshModel({
+            "strategist": lambda m, e, n: (
+                objectives(("scout", "probe the login form"))
+                if n == 1 else objectives(done=True)),
+            "scout": always({"action": "http_probe",
+                             "args": {"target": "http://127.0.0.1:9/login"}}),
+            "validator": validator(),
+            "scribe": scribe(),
+        })
+        batches = [[], [{"id": "dir_mid", "kind": "skip",
+                         "text": "skip the login probe",
+                         "terms": ["login", "probe"]}]]
+        mesh = self.make(model)
+        mesh.directive_source = lambda: batches.pop(0) if batches else []
+        seen = []
+        mesh.on_step = lambda stage, payload: seen.append((stage, dict(payload)))
+        result = mesh.run()
+
+        self.assertEqual(result["steps"], [])
+        self.assertEqual(result["directives"], 1)
+        skipped = [payload for stage, payload in seen
+                   if stage == "task" and payload.get("status") == "skipped"]
+        self.assertTrue(any("login" in item.get("goal", "") for item in skipped))
+
+
+    def test_task_id_skip_is_exact_and_does_not_drop_siblings(self):
+        model = MeshModel({
+            "strategist": lambda m, e, n: (
+                objectives(("scout", "probe the login form"),
+                           ("scout", "probe the login redirect"))
+                if n == 1 else objectives(done=True)),
+            "scout": always({"action": "http_probe",
+                             "args": {"target": "http://127.0.0.1:9/login"}}),
+            "validator": validator(),
+            "scribe": scribe(),
+        })
+        target = swarm._task_id("probe the login form")
+        batches = [[{"id": "dir_exact", "kind": "skip",
+                     "text": "Skip this task: probe the login form",
+                     "terms": ["probe", "login", "form"], "target": target},
+                    {"id": "dir_late", "kind": "skip",
+                     "text": "skip the login probe", "terms": ["login"],
+                     "target": target}]]
+        mesh = self.make(model)
+        mesh.directive_source = lambda: batches.pop(0) if batches else []
+        seen = []
+        mesh.on_step = lambda stage, payload: seen.append((stage, dict(payload)))
+        result = mesh.run()
+
+        skipped = [payload for stage, payload in seen
+                   if stage == "task" and payload.get("status") == "skipped"]
+        self.assertEqual(len(skipped), 1)
+        self.assertEqual(skipped[0]["task_id"], target)
+        self.assertEqual(skipped[0]["directive_id"], "dir_exact")
+        self.assertEqual(len(result["steps"]), 1)
+        applied = [payload for stage, payload in seen
+                   if stage == "directive" and payload.get("status") == "applied"]
+        self.assertEqual([item["directive_id"] for item in applied], ["dir_exact"])
+        self.assertEqual(applied[0]["text"], "Skip this task: probe the login form")
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -17,6 +17,7 @@
   import ReverseLab from './lib/screens/ReverseLab.svelte';
   import Runs from './lib/screens/Runs.svelte';
   import Backdrop from './lib/ui/Backdrop.svelte';
+  import BrandMark from './lib/ui/BrandMark.svelte';
   import Palette from './lib/ui/Palette.svelte';
   import ToastHost from './lib/ui/ToastHost.svelte';
   import Unlock from './lib/ui/Unlock.svelte';
@@ -80,16 +81,9 @@
   <div class="obs-boot" role="status" aria-live="polite">
     <div class="obs-boot-card">
       <div class="obs-boot-mark" aria-hidden="true">
-        <svg viewBox="0 0 28 28" fill="none">
-          <path
-            d="M14 2.5 24.5 8.6v10.8L14 25.5 3.5 19.4V8.6z"
-            stroke="#C8F81A"
-            stroke-width="1.3"
-          />
-          <circle cx="14" cy="14" r="2.1" fill="#C8F81A" />
-        </svg>
+        <BrandMark size={30} shadow />
       </div>
-      <div class="obs-boot-title">NetCast3r</div>
+      <div class="obs-boot-title">NetCast<span class="obs-brand-3r">3R</span></div>
       <div class="obs-boot-sub">warming the control plane</div>
       <div class="obs-boot-bar" aria-hidden="true"><i></i></div>
     </div>
@@ -107,6 +101,19 @@
 
     <div class="obs-main">
       <CommandBar onMenu={() => (railOpen = true)} />
+
+      {#if store.syncState === 'error'}
+        <div class="obs-conn-banner" role="alert">
+          <span class="obs-conn-dot" aria-hidden="true"></span>
+          <span class="obs-conn-text">
+            control plane unreachable - showing the last data
+            {store.lastSync ? ` from ${new Date(store.lastSync).toLocaleTimeString()}` : ''}
+          </span>
+          <button class="obs-btn obs-btn-sm" type="button" onclick={() => void store.retry()}>
+            retry
+          </button>
+        </div>
+      {/if}
 
       <main id="main" class="obs-content" tabindex="-1">
         {#key store.screen === 'live' ? `live:${store.activeRunId}` : store.screen}

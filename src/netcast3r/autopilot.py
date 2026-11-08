@@ -14,10 +14,13 @@ and a human-gated write.
 
 from __future__ import annotations
 
+import hashlib
 import json
+import re
 import time
 
 from .agents import _first_json
+from .directives import matches_enough, terms_for
 from .mcp.tools import _TOOL_MAP
 
 # Low and medium read/probe tools only. No destructive call, no approval spend,
@@ -245,7 +248,7 @@ class Autopilot:
     def __init__(self, registry, complete, mission: dict, max_steps: int = DEFAULT_STEPS,
                  max_seconds: float = DEFAULT_SECONDS,
                  max_model_calls: int = DEFAULT_MODEL_CALLS, run_id: str = "",
-                 on_step=None, should_stop=None):
+                 on_step=None, should_stop=None, directive_source=None):
         self.registry = registry
         self.complete = complete
         self.mission = mission or {}
@@ -263,6 +266,16 @@ class Autopilot:
         self.actor = "agent:autopilot"
         self.model_calls = 0
         self.hypotheses_recorded = 0
+        # Operator directives: skip rules persist for the run; focus notes go
+        # into the next plan prompt as the highest-priority instruction.
+        self.directive_source = directive_source
+        self._directive_seen: set[str] = set()
+        self._skip_rules: list[dict] = []
+        self._skip_next: list[dict] = []
+        self._skip_ids: dict[str, dict] = {}
+        self._operator_notes: list[str] = []
+        self._priority_moves: list[dict] = []
+        self.directives_applied = 0
 
     # -- plumbing ----------------------------------------------------------
     def _emit(self, stage: str, payload: dict) -> None:
@@ -271,6 +284,122 @@ class Autopilot:
                 self.on_step(stage, payload)
             except Exception:  # noqa: BLE001 - a listener must not stop the loop
                 pass
+
+    # -- operator channel --------------------------------------------------
+    def _drain_directives(self) -> int:
+        source = self.directive_source
+        if source is None:
+            return 0
+        try:
+            rows = source() or []
+        except Exception:  # noqa: BLE001 - a broken queue must not stop the loop
+            return 0
+        applied = 0
+        for item in rows:
+            if not isinstance(item, dict):
+                continue
+            did = str(item.get("id") or "")
+            if did and did in self._directive_seen:
+                continue
+            if did:
+                self._directive_seen.add(did)
+            text = " ".join(str(item.get("text") or "").split())[:800]
+            if not text:
+                continue
+            kind = str(item.get("kind") or "focus").strip().lower()
+            if kind == "skip":
+                target = str(item.get("target") or "").strip()
+                terms = [str(term) for term in (item.get("terms") or [])][:12]
+                if not terms:
+                    terms = terms_for(text, "skip")
+                if target:
+                    # The operator named one move in the board. Drop exactly
+                    # that move instead of filtering every later move that
+                    # happens to share a word with it.
+                    entry = {"id": did, "text": text}
+                    self._skip_ids.setdefault(target, entry)
+                elif terms:
+                    self._skip_rules.append({"id": did, "terms": terms, "text": text})
+                else:
+                    self._skip_next.append({"id": did, "terms": [], "text": text})
+                self._emit("directive", {
+                    "agent": "operator", "directive_id": did, "kind": "skip",
+                    "status": "accepted", "text": text, "terms": terms,
+                    "target": target,
+                    "plan": ("drop the named move only" if target else
+                             "drop moves that mention " + ", ".join(terms)
+                             if terms else "drop the next move")})
+            else:
+                self._operator_notes = (self._operator_notes + [text])[-8:]
+                match = re.search(r"https?://[^\s'\"<>()]+", text)
+                if match:
+                    self._priority_moves.append({
+                        "action": "http_probe",
+                        "args": {"target": match.group(0).rstrip(".,);]'\"")},
+                        "why": f"operator directive: {text}"[:240]})
+                self._emit("directive", {
+                    "agent": "operator", "directive_id": did, "kind": "focus",
+                    "status": "accepted", "text": text,
+                    "plan": "raise the operator instruction in the next plan"})
+            self.directives_applied += 1
+            applied += 1
+        return applied
+
+    def _take_priority(self) -> list[dict]:
+        moves = self._priority_moves
+        self._priority_moves = []
+        return moves
+
+    def _skip_filter(self, moves: list[dict]) -> list[dict]:
+        kept: list[dict] = []
+        for move in moves:
+            blob = " ".join([
+                str(move.get("action") or ""),
+                str(move.get("why") or ""),
+                json.dumps(move.get("args") or {}, default=str)])
+            rule = None
+            move_id = self._move_id(move)
+            if move_id in self._skip_ids:
+                entry = self._skip_ids[move_id]
+                rule = {"id": str(entry.get("id") or ""), "terms": [],
+                        "text": str(entry.get("text")
+                                   or "operator skipped this move")}
+            if rule is None:
+                for candidate in self._skip_rules:
+                    if matches_enough(blob, candidate.get("terms") or []):
+                        rule = candidate
+                        break
+            if rule is None and self._skip_next:
+                rule = self._skip_next.pop(0)
+            if rule is not None:
+                self._task_event(move, "skipped", reason="operator directive",
+                                 directive_id=str(rule.get("id") or ""))
+                self._emit("directive", {
+                    "agent": "operator", "directive_id": str(rule.get("id") or ""),
+                    "kind": "skip", "status": "applied",
+                    "text": str(rule.get("text") or ""), "matched_task": move_id,
+                    "goal": str(move.get("why") or move.get("action") or "")[:300]})
+                continue
+            kept.append(move)
+        return kept
+
+    @staticmethod
+    def _move_id(move: dict) -> str:
+        raw = str(move.get("action") or "") + json.dumps(
+            move.get("args") or {}, sort_keys=True, default=str)
+        return "mv_" + hashlib.sha1(raw.encode("utf-8")).hexdigest()[:10]
+
+    def _task_event(self, move: dict, status: str, **extra) -> None:
+        payload = {
+            "task_id": self._move_id(move),
+            "agent": "operator",
+            "goal": str(move.get("why") or move.get("action") or "")[:300],
+            "status": status,
+            "tool": str(move.get("action") or ""),
+            "source": "autopilot",
+        }
+        payload.update(extra)
+        self._emit("task", payload)
 
     def _args_for(self, name: str, args: dict) -> dict:
         spec = _TOOL_MAP.get(name)
@@ -289,6 +418,22 @@ class Autopilot:
                     source["target"] = self.target
         clean = {key: value for key, value in source.items()
                  if key in props and key not in {"approval_id", "confirm"}}
+        # Weak models emit out-of-range numbers (max_bytes=512, limit=9999).
+        # Clamp to the declared bounds so a near-miss becomes a real request
+        # instead of a wasted "invalid_arguments" observation.
+        for key, value in list(clean.items()):
+            prop = props.get(key) or {}
+            if not isinstance(prop, dict) or isinstance(value, bool):
+                continue
+            if isinstance(value, (int, float)):
+                low, high = prop.get("minimum"), prop.get("maximum")
+                if isinstance(low, (int, float)) and value < low:
+                    value = low
+                if isinstance(high, (int, float)) and value > high:
+                    value = high
+                if prop.get("type") == "integer" and isinstance(value, float):
+                    value = int(value)
+                clean[key] = value
         if "mission_id" in props and self.mission_id:
             clean["mission_id"] = self.mission_id
         return clean
@@ -386,6 +531,7 @@ class Autopilot:
                 .replace("<<MOVES>>", str(MAX_PLAN_MOVES))},
             {"role": "user", "content": json.dumps(
                 {"phase": "plan", "brief": brief,
+                 "operator": self._operator_notes[-6:],
                  "steps_left": self.max_steps}, default=str)},
         ]
         text, error = self._model(messages)
@@ -435,6 +581,7 @@ class Autopilot:
                 .replace("<<MOVES>>", str(MAX_PLAN_MOVES))},
             {"role": "user", "content": json.dumps(
                 {"phase": "reflect", "brief": brief,
+                 "operator": self._operator_notes[-6:],
                  "observed": executed[-8:], "steps_left":
                      self.max_steps - len(executed)}, default=str)},
         ]
@@ -467,9 +614,21 @@ class Autopilot:
                      f"{len(brief.get('chains') or [])} chains, "
                      f"{len(brief.get('memory') or [])} prior notes")})
 
+        self._drain_directives()
         plan, plan_note = self._plan(brief)
+        plan = self._take_priority() + self._skip_filter(plan)
         self._note("plan", "Initial plan", plan_note)
         self._emit("reason", {"text": plan_note})
+        if plan:
+            self._emit("plan", {
+                "agent": "operator", "round": 1, "source": "autopilot",
+                "note": plan_note,
+                "moves": [{"id": self._move_id(move),
+                           "tool": str(move.get("action") or ""),
+                           "why": str(move.get("why") or "")[:240]}
+                          for move in plan]})
+            for move in plan:
+                self._task_event(move, "assigned")
 
         while plan and len(executed) < self.max_steps:
             if self.should_stop is not None and self.should_stop():
@@ -479,6 +638,11 @@ class Autopilot:
                 stop = "time budget reached"
                 break
             move = plan.pop(0)
+            # A directive can land at any time; honour it against the very
+            # next move instead of waiting for a fresh plan.
+            self._drain_directives()
+            if not self._skip_filter([move]):
+                continue
             action = move["action"]
             signature = action + json.dumps(self._args_for(action, move.get("args") or {}),
                                             sort_keys=True, default=str)
@@ -489,10 +653,14 @@ class Autopilot:
                 self._emit("decide", {"text": stop})
                 break
 
-            self._emit("act", {"tool": action, "text": move.get("why") or f"calling {action}"})
+            self._task_event(move, "running")
+            self._emit("act", {"tool": action,
+                               "task_id": self._move_id(move),
+                               "text": move.get("why") or f"calling {action}"})
             payload, is_error, clean = self._tool(action, move.get("args") or {})
             record = {"step": len(executed) + 1, "action": action, "args": clean,
                       "ok": not is_error, "result": _compact(payload),
+                      "task_id": self._move_id(move),
                       "why": move.get("why") or ""}
             if is_error:
                 error = payload.get("error") or {}
@@ -501,8 +669,10 @@ class Autopilot:
             else:
                 errors = 0
             executed.append(record)
+            self._task_event(move, "done" if not is_error else "failed")
             self._emit("observe", {
                 "tool": action, "ok": not is_error,
+                "task_id": self._move_id(move),
                 "text": (f"{action}: {record.get('error')}" if is_error
                          else f"{action}: ok"),
                 "url": str(payload.get("url") or ""),
@@ -523,15 +693,20 @@ class Autopilot:
                     stop = "operator finished"
                     summary = reflect_note
                     break
-                plan = nxt
+                plan = self._take_priority() + self._skip_filter(nxt)
                 if plan:
                     self._note("plan", f"Revised plan after step {len(executed)}",
                                json.dumps(plan, default=str)[:4000])
+                    for move in plan:
+                        self._task_event(move, "assigned")
             if not plan and len(executed) < self.max_steps:
                 # The model is quiet or out of budget. Never idle with steps
                 # remaining: run the deterministic baseline again.
                 plan, note = self._fallback_plan()
+                plan = self._take_priority() + self._skip_filter(plan)
                 self._emit("decide", {"text": note})
+                for move in plan:
+                    self._task_event(move, "assigned")
 
         if not summary:
             summary = self._final_summary(executed)
@@ -549,6 +724,7 @@ class Autopilot:
             "actions": len(executed),
             "hypotheses": self.hypotheses_recorded + hypotheses,
             "model_calls": self.model_calls,
+            "directives": self.directives_applied,
             "seconds": round(time.monotonic() - started, 2),
             "findings": 0,
             "note": ("The operator plans and records leads through the scoped tools. "

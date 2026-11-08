@@ -251,6 +251,292 @@ def save(target: str, summary: dict, findings: list[dict],
     return path
 
 
+def _req_rank(req: dict, evidence: str = "") -> int:
+    """Lower is a stronger demonstration of the issue."""
+    target = str(req.get("target") or "").lower()
+    traversal = ("../", "..%2f", "..%5c", "..%252f", "..\\", "%2e%2e", "/etc/")
+    injection = ("<script", "union+select", "union%20select", "{{", "${", "';",
+                 "\" or ", "sleep(", "waitfor")
+    rank = 3
+    if any(marker in target for marker in traversal):
+        rank = 0
+    elif any(marker in target for marker in injection):
+        rank = 1
+    else:
+        status = req.get("status")
+        if isinstance(status, int) and status >= 500:
+            rank = 2
+    # A request whose query value (or file name) is named in the write-up is the
+    # exact one that was proven, so it outranks its neighbours. Only traversal
+    # requests are eligible, so a baseline "file=web.config" never wins.
+    if rank == 0 and evidence and "file=" in target:
+        raw = target.split("file=", 1)[-1]
+        if raw in evidence:
+            return -2
+        decoded = raw
+        for escape in ("%2f", "%5c", "%252f"):
+            decoded = decoded.replace(escape, "/")
+        name = decoded.rstrip("/").rsplit("/", 1)[-1]
+        if len(name) > 3 and name in evidence:
+            return -1
+    return rank
+
+
+def _poc_chain_requests(finding: dict) -> list[dict]:
+    """The HTTP requests worth replaying, pulled from the finding's evidence.
+
+    Only recorded observations qualify: a request that actually reached the
+    target. Planning calls, notes, and artifacts are not reproduction steps.
+    """
+    seen: set[tuple[str, str]] = set()
+    out: list[dict] = []
+    for item in finding.get("evidence_chain") or []:
+        if not isinstance(item, dict) or item.get("kind") != "tool_call":
+            continue
+        if str(item.get("tool") or "") not in {"http_request", "http_probe", "http"}:
+            continue
+        request = item.get("request") if isinstance(item.get("request"), dict) else {}
+        target = str(request.get("target") or "").strip()
+        if not target:
+            continue
+        method = str(request.get("method") or "GET").upper() or "GET"
+        key = (method, target)
+        if key in seen:
+            continue
+        seen.add(key)
+        response = item.get("response") if isinstance(item.get("response"), dict) else {}
+        out.append({
+            "at": str(item.get("at") or ""),
+            "method": method,
+            "target": target,
+            "status": response.get("status"),
+            "bytes": response.get("bytes"),
+        })
+    return out
+
+
+def _shell(value: str) -> str:
+    """Quote for a shell only when the value would not survive word-splitting."""
+    text = str(value)
+    safe = set("-_./:@=%?&+,~")
+    if text and all(ch.isalnum() or ch in safe for ch in text):
+        return text
+    return "'" + text.replace("'", "'\\''") + "'"
+
+
+def _poc_curl(req: dict) -> str:
+    method = req.get("method") or "GET"
+    parts = ["curl", "-sS", "-i", "-X", method]
+    for name, value in (req.get("headers") or {}).items():
+        if str(name).lower() in {"content-length", "date", "connection"}:
+            continue
+        parts += ["-H", f"{name}: {value}"]
+    parts.append(req["target"])
+    return " ".join(_shell(part) for part in parts)
+
+
+def _interesting(req: dict) -> bool:
+    """Rank the exploit request above the reconnaissance ones."""
+    target = str(req.get("target") or "")
+    markers = ("../", "..%2f", "%2e%2e", "file=", "?id=", "?url=", "?path=",
+               "<script", "union+select", "union%20select", "{{", "${")
+    if any(marker in target.lower() for marker in markers):
+        return True
+    status = req.get("status")
+    return isinstance(status, int) and status >= 500
+
+
+def render_finding_poc(finding: dict, mission: dict | None = None,
+                       submission: dict | None = None) -> str:
+    """A humanized, submission-ready proof of concept for one finding.
+
+    Assembles the finding's own words and the requests that were actually
+    recorded into a document a reviewer can follow by hand: a plain-language
+    summary, numbered reproduction steps, copy-paste curl and Python, the
+    evidence on file, and remediation. Secrets are redacted exactly as in the
+    run report, so the PoC never leaks the raw value it proves.
+    """
+    mission = mission or {}
+    submission = submission or {}
+    finding = public_finding(finding)
+
+    title = _inline(finding.get("title", "finding")) or "finding"
+    severity = _inline(finding.get("severity", "unknown")) or "unknown"
+    kind = _inline(finding.get("secret_type", "") or finding.get("type", "")) or "n/a"
+    target = _inline(mission.get("target", "") or submission.get("target", "")
+                     or finding.get("target", "")) or "(not recorded)"
+    status = _inline(finding.get("triage_status", "") or finding.get("status", "")) or "untriaged"
+    confidence = finding.get("confidence")
+    created = _inline(finding.get("created_at", ""))
+
+    impact = _inline(finding.get("impact", ""))
+    evidence = _inline(finding.get("evidence", ""))
+    source = _inline(finding.get("source", ""))
+    notes = _inline(finding.get("notes", ""))
+
+    requests = _poc_chain_requests(finding)
+    key_request = None
+    if requests:
+        hint = f"{evidence} {impact}".lower()
+        key_request = min(requests, key=lambda r: (_req_rank(r, hint), str(r.get("at") or "")))
+    total_requests = len(requests)
+    requests = requests[:10]
+
+    summary_lines: list[str] = []
+    if impact:
+        summary_lines.append(impact)
+    if evidence:
+        summary_lines.append("")
+        summary_lines.append(evidence)
+    if not summary_lines:
+        summary_lines.append(
+            "This finding was recorded without a written impact statement. "
+            "Reproduce the request below and describe the difference you observe.")
+
+    asset = ""
+    if key_request:
+        asset = str(key_request["target"])
+    elif requests:
+        asset = str(requests[0]["target"])
+    if not asset:
+        asset = source or target
+
+    step_lines: list[str] = []
+    for index, req in enumerate(requests, start=1):
+        note = ""
+        if isinstance(req.get("status"), int):
+            note = f" Observe the response status ({req['status']})."
+        if key_request and req["target"] == key_request["target"] and req["method"] == key_request["method"]:
+            note += " This is the request that demonstrates the issue."
+        step_lines.append(f"{index}. Send `{req['method']} {req['target']}`.{note}")
+
+    curl_blocks: list[str] = []
+    python_lines = ["import requests", ""]
+    for req in requests:
+        curl_blocks.append(_poc_curl(req))
+        python_lines.append(
+            f"response = requests.request({req['method']!r}, {req['target']!r})")
+        if isinstance(req.get("status"), int):
+            python_lines.append(f"assert response.status_code == {req['status']}")
+        python_lines.append("print(response.status_code)")
+        python_lines.append("print(response.text[:400])")
+        python_lines.append("")
+    curl_text = "\n\n".join(curl_blocks) or "# no request was recorded for this finding"
+    python_text = "\n".join(python_lines).strip()
+
+    lines: list[str] = [f"# {title}", ""]
+    lines.append(f"- **Severity:** {severity}")
+    lines.append(f"- **Type:** {kind}")
+    lines.append(f"- **Target:** {target}")
+    if mission.get("title"):
+        lines.append(f"- **Mission:** {_inline(mission['title'])}")
+    if created:
+        lines.append(f"- **Recorded:** {created}")
+    lines.append(f"- **Status:** {status}")
+    if isinstance(confidence, (int, float)) and confidence:
+        lines.append(f"- **Confidence:** {confidence}")
+    lines.append("")
+
+    lines.append("## Summary")
+    lines.append("")
+    lines.extend(summary_lines)
+    lines.append("")
+
+    if asset:
+        lines.append("## Affected asset")
+        lines.append("")
+        lines.append(f"`{asset}`")
+        lines.append("")
+
+    lines.append("## Steps to reproduce")
+    lines.append("")
+    if step_lines:
+        lines.extend(step_lines)
+        extra = total_requests - len(requests)
+        if extra > 0:
+            lines.append(f"{len(requests) + 1}. {extra} further probe(s) were recorded; "
+                         "the full request log is in the evidence on file.")
+    else:
+        lines.append("1. No request step was recorded on this finding. Re-derive "
+                     "the request from the evidence below before filing.")
+    lines.append("")
+
+    lines.append("## Manual verification")
+    lines.append("")
+    lines.append("### curl")
+    lines.append("")
+    lines.append("```bash")
+    lines.append(curl_text)
+    lines.append("```")
+    lines.append("")
+    lines.append("### python")
+    lines.append("")
+    lines.append("```python")
+    lines.append(python_text)
+    lines.append("```")
+    lines.append("")
+
+    if evidence:
+        lines.append("## Proof")
+        lines.append("")
+        lines.append(evidence)
+        lines.append("")
+
+    artifacts = [a for a in (finding.get("artifacts") or []) if isinstance(a, dict)]
+    if artifacts:
+        lines.append("## Evidence on file")
+        lines.append("")
+        for artifact in artifacts[:20]:
+            name = _inline(artifact.get("name", "artifact"))
+            digest = _inline(artifact.get("sha256", ""))
+            size = artifact.get("bytes") or 0
+            line = f"- `{name}` ({size} bytes"
+            if digest:
+                line += f", sha256 {digest[:16]}"
+            line += ")"
+            lines.append(line)
+        lines.append("")
+
+    lines.append("## Impact")
+    lines.append("")
+    lines.append(impact or "Not yet written. Describe the concrete impact before "
+                 "filing this report.")
+    lines.append("")
+
+    lines.append("## Remediation")
+    lines.append("")
+    if kind == "path-traversal" or "traversal" in kind:
+        lines.append("Resolve the requested file against a fixed allow-list instead "
+                     "of the application root, reject any name that escapes it, and "
+                     "rotate every credential the readable file exposed.")
+    elif "credential" in kind or "secret" in kind or "key" in kind or "token" in kind:
+        lines.append("Rotate the exposed credential, remove it from any reachable "
+                     "artifact, and move it behind server-side configuration.")
+    else:
+        lines.append("Fix the underlying weakness, then re-run the steps above to "
+                     "confirm the difference is gone.")
+    lines.append("")
+
+    if notes:
+        lines.append("## Notes")
+        lines.append("")
+        lines.append(notes)
+        lines.append("")
+
+    lines.append("---")
+    lines.append("")
+    lines.append(f"_Auto-generated from finding `{_inline(finding.get('id', ''))}` by "
+                 "NetCast3r. Reproduce only against the authorised target._")
+    return "\n".join(lines)
+
+
+def finding_poc_filename(finding: dict, submission: dict | None = None) -> str:
+    """A stable, filesystem-safe name for a finding's PoC report."""
+    basis = str((submission or {}).get("id") or finding.get("id") or "finding")
+    safe = re.sub(r"[^A-Za-z0-9_.-]+", "-", basis).strip("-") or "finding"
+    return f"{safe}-poc.md"
+
+
 def _pdf_escape(text: str) -> str:
     return (str(text or "").replace("\\", "\\\\").replace("(", "\\(")
             .replace(")", "\\)"))

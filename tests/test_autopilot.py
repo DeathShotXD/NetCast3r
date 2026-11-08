@@ -204,6 +204,34 @@ class AutopilotLoopTests(unittest.TestCase):
         self.assertEqual(args["mission_id"], "msn_test")
 
 
+    def test_a_named_move_skip_does_not_drop_a_sibling(self):
+        operator = self.make(scripted(
+            plan(("http_probe", {"target": "http://127.0.0.1:9/a"}),
+                 ("http_probe", {"target": "http://127.0.0.1:9/b"})),
+            reply({"thought": "enough", "summary": "done", "done": True}),
+        ))
+        target = autopilot.Autopilot._move_id(
+            {"action": "http_probe", "args": {"target": "http://127.0.0.1:9/a"}})
+        batches = [[{"id": "dir_move", "kind": "skip",
+                     "text": "Skip this move", "target": target}]]
+        operator.directive_source = lambda: batches.pop(0) if batches else []
+        seen = []
+        operator.on_step = lambda stage, payload: seen.append((stage, dict(payload)))
+        result = operator.run()
+
+        probes = [args["target"] for name, args, _ in self.registry.calls
+                  if name == "http_probe"]
+        self.assertEqual(probes, ["http://127.0.0.1:9/b"])
+        skipped = [payload for stage, payload in seen
+                   if stage == "task" and payload.get("status") == "skipped"]
+        self.assertEqual([item["task_id"] for item in skipped], [target])
+        applied = [payload for stage, payload in seen
+                   if stage == "directive" and payload.get("status") == "applied"]
+        self.assertEqual([item["directive_id"] for item in applied], ["dir_move"])
+        self.assertEqual(applied[0]["text"], "Skip this move")
+        self.assertEqual(len(result["steps"]), 1)
+
+
 class AutopilotRunnerTests(unittest.TestCase):
     def setUp(self):
         self.tmp = Path(tempfile.mkdtemp())

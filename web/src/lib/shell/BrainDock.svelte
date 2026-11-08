@@ -271,6 +271,17 @@
   });
 
   $effect(() => {
+    if (store.brainPrefill) {
+      const draft = store.brainPrefill;
+      store.brainPrefill = '';
+      input = draft;
+      store.brainDock = true;
+      stickToBottom = true;
+      queueMicrotask(() => inputEl?.focus());
+    }
+  });
+
+  $effect(() => {
     if (open) {
       armPoll(1500);
       queueMicrotask(() => inputEl?.focus());

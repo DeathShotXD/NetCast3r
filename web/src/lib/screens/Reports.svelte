@@ -4,6 +4,7 @@
   import { ago, sevColor } from '../format';
   import { store } from '../state.svelte';
   import type {
+    Finding,
     Mission,
     Submission,
     SubmissionPlatform,
@@ -11,6 +12,7 @@
     SubmissionSummary
   } from '../types';
   import Buffering from '../ui/Buffering.svelte';
+  import Confirm from '../ui/Confirm.svelte';
   import Icon from '../ui/Icon.svelte';
 
   type Filter = 'all' | 'open' | 'review' | 'accepted' | 'closed';
@@ -88,13 +90,21 @@
   let submissions = $state<Submission[]>([]);
   let summary = $state<SubmissionSummary>(emptySummary);
   let missions = $state<Mission[]>([]);
+  let findings = $state<Finding[]>([]);
   let loading = $state(true);
   let refreshing = $state(false);
   let error = $state('');
   let filter = $state<Filter>('all');
   let composer = $state(false);
   let editing = $state<Submission | null>(null);
+  let deleteOpen = $state(false);
   let busy = $state('');
+  let pocOpen = $state(false);
+  let pocSubmission = $state<Submission | null>(null);
+  let pocText = $state('');
+  let pocLoading = $state(false);
+  let pocError = $state('');
+  let pocCopied = $state(false);
   let form = $state({
     title: '',
     target: '',
@@ -103,6 +113,7 @@
     severity: 'medium',
     status: 'draft' as SubmissionStatus,
     mission_id: '',
+    finding_id: '',
     bounty: '',
     currency: 'USD',
     external_id: '',
@@ -178,14 +189,16 @@
       error = '';
     }
     try {
-      const [page, nextSummary, missionPage] = await Promise.all([
+      const [page, nextSummary, missionPage, findingPage] = await Promise.all([
         api.submissions('?size=200'),
         api.submissionSummary(),
-        api.missions('?size=100')
+        api.missions('?size=100'),
+        api.findings('?size=200&sort=created_at')
       ]);
       submissions = page.items;
       summary = nextSummary;
       missions = missionPage.items;
+      findings = findingPage.items;
     } catch (exc) {
       error = exc instanceof Error ? exc.message : 'could not read the submission ledger';
     } finally {
@@ -203,6 +216,7 @@
       severity: 'medium',
       status: 'draft',
       mission_id: '',
+      finding_id: '',
       bounty: '',
       currency: 'USD',
       external_id: '',
@@ -210,6 +224,48 @@
       notes: ''
     };
     composer = true;
+  }
+
+  function findingLabel(item: Finding): string {
+    return `${item.severity.toUpperCase()} - ${item.title}`;
+  }
+
+  async function openPoc(item: Submission) {
+    pocSubmission = item;
+    pocOpen = true;
+    pocText = '';
+    pocError = '';
+    pocCopied = false;
+    pocLoading = true;
+    try {
+      pocText = (await api.submissionPoc(item.id)).markdown;
+    } catch (exc) {
+      pocError = exc instanceof Error ? exc.message : 'could not build the PoC report';
+    } finally {
+      pocLoading = false;
+    }
+  }
+
+  async function copyPoc() {
+    try {
+      await navigator.clipboard.writeText(pocText);
+      pocCopied = true;
+      window.setTimeout(() => (pocCopied = false), 1600);
+      store.toast('ok', 'PoC markdown copied');
+    } catch {
+      store.fail('clipboard is unavailable');
+    }
+  }
+
+  function closePoc() {
+    pocOpen = false;
+    pocSubmission = null;
+    pocText = '';
+    pocError = '';
+  }
+
+  function openEditingPoc() {
+    if (editing) void openPoc(editing);
   }
 
   function openSubmission(item: Submission) {
@@ -239,6 +295,7 @@
         severity: form.severity,
         status: form.status,
         mission_id: form.mission_id,
+        finding_id: form.finding_id,
         bounty_cents: toCents(form.bounty),
         currency: form.currency,
         external_id: form.external_id.trim(),
@@ -281,14 +338,12 @@
 
   async function deleteEdit() {
     if (!editing) return;
-    if (!window.confirm(`Delete "${editing.title}" from the ledger? The report file is not removed.`)) {
-      return;
-    }
     busy = 'delete';
     try {
       await api.deleteSubmission(editing.id);
       store.toast('ok', 'submission deleted from the ledger');
       editing = null;
+      deleteOpen = false;
       await load(true);
       void store.refreshTotals();
     } catch (exc) {
@@ -545,6 +600,18 @@
             </select>
           </label>
         </div>
+        <label class="obs-field">
+          <span>Finding</span>
+          <select bind:value={form.finding_id}>
+            <option value="">No finding link</option>
+            {#each findings as finding (finding.id)}
+              <option value={finding.id}>{findingLabel(finding)}</option>
+            {/each}
+          </select>
+          <small>
+            Linking a finding writes its humanized PoC report to disk the moment this row is saved.
+          </small>
+        </label>
         <div class="obs-form-row">
           <label class="obs-field">
             <span>Recorded award</span>
@@ -642,6 +709,16 @@
           </div>
         {/if}
 
+        <div class="obs-poc-trigger">
+          <button class="obs-btn obs-btn-ghost" type="button" onclick={openEditingPoc}>
+            <Icon name="file" size={12} />
+            {editing.report_path ? 'Open PoC report' : 'Build PoC report'}
+          </button>
+          <span class="obs-modal-note">
+            {editing.report_path || 'Manual steps, raw requests, impact, and remediation from the recorded evidence.'}
+          </span>
+        </div>
+
         <div class="obs-form-row">
           <label class="obs-field">
             <span>Status</span>
@@ -696,7 +773,7 @@
           type="button"
           disabled={busy === 'delete'}
           aria-busy={busy === 'delete'}
-          onclick={() => void deleteEdit()}
+          onclick={() => (deleteOpen = true)}
         >
           {busy === 'delete' ? 'Deleting' : 'Delete from ledger'}
         </button>
@@ -715,4 +792,82 @@
       </footer>
     </div>
   </div>
+{/if}
+
+{#if pocOpen && pocSubmission}
+  <div
+    class="obs-modal-veil"
+    role="presentation"
+    onclick={closePoc}
+    onkeydown={(event) => {
+      if (event.key === 'Escape') closePoc();
+    }}
+  >
+    <div
+      class="obs-modal obs-poc-modal"
+      role="dialog"
+      aria-modal="true"
+      aria-label="PoC report"
+      tabindex="-1"
+      onclick={(event) => event.stopPropagation()}
+      onkeydown={(event) => event.stopPropagation()}
+    >
+      <header class="obs-modal-head">
+        <div>
+          <div class="obs-eyebrow"><span class="tick"></span> Humanized PoC</div>
+          <h2>{pocSubmission.title}</h2>
+          <p>{pocSubmission.target || 'No target recorded'} - {platformCopy[pocSubmission.platform] ?? pocSubmission.platform}</p>
+        </div>
+        <button class="obs-icon-btn" type="button" aria-label="close" onclick={closePoc}>
+          <Icon name="x" size={14} />
+        </button>
+      </header>
+
+      <div class="obs-modal-body">
+        {#if pocLoading}
+          <Buffering
+            variant="block"
+            tone="quiet"
+            label="Writing the PoC"
+            detail="Pulling the recorded request chain and evidence from the index."
+          />
+        {:else if pocError}
+          <div class="obs-agent-note is-warn" role="status">{pocError}</div>
+        {:else}
+          <pre class="obs-poc-pre">{pocText}</pre>
+        {/if}
+      </div>
+
+      <footer class="obs-modal-foot">
+        <span class="obs-modal-note">
+          {pocSubmission.report_path || 'Preview only until the submission is linked to a finding.'}
+        </span>
+        <button class="obs-btn obs-btn-ghost" type="button" disabled={!pocText} onclick={() => void copyPoc()}>
+          {pocCopied ? 'Copied' : 'Copy markdown'}
+        </button>
+        {#if pocText}
+          <a
+            class="obs-btn obs-btn-primary"
+            href={`/api/v1/submissions/${pocSubmission.id}/poc?download=1`}
+            download
+          >
+            Download .md
+          </a>
+        {:else}
+          <button class="obs-btn obs-btn-primary" type="button" disabled>Download .md</button>
+        {/if}
+      </footer>
+    </div>
+  </div>
+{/if}
+
+{#if deleteOpen && editing}
+  <Confirm
+    title="Delete this ledger row?"
+    body={`Remove "${editing.title}" from the submission ledger. The report file on disk is not touched, and the finding stays in the index.`}
+    confirmLabel="delete row"
+    danger
+    onConfirm={() => void deleteEdit()}
+    onCancel={() => (deleteOpen = false)}
+  />
 {/if}

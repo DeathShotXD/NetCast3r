@@ -4,7 +4,7 @@ import unittest
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from netcast3r.config import Config, ProviderConfig, RouteConfig
-from netcast3r.providers import Chunk, ProviderBus, model_family
+from netcast3r.providers import Chunk, ProviderBus, model_family, shared_bus
 
 
 class StreamHandler(BaseHTTPRequestHandler):
@@ -84,6 +84,35 @@ class ProviderBusTests(unittest.TestCase):
         self.assertEqual(calls, ["openrouter"])
         self.assertTrue(any(row.get("kind") == "done" and not row.get("ok")
                             for row in seen))
+
+    def test_diversify_puts_shared_catalogues_before_the_lane_wall(self):
+        providers = [
+            ProviderConfig(name=f"th-hunt-{index}", base_url="http://127.0.0.1/v1",
+                           api_key="k", priority=index, models=["m"])
+            for index in range(1, 7)
+        ]
+        providers.append(ProviderConfig(
+            name="nvidia", base_url="http://127.0.0.1/v1", api_key="k",
+            priority=5, models=["m"]))
+        providers.append(ProviderConfig(
+            name="openrouter", base_url="http://127.0.0.1/v1", api_key="k",
+            priority=10, models=["m"]))
+        config = Config(providers=providers,
+                        routes=[RouteConfig(agent="scout", model="m",
+                                            provider="")])
+        bus = ProviderBus(config)
+        plain = [provider.name for provider, _, _ in bus._candidates("scout")]
+        mixed = [provider.name for provider, _, _ in
+                 bus._candidates("scout", diversify=True)]
+        self.assertEqual(mixed[:2], ["th-hunt-1", "th-hunt-2"])
+        self.assertLess(mixed.index("nvidia"), mixed.index("th-hunt-6"))
+        self.assertGreater(plain.index("nvidia"), plain.index("th-hunt-6"))
+
+    def test_shared_bus_is_reused_for_an_unchanged_config(self):
+        config = self._config()
+        first = shared_bus(config)
+        second = shared_bus(config)
+        self.assertIs(first, second)
 
     def test_route_model_only_applies_to_the_routed_provider(self):
         base = f"http://127.0.0.1:{self.port}"
@@ -319,6 +348,29 @@ class ProviderValidateTests(unittest.TestCase):
                               validate=lambda text: text.strip().startswith("{"))
         self.assertEqual(result.provider, "json")
         self.assertIn('"ok"', result.text)
+
+    def test_min_providers_keeps_walking_past_the_candidate_cap(self):
+        base = f"http://127.0.0.1:{self.port}"
+        config = Config(
+            providers=[
+                ProviderConfig(name="th-hunt-1", base_url=f"{base}/prose",
+                               api_key="x", priority=1, models=["m"]),
+                ProviderConfig(name="th-hunt-2", base_url=f"{base}/prose",
+                               api_key="x", priority=2, models=["m"]),
+                ProviderConfig(name="nvidia", base_url=f"{base}/json",
+                               api_key="x", priority=5, models=["m"]),
+            ],
+            routes=[RouteConfig(agent="scribe", model="m", provider="")],
+        )
+        seen = []
+        bus = ProviderBus(config, observer=seen.append)
+        result = bus.complete(
+            "scribe", [{"role": "user", "content": "hi"}], max_candidates=1,
+            min_providers=3,
+            validate=lambda text: text.strip().startswith("{"))
+        self.assertEqual(result.provider, "nvidia")
+        calls = [row["provider"] for row in seen if row["kind"] == "call"]
+        self.assertEqual(calls, ["th-hunt-1", "th-hunt-2", "nvidia"])
 
 
 if __name__ == "__main__":

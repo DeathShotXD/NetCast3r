@@ -3,6 +3,7 @@
   import { isoMs } from '../format';
   import { STAGES } from '../../tokens';
   import type { Screen } from '../types';
+  import BrandMark from '../ui/BrandMark.svelte';
   import Icon from '../ui/Icon.svelte';
 
   let {
@@ -133,30 +134,11 @@
 
 <aside class="obs-sidebar" class:is-open={open} aria-label="primary navigation">
   <div class="obs-brand">
-    <div class="obs-brand-mark" aria-hidden="true">
-      <svg viewBox="0 0 28 28" fill="none">
-        <path
-          d="M14 2.5 24.5 8.6v10.8L14 25.5 3.5 19.4V8.6z"
-          stroke="url(#obs-brand-gradient)"
-          stroke-width="1.3"
-        />
-        <path
-          d="M14 7.2 20 10.7v6.6L14 20.8l-6-3.5v-6.6z"
-          stroke="#C8F81A"
-          stroke-opacity=".55"
-          stroke-width=".9"
-        />
-        <circle cx="14" cy="14" r="2.1" fill="#C8F81A" />
-        <path
-          d="M14 7.2v4.7M20 10.7l-3.9 2.2M20 17.3l-3.9-2.2M14 20.8v-4.7M8 17.3l3.9-2.2M8 10.7l3.9 2.2"
-          stroke="#C8F81A"
-          stroke-opacity=".42"
-          stroke-width=".75"
-        />
-      </svg>
-    </div>
+    <span class="obs-brand-mark">
+      <BrandMark size={24} />
+    </span>
     <div>
-      <div class="obs-brand-name">NETCAST3R</div>
+      <div class="obs-brand-name">NETCAST<span class="obs-brand-3r">3R</span></div>
       <div class="obs-brand-sub">Agentic security OS</div>
     </div>
   </div>

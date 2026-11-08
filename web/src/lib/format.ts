@@ -102,7 +102,7 @@ export function statusColor(status: string): string {
     {
       queued: 'var(--nc-ash)',
       running: 'var(--nc-acid)',
-      done: 'var(--nc-gold)',
+      done: '#b1e61b',
       failed: 'var(--nc-violet)',
       stopped: 'var(--nc-bone_dust)',
       interrupted: 'var(--nc-slate)'

@@ -285,7 +285,7 @@ class ProviderBus:
         return "hunt"
 
     @staticmethod
-    def _order_for_lane(providers: list, lane: str) -> list:
+    def _order_for_lane(providers: list, lane: str, diversify: bool = False) -> list:
         if lane == "learn":
             primary = [p for p in providers if str(p.name).startswith("th-learn-")]
             shared = [p for p in providers
@@ -296,12 +296,22 @@ class ProviderBus:
         shared = [p for p in providers
                   if not str(p.name).startswith(("th-learn-", "th-hunt-"))]
         spare = [p for p in providers if str(p.name).startswith("th-learn-")]
+        if diversify and shared:
+            # A wall of 20+ tokenharbor lanes can all 429 in one turn. Put the
+            # independent catalogues (nvidia, openrouter, local routes) a few
+            # lanes in instead of after every hunt key, so one exhausted free
+            # quota never silences the brain. The first two lanes keep the
+            # primary quota preference.
+            head = primary[:2]
+            return head + shared + primary[2:] + spare
         return primary + shared + spare
 
-    def _candidates(self, agent: str, exclude_providers=None):
+    def _candidates(self, agent: str, exclude_providers=None,
+                    diversify: bool = False):
         route = self.config.route_for(agent)
         ordered = self._order_for_lane(
-            self.config.ordered_providers(), self._lane_for_agent(agent))
+            self.config.ordered_providers(), self._lane_for_agent(agent),
+            diversify=diversify)
         if route.provider:
             preferred = [p for p in ordered if p.name == route.provider]
             rest = [p for p in ordered if p.name != route.provider]
@@ -346,12 +356,21 @@ class ProviderBus:
         call_timeout = min(self.timeout, budget)
         last_error = "no provider available"
         rate_limited: set[str] = set()
+        # A 429 soft-retires one model. Allow exactly one sibling on the same
+        # catalogue so a key with two real models still rotates, then stop
+        # walking the rest: a free catalogue with many aliases would otherwise
+        # turn one logical call into a wall of identical 429 attempts.
+        siblings_tried: dict[str, int] = {}
         prev_provider = ""
         for provider, model, key in self._candidates(agent,
                                                      exclude_providers=exclude_providers):
             if prev_provider and provider.name != prev_provider and prev_provider in rate_limited:
                 self._penalize(prev_provider)
             prev_provider = provider.name
+            if provider.name in rate_limited:
+                if siblings_tried.get(provider.name, 0) >= 1:
+                    continue
+                siblings_tried[provider.name] = siblings_tried.get(provider.name, 0) + 1
             attempt = time.monotonic()
             self._observe({"kind": "call", "agent": agent,
                            "provider": provider.name, "model": model})
@@ -472,40 +491,65 @@ class ProviderBus:
         return "", "", ""
     def complete(self, agent: str, messages: list[dict], timeout: float = 45.0,
                  exclude_providers=None, max_candidates: int | None = None,
-                 validate=None) -> Completion:
+                 validate=None, min_providers: int = 0,
+                 max_seconds: float | None = None,
+                 diversify: bool = False) -> Completion:
         """One non-streaming call that keeps the provider's usage block.
 
         The mission runtime needs a bounded call that cannot stream forever and
         that tells it how many tokens a provider reported. Every failure is
         returned, never raised, so a dead provider becomes a recorded error
         instead of a hung agent. ``max_candidates`` caps how far down the
-        fallback chain one call may walk.
+        fallback chain one call may walk. ``min_providers`` keeps that cap from
+        cutting the walk before independent catalogues were tried, and
+        ``max_seconds`` bounds the whole walk, not just one HTTP request.
         """
         route = self.config.route_for(agent)
         budget = max(1.0, min(float(timeout),
                               float(getattr(self.config.run, "max_call_seconds", 90))))
         started = time.monotonic()
+        deadline = (started + float(max_seconds)
+                    if max_seconds is not None and float(max_seconds) > 0 else None)
         last_error = "no provider available"
         last_provider = ""
         last_model = ""
         failed: list[str] = []
         rate_limited: set[str] = set()
+        siblings_tried: dict[str, int] = {}
+        providers_tried: set[str] = set()
         attempts = 0
         prev_provider = ""
         for provider, model, key in self._candidates(
-                agent, exclude_providers=exclude_providers):
-            if max_candidates is not None and attempts >= max_candidates:
+                agent, exclude_providers=exclude_providers,
+                diversify=diversify):
+            if deadline is not None and time.monotonic() >= deadline:
+                last_error = (f"provider budget spent after {float(max_seconds):.0f}s "
+                              f"({attempts} attempt(s)); {last_error}")
+                break
+            if (max_candidates is not None and attempts >= max_candidates
+                    and len(providers_tried) >= max(0, int(min_providers))):
                 break
             # Cool a rate-limited provider only after we leave it, so sibling
             # models on the same catalogue still get one shot in this walk.
             if prev_provider and provider.name != prev_provider and prev_provider in rate_limited:
                 self._penalize(prev_provider)
             prev_provider = provider.name
+            # One sibling attempt per catalogue after a 429: enough for a key
+            # with two real models, not enough to walk twenty aliases of the
+            # same throttled free expert.
+            if provider.name in rate_limited:
+                if siblings_tried.get(provider.name, 0) >= 1:
+                    continue
+                siblings_tried[provider.name] = siblings_tried.get(provider.name, 0) + 1
             if self._cooling(provider.name):
                 continue
             attempts += 1
+            providers_tried.add(provider.name)
             last_provider, last_model = provider.name, model
             attempt = time.monotonic()
+            attempt_budget = budget
+            if deadline is not None:
+                attempt_budget = max(1.0, min(budget, deadline - attempt))
             proxy = self.egress.get() if self.egress else None
             headers = {"Content-Type": "application/json"}
             if key:
@@ -522,7 +566,7 @@ class ProviderBus:
             self._observe({"kind": "call", "agent": agent,
                            "provider": provider.name, "model": model})
             try:
-                with httpx.Client(timeout=budget, proxy=proxy) as client:
+                with httpx.Client(timeout=attempt_budget, proxy=proxy) as client:
                     response = client.post(f"{provider.base_url}/chat/completions",
                                            headers=headers, json=payload)
                     if response.status_code in (403, 429):
@@ -634,3 +678,29 @@ class ProviderBus:
         return Completion(error=last_error, provider=last_provider,
                           model=last_model, failed=failed,
                           duration_ms=_ms(started))
+
+
+_SHARED_BUS: ProviderBus | None = None
+_SHARED_BUS_KEY: tuple | None = None
+_SHARED_BUS_LOCK = threading.Lock()
+
+
+def shared_bus(config, timeout: float = 45.0) -> ProviderBus:
+    """Reuse one bus while the provider configuration is unchanged.
+
+    A fresh bus on every brain turn forgot every 429 it had just learned, so
+    each turn walked the same dead lanes in the same order. A live bus keeps
+    the cooldown and retired-model maps useful across turns.
+    """
+    global _SHARED_BUS, _SHARED_BUS_KEY
+    key = tuple(sorted(
+        (str(p.name), str(p.base_url), int(p.priority),
+         tuple(str(m) for m in (p.models or [])), p.resolve_key())
+        for p in config.providers))
+    with _SHARED_BUS_LOCK:
+        if _SHARED_BUS is None or _SHARED_BUS_KEY != key:
+            _SHARED_BUS = ProviderBus(config, timeout=timeout)
+            _SHARED_BUS_KEY = key
+        else:
+            _SHARED_BUS.config = config
+        return _SHARED_BUS

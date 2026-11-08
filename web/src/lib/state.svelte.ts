@@ -31,12 +31,14 @@ class Store {
   busy = $state('');
   palette = $state(false);
   brainDock = $state(false);
+  brainPrefill = $state('');
   netCursor = $state(false);
   query = $state('');
   toasts = $state<Toast[]>([]);
   toastSeq = 0;
   lastSync = $state(0);
   syncState = $state<'idle' | 'syncing' | 'error'>('idle');
+  liveStream = $state(false);
   heartbeat: number | undefined;
   liveRunId = $state('');
   liveStage = $state('');
@@ -180,11 +182,17 @@ class Store {
     }
   }
 
+  /** Manual retry from the connection banner. */
+  async retry(): Promise<void> {
+    this.syncState = 'idle';
+    await this.refreshPulse();
+  }
+
   startHeartbeat(): void {
     if (this.heartbeat) return;
     this.startLiveStream();
-    const tick = () => {
-      if (typeof document === 'undefined' || !document.hidden) void this.refreshPulse();
+    const tick = async () => {
+      if (typeof document === 'undefined' || !document.hidden) await this.refreshPulse();
       const active = this.runs.some((run) => run.status === 'running' || run.status === 'queued');
       this.heartbeat = window.setTimeout(tick, active ? 2500 : 12000);
     };
@@ -196,6 +204,7 @@ class Store {
     this.heartbeat = undefined;
     this.source?.close();
     this.source = null;
+    this.liveStream = false;
   }
 
   /** One global SSE connection feeds the shell's live status rail. The
@@ -204,6 +213,12 @@ class Store {
     if (this.source) return;
     try {
       const stream = new EventSource(api.eventsUrl());
+      stream.onopen = () => {
+        this.liveStream = true;
+      };
+      stream.onerror = () => {
+        this.liveStream = false;
+      };
       stream.onmessage = (message) => {
         try {
           const event = JSON.parse(message.data) as RunEvent;

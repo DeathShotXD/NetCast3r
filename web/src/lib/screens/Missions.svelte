@@ -781,7 +781,7 @@
       });
       composer = false;
       resetForm();
-      store.toast('ok', 'mission saved as a draft');
+      store.toast('ok', 'mission created and in pursuit');
       await load();
       await open(mission);
       void store.refreshTotals();

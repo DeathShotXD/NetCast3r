@@ -93,6 +93,9 @@ class Extractor:
     def __init__(self, patterns: list[Pattern] | None = None, max_scan: int = 0):
         self.patterns = patterns if patterns is not None else load_patterns()
         self.max_scan = max_scan
+        self._vocab: re.Pattern | None = None
+        self._vocab_members: dict[str, list[str]] = {}
+        self._vocab_ready = False
 
     @staticmethod
     def _confidence(pattern: Pattern, value: str, context: str) -> float:
@@ -122,9 +125,14 @@ class Extractor:
             segments = [text]
         found: dict[tuple[str, str], Secret] = {}
         for segment in segments:
+            # Locate every catalog keyword in ONE case-insensitive pass, then
+            # let each pattern read the spans it cares about. Re-running a
+            # substring search per keyword made the catalog scan scale with
+            # (patterns x keywords x bytes) and stall on a hostile blob.
+            positions = self._keyword_positions(segment)
             for pattern in self.patterns:
                 if pattern.keywords:
-                    for start, end in self._windows(segment, pattern.keywords):
+                    for start, end in self._windows(positions, pattern.keywords):
                         self._match(pattern, segment, start, end, source, found)
                 else:
                     self._match(pattern, segment, 0, len(segment), source, found)
@@ -133,15 +141,56 @@ class Extractor:
     WINDOW_BEFORE = 400
     WINDOW_AFTER = 8000
 
+    def _keyword_positions(self, text: str) -> dict[str, list[tuple[int, int]]]:
+        """Every keyword hit in ``text`` keyed by the lowercased keyword.
+
+        One compiled alternation walks the text once. A match can still cover
+        a shorter keyword inside it ("sk" inside "sk_live"), so each hit is
+        decomposed into every catalogue keyword it contains. That keeps the
+        window set identical to the old per-keyword scan without paying its
+        cost.
+        """
+        vocabulary = self._vocabulary()
+        if vocabulary is None:
+            return {}
+        positions: dict[str, list[tuple[int, int]]] = {}
+        for match in vocabulary.finditer(text):
+            lowered = match.group(0).lower()
+            for keyword in self._vocab_members.get(lowered, (lowered,)):
+                at = lowered.find(keyword)
+                while at >= 0:
+                    positions.setdefault(keyword, []).append(
+                        (match.start() + at, match.start() + at + len(keyword)))
+                    at = lowered.find(keyword, at + 1)
+        return positions
+
+    def _vocabulary(self) -> re.Pattern | None:
+        """Alternation of every keyword in this extractor, built lazily."""
+        if not self._vocab_ready:
+            words = {kw.lower() for pattern in self.patterns for kw in pattern.keywords if kw}
+            if words:
+                # Longest first so a keyword that contains a shorter one wins.
+                ordered = sorted(words, key=len, reverse=True)
+                self._vocab = re.compile("|".join(re.escape(word) for word in ordered),
+                                         re.IGNORECASE)
+                self._vocab_members = {
+                    word: [other for other in words if other in word]
+                    for word in words}
+            self._vocab_ready = True
+        return self._vocab
+
     @classmethod
-    def _windows(cls, text: str, keywords: list[str]) -> list[tuple[int, int]]:
+    def _windows(cls, positions: dict[str, list[tuple[int, int]]],
+                 keywords: list[str]) -> list[tuple[int, int]]:
+        if not positions:
+            return []
         spans: list[tuple[int, int]] = []
         for keyword in keywords:
             if not keyword:
                 continue
-            for match in re.finditer(re.escape(keyword), text, re.IGNORECASE):
-                spans.append((max(0, match.start() - cls.WINDOW_BEFORE),
-                              match.end() + cls.WINDOW_AFTER))
+            for start, end in positions.get(keyword.lower(), ()):
+                spans.append((max(0, start - cls.WINDOW_BEFORE),
+                              end + cls.WINDOW_AFTER))
         if not spans:
             return []
         spans.sort()
