@@ -120,9 +120,20 @@
     interrupted: 'Interrupted'
   };
 
-  const filtered = $derived(
-    filter === 'all' ? missions : missions.filter((mission) => mission.status === filter)
-  );
+  const filtered = $derived.by(() => {
+    const list = filter === 'all'
+      ? missions
+      : missions.filter((mission) => mission.status === filter);
+    // Active work leads. A paused mission must never outrank the one that is
+    // actually hunting, so status order wins before recency.
+    return [...list].sort((a, b) => {
+      const rank = statusOrder.indexOf(a.status) - statusOrder.indexOf(b.status);
+      if (rank !== 0) return rank;
+      const at = Date.parse(a.updated_at || a.created_at || '') || 0;
+      const bt = Date.parse(b.updated_at || b.created_at || '') || 0;
+      return bt - at;
+    });
+  });
   const activeCount = $derived(missions.filter((mission) => mission.status === 'active').length);
   const pendingApprovals = $derived(approvals.filter((approval) => approval.status === 'pending'));
   const selectedApprovals = $derived(

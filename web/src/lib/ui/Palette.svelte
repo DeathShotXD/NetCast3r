@@ -1,8 +1,9 @@
 <script lang="ts">
   import { store } from '../state.svelte';
-  import { ago } from '../format';
+  import { api } from '../api';
+  import { ago, statusLabel } from '../format';
   import { focusTrap } from '../actions';
-  import type { Screen } from '../types';
+  import type { Finding, Screen } from '../types';
 
   type Item = { label: string; hint: string; glyph: string; group: string; run: () => void };
 
@@ -24,6 +25,18 @@
   let q = $state('');
   let cursor = $state(0);
   let input = $state<HTMLInputElement | null>(null);
+  let remote = $state<Finding[]>([]);
+
+  /** Subsequence match, so "cmdctr" finds "Command Center". */
+  function fuzzy(needle: string, text: string): boolean {
+    if (!needle) return true;
+    let index = 0;
+    for (const char of text) {
+      if (char === needle[index]) index += 1;
+      if (index >= needle.length) return true;
+    }
+    return false;
+  }
 
   const navItems = $derived<Item[]>(
     NAV.map((s) => ({
@@ -34,6 +47,60 @@
       run: () => store.go(s.id)
     }))
   );
+
+  const castItems = $derived<Item[]>(
+    store.activeCasts.map((cast) => ({
+      label: `Watch ${cast.target}`,
+      hint: `${cast.id.slice(-6)} - in flight`,
+      glyph: '[*]',
+      group: 'Live casts',
+      run: () => store.watch(cast.id)
+    }))
+  );
+
+  const findingItems = $derived<Item[]>(
+    remote.map((finding) => ({
+      label: finding.title,
+      hint: `${finding.severity || 'unknown'} - ${finding.triage_status || 'new'}`,
+      glyph: '*',
+      group: 'Findings',
+      run: () => {
+        store.query = finding.title;
+        store.go('findings');
+      }
+    }))
+  );
+
+  const recentItems = $derived<Item[]>(
+    store.recentScreens
+      .map((id) => NAV.find((entry) => entry.id === id))
+      .filter((entry): entry is (typeof NAV)[number] => !!entry)
+      .map((entry) => ({
+        label: entry.label,
+        hint: 'recent',
+        glyph: entry.glyph,
+        group: 'Recent',
+        run: () => store.go(entry.id)
+      }))
+  );
+
+  const castHistoryItems = $derived.by<Item[]>(() => {
+    const needle = q.trim().toLowerCase();
+    if (needle.length < 2) return [];
+    return store.runs
+      .filter(
+        (run) =>
+          run.target.toLowerCase().includes(needle) || run.id.toLowerCase().includes(needle)
+      )
+      .slice(0, 5)
+      .map((run) => ({
+        label: run.target,
+        hint: `${statusLabel(run.status)} - ${run.id.slice(-6)}`,
+        glyph: '[ ]',
+        group: 'Casts',
+        run: () => store.watch(run.id)
+      }));
+  });
 
   const actionItems = $derived.by<Item[]>(() => {
     const list: Item[] = [];
@@ -97,6 +164,15 @@
       }
     });
     list.push({
+      label: 'Keyboard shortcuts',
+      hint: 'press ? any time',
+      glyph: '?',
+      group: 'Actions',
+      run: () => {
+        store.shortcuts = true;
+      }
+    });
+    list.push({
       label: 'Refresh the control plane',
       hint: 'summary + run ledger',
       glyph: '~',
@@ -120,36 +196,48 @@
   });
 
   const items = $derived.by<Item[]>(() => {
-    const all = [...actionItems, ...navItems];
+    const all = [
+      ...castItems,
+      ...actionItems,
+      ...recentItems,
+      ...findingItems,
+      ...castHistoryItems,
+      ...navItems
+    ];
     const needle = q.trim().toLowerCase();
     if (!needle) return all;
     const matches = all.filter(
       (item) =>
-        item.label.toLowerCase().includes(needle) ||
+        fuzzy(needle, item.label.toLowerCase()) ||
         item.hint.toLowerCase().includes(needle) ||
         item.group.toLowerCase().includes(needle)
     );
+    const extra: Item[] = [];
+    if (needle.length >= 2) {
+      extra.push({
+        label: `Search findings for "${q.trim()}"`,
+        hint: 'filter the findings ledger',
+        glyph: '*',
+        group: 'Search',
+        run: () => {
+          store.query = q.trim();
+          store.go('findings');
+        }
+      });
+    }
     // Free text that is not a navigation label is an instruction for Helix.
     // Keep real matches first so Enter never sends a screen name to the model.
-    const looksLikeInstruction = needle.includes(' ') || matches.length === 0;
-    if (looksLikeInstruction) {
-      const ask: Item = {
-        label: `Ask Helix: ${q.trim()}`,
-        hint: 'send as an operator instruction',
-        glyph: '?',
-        group: 'Ask',
-        run: () => {
-          store.brainPrefill = q.trim();
-          store.brainDock = true;
-        }
-      };
-      if (matches.length === 0) {
-        matches.unshift(ask);
-      } else {
-        matches.push(ask);
+    extra.push({
+      label: `Ask Helix: ${q.trim()}`,
+      hint: 'send as an operator instruction',
+      glyph: '?',
+      group: 'Ask',
+      run: () => {
+        store.brainPrefill = q.trim();
+        store.brainDock = true;
       }
-    }
-    return matches;
+    });
+    return [...matches, ...extra];
   });
 
   const sections = $derived.by(() => {
@@ -174,6 +262,25 @@
     }
   });
 
+  // Live findings search: two characters is enough to be useful, and the
+  // debounce keeps a fast typist from firing a request per keystroke.
+  $effect(() => {
+    const needle = q.trim();
+    if (!store.palette || needle.length < 2) {
+      remote = [];
+      return;
+    }
+    const handle = window.setTimeout(async () => {
+      try {
+        const page = await api.findings(`?q=${encodeURIComponent(needle)}&size=6`);
+        if (q.trim() === needle) remote = page.items;
+      } catch {
+        if (q.trim() === needle) remote = [];
+      }
+    }, 220);
+    return () => window.clearTimeout(handle);
+  });
+
   function onkey(event: KeyboardEvent) {
     if (event.key === 'ArrowDown') {
       event.preventDefault();
@@ -181,6 +288,12 @@
     } else if (event.key === 'ArrowUp') {
       event.preventDefault();
       cursor = Math.max(sel - 1, 0);
+    } else if (event.key === 'Home') {
+      event.preventDefault();
+      cursor = 0;
+    } else if (event.key === 'End') {
+      event.preventDefault();
+      cursor = Math.max(0, items.length - 1);
     } else if (event.key === 'Enter') {
       event.preventDefault();
       items[sel]?.run();
@@ -231,7 +344,7 @@
         <ul class="max-h-[52vh] overflow-auto p-2">
           {#each sections as section (section.name)}
             <li class="palette-section" aria-hidden="true">{section.name}</li>
-            {#each section.rows as row (row.item.label)}
+            {#each section.rows as row (row.item.label + row.index)}
               <li>
                 <button
                   class="palette-item"
@@ -257,8 +370,8 @@
           <span class="kbd">v</span>
           <span class="mono ml-2 text-[10px] tracking-[0.14em] text-ash">run</span>
           <span class="kbd">Enter</span>
-          <span class="mono ml-2 text-[10px] tracking-[0.14em] text-ash">brain</span>
-          <span class="kbd">B</span>
+          <span class="mono ml-2 text-[10px] tracking-[0.14em] text-ash">help</span>
+          <span class="kbd">?</span>
           <span class="mono ml-auto text-[10px] tracking-[0.24em] text-slate">netcast3r</span>
         </div>
       </div>

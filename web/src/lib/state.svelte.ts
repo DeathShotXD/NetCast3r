@@ -3,6 +3,28 @@ import { stageForAgent } from './format';
 import type { Finding, Meta, Run, RunEvent, Screen, Toast, Totals } from './types';
 
 const NET_CURSOR_KEY = 'netcast3r.netcursor';
+const FOCUS_KEY = 'netcast3r.focus';
+const RECENT_KEY = 'netcast3r.recents';
+
+function readRecents(): Screen[] {
+  try {
+    const raw = window.localStorage.getItem(RECENT_KEY);
+    const parsed = raw ? (JSON.parse(raw) as unknown) : [];
+    if (Array.isArray(parsed)) return parsed.filter((item) => typeof item === 'string').slice(0, 5) as Screen[];
+  } catch {
+    /* storage is unavailable; recents just do not persist */
+  }
+  return [];
+}
+
+function readFocus(): boolean {
+  try {
+    return window.localStorage.getItem(FOCUS_KEY) === 'on';
+  } catch {
+    /* storage is unavailable; focus mode just does not persist */
+    return false;
+  }
+}
 
 function readNetCursor(): boolean {
   try {
@@ -30,6 +52,9 @@ class Store {
   ready = $state(false);
   busy = $state('');
   palette = $state(false);
+  shortcuts = $state(false);
+  focusMode = $state(false);
+  recentScreens = $state<Screen[]>([]);
   brainDock = $state(false);
   brainPrefill = $state('');
   netCursor = $state(false);
@@ -50,11 +75,51 @@ class Store {
   constructor() {
     if (typeof window !== 'undefined') {
       this.netCursor = readNetCursor();
+      this.focusMode = readFocus();
+      this.recentScreens = readRecents();
       window.addEventListener('nc:locked', () => {
         this.locked = true;
         this.stopHeartbeat();
       });
       window.addEventListener('hashchange', () => this.applyHash());
+    }
+  }
+
+  /** Every cast currently in flight, newest first. The run ledger is paged,
+   *  so the live run is folded in when it is not on the current page. This is
+   *  the count the Command Center shows: all casts, not just one. */
+  get activeCasts(): Run[] {
+    const seen = new Map<string, Run>();
+    for (const run of this.runs) {
+      if (run.status === 'running' || run.status === 'queued') seen.set(run.id, run);
+    }
+    if (
+      this.liveRun &&
+      (this.liveRun.status === 'running' || this.liveRun.status === 'queued')
+    ) {
+      if (!seen.has(this.liveRun.id)) seen.set(this.liveRun.id, this.liveRun);
+    }
+    return [...seen.values()];
+  }
+
+  /** Focus mode hides the sidebar so a live cast gets the whole window. */
+  setFocusMode(value: boolean): void {
+    this.focusMode = value;
+    try {
+      window.localStorage.setItem(FOCUS_KEY, value ? 'on' : 'off');
+    } catch {
+      /* private mode: the choice just does not persist */
+    }
+  }
+
+  /** Recently visited screens, most recent first. Feeds the palette. */
+  private rememberScreen(screen: Screen): void {
+    const next = [screen, ...this.recentScreens.filter((item) => item !== screen)].slice(0, 5);
+    this.recentScreens = next;
+    try {
+      window.localStorage.setItem(RECENT_KEY, JSON.stringify(next));
+    } catch {
+      /* private mode: the list just does not persist */
     }
   }
 
@@ -151,6 +216,7 @@ class Store {
 
   go(screen: Screen, runId = ''): void {
     this.screen = screen;
+    this.rememberScreen(screen);
     if (runId) this.activeRunId = runId;
     else if (screen === 'live' && !this.runs.some((run) => run.id === this.activeRunId)) {
       const live = this.runs.find((run) => run.status === 'running' || run.status === 'queued');
@@ -164,6 +230,7 @@ class Store {
     this.activeRunId = runId;
     this.liveTab = tab;
     this.screen = 'live';
+    this.rememberScreen('live');
     this.syncHash();
   }
 

@@ -10,6 +10,8 @@
 
   let search = $state('');
   let searchFocused = $state(false);
+  let castMenu = $state(false);
+  const casts = $derived(store.activeCasts);
 
   const labels: Record<string, string> = {
     home: 'Command Center',
@@ -133,6 +135,50 @@
     </span>
   {/if}
 
+  {#if casts.length > 1}
+    <div class="obs-castbar">
+      <button
+        class="obs-castbar-btn"
+        type="button"
+        aria-haspopup="menu"
+        aria-expanded={castMenu}
+        title="{casts.length} casts in flight"
+        onclick={() => (castMenu = !castMenu)}
+      >
+        <span class="obs-pulse" aria-hidden="true"></span>
+        <span class="obs-castbar-count">{casts.length}</span>
+        <span class="hidden sm:inline">live</span>
+      </button>
+      {#if castMenu}
+        <button
+          class="obs-castbar-veil"
+          type="button"
+          tabindex="-1"
+          aria-label="close cast menu"
+          onclick={() => (castMenu = false)}
+        ></button>
+        <div class="obs-castbar-menu" role="menu" aria-label="casts in flight">
+          <div class="obs-castbar-head">Casts in flight</div>
+          {#each casts as cast (cast.id)}
+            <button
+              class="obs-castbar-item"
+              class:on={cast.id === store.activeRunId}
+              type="button"
+              role="menuitem"
+              onclick={() => {
+                castMenu = false;
+                store.watch(cast.id);
+              }}
+            >
+              <span class="obs-castbar-target" title={cast.target}>{cast.target}</span>
+              <em>{cast.id.slice(-6)}</em>
+            </button>
+          {/each}
+        </div>
+      {/if}
+    </div>
+  {/if}
+
   <button
     class="obs-net-toggle"
     class:on={store.netCursor}
@@ -185,6 +231,28 @@
     aria-label="open command palette"
   >
     <Icon name="terminal" size={13} />
+  </button>
+
+  <button
+    class="obs-icon-btn"
+    type="button"
+    class:on={store.focusMode}
+    aria-pressed={store.focusMode}
+    title={store.focusMode ? 'leave focus mode (F)' : 'focus mode - hide the sidebar (F)'}
+    aria-label="toggle focus mode"
+    onclick={() => store.setFocusMode(!store.focusMode)}
+  >
+    <Icon name="layers" size={14} />
+  </button>
+
+  <button
+    class="obs-icon-btn"
+    type="button"
+    title="keyboard shortcuts (?)"
+    aria-label="keyboard shortcuts"
+    onclick={() => (store.shortcuts = true)}
+  >
+    <Icon name="scroll" size={14} />
   </button>
 
   <button class="obs-btn obs-btn-primary" type="button" onclick={() => store.go('new')} title="engage a target - one seed starts the full hunt">

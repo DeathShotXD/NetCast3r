@@ -19,6 +19,7 @@
   import Backdrop from './lib/ui/Backdrop.svelte';
   import BrandMark from './lib/ui/BrandMark.svelte';
   import Palette from './lib/ui/Palette.svelte';
+  import Shortcuts from './lib/ui/Shortcuts.svelte';
   import RadialMenu from './lib/ui/RadialMenu.svelte';
   import ToastHost from './lib/ui/ToastHost.svelte';
   import Unlock from './lib/ui/Unlock.svelte';
@@ -123,6 +124,10 @@
           radial = null;
           return;
         }
+        if (store.shortcuts) {
+          store.shortcuts = false;
+          return;
+        }
         if (store.palette) {
           store.palette = false;
           return;
@@ -139,6 +144,16 @@
         }
       }
       if (store.palette) return;
+      if (event.key === '?' && !typing) {
+        event.preventDefault();
+        store.shortcuts = true;
+        return;
+      }
+      if ((event.key === 'f' || event.key === 'F') && !typing && !event.metaKey && !event.ctrlKey && !event.altKey) {
+        event.preventDefault();
+        store.setFocusMode(!store.focusMode);
+        return;
+      }
       if (event.key === '/' && !typing) {
         event.preventDefault();
         document.querySelector<HTMLInputElement>('header [data-search]')?.focus();
@@ -188,7 +203,7 @@
   <Backdrop />
   <Symbols />
   <NetCursor />
-  <div class="obs-app">
+  <div class="obs-app" class:is-focus={store.focusMode}>
     <Rail open={railOpen} onNavigate={() => (railOpen = false)} />
 
     <div class="obs-main">
@@ -243,6 +258,7 @@
 
   <ToastHost />
   <Palette />
+  <Shortcuts />
   <BrainDock />
   {#if radial}
     <RadialMenu

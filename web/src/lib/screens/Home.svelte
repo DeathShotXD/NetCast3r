@@ -124,6 +124,8 @@
   const counts = $derived((focusRun?.counts ?? {}) as Record<string, number>);
   const triage = $derived(totals?.triage ?? {});
   const openFindings = $derived((triage.new ?? 0) + (triage.in_progress ?? 0));
+  const activeCasts = $derived(store.activeCasts);
+  const castTargets = $derived(new Set(activeCasts.map((cast) => cast.target)).size);
   const confirmed = $derived(triage.confirmed ?? 0);
   const escalated = $derived(triage.escalated ?? 0);
   const target = $derived(focusRun?.target ?? '');
@@ -414,11 +416,14 @@
       key: 'active',
       icon: 'activity',
       label: 'Active casts',
-      value: live ? 1 : 0,
-      note: live
-        ? `${target} in flight - ${stageLabel.toLowerCase()}`
-        : `${totals?.active_runs ?? 0} queued - control plane idle`,
-      tone: live ? 'acid' : '',
+      value: activeCasts.length,
+      note:
+        activeCasts.length === 0
+          ? `${totals?.active_runs ?? 0} queued - control plane idle`
+          : activeCasts.length === 1
+            ? `${activeCasts[0].target} in flight - ${stageLabel.toLowerCase()}`
+            : `${activeCasts.length} casts in flight - ${castTargets} target${castTargets === 1 ? '' : 's'}`,
+      tone: activeCasts.length ? 'acid' : '',
       spark: false
     },
     {
@@ -1156,6 +1161,32 @@
 
   <div class="obs-command-grid">
     <div class="obs-command-main">
+      {#if activeCasts.length > 1}
+        <section class="obs-card obs-casts" aria-label="casts in flight">
+          <div class="obs-casts-head">
+            <span class="obs-casts-title"><Icon name="activity" size={13} /> Casts in flight</span>
+            <span class="obs-casts-meta">
+              {activeCasts.length} running - {castTargets} target{castTargets === 1 ? '' : 's'}
+            </span>
+          </div>
+          <div class="obs-cast-list">
+            {#each activeCasts as cast (cast.id)}
+              <button
+                class="obs-cast-chip"
+                class:on={cast.id === focusRun?.id}
+                type="button"
+                title="watch {cast.target}"
+                onclick={() => store.watch(cast.id)}
+              >
+                <span class="obs-pulse" aria-hidden="true"></span>
+                <span class="obs-cast-target">{cast.target}</span>
+                <em>{cast.id.slice(-6)}</em>
+              </button>
+            {/each}
+          </div>
+        </section>
+      {/if}
+
       <!-- mission hero -->
       <section class="obs-card obs-hero" class:is-live={live} use:pauseOffscreen aria-label="current operation">
         <svg class="obs-hero-net" viewBox="0 0 460 250" fill="none" aria-hidden="true">
