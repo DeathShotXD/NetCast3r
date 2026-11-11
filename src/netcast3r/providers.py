@@ -280,12 +280,21 @@ class ProviderBus:
     LEARN_AGENTS = frozenset({
         "train", "training", "learn", "learning", "lab", "study", "model-study",
     })
+    # The main brain - the steward's own cognition and the operator-facing
+    # voice - runs on the primary preferred catalogue (b.ai DeepSeek). Nemotron
+    # and the free MoE lanes stay on the subagents, which are the specified
+    # tasks. Add a name here to bring another steward role onto the main brain.
+    BRAIN_AGENTS = frozenset({
+        "brain", "prime", "helix", "chat", "voice", "steward",
+    })
 
     @staticmethod
     def _lane_for_agent(agent: str) -> str:
         name = str(agent or "").strip().lower()
         if name in ProviderBus.LEARN_AGENTS or name.startswith("train"):
             return "learn"
+        if name in ProviderBus.BRAIN_AGENTS:
+            return "brain"
         return "hunt"
 
     @staticmethod
@@ -296,6 +305,15 @@ class ProviderBus:
                       if not str(p.name).startswith(("th-learn-", "th-hunt-"))]
             spare = [p for p in providers if str(p.name).startswith("th-hunt-")]
             return primary + shared + spare
+        if lane == "brain":
+            # The main brain leads with the explicitly configured catalogues in
+            # priority order (bai/DeepSeek is priority 0), then the free lanes
+            # only as a fallback when the primary is cooling or down.
+            shared = [p for p in providers
+                      if not str(p.name).startswith(("th-learn-", "th-hunt-"))]
+            hunt = [p for p in providers if str(p.name).startswith("th-hunt-")]
+            learn = [p for p in providers if str(p.name).startswith("th-learn-")]
+            return shared + hunt + learn
         primary = [p for p in providers if str(p.name).startswith("th-hunt-")]
         shared = [p for p in providers
                   if not str(p.name).startswith(("th-learn-", "th-hunt-"))]

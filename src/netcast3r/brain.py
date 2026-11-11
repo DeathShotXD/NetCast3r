@@ -905,9 +905,11 @@ Rules:
 """
 
 
-_CHAT_LIGHT_MODELS: tuple[tuple[str, str], ...] = (
-    # Ordered by speed and free/light footprint. DeepSeek is last so a normal
-    # chat never burns the paid reasoning lane.
+_MAIN_BRAIN_MODELS: tuple[tuple[str, str], ...] = (
+    # The main brain speaks on the primary preferred catalogue (b.ai DeepSeek),
+    # so the operator voice and the steward cognition agree. The free MoE
+    # models are ordered after it as fallbacks; they stay the subagents' lane.
+    ("bai", "deepseek-v4.1-flash"),
     ("nvidia", "nvidia/nemotron-3.5-lightning-30b-a3b"),
     ("openrouter", "nvidia/nemotron-3.5-lightning:free"),
     ("opencode", "mimo-v2.6-flash-free"),
@@ -918,10 +920,10 @@ _CHAT_LIGHT_MODELS: tuple[tuple[str, str], ...] = (
 
 
 def _chat_route(config):
-    """Pick the light free chat route unless the operator pinned one."""
+    """Pick the chat route: the main brain first, a free model as fallback."""
     from .config import RouteConfig
 
-    for name, model in _CHAT_LIGHT_MODELS:
+    for name, model in _MAIN_BRAIN_MODELS:
         provider = config.provider(name)
         if provider is None:
             continue
