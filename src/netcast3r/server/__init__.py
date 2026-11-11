@@ -4288,7 +4288,15 @@ def serve(host: str = "127.0.0.1", port: int = 7857, *, open_browser: bool = Tru
         # the whole plane, decides the next move, and steers. It respects its
         # own pause and never creates a finding.
         try:
-            server._brain_loop().start()
+            loop = server._brain_loop()
+            loop.start()
+            # A pause is an operator intent, not a boot default. If the
+            # director is engaged and hunting, a stale pause must not leave the
+            # steward asleep, so resume it and record why.
+            if server.index.ensure_director_state().get("engaged") and loop.paused:
+                loop.engage()
+                server.index.add_director_log(
+                    "helix", "hunt steward resumed on boot: the director is engaged")
         except Exception:  # noqa: BLE001 - the API must still come up
             pass
     if open_browser:
