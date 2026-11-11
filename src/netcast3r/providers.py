@@ -68,6 +68,10 @@ _EXPERT_FAMILIES = ("deepseek", "mimo", "qwen", "nemotron", "coder", "llama",
 
 _AGENT_EXPERTS: dict[str, tuple[str, ...]] = {
     "prime": ("deepseek", "nemotron", "qwen", "mimo"),
+    # Helix's operator-facing chat is deliberately light: small free models
+    # handle greetings, acknowledgements, and short status phrasing while
+    # DeepSeek does the planning and complex reasoning.
+    "chat": ("nemotron", "mimo", "qwen", "deepseek"),
     "strategist": ("deepseek", "nemotron", "qwen", "mimo"),
     "scout": ("mimo", "deepseek", "qwen", "nemotron"),
     "attacker": ("deepseek", "qwen", "mimo", "nemotron"),

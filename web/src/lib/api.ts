@@ -1,8 +1,22 @@
 import type {
-  BenchResult, BrainLiveFeed, BrainReply, Campaign, Candidate, ConnectInfo, Approval, CoverageSummary, Direction, DirectorLogEntry, DirectorStatus, ExploitPlan, Finding, HarnessDiagnose, HarnessLearn, HarnessRecall, HarnessStatus, HarnessTick, HostShellResult, Hypothesis, HypothesisEvidence, Inventory, KeyEntry, McpInfo, Meta, Mission, MissionAgent, MissionGraph, Paged, ProgramImport, ProgramPreview, Provider, ProviderHealth, RevengKinds, RevengResult, Run, RunDirective, RunEvent, Submission, SubmissionSummary, ThreatMap, ToolCall, Totals, TrendPoint, BrainTurn, BrainLoopStatus } from './types';
+  BenchResult, BrainLiveFeed, BrainReply, BrainSession, Campaign, Candidate, ConnectInfo, Approval, CoverageSummary, Direction, DirectorLogEntry, DirectorStatus, ExploitPlan, Finding, HarnessDiagnose, HarnessLearn, HarnessRecall, HarnessStatus, HarnessTick, HostShellResult, Hypothesis, HypothesisEvidence, Inventory, KeyEntry, McpInfo, Meta, Mission, MissionAgent, MissionGraph, Paged, ProgramImport, ProgramPreview, Provider, ProviderHealth, RevengKinds, RevengResult, Run, RunDirective, RunEvent, Submission, SubmissionSummary, ThreatMap, ToolCall, Totals, TrendPoint, BrainTurn, BrainLoopStatus } from './types';
 
 const BASE = '/api/v1';
 const DEFAULT_TIMEOUT_MS = 60000;
+
+/** Problem documents carry the human message in `detail` or `title`.
+ * Prefer whichever is non-empty so the UI never falls back to "Bad Request". */
+async function problemMessage(res: Response): Promise<string> {
+  let message = res.statusText || `HTTP ${res.status}`;
+  try {
+    const problem = (await res.json()) as { detail?: string; title?: string; message?: string };
+    message = (problem.detail || '').trim() || (problem.title || '').trim()
+      || (problem.message || '').trim() || message;
+  } catch {
+    /* keep status text */
+  }
+  return message;
+}
 
 async function request<T>(method: string, path: string, body?: unknown,
                           timeoutMs = DEFAULT_TIMEOUT_MS): Promise<T> {
@@ -32,14 +46,7 @@ async function request<T>(method: string, path: string, body?: unknown,
     throw new Error('session token required');
   }
   if (!res.ok) {
-    let detail = res.statusText;
-    try {
-      const problem = (await res.json()) as { detail?: string };
-      detail = problem.detail || detail;
-    } catch {
-      /* keep status text */
-    }
-    throw new Error(detail);
+    throw new Error(await problemMessage(res));
   }
   return (await res.json()) as T;
 }
@@ -65,19 +72,14 @@ async function requestText(path: string, timeoutMs = DEFAULT_TIMEOUT_MS): Promis
     throw new Error('session token required');
   }
   if (!res.ok) {
-    let detail = res.statusText;
-    try {
-      const problem = (await res.json()) as { detail?: string };
-      detail = problem.detail || detail;
-    } catch {
-      /* keep status text */
-    }
-    throw new Error(detail);
+    throw new Error(await problemMessage(res));
   }
   return await res.text();
 }
 
 export const api = {
+  sessionState: () =>
+    request<{ authenticated: boolean; auth_required: boolean }>('GET', '/session'),
   meta: () => request<Meta>('GET', '/meta'),
   authInfo: () => request<{ username: string; default: boolean; source: string }>('GET', '/auth'),
   changeCredentials: (username: string, password: string) =>
@@ -191,14 +193,29 @@ export const api = {
       'GET', `/brain/context${missionId ? `?mission_id=${missionId}` : ''}`),
   brainChat: (message: string, body: Record<string, unknown> = {}) =>
     request<BrainReply>('POST', '/brain/chat', { message, ...body }),
-  brainJournal: (limit = 60, missionId = '') =>
+  brainJournal: (limit = 60, missionId = '', sessionId = '') =>
     request<{ items: BrainTurn[]; loop: BrainLoopStatus }>(
       'GET',
-      `/brain/journal?limit=${limit}${missionId ? `&mission_id=${missionId}` : ''}`),
-  brainLive: (limit = 80, missionId = '') =>
+      `/brain/journal?limit=${limit}${missionId ? `&mission_id=${missionId}` : ''}${sessionId ? `&session_id=${sessionId}` : ''}`),
+  brainLive: (limit = 80, missionId = '', sessionId = '') =>
     request<BrainLiveFeed>(
       'GET',
-      `/brain/live?limit=${limit}${missionId ? `&mission_id=${missionId}` : ''}`),
+      `/brain/live?limit=${limit}${missionId ? `&mission_id=${missionId}` : ''}${sessionId ? `&session_id=${sessionId}` : ''}`),
+  brainSessions: (missionId = '', archived = false) =>
+    request<{ items: BrainSession[] }>(
+      'GET',
+      `/brain/sessions?limit=40${missionId ? `&mission_id=${missionId}` : ''}${archived ? '&archived=1' : ''}`),
+  brainSession: (id: string) => request<BrainSession>('GET', `/brain/sessions/${id}`),
+  brainSessionCreate: (body: Record<string, unknown>) =>
+    request<BrainSession>('POST', '/brain/sessions', body),
+  brainSessionPatch: (id: string, body: Record<string, unknown>) =>
+    request<BrainSession>('PATCH', `/brain/sessions/${id}`, body),
+  brainSessionDelete: (id: string) =>
+    request<{ deleted: boolean }>('DELETE', `/brain/sessions/${id}`),
+  brainSessionFork: (id: string, title = '') =>
+    request<BrainSession>('POST', `/brain/sessions/${id}/fork`, { title }),
+  brainSessionMessages: (id: string, limit = 500) =>
+    request<{ items: BrainTurn[] }>('GET', `/brain/sessions/${id}/messages?limit=${limit}`),
   brainLoop: (action = 'status', interval = 0) =>
     request<BrainLoopStatus>('POST', '/brain/loop',
       interval ? { action, interval } : { action }),

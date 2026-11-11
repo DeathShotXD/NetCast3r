@@ -119,7 +119,7 @@ class DashboardTests(unittest.TestCase):
         dash.header("https://a.example")
         dash.line("exegete", "reading")
         rail = T.strip(dash._stage_rail())
-        self.assertIn("CRAWL", rail)
+        self.assertIn("SCOPE", rail)
         self.assertIn("HUNT", rail)
         dash._finished = True
         self.assertGreater(T.strip(dash._stage_rail()).count(" "), 0)

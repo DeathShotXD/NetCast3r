@@ -1,10 +1,11 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onMount, tick } from 'svelte';
   import { api } from '../api';
   import { store } from '../state.svelte';
-  import { ago, sevColor, statusLabel } from '../format';
+  import { ago, sevColor, statusLabel, utcStamp } from '../format';
   import type { AgentStatus, Approval, Autonomy, Campaign, Candidate, CoverageSummary, Direction, ExploitPlan, GraphNode, GraphPath, Hypothesis, HypothesisEvidence, Mission, MissionAgent, MissionGraph, MissionStatus, ProgramImport, ProgramPreview, ToolCall , ThreatMap } from '../types';
   import Buffering from '../ui/Buffering.svelte';
+  import Confirm from '../ui/Confirm.svelte';
   import Icon from '../ui/Icon.svelte';
   import Sparkline from '../ui/Sparkline.svelte';
 
@@ -81,13 +82,14 @@
   let candidates = $state<Candidate[]>([]);
   let candidateBusy = $state('');
   let composer = $state(false);
+  let pendingClose = $state(false);
   let busy = $state('');
   let form = $state({
     title: '',
     target: '',
     objective: '',
     autonomy: 'autonomous' as Autonomy,
-    unrestricted: true,
+    unrestricted: false,
     budget: '',
     scope: ''
   });
@@ -187,7 +189,13 @@
       void loadLeads();
       void loadThreatMap();
       if (scroll && window.innerWidth < 1180) {
-        requestAnimationFrame(() => document.querySelector('.obs-mission-detail')?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
+        // Wait for the detail panel to render before measuring it.
+        void tick().then(() => {
+          const detail = document.querySelector<HTMLElement>('.obs-mission-detail');
+          if (!detail) return;
+          detail.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          detail.focus({ preventScroll: true });
+        });
       }
     } catch (exc) {
       store.fail(exc instanceof Error ? exc.message : 'could not open the mission');
@@ -863,7 +871,10 @@
 
 <svelte:window
   onkeydown={(event) => {
-    if (event.key === 'Escape' && composer) {
+    if (event.key === 'Escape' && pendingClose) {
+      pendingClose = false;
+      event.preventDefault();
+    } else if (event.key === 'Escape' && composer) {
       composer = false;
       event.preventDefault();
     }
@@ -913,8 +924,8 @@
     </article>
     <article class="obs-card">
       <span>Findings</span>
-      <strong>{missionStats.findings}</strong>
-      <small>across missions</small>
+      <strong>{Math.max(missionStats.findings, store.totals?.findings ?? 0)}</strong>
+      <small>portfolio wide</small>
     </article>
   </section>
 
@@ -1006,7 +1017,7 @@
             </div>
 
             <div class="obs-mission-foot">
-              <span class="obs-mission-updated">updated {ago(mission.updated_at)}</span>
+              <span class="obs-mission-updated" title={utcStamp(mission.updated_at)}>updated {ago(mission.updated_at)}</span>
               <span class="obs-mission-open">
                 Open <Icon name="arrow-right" size={12} />
               </span>
@@ -1023,7 +1034,7 @@
       </div>
 
       {#if selected}
-        <aside class="obs-card obs-mission-detail" aria-label="mission detail">
+        <aside class="obs-card obs-mission-detail" aria-label="mission detail" tabindex="-1">
           <header class="obs-mission-detail-head">
             <div class="obs-mission-top">
               <span class="obs-mission-state {statusClass(selected.status)}">
@@ -1127,7 +1138,7 @@
                 </button>
               {/if}
               {#if selected.status !== 'done' && selected.status !== 'archived'}
-                <button class="obs-btn obs-btn-ghost" type="button" disabled={busy.startsWith('status:')} onclick={() => void transition('done')}>
+                <button class="obs-btn obs-btn-ghost" type="button" disabled={busy.startsWith('status:')} onclick={() => (pendingClose = true)}>
                   <Icon name="check" size={12} />
                   Close
                 </button>
@@ -1255,10 +1266,10 @@
               <section class="obs-detail-section">
                 <h3>Timeline</h3>
                 <div class="obs-detail-grid">
-                  <div><span>Created</span><strong>{ago(selected.created_at)}</strong></div>
-                  <div><span>Updated</span><strong>{ago(selected.updated_at)}</strong></div>
-                  <div><span>Started</span><strong>{selected.started_at ? ago(selected.started_at) : 'not started'}</strong></div>
-                  <div><span>Finished</span><strong>{selected.finished_at ? ago(selected.finished_at) : 'open'}</strong></div>
+                  <div><span>Created</span><strong title={utcStamp(selected.created_at)}>{ago(selected.created_at)}</strong></div>
+                  <div><span>Updated</span><strong title={utcStamp(selected.updated_at)}>{ago(selected.updated_at)}</strong></div>
+                  <div><span>Started</span><strong title={selected.started_at ? utcStamp(selected.started_at) : undefined}>{selected.started_at ? ago(selected.started_at) : 'not started'}</strong></div>
+                  <div><span>Finished</span><strong title={selected.finished_at ? utcStamp(selected.finished_at) : undefined}>{selected.finished_at ? ago(selected.finished_at) : 'open'}</strong></div>
                 </div>
               </section>
             {:else if detailTab === 'runs'}
@@ -2110,6 +2121,20 @@
     </div>
   {/if}
 </div>
+
+{#if pendingClose}
+  <Confirm
+    title="Close this mission?"
+    body="Closing marks the mission done. Its runs, findings, and report files are kept, but the director will stop scheduling new work for it. You can reopen it later from the mission list."
+    confirmLabel="close mission"
+    danger
+    onConfirm={() => {
+      pendingClose = false;
+      void transition('done');
+    }}
+    onCancel={() => (pendingClose = false)}
+  />
+{/if}
 
 {#if composer}
   <div

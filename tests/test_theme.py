@@ -75,7 +75,7 @@ class StageTests(unittest.TestCase):
     def test_stage_order_matches_the_banner(self):
         labels = [s["label"] for s in T.STAGES]
         self.assertEqual(
-            labels, ["CRAWL", "READ JS", "HUNT", "VALIDATE", "ESCALATE", "REPORT"]
+            labels, ["SCOPE", "REASON", "HUNT", "VALIDATE", "CHAIN", "REPORT"]
         )
 
     def test_agent_maps_to_a_stage(self):

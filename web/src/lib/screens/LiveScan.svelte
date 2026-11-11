@@ -2,7 +2,7 @@
   import { onDestroy, onMount, tick } from 'svelte';
   import { api } from '../api';
   import { AGENT_COLORS, STAGES } from '../../tokens';
-  import { clock, finishedThrough, isoMs, sevColor, sevShape, stageForAgent, statusColor, statusLabel } from '../format';
+  import { clock, finishedThrough, isoMs, sevColor, sevShape, stageForAgent, statusColor, statusLabel, utcStamp } from '../format';
   import { renderMarkdown } from '../markdown';
   import { store } from '../state.svelte';
   import type { Run, RunDirective, RunEvent } from '../types';
@@ -59,7 +59,7 @@
   const RESUMABLE = ['stopped', 'interrupted', 'failed'];
   const BUCKET_MS = 250;
   const BUCKETS = 96;
-  const STREAM_CAP = 700;
+  const STREAM_CAP = 250;
 
   type StreamRow = {
     seq: number;
@@ -161,6 +161,7 @@
   let unseen = $state(0);
   let seenStreamLen = 0;
   let filter = $state('all');
+  let streamLimit = $state(STREAM_CAP);
   let tab = $state(store.liveTab || 'feed');
   let stopOpen = $state(false);
   let stop = $state<() => void>(() => {});
@@ -392,16 +393,26 @@
     return rows;
   });
 
-  const stream = $derived.by(() => {
-    if (filter === 'all') return streamAll.slice(-STREAM_CAP);
+  /** Rows matching the active filter, before the render window is applied. */
+  const streamBase = $derived.by(() => {
+    if (filter === 'all') return streamAll;
+    if (filter === 'http') {
+      return streamAll.filter((row) => row.kind === 'http'
+        || (row.kind === 'tool' && (!!row.url || /http|fetch|request/i.test(row.tool ?? ''))));
+    }
     const want: Record<string, string[]> = {
       think: ['think'], tool: ['act', 'tool'], http: ['http'],
       model: ['model'], log: ['log', 'note', 'plan', 'directive'],
       found: ['found'], err: ['err']
     };
     const kinds = want[filter] ?? [filter];
-    return streamAll.filter((row) => kinds.includes(row.kind)).slice(-STREAM_CAP);
+    return streamAll.filter((row) => kinds.includes(row.kind));
   });
+  const stream = $derived(streamBase.slice(-streamLimit));
+  const olderRows = $derived(Math.max(0, streamBase.length - stream.length));
+  const urlsSeen = $derived(new Set(
+    streamAll.filter((row) => row.url && /^https?:/i.test(row.url)).map((row) => row.url)
+  ).size);
   const lastSeq = $derived(stream.length ? stream[stream.length - 1].seq : 0);
   const reasoningCount = $derived(streamAll.filter((row) => row.kind === 'think').length);
   const toolCount = $derived(streamAll.filter((row) => row.kind === 'tool').length);
@@ -439,6 +450,17 @@
     if (key === 'findings') return landed.length;
     return 0;
   }
+  /** Mesh role counter: reported totals win, then the live lane, so an
+   *  in-flight run shows real moves instead of a flat zero. */
+  function roleCount(counter: string): number {
+    const reported = counts[counter];
+    if (typeof reported === 'number' && reported > 0) return reported;
+    const agent = counter.replace(/_(calls|actions)$/, '');
+    return agents[agent]?.calls ?? 0;
+  }
+  function roundCount(): number {
+    return (counts.rounds ?? 0) || planRound;
+  }
   const spotlightRows = $derived(
     spotlightAgent ? streamAll.filter((row) => row.agent === spotlightAgent).slice(-400) : []
   );
@@ -464,6 +486,16 @@
 
   function toggleRow(seq: number) {
     expanded = { ...expanded, [seq]: !expanded[seq] };
+  }
+
+  async function copyRow(row: StreamRow) {
+    const text = row.detail || [row.tool, row.url, row.text].filter(Boolean).join('\n');
+    try {
+      await navigator.clipboard.writeText(text);
+      store.toast('ok', 'row copied');
+    } catch {
+      store.fail('clipboard is unavailable');
+    }
   }
 
   /** One-line preview of a tool call's arguments so the move is readable
@@ -966,11 +998,13 @@
     }
   }
 
+  // Quick actions only prepare a directive. They never send one: a stray click
+  // must not skip a live task or redirect a running hunt.
   function skipCurrent() {
     const goal = liveTask?.goal || '';
     directiveText = goal ? `Skip this task: ${goal}` : 'Skip this task for now';
     directiveKind = 'skip';
-    void sendDirective('skip', liveTask?.id || '');
+    directiveBox?.focus();
   }
 
   function checkAuthFlow() {
@@ -982,7 +1016,7 @@
   function wrapUp() {
     directiveText = 'Focus on closing the strongest open lead and stop exploring side paths';
     directiveKind = 'focus';
-    void sendDirective('focus');
+    directiveBox?.focus();
   }
 
   function onDirectiveKey(event: KeyboardEvent) {
@@ -1185,7 +1219,7 @@
           </div>
           <div>
             <p class="eyebrow">urls</p>
-            <p class="num mt-0.5 text-[15px] text-bone"><span use:countup={urlCount}>0</span></p>
+            <p class="num mt-0.5 text-[15px] text-bone"><span use:countup={Math.max(urlCount, urlsSeen)}>0</span></p>
           </div>
           <div>
             <p class="eyebrow">elapsed</p>
@@ -1398,7 +1432,7 @@
                   class="live-filter"
                   class:active={filter === item.id}
                   type="button"
-                  onclick={() => (filter = item.id)}
+                  onclick={() => { filter = item.id; streamLimit = STREAM_CAP; }}
                 >
                   {item.label}
                 </button>
@@ -1425,6 +1459,7 @@
             </div>
             <div
               class="mono flex-1 overflow-y-auto px-4 pb-3 text-[12px] leading-relaxed"
+              style="max-height:min(58vh,560px);min-height:200px"
               data-transmission="1"
               class:is-live={running}
               bind:this={streamBox}
@@ -1437,6 +1472,13 @@
                   <p class="py-2 text-slate">{filter === 'all' ? 'Nothing was transmitted on this run.' : `No ${filter} rows on this run.`}</p>
                 {/if}
               {/if}
+              {#if olderRows > 0}
+                <div class="trace-older">
+                  <button type="button" onclick={() => (streamLimit += STREAM_CAP)}>
+                    load {Math.min(olderRows, STREAM_CAP)} older ({olderRows} hidden)
+                  </button>
+                </div>
+              {/if}
               {#each stream as row (row.seq)}
                 {@const meta = metaOf(row)}
                 <div
@@ -1448,7 +1490,7 @@
                   <button class="trace-main" type="button" onclick={() => toggleRow(row.seq)}>
                     <span class="trace-gutter" style="--agent:{agentColor(row.agent)}">
                       <i class="trace-icon" style="color:{meta.color}">{meta.icon}</i>
-                      <span class="trace-time">{clock(row.ts)}</span>
+                      <span class="trace-time" title={utcStamp(row.ts)}>{clock(row.ts)}</span>
                     </span>
                     <span class="trace-kind" style="color:{meta.color}">{meta.label}</span>
                     <span class="trace-agent" style="color:{agentColor(row.agent)}">{row.agent}</span>
@@ -1500,7 +1542,10 @@
                     </span>
                   </button>
                   {#if expanded[row.seq] && row.detail}
-                    <pre class="trace-detail">{row.detail}</pre>
+                    <div class="trace-detail-wrap">
+                      <button class="trace-copy" type="button" onclick={() => void copyRow(row)}>copy</button>
+                      <pre class="trace-detail">{row.detail}</pre>
+                    </div>
                   {/if}
                 </div>
               {/each}
@@ -1557,7 +1602,7 @@
                         <span class="lane-led" style="--agent:{color}" aria-hidden="true"></span>
                         <span class="mono w-[74px] shrink-0 text-[11px]" style="color:{color}">{role.label}</span>
                         <span class="text-[11px] text-bone-dust">{role.detail}</span>
-                        <span class="num ml-auto text-[11px] text-ash">{counts[role.counter] ?? 0} <span class="text-[9px] uppercase tracking-[0.08em] text-bone-dust">{role.unit}</span></span>
+                        <span class="num ml-auto text-[11px] text-ash">{roleCount(role.counter)} <span class="text-[9px] uppercase tracking-[0.08em] text-bone-dust">{role.unit}</span></span>
                       </li>
                     {/each}
                   </ul>
@@ -1565,7 +1610,7 @@
                     <span class="mono text-[9px] uppercase tracking-[0.12em]" style="color:var(--nc-acid)">supports {counts.supports ?? 0}</span>
                     <span class="mono text-[9px] uppercase tracking-[0.12em]" style="color:var(--nc-violet)">refutes {counts.refuted ?? 0}</span>
                     <span class="mono text-[9px] uppercase tracking-[0.12em] text-ash">inconclusive {counts.inconclusive ?? 0}</span>
-                    <span class="mono ml-auto text-[9px] text-bone-dust">{counts.rounds ?? 0} round(s) - {counts.corroborated ?? 0} corroborated / {counts.contested ?? 0} contested</span>
+                    <span class="mono ml-auto text-[9px] text-bone-dust">{roundCount()} round(s) - {counts.corroborated ?? 0} corroborated / {counts.contested ?? 0} contested</span>
                   </div>
                 {/if}
                 {#if memory.length === 0}

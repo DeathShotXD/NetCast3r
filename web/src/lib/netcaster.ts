@@ -727,6 +727,14 @@ export class Netcaster {
     if (!ctx || document.hidden) return;
     if (Math.min(window.devicePixelRatio || 1, 2) !== this.dpr) this.resize();
     this.syncFallback();
+    if (this.nativeFallback) {
+      // A top-layer dialog or popover paints above the canvas. Drawing the
+      // reticle under it would double the native pointer outside the dialog,
+      // so park the overlay until the top layer closes.
+      this.clear();
+      this.hideTags();
+      return;
+    }
     this.clear();
     ctx.globalCompositeOperation = 'lighter';
 

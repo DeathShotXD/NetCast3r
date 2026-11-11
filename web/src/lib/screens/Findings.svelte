@@ -1,7 +1,7 @@
 <script lang="ts">
-  import { onDestroy, onMount } from 'svelte';
+  import { onDestroy, onMount, untrack } from 'svelte';
   import { api } from '../api';
-  import { ago, sevColor, sevShape, triageLabel } from '../format';
+  import { ago, sevColor, sevShape, triageLabel, utcStamp } from '../format';
   import { store } from '../state.svelte';
   import { pauseOffscreen } from '../actions';
   import type { Finding } from '../types';
@@ -25,8 +25,10 @@
   let retesting = $state(false);
   let error = $state('');
   let pendingReject = $state<Finding | null>(null);
+  let pendingBulk = $state<{ status: string; message: string; label: string; count: number } | null>(null);
   let picked = $state<Set<string>>(new Set());
   let bulkBusy = $state('');
+  let lastRow: HTMLElement | null = null;
   let seq = 0;
   let searchTimer: number | undefined;
 
@@ -105,7 +107,11 @@
       pendingReject = null;
       return;
     }
-    if (selected) selected = null;
+    if (pendingBulk) {
+      pendingBulk = null;
+      return;
+    }
+    if (selected) close();
   }
 
   async function load() {
@@ -140,7 +146,9 @@
 
   $effect(() => {
     const incoming = store.query;
-    if (incoming !== q) {
+    // Read q untracked: typing must be able to change q without this sync
+    // immediately reverting it before the debounce fires.
+    if (incoming !== untrack(() => q)) {
       q = incoming;
       void load();
     }
@@ -150,7 +158,8 @@
     if (searchTimer) window.clearTimeout(searchTimer);
   });
 
-  function open(finding: Finding) {
+  function open(finding: Finding, origin?: EventTarget | null) {
+    if (origin instanceof HTMLElement) lastRow = origin;
     selected = finding;
     notes = finding.notes || '';
     quality = null;
@@ -195,6 +204,10 @@
 
   function close() {
     selected = null;
+    const row = lastRow;
+    lastRow = null;
+    // Return focus to the row that opened the drawer, not the search field.
+    if (row) requestAnimationFrame(() => row.focus());
   }
 
   async function patch(body: Partial<Finding>, message: string) {
@@ -265,14 +278,14 @@
     <div class="obs-findings-tools-actions">
       {#if picked.size > 0}
         <span class="obs-findings-picked" role="status">{picked.size} selected</span>
-        <button class="obs-btn obs-btn-swarm" type="button" disabled={!!bulkBusy} onclick={() => void bulk('confirmed', 'confirmed')}>
-          {bulkBusy === 'confirmed' ? 'confirming...' : 'confirm'}
+        <button class="obs-btn obs-btn-swarm" type="button" disabled={!!bulkBusy} onclick={() => (pendingBulk = { status: 'confirmed', message: 'confirmed', label: 'confirm', count: picked.size })}>
+          confirm
         </button>
-        <button class="obs-btn" type="button" disabled={!!bulkBusy} onclick={() => void bulk('escalated', 'marked escalate-ready')}>
-          {bulkBusy === 'escalated' ? 'working...' : 'escalate'}
+        <button class="obs-btn" type="button" disabled={!!bulkBusy} onclick={() => (pendingBulk = { status: 'escalated', message: 'marked escalate-ready', label: 'escalate', count: picked.size })}>
+          escalate
         </button>
-        <button class="obs-btn obs-btn-danger" type="button" disabled={!!bulkBusy} onclick={() => void bulk('rejected', 'rejected')}>
-          {bulkBusy === 'rejected' ? 'rejecting...' : 'reject'}
+        <button class="obs-btn obs-btn-danger" type="button" disabled={!!bulkBusy} onclick={() => (pendingBulk = { status: 'rejected', message: 'rejected', label: 'reject', count: picked.size })}>
+          reject
         </button>
         <button class="obs-btn obs-btn-ghost" type="button" disabled={!!bulkBusy} onclick={() => (picked = new Set())}>
           clear
@@ -329,8 +342,8 @@
               <tr
                 style="--row-accent:{sevColor(sev)}"
                 class:is-picked={picked.has(finding.id)}
-                onclick={() => open(finding)}
-                onkeydown={(event) => event.key === 'Enter' && open(finding)}
+                onclick={(event) => open(finding, event.currentTarget)}
+                onkeydown={(event) => event.key === 'Enter' && open(finding, event.currentTarget)}
                 tabindex="0"
               >
                 <td class="obs-pick-col">
@@ -342,17 +355,17 @@
                     onchange={() => togglePick(finding.id)}
                   />
                 </td>
-                <td>
+                <td class="obs-f-sev">
                   <Chip label={sev} color={sevColor(sev)} shape={sevShape(sev)} />
                 </td>
-                <td class="obs-findings-title">
+                <td class="obs-findings-title obs-f-title">
                   <span class="obs-findings-title-text" title={finding.title}>{finding.title}</span>
                   <span class="obs-mono obs-findings-type" title={finding.secret_type || ''}>{finding.secret_type}</span>
                 </td>
-                <td class="obs-mono obs-findings-value" title={finding.value || ''}>
+                <td class="obs-mono obs-findings-value obs-f-value" title={finding.value || ''}>
                   {finding.value}
                 </td>
-                <td>
+                <td class="obs-f-conf">
                   <span style="display:inline-flex;align-items:center;gap:8px">
                     <span class="obs-mono" style="font-size:11px">{Math.round((finding.confidence ?? 0) * 100)}%</span>
                     <span
@@ -362,8 +375,8 @@
                     ></span>
                   </span>
                 </td>
-                <td style="font-size:11.5px;color:var(--obs-muted)">{triageLabel(finding.triage_status)}</td>
-                <td class="obs-mono" style="white-space:nowrap;font-size:11px;color:var(--obs-faint)">{ago(finding.created_at)}</td>
+                <td class="obs-f-state" style="font-size:11.5px;color:var(--obs-muted)">{triageLabel(finding.triage_status)}</td>
+                <td class="obs-mono obs-f-seen" style="white-space:nowrap;font-size:11px;color:var(--obs-faint)" title={utcStamp(finding.created_at)}>{ago(finding.created_at)}</td>
               </tr>
             {/each}
           </tbody>
@@ -517,6 +530,23 @@
       </div>
     </div>
   </aside>
+{/if}
+
+{#if pendingBulk}
+  <Confirm
+    title={`${pendingBulk.label} ${pendingBulk.count} finding${pendingBulk.count === 1 ? '' : 's'}?`}
+    body={pendingBulk.status === 'rejected'
+      ? 'Bulk reject marks every selected finding as not an issue. Report files are left alone. Use the finding drawer to reject one at a time if you need to explain why.'
+      : 'This applies to every selected finding in one pass. Nothing is submitted anywhere; triage only changes the local index.'}
+    confirmLabel={`${pendingBulk.label} ${pendingBulk.count}`}
+    danger={pendingBulk.status === 'rejected'}
+    onConfirm={() => {
+      const job = pendingBulk;
+      pendingBulk = null;
+      if (job) void bulk(job.status, job.message);
+    }}
+    onCancel={() => (pendingBulk = null)}
+  />
 {/if}
 
 {#if pendingReject}

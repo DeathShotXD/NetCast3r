@@ -97,6 +97,27 @@ Reply with ONLY one JSON object, no prose and no markdown fence:
               "technique": "...", "outcome": "success|blocked|observation"},
              {"kind": "run_lab", "slug": "auto|lab-slug"},
              {"kind": "solve_lab", "slug": "lab-slug"},
+             {"kind": "api_call", "method": "GET|POST|PATCH|PUT|DELETE",
+              "path": "/api/v1/...", "query": {...}, "body": {...}},
+             {"kind": "tool_call", "tool": "http_request|http_probe|host_shell|...",
+              "args": {...}},
+             {"kind": "script_write", "name": "recon-helper", "purpose": "...",
+              "language": "python|bash", "content": "...", "tags": ["..."]},
+             {"kind": "script_run", "name": "recon-helper", "args": ["..."],
+              "timeout": 60},
+             {"kind": "script_list", "query": "..."},
+             {"kind": "tool_study", "tool": "git-dumper", "query": "..."},
+             {"kind": "tool_list", "query": "..."},
+             {"kind": "chain_execute", "mission_id": "...",
+              "template": "git-to-source-audit|token-to-auth-profile|jwt-forge-to-auth-profile|sqli-union-to-data",
+              "variables": {...}},
+             {"kind": "chain_execute", "mission_id": "...",
+              "steps": [{"kind": "http", "args": {...}},
+                        {"kind": "auth_profile", "name": "...", "headers": {...}},
+                        {"kind": "extract", "from": "last.body", "regex": "...",
+                         "name": "token", "secret": true},
+                        {"kind": "tool", "tool": "exploit_run", "args": {...}},
+                        {"kind": "pivot", "hosts": ["..."], "token": "{{token}}"}]},
              {"kind": "host_shell", "command": "...", "cwd": "...",
               "timeout": 60} |
              {"kind": "host_read", "path": "..."} |
@@ -115,6 +136,38 @@ Rules:
   stop scans, pause/kill/stop_run. When they ask for host work or to stop
   NetCast3r itself, use host_shell or shutdown_plane. You may not create a
   finding or submit a report.
+- You are a full operator harness, not only a narrator. api_call runs any
+  internal /api/v1 route (method, path, query, JSON body). tool_call runs any
+  registered MCP tool (http_request, http_probe, git_dump, postex_plan,
+  token_pivot, access_control_compare, hypothesis_create, mission notes,
+  graph, KB, and so on) with full policy on an active autonomous mission.
+  host_shell runs bash/PowerShell on the host. Use these to inspect your own
+  plane, read logs and evidence, run commands, and keep the hunt moving
+  without waiting for the operator.
+- Hard stops that even full authority does not remove: never self-approve an
+  approval, never widen mission scope, never fabricate a finding, request,
+  response, payout, or run state, and never run a destructive or
+  denial-of-service action against a target.
+- Toolsmith doctrine: when a task needs custom logic, a missing parser, or a
+  repeatable multi-step check, first run script_list/tool_list. Study an
+  installed tool with tool_study. Then write a small Python automation with
+  script_write, test it with script_run, and reuse it on later turns. Keep the
+  script name stable so its success/failure history accumulates. A script is a
+  tool, not a finding: validate its output against the live target before any
+  claim.
+- Post-exploitation doctrine: after a foothold, token, session, or source
+  disclosure, call postex_plan to rank gated next moves and token_pivot to find
+  where the credential is valid. Extend the graph with services, identities,
+  and endpoints you observe, then test the smallest safe boundary break. Stay
+  inside mission scope, never self-approve, and never run destructive or
+  denial-of-service actions. Prefer a chain that turns one primitive into
+  higher-impact data or access over another isolated banner.
+- Chain doctrine: when a confirmed primitive can be turned into a session or a
+  higher-impact proof, use chain_execute. The typed steps are extract,
+  auth_profile, http, tool, script, assert, pivot, and exploit_run. Templates
+  cover git-to-source-audit, token-to-auth-profile, jwt-forge-to-auth-profile,
+  and sqli-union-to-data. A chain stages observations and candidates; it never
+  creates a finding. Stop on a failed assertion unless the step is optional.
 - Free models are a Mixture of Experts (deepseek / mimo / qwen / ...). A single
   429 is rotation, not "model health down" - keep hunting on sibling keys.
 - When snapshot.second_brain.helix_role is "second", a heavy MCP harness
@@ -221,6 +274,9 @@ _ACTION_KINDS = {
     "start_campaign", "start_hunt", "start_swarm", "stop_run", "kill",
     "run_module", "mark_coverage", "record_lesson", "run_lab", "solve_lab",
     "host_shell", "host_read", "host_write", "host_list",
+    "api_call", "tool_call",
+    "script_write", "script_run", "script_list", "tool_study", "tool_list",
+    "chain_execute",
     "prioritize_mission", "clear_priority",
     "peer_sync", "self_upgrade", "shutdown_plane",
 }
@@ -358,10 +414,11 @@ def _recent_run_thoughts(index, director=None, mission_id: str = "",
 
 
 def live_feed(index, director=None, mission_id: str = "",
-              limit: int = 80) -> dict:
+              limit: int = 80, session_id: str = "") -> dict:
     """Unified Helix console payload: journal, logs, mesh chats, run thoughts."""
     limit = max(20, min(int(limit or 80), 200))
-    journal = index.list_brain_log(limit=limit, mission_id=mission_id)
+    journal = index.list_brain_log(limit=limit, mission_id=mission_id,
+                                   session_id=session_id)
     logs = index.list_director_log(limit=min(limit, 80))
     mesh = index.list_recent_mesh_advisories(
         limit=min(limit, 60), mission_id=mission_id)
@@ -380,6 +437,8 @@ def live_feed(index, director=None, mission_id: str = "",
             "focus": row.get("focus") or "",
             "provider": row.get("provider") or "",
             "model": row.get("model") or "",
+            "chat_provider": row.get("chat_provider") or "",
+            "chat_model": row.get("chat_model") or "",
             "source": row.get("source") or "",
             "actions": row.get("actions") or [],
             "mission_id": row.get("mission_id") or "",
@@ -505,8 +564,10 @@ def context(index, director=None, mission_id: str = "", limit: int = 8) -> dict:
                      "open_leads": stage.get("open_leads", 0)})
     runs, _ = index.list_runs(limit=max(limit, 16))
     calls, _ = index.list_tool_calls(limit=limit)
-    leads, _ = index.list_hypotheses(status="open", limit=limit)
-    candidates = index.list_candidates(status="candidate", limit=limit)
+    leads, _ = index.list_hypotheses(mission_id=mission_id, status="open",
+                                     limit=limit)
+    candidates = index.list_candidates(mission_id=mission_id,
+                                       status="candidate", limit=limit)
     director_log = index.list_director_log(limit=28)
     mesh_chat = index.list_recent_mesh_advisories(limit=16, mission_id=mission_id)
     model_traffic = index.list_recent_agent_model_calls(
@@ -747,6 +808,11 @@ def context(index, director=None, mission_id: str = "", limit: int = 8) -> dict:
         }
     except Exception:  # noqa: BLE001
         snapshot["training"] = {}
+    try:
+        from . import toolshed
+        snapshot["toolshed"] = toolshed.tools_context(index)
+    except Exception:  # noqa: BLE001 - the toolbox is helpful, not required
+        snapshot["toolshed"] = {"scripts": [], "tool_notes": []}
     return snapshot
 
 
@@ -779,6 +845,25 @@ def _salvage_model_text(text: str) -> dict:
     return out
 
 
+def _plain_reply(value) -> str:
+    """Never show a model's raw JSON (or a fenced JSON block) to the operator."""
+    text = str(value or "").strip()
+    if not text:
+        return ""
+    if text.startswith("```"):
+        text = re.sub(r"^```[a-zA-Z0-9_-]*\s*", "", text)
+        text = re.sub(r"\s*```$", "", text).strip()
+    if text.startswith("{") or text.startswith("["):
+        data = _first_json(text)
+        if not isinstance(data, dict):
+            data = _salvage_model_text(text)
+        inner = str((data or {}).get("reply") or "").strip()
+        if inner and not inner.startswith(("{", "[", "```")):
+            return inner
+        return ""
+    return text
+
+
 _PROVIDER_FAILS: dict[str, float] = {}
 _PROVIDER_FAIL_TTL = 300.0
 _PROVIDER_SOFT_TTL = 180.0
@@ -799,6 +884,104 @@ def _soft_model_error(error: str) -> bool:
         "429", "rate limit", "rate_limited", "too many requests",
         "no content", "empty", "timeout", "timed out",
     ))
+
+
+CHAT_SYSTEM = """You are Helix, the operator-facing voice of NetCast3r's
+autonomous hunt steward. A heavier planner (DeepSeek) owns the plan and the
+actions; your job is to say the result back to the operator clearly and briefly.
+Rules:
+- 1-4 short sentences. No markdown fences, no role-play, no filler.
+- Use only the plan and snapshot you are given. Never invent a finding, a raw
+  request, a response code, a payout, an approval, or a run state.
+- If the plan says 0 confirmed, say 0 confirmed. If evidence is missing, name
+  the exact missing item and the next request.
+- When the plan contains actions, say what was actually applied, not what you
+  wish had happened. Prefer concrete hosts, paths, hypotheses, and counts.
+- Plain prose only. Never return JSON, a JSON fence, or an action object.
+"""
+
+
+_CHAT_LIGHT_MODELS: tuple[tuple[str, str], ...] = (
+    # Ordered by speed and free/light footprint. DeepSeek is last so a normal
+    # chat never burns the paid reasoning lane.
+    ("nvidia", "nvidia/nemotron-3.5-lightning-30b-a3b"),
+    ("openrouter", "nvidia/nemotron-3.5-lightning:free"),
+    ("opencode", "mimo-v2.6-flash-free"),
+    ("freeai", "openrouter/free"),
+    ("nvidia", "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning"),
+    ("openrouter", "nvidia/nemotron-3-super-120b-a12b:free"),
+)
+
+
+def _chat_route(config):
+    """Pick the light free chat route unless the operator pinned one."""
+    from .config import RouteConfig
+
+    for name, model in _CHAT_LIGHT_MODELS:
+        provider = config.provider(name)
+        if provider is None:
+            continue
+        try:
+            key = provider.resolve_key()
+        except Exception:  # noqa: BLE001 - an unreadable keyring is not fatal
+            key = ""
+        local = str(provider.base_url or "").startswith(
+            ("http://127.", "http://localhost", "http://[::1]"))
+        if key or local:
+            return RouteConfig(agent="chat", provider=name, model=model,
+                               temperature=0.35, max_tokens=700,
+                               reasoning=False)
+    return RouteConfig(agent="chat", model="", temperature=0.35,
+                       max_tokens=700, reasoning=False)
+
+
+_REASONING_HINTS = (
+    "start", "stop", "pause", "resume", "engage", "hunt", "scan", "test",
+    "probe", "exploit", "chain", "validate", "report", "focus", "priorit",
+    "lead", "hypothes", "mission", "run", "target", "scope", "why", "how",
+    "plan", "next", "status", "progress", "update", "find", "bug", "vuln",
+    "critical", "proof", "evid", "raw", "request", "response", "shell",
+    "command", "api", "tool", "agent", "stop ", "kill", "approval",
+)
+
+
+def _needs_reasoning(message: str, act: bool = True) -> bool:
+    """Simple conversation stays on the light lane; anything that steers the
+    plane or asks for evidence goes to DeepSeek first."""
+    text = str(message or "").strip().lower()
+    if act:
+        return True
+    if len(text) > 180:
+        return True
+    return any(hint in text for hint in _REASONING_HINTS)
+
+
+def _compact_context(snapshot: dict) -> dict:
+    """A small snapshot for the light chat model: enough to be truthful
+    without paying a 60k-token reasoning prompt."""
+    missions = [m for m in (snapshot.get("missions") or [])
+                if str(m.get("status") or "") == "active"]
+    priority = snapshot.get("operator_priority") or {}
+    focus_id = str(priority.get("mission_id") or "")
+    focus = next((m for m in missions if str(m.get("id")) == focus_id), None)
+    if focus is None and missions:
+        focus = missions[0]
+    return {
+        "focus_mission": focus,
+        "plane": snapshot.get("plane") or {},
+        "open_leads": (snapshot.get("leads") or [])[:5],
+        "recent_tools": (snapshot.get("traffic") or [])[:5],
+        "last_helix": (snapshot.get("helix_journal") or [])[-1:] or [],
+        "note": ("Use only these facts. A 200 is reachability, not a bug. "
+                 "0 confirmed means 0 confirmed."),
+    }
+
+
+def _ask_light(server, index, messages: list, complete=None,
+               timeout: float = 20.0) -> tuple[str, str, str, str]:
+    """The chat lane: cheap, fast, and never the planning brain."""
+    return _ask(server, index, messages, complete, timeout=timeout,
+                max_candidates=6, agent="chat")
 
 
 def _remember_provider(provider: str, error: str) -> None:
@@ -825,7 +1008,7 @@ def _remember_provider(provider: str, error: str) -> None:
 
 def _ask(server, index, messages: list, complete=None,
          timeout: float = 60.0, max_candidates: int | None = None,
-         require_json: bool = False
+         require_json: bool = False, agent: str = "prime"
          ) -> tuple[str, str, str, str]:
     """One model call for the brain, with the tokenharbor prime route and the
     provider bus as the fallback. Returns (text, provider, model, error)."""
@@ -837,6 +1020,18 @@ def _ask(server, index, messages: list, complete=None,
         from .server.runner import DashboardBridge
 
         config = load_config()
+        if agent == "chat":
+            # No explicit chat route means "use the light free catalogue".
+            # Keep it first so route_for returns the light pin, while the bus
+            # can still rotate to siblings when that model is rate-limited.
+            try:
+                chat_route = config.route_for("chat")
+            except Exception:  # noqa: BLE001 - a broken route is not fatal
+                chat_route = None
+            if not (chat_route and chat_route.model):
+                route = _chat_route(config)
+                config.routes = [route] + [r for r in config.routes
+                                          if str(getattr(r, "agent", "")) != "chat"]
         try:
             DashboardBridge(index, server.keys).apply(config)
         except Exception:  # noqa: BLE001 - a broken provider row must not stop the brain
@@ -844,7 +1039,7 @@ def _ask(server, index, messages: list, complete=None,
         call_timeout = max(5.0, min(float(timeout), 30.0))
         total_budget = max(call_timeout, min(float(timeout), 45.0))
         completion = shared_bus(config, timeout=call_timeout).complete(
-            "prime", messages, timeout=call_timeout,
+            agent, messages, timeout=call_timeout,
             exclude_providers=_excluded_providers() or None,
             max_candidates=12 if max_candidates is None else max_candidates,
             min_providers=8, max_seconds=total_budget, diversify=True,
@@ -1065,10 +1260,67 @@ def focus_mission_id(index) -> str:
 
 def chat(server, index, director, message: str, history: list | None = None,
          mission_id: str = "", act: bool = True, timeout: float = 60.0,
-         complete=None, source: str = "") -> dict:
-    """Answer and steer. The model is advisory; actions are applied carefully."""
+         complete=None, source: str = "", session_id: str = "") -> dict:
+    """Answer and steer. DeepSeek plans; a light free model speaks.
+
+    ``act=False`` is pure conversation. Short greetings and acknowledgements
+    stay entirely on the light lane; anything that could steer the plane, name
+    a target, ask for evidence, or run a tool goes through the heavy planner
+    first, then the light model phrases the result.
+    """
     mission_id = mission_id or focus_mission_id(index)
+    if session_id and not history:
+        try:
+            prior = index.list_brain_messages(session_id, limit=40)
+        except Exception:  # noqa: BLE001 - a broken session must not block chat
+            prior = []
+        history = [
+            {"role": "user" if row.get("role") == "operator" else "assistant",
+             "content": str(row.get("text") or "")}
+            for row in prior if row.get("role") in {"operator", "brain"}
+        ][-16:]
     snapshot = context(index, director, mission_id=mission_id)
+    reasoning = _needs_reasoning(message, act)
+    chat_provider = ""
+    chat_model = ""
+    focus = ""
+
+    if not reasoning:
+        light_messages = [{"role": "system", "content": CHAT_SYSTEM}]
+        for turn in (history or [])[-8:]:
+            if isinstance(turn, dict) and turn.get("role") in {"user", "assistant"}:
+                light_messages.append({
+                    "role": turn["role"],
+                    "content": str(turn.get("content") or "")[:2000]})
+        light_messages.append({"role": "user", "content": json.dumps(
+            {"operator_message": message,
+             "snapshot": _compact_context(snapshot)}, default=str)[:14000]})
+        light_text, chat_provider, chat_model, light_error = _ask_light(
+            server, index, light_messages, complete, timeout=min(timeout, 25.0))
+        reply = _plain_reply(light_text)
+        error = light_error
+        if not reply:
+            reply, focus = _fallback_reply(index, mission_id, light_error, [])
+            reply = _plain_reply(reply) or reply
+        applied: list = []
+        try:
+            index.add_brain_turn("operator", message, mission_id=mission_id,
+                                 provider=chat_provider, model=chat_model,
+                                 source=source, session_id=session_id)
+            index.add_brain_turn("brain", reply[:4000], mission_id=mission_id,
+                                 focus=focus, provider=chat_provider,
+                                 model=chat_model, actions=[],
+                                 chat_provider=chat_provider,
+                                 chat_model=chat_model, source=source,
+                                 session_id=session_id)
+        except Exception:  # noqa: BLE001 - journaling must never break a reply
+            pass
+        return {"reply": reply[:4000], "focus": focus, "actions": [],
+                "provider": chat_provider, "model": chat_model,
+                "chat_provider": chat_provider, "chat_model": chat_model,
+                "reasoning": False, "mission_id": mission_id,
+                "session_id": session_id, "error": error, "findings": 0}
+
     messages = [{"role": "system", "content": BRAIN_SYSTEM}]
     for turn in (history or [])[-8:]:
         if isinstance(turn, dict) and turn.get("role") in {"user", "assistant"}:
@@ -1078,7 +1330,7 @@ def chat(server, index, director, message: str, history: list | None = None,
         {"operator_message": message, "snapshot": snapshot}, default=str)[:60000]})
 
     text, provider, model, error = _ask(server, index, messages, complete, timeout,
-                                        max_candidates=12)
+                                        max_candidates=12, agent="prime")
     data = _first_json(text) or _salvage_model_text(text)
     reply = str(data.get("reply") or text or "").strip()
     focus = str(data.get("focus") or "")[:400]
@@ -1095,18 +1347,46 @@ def chat(server, index, director, message: str, history: list | None = None,
         reply, fallback_focus = _fallback_reply(index, mission_id, error, applied)
         if not focus:
             focus = fallback_focus
+
+    # DeepSeek owns the plan; the light model owns the operator-facing voice.
+    # If the light lane fails, keep the planner's own answer instead of
+    # inventing one.
+    plan_view = {
+        "reply": reply[:1800],
+        "focus": focus,
+        "actions": [{k: a.get(k) for k in ("kind", "applied", "reason",
+                                           "mission_id", "run_id", "tool",
+                                           "exit_code", "stdout")
+                     if k in a} for a in applied[:8]],
+    }
+    light_messages = [
+        {"role": "system", "content": CHAT_SYSTEM},
+        {"role": "user", "content": json.dumps(
+            {"operator_message": message, "plan": plan_view,
+             "snapshot": _compact_context(snapshot)}, default=str)[:18000]},
+    ]
+    light_text, chat_provider, chat_model, _light_error = _ask_light(
+        server, index, light_messages, complete, timeout=min(timeout, 25.0))
+    light_clean = _plain_reply(light_text)
+    if light_clean:
+        reply = light_clean
+    reply = _plain_reply(reply) or reply
     reply = reply[:4000]
     try:
         index.add_brain_turn("operator", message, mission_id=mission_id,
-                             provider=provider, model=model, source=source)
+                             provider=provider, model=model, source=source,
+                             session_id=session_id)
         index.add_brain_turn("brain", reply, mission_id=mission_id, focus=focus,
                              provider=provider, model=model, actions=applied,
-                             source=source)
+                             chat_provider=chat_provider, chat_model=chat_model,
+                             source=source, session_id=session_id)
     except Exception:  # noqa: BLE001 - journaling must never break a reply
         pass
     return {"reply": reply, "focus": focus, "actions": applied,
-            "provider": provider, "model": model, "mission_id": mission_id,
-            "error": error, "findings": 0}
+            "provider": provider, "model": model,
+            "chat_provider": chat_provider, "chat_model": chat_model,
+            "reasoning": True, "mission_id": mission_id,
+            "session_id": session_id, "error": error, "findings": 0}
 
 
 def critical_ready_directive(index, mission_id: str) -> dict | None:
@@ -1437,6 +1717,20 @@ def cognition(server, index, director, mission_id: str = "", complete=None,
     return result
 
 
+def _portfolio_allows(director, target: str) -> bool:
+    """True when the director's portfolio allowlist permits this host."""
+    if director is None:
+        return True
+    try:
+        hosts = (director.status() or {}).get("scope_hosts") or []
+    except Exception:  # noqa: BLE001 - a broken status must not block the brain
+        return True
+    if not hosts:
+        return True
+    host = host_of(str(target or "")).lower().rstrip(".")
+    return any(host == item or host.endswith("." + item) for item in hosts)
+
+
 def _apply(index, director, action, default_mission: str = "") -> dict:
     """Apply one plane/host action, or report why it was refused."""
     if not isinstance(action, dict):
@@ -1486,6 +1780,9 @@ def _apply(index, director, action, default_mission: str = "") -> dict:
             if not target:
                 return {"kind": kind, "applied": False,
                         "reason": "start_campaign needs target"}
+            if not _portfolio_allows(director, target):
+                return {"kind": kind, "applied": False,
+                        "reason": "target is outside the director portfolio allowlist"}
             result = start_campaign(
                 server, index, target,
                 title=str(action.get("title") or ""),
@@ -1517,6 +1814,10 @@ def _apply(index, director, action, default_mission: str = "") -> dict:
             if locked.get("mission_id") and locked["mission_id"] != mission_id:
                 return {"kind": kind, "applied": False,
                         "reason": f"operator priority locked on {locked['mission_id']}"}
+            mission_row = index.get_mission(mission_id) or {}
+            if not _portfolio_allows(director, str(mission_row.get("target") or "")):
+                return {"kind": kind, "applied": False,
+                        "reason": "mission is outside the director portfolio allowlist"}
             run = server._hunts().start(mission_id)
             return {"kind": kind, "applied": True, "run_id": run.get("id"),
                     "mission_id": mission_id}
@@ -1531,6 +1832,10 @@ def _apply(index, director, action, default_mission: str = "") -> dict:
             if locked.get("mission_id") and locked["mission_id"] != mission_id:
                 return {"kind": kind, "applied": False,
                         "reason": f"operator priority locked on {locked['mission_id']}"}
+            mission_row = index.get_mission(mission_id) or {}
+            if not _portfolio_allows(director, str(mission_row.get("target") or "")):
+                return {"kind": kind, "applied": False,
+                        "reason": "mission is outside the director portfolio allowlist"}
             run = server._solvers().start(mission_id, {
                 "mode": "swarm", "endless": True,
             })
@@ -1622,6 +1927,23 @@ def _apply(index, director, action, default_mission: str = "") -> dict:
             if server is None:
                 return {"kind": kind, "applied": False, "reason": "no server"}
             return _apply_host(server, kind, action, default_mission)
+        if kind == "api_call":
+            if server is None:
+                return {"kind": kind, "applied": False, "reason": "no server"}
+            return _apply_api(server, action, default_mission)
+        if kind == "tool_call":
+            if server is None:
+                return {"kind": kind, "applied": False, "reason": "no server"}
+            return _apply_tool(server, action, default_mission)
+        if kind in {"script_write", "script_run", "script_list",
+                    "tool_study", "tool_list"}:
+            if server is None:
+                return {"kind": kind, "applied": False, "reason": "no server"}
+            return _apply_toolsmith(server, index, kind, action, default_mission)
+        if kind == "chain_execute":
+            if server is None:
+                return {"kind": kind, "applied": False, "reason": "no server"}
+            return _apply_chain(server, action, default_mission)
         if kind == "peer_sync":
             from . import second_brain as second_brain_module
             base = getattr(server, "base", None) if server is not None else None
@@ -1730,6 +2052,249 @@ def _host_approval(server, kind: str, action: dict, mission_id: str) -> str:
     return ""
 
 
+def _clip_result(value, limit: int = 6000):
+    """Keep an API/tool result readable in the journal and the chat turn."""
+    try:
+        text = json.dumps(value, default=str)
+    except (TypeError, ValueError):
+        text = str(value)
+    if len(text) <= limit:
+        return value
+    return {"truncated": True, "preview": text[:limit]}
+
+
+def _brain_mission(server, mission_id: str) -> dict:
+    if server is None or not mission_id:
+        return {}
+    try:
+        return server.index.get_mission(mission_id) or {}
+    except Exception:  # noqa: BLE001 - an unreadable mission is simply unauthorized
+        return {}
+
+
+def _mission_authorizes_operator(mission: dict) -> bool:
+    return (str(mission.get("status") or "") == "active"
+            and str(mission.get("autonomy") or "") == "autonomous")
+
+
+def _apply_chain(server, action: dict, default_mission: str = "") -> dict:
+    from . import chain_workflow
+
+    mission_id = str(action.get("mission_id") or default_mission or "").strip()
+    mission = _brain_mission(server, mission_id)
+    if not _mission_authorizes_operator(mission):
+        return {"kind": "chain_execute", "applied": False,
+                "reason": ("chain_execute needs an active autonomous mission; "
+                           "a supervised brain cannot run an exploit chain")}
+    steps = action.get("steps")
+    if not steps and action.get("template"):
+        template = chain_workflow.TEMPLATES.get(str(action["template"]))
+        if not template:
+            return {"kind": "chain_execute", "applied": False,
+                    "reason": "unknown chain template"}
+        steps = template["steps"]
+    if not isinstance(steps, list) or not steps:
+        return {"kind": "chain_execute", "applied": False,
+                "reason": "chain_execute needs steps or a known template"}
+    values = action.get("variables")
+    values = values if isinstance(values, dict) else {}
+    try:
+        result = chain_workflow.execute(
+            server, mission_id, steps,
+            policy=str(action.get("policy") or "full"),
+            dry_run=bool(action.get("dry_run", False)),
+            variables=values)
+    except chain_workflow.ChainError as exc:
+        return {"kind": "chain_execute", "applied": False, "reason": str(exc)}
+    return {"kind": "chain_execute", "applied": result.get("status") == "ok",
+            "detail": f"chain {result.get('status')} in "
+                      f"{result.get('elapsed_ms', 0)}ms",
+            "result": _clip_result(result)}
+
+
+def _apply_toolsmith(server, index, kind: str, action: dict,
+                     default_mission: str = "") -> dict:
+    """Helix writes, runs, and studies its own tools."""
+    from . import host as host_module
+    from . import toolshed
+
+    mission_id = str(action.get("mission_id") or default_mission or "").strip()
+    mission = _brain_mission(server, mission_id)
+    if not _mission_authorizes_operator(mission):
+        return {"kind": kind, "applied": False,
+                "reason": ("toolsmith actions need an active autonomous mission; "
+                           "a supervised brain cannot write or run host code")}
+    try:
+        if kind == "script_write":
+            name = str(action.get("name") or "").strip()
+            content = str(action.get("content") or "")
+            if not name or not content:
+                return {"kind": kind, "applied": False,
+                        "reason": "script_write needs name and content"}
+            record = toolshed.write_script(
+                index, getattr(server, "base", None), name, content,
+                purpose=str(action.get("purpose") or ""),
+                language=str(action.get("language") or "python"),
+                tags=action.get("tags") if isinstance(action.get("tags"), list) else [],
+                mission_id=mission_id)
+            return {"kind": kind, "applied": True,
+                    "detail": f"wrote {record.get('name')}",
+                    "name": record.get("name"), "path": record.get("path"),
+                    "script_id": record.get("id")}
+        if kind == "script_run":
+            name = str(action.get("name") or action.get("script") or "").strip()
+            if not name:
+                return {"kind": kind, "applied": False,
+                        "reason": "script_run needs name"}
+            args = action.get("args")
+            args = [str(item) for item in args] if isinstance(args, list) else []
+            result = toolshed.run_script(
+                index, getattr(server, "base", None), name, args=args,
+                timeout=int(action.get("timeout") or 60),
+                mission_id=mission_id)
+            return {"kind": kind, "applied": result.get("status") == "ok",
+                    "detail": f"{name}: exit {result.get('exit_code')}",
+                    "result": _clip_result(result)}
+        if kind == "script_list":
+            items = index.list_helix_scripts(
+                query=str(action.get("query") or ""),
+                limit=int(action.get("limit") or 30))
+            return {"kind": kind, "applied": True,
+                    "detail": f"{len(items)} script(s)",
+                    "items": [{key: row.get(key) for key in
+                               ("id", "name", "purpose", "language", "runs",
+                                "successes", "failures", "last_status")}
+                              for row in items]}
+        if kind == "tool_study":
+            tool = str(action.get("tool") or action.get("name") or "").strip()
+            query = str(action.get("query") or "").strip()
+            if not tool and not query:
+                return {"kind": kind, "applied": False,
+                        "reason": "tool_study needs a tool name or query"}
+            result = toolshed.study_tool(index, name=tool, query=query)
+            return {"kind": kind, "applied": True,
+                    "detail": f"studied {tool or query}",
+                    "result": _clip_result(result)}
+        if kind == "tool_list":
+            capabilities = host_module.capabilities()
+            scripts = index.list_helix_scripts(limit=20)
+            notes = index.list_tool_notes(limit=20)
+            return {"kind": kind, "applied": True,
+                    "detail": f"{sum(1 for v in capabilities.get('tools', {}).values() if v)} installed",
+                    "capabilities": capabilities,
+                    "scripts": [row.get("name") for row in scripts],
+                    "studied": [row.get("tool") for row in notes]}
+    except ValueError as exc:
+        return {"kind": kind, "applied": False, "reason": str(exc)}
+    except Exception as exc:  # noqa: BLE001 - report, do not crash the chat
+        return {"kind": kind, "applied": False,
+                "reason": f"{type(exc).__name__}: {exc}"}
+    return {"kind": kind, "applied": False, "reason": "no handler"}
+
+
+def _apply_api(server, action: dict, default_mission: str = "") -> dict:
+    """Run any control-plane API route as the operator.
+
+    This uses the in-process router, so the call passes exactly the same
+    auth, validation, scope, and audit checks as a browser request. Recursive
+    brain/instruct calls are refused so Helix cannot fork its own reasoning
+    loop by accident.
+    """
+    from urllib.parse import parse_qs, urlsplit
+
+    from .mcp.plane import PlaneError
+    from .server.agent_runtime import LocalPlane
+
+    mission_id = str(action.get("mission_id") or default_mission or "").strip()
+    mission = _brain_mission(server, mission_id)
+    if not _mission_authorizes_operator(mission):
+        return {"kind": "api_call", "applied": False,
+                "reason": ("api_call needs an active autonomous mission; "
+                           "a supervised brain cannot drive the plane")}
+    method = str(action.get("method") or "GET").strip().upper()
+    if method not in {"GET", "POST", "PATCH", "PUT", "DELETE", "HEAD"}:
+        return {"kind": "api_call", "applied": False,
+                "reason": f"unsupported method: {method}"}
+    raw = str(action.get("path") or action.get("url") or "").strip()
+    if not raw:
+        return {"kind": "api_call", "applied": False, "reason": "path required"}
+    if raw.startswith("/api/v1/"):
+        target = raw
+    elif raw.startswith("/"):
+        target = "/api/v1" + raw
+    elif raw.startswith("api/v1/"):
+        target = "/" + raw
+    else:
+        return {"kind": "api_call", "applied": False,
+                "reason": "path must be an internal /api/v1 route"}
+    parsed = urlsplit(target)
+    if parsed.scheme or parsed.netloc:
+        return {"kind": "api_call", "applied": False,
+                "reason": "external URLs are not allowed in api_call"}
+    path = parsed.path
+    if path.startswith(("/api/v1/brain", "/api/v1/instruct")):
+        return {"kind": "api_call", "applied": False,
+                "reason": "recursive brain/instruct calls are blocked"}
+    query = {key: values[-1] for key, values in parse_qs(parsed.query).items()
+             if values}
+    body = action.get("body")
+    try:
+        result = LocalPlane(server).request(method, path, query=query, body=body)
+    except PlaneError as exc:
+        return {"kind": "api_call", "applied": False, "method": method,
+                "path": path, "status": getattr(exc, "status", 0),
+                "reason": str(exc)}
+    except Exception as exc:  # noqa: BLE001 - report, do not crash the chat
+        return {"kind": "api_call", "applied": False, "method": method,
+                "path": path, "reason": f"{type(exc).__name__}: {exc}"}
+    return {"kind": "api_call", "applied": True, "method": method,
+            "path": path, "detail": f"{method} {path}",
+            "result": _clip_result(result)}
+
+
+def _apply_tool(server, action: dict, default_mission: str = "") -> dict:
+    """Run any registered MCP tool as Helix under the operator's mission."""
+    from .mcp.plane import PlaneError
+    from .mcp.tools import ToolContext, ToolError, ToolRegistry
+    from .server.agent_runtime import LocalPlane
+
+    mission_id = str(action.get("mission_id") or default_mission or "").strip()
+    mission = _brain_mission(server, mission_id)
+    if not _mission_authorizes_operator(mission):
+        return {"kind": "tool_call", "applied": False,
+                "reason": ("tool_call needs an active autonomous mission; "
+                           "a supervised brain cannot run tools")}
+    name = str(action.get("tool") or action.get("name") or "").strip()
+    if not name:
+        return {"kind": "tool_call", "applied": False, "reason": "tool required"}
+    args = action.get("args")
+    args = dict(args) if isinstance(args, dict) else {}
+    from .mcp.tools import _TOOL_MAP
+
+    spec = _TOOL_MAP.get(name)
+    schema = getattr(spec, "input_schema", {}) or {}
+    if mission_id and "mission_id" in (schema.get("properties") or {}):
+        args.setdefault("mission_id", mission_id)
+    ctx = ToolContext(plane=LocalPlane(server), policy="full",
+                      base=getattr(server, "base", None), actor="agent:helix",
+                      mission_id=mission_id, authorized=True)
+    registry = ToolRegistry(ctx)
+    try:
+        payload, is_error = registry.call(name, args, actor="agent:helix")
+    except ToolError as exc:
+        return {"kind": "tool_call", "applied": False, "tool": name,
+                "code": getattr(exc, "code", ""), "reason": str(exc)}
+    except PlaneError as exc:
+        return {"kind": "tool_call", "applied": False, "tool": name,
+                "reason": str(exc)}
+    except Exception as exc:  # noqa: BLE001 - report, do not crash the chat
+        return {"kind": "tool_call", "applied": False, "tool": name,
+                "reason": f"{type(exc).__name__}: {exc}"}
+    return {"kind": "tool_call", "applied": not is_error, "tool": name,
+            "detail": f"{name} -> {'ok' if not is_error else 'refused'}",
+            "result": _clip_result(payload)}
+
+
 def _apply_host(server, kind: str, action: dict,
                 default_mission: str = "") -> dict:
     from . import host as host_module
@@ -1758,6 +2323,7 @@ def _apply_host(server, kind: str, action: dict,
         _audit_brain_host(server, "host_shell",
                           {"command": command, "cwd": action.get("cwd")}, result)
         return {"kind": kind, "applied": True,
+                "detail": f"exit {result.get('exit_code')}",
                 "exit_code": result.get("exit_code"),
                 "timed_out": bool(result.get("timed_out")),
                 "stdout": str(result.get("stdout") or "")[:2000],

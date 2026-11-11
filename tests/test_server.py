@@ -400,6 +400,37 @@ class ServerTests(unittest.TestCase):
         self.assertIn("attachment",
                       str(download.headers.get("Content-Disposition") or ""))
 
+    def test_submission_poc_serves_a_recorded_report_without_a_finding(self):
+        self.server.base = Path(self.tmp.name)
+        reports = Path(self.tmp.name) / "reports" / "submissions"
+        reports.mkdir(parents=True)
+        report = reports / "draft-chain.md"
+        report.write_text("# Chain draft\n\nForged token replay proof.", encoding="utf-8")
+
+        created = self.data(self.call("POST", "/api/v1/submissions", body={
+            "title": "Recorded chain draft", "platform": "other",
+            "program": "internal", "target": "app.example.com",
+            "severity": "high", "report_path": str(report)}))
+        self.assertEqual(created["finding_id"], "")
+        preview = self.call("GET", f"/api/v1/submissions/{created['id']}/poc")
+        self.assertEqual(preview.status, 200)
+        payload = self.data(preview)
+        self.assertEqual(payload["submission_id"], created["id"])
+        self.assertEqual(payload["finding_id"], "")
+        self.assertIn("Forged token replay proof", payload["markdown"])
+        download = self.call("GET", f"/api/v1/submissions/{created['id']}/poc",
+                             query={"download": "1"})
+        self.assertEqual(download.status, 200)
+        self.assertIn("draft-chain.md",
+                      str(download.headers.get("Content-Disposition") or ""))
+
+        outside = Path(self.tmp.name) / "outside.md"
+        outside.write_text("not a report", encoding="utf-8")
+        refused = self.data(self.call("POST", "/api/v1/submissions", body={
+            "title": "Outside path", "report_path": str(outside)}))
+        blocked = self.call("GET", f"/api/v1/submissions/{refused['id']}/poc")
+        self.assertEqual(blocked.status, 400)
+
     def test_fingerprints_do_not_collide_when_tokens_share_a_prefix(self):
         prefix = "same-header-" + "x" * 80
         first = self.index.create_run("https://one.example")

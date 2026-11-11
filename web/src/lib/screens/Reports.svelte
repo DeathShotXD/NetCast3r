@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { api } from '../api';
-  import { ago, sevColor } from '../format';
+  import { ago, sevColor, utcStamp } from '../format';
   import { store } from '../state.svelte';
   import type {
     Finding,
@@ -490,7 +490,7 @@
               <span class="is-empty">not recorded</span>
             {/if}
           </span>
-          <span class="obs-sub-updated col-updated">{ago(item.updated_at)}</span>
+          <span class="obs-sub-updated col-updated" title={utcStamp(item.updated_at)}>{ago(item.updated_at)}</span>
           <span class="obs-sub-chevron"><Icon name="chevron-down" size={10} /></span>
         </button>
       {/each}
@@ -698,10 +698,10 @@
 
       <div class="obs-modal-body">
         <div class="obs-sub-meta">
-          <div><span>Recorded</span><strong>{ago(editing.created_at)}</strong></div>
-          <div><span>Submitted</span><strong>{editing.submitted_at ? ago(editing.submitted_at) : 'not filed'}</strong></div>
-          <div><span>Decided</span><strong>{editing.decided_at ? ago(editing.decided_at) : 'open'}</strong></div>
-          <div><span>Paid</span><strong>{editing.paid_at ? ago(editing.paid_at) : 'not paid'}</strong></div>
+          <div><span>Recorded</span><strong title={utcStamp(editing.created_at)}>{ago(editing.created_at)}</strong></div>
+          <div><span>Submitted</span><strong title={editing.submitted_at ? utcStamp(editing.submitted_at) : undefined}>{editing.submitted_at ? ago(editing.submitted_at) : 'not filed'}</strong></div>
+          <div><span>Decided</span><strong title={editing.decided_at ? utcStamp(editing.decided_at) : undefined}>{editing.decided_at ? ago(editing.decided_at) : 'open'}</strong></div>
+          <div><span>Paid</span><strong title={editing.paid_at ? utcStamp(editing.paid_at) : undefined}>{editing.paid_at ? ago(editing.paid_at) : 'not paid'}</strong></div>
         </div>
 
         {#if editing.mission_title || editing.finding_title || editing.run_target}

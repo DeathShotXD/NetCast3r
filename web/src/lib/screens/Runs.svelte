@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { api } from '../api';
-  import { ago, statusColor, statusLabel } from '../format';
+  import { ago, statusColor, statusLabel, utcStamp } from '../format';
   import { store } from '../state.svelte';
   import Buffering from '../ui/Buffering.svelte';
   import Chip from '../ui/Chip.svelte';
@@ -20,6 +20,13 @@
   let sortBy = $state('newest');
   let pendingDelete = $state<string | null>(null);
   let reportRun = $state<string | null>(null);
+
+  // The ledger can hold thousands of casts. Keep every row in memory for the
+  // KPIs and the activity chart, but only paint a window of them at a time:
+  // rendering ~1,200 rows at once froze the screen and produced a 84,000px
+  // page. "load more" extends the window without another API round-trip.
+  const PAGE_SIZE = 120;
+  let visibleCount = $state(PAGE_SIZE);
 
   const TONES: Record<string, string> = {
     running: 'running',
@@ -94,6 +101,7 @@
         guard += 1;
       }
       runs = all;
+      visibleCount = PAGE_SIZE;
     } catch (exc) {
       error = exc instanceof Error ? exc.message : 'could not load the cast history';
     } finally {
@@ -147,7 +155,11 @@
     return by;
   });
   const liveCount = $derived((counts.running ?? 0) + (counts.queued ?? 0));
-  const findingTotal = $derived(runs.reduce((n, run) => n + (run.counts?.findings ?? 0), 0));
+  const findingCount = (run: Run) => run.finding_count ?? run.counts?.findings ?? 0;
+  const findingTotal = $derived(Math.max(
+    runs.reduce((n, run) => n + (run.finding_count ?? run.counts?.findings ?? 0), 0),
+    store.totals?.findings ?? 0
+  ));
   const endpointTotal = $derived(runs.reduce((n, run) => n + (run.counts?.endpoints ?? 0), 0));
 
   const mix = $derived(
@@ -169,7 +181,7 @@
         label: start.toLocaleDateString([], { month: 'short', day: 'numeric' }),
         short: String(start.getDate()),
         count: inDay.length,
-        findings: inDay.reduce((n, run) => n + (run.counts?.findings ?? 0), 0)
+        findings: inDay.reduce((n, run) => n + findingCount(run), 0)
       });
     }
     return days;
@@ -196,15 +208,18 @@
         (run) => run.target.toLowerCase().includes(needle) || run.id.toLowerCase().includes(needle)
       );
     }
-    if (sortBy === 'findings') list.sort((a, b) => (b.counts?.findings ?? 0) - (a.counts?.findings ?? 0));
+    if (sortBy === 'findings') list.sort((a, b) => findingCount(b) - findingCount(a));
     else if (sortBy === 'target') list.sort((a, b) => a.target.localeCompare(b.target));
     else list.sort((a, b) => String(b.created_at ?? '').localeCompare(String(a.created_at ?? '')));
     return list;
   });
 
+  const visible = $derived(filtered.slice(0, visibleCount));
+  const hidden = $derived(Math.max(0, filtered.length - visible.length));
+
   const grouped = $derived.by(() => {
     const groups: { label: string; runs: Run[] }[] = [];
-    for (const run of filtered) {
+    for (const run of visible) {
       const label = dayLabel(run.created_at);
       const last = groups[groups.length - 1];
       if (last && last.label === label) last.runs.push(run);
@@ -318,7 +333,7 @@
         <circle cx="10.5" cy="10.5" r="6.2" />
         <path d="M15.2 15.2 L20.4 20.4" />
       </svg>
-      <input type="search" placeholder="search target or run id" bind:value={query} aria-label="search casts" />
+      <input type="search" placeholder="search target or run id" bind:value={query} oninput={() => (visibleCount = PAGE_SIZE)} aria-label="search casts" />
     </label>
     <div class="obs-hist-filters" role="group" aria-label="filter by status">
       {#each filters as item (item.key)}
@@ -326,7 +341,10 @@
           class="obs-hist-filter"
           class:active={statusFilter === item.key}
           type="button"
-          onclick={() => (statusFilter = item.key)}
+          onclick={() => {
+            statusFilter = item.key;
+            visibleCount = PAGE_SIZE;
+          }}
         >
           {item.label}<span>{item.count}</span>
         </button>
@@ -334,7 +352,7 @@
     </div>
     <label class="obs-hist-sort">
       <span>sort</span>
-      <select bind:value={sortBy} aria-label="sort casts">
+      <select bind:value={sortBy} onchange={() => (visibleCount = PAGE_SIZE)} aria-label="sort casts">
         <option value="newest">newest</option>
         <option value="findings">findings</option>
         <option value="target">target</option>
@@ -407,11 +425,11 @@
                   <button class="obs-hist-run-target" type="button" onclick={() => store.watch(run.id)} title={run.target}>
                     {run.target}
                   </button>
-                  <span class="obs-hist-run-time">{ago(run.created_at)}</span>
+                  <span class="obs-hist-run-time" title={utcStamp(run.created_at)}>{ago(run.created_at)}</span>
                 </div>
                 <div class="obs-hist-run-stats">
-                  <span class:pulse={((run.counts?.findings ?? 0) as number) > 0}>
-                    <b>{run.counts?.findings ?? 0}</b> findings
+                  <span class:pulse={findingCount(run) > 0}>
+                    <b>{findingCount(run)}</b> findings
                   </span>
                   <span><b>{run.counts?.endpoints ?? 0}</b> endpoints</span>
                   <span><b>{run.counts?.pages ?? 0}</b> pages</span>
@@ -439,6 +457,16 @@
         </div>
       </section>
     {/each}
+    {#if filtered.length > PAGE_SIZE}
+      <div class="obs-hist-more">
+        <span>{visible.length} of {filtered.length} casts</span>
+        {#if hidden > 0}
+          <button class="btn btn-quiet" type="button" onclick={() => (visibleCount += PAGE_SIZE)}>
+            load {Math.min(PAGE_SIZE, hidden)} more
+          </button>
+        {/if}
+      </div>
+    {/if}
   {/if}
 </div>
 

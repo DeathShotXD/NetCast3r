@@ -88,6 +88,18 @@ class PasswordLoginTests(unittest.TestCase):
         self.assertEqual(res.status, 200)
         self.assertIn("netcast3r_token", res.headers.get("Set-Cookie", ""))
 
+    def test_session_probe_is_unauthenticated_and_honest(self):
+        res = self.call("GET", "/api/v1/session")
+        self.assertEqual(res.status, 200)
+        payload = json.loads(res.body)
+        self.assertFalse(payload["authenticated"])
+        self.assertTrue(payload["auth_required"])
+
+        res = self.call("GET", "/api/v1/session",
+                        headers={"x-netcast3r-token": TOKEN})
+        self.assertEqual(res.status, 200)
+        self.assertTrue(json.loads(res.body)["authenticated"])
+
     def test_wrong_password_is_rejected(self):
         res = self.call("POST", "/api/v1/session",
                         {"username": "admin", "password": "nope"})

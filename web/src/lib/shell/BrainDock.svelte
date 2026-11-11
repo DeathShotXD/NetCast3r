@@ -3,8 +3,9 @@
   import { onDestroy, onMount } from 'svelte';
   import { api } from '../api';
   import { store } from '../state.svelte';
-  import type { BrainLiveEntry, BrainLoopStatus, BrainTurn } from '../types';
+  import type { BrainLiveEntry, BrainLoopStatus, BrainSession, BrainTurn } from '../types';
   import Buffering from '../ui/Buffering.svelte';
+  import Confirm from '../ui/Confirm.svelte';
   import Icon from '../ui/Icon.svelte';
 
   const BUFFER_PHASES = [
@@ -37,11 +38,22 @@
   let input = $state('');
   let busy = $state(false);
   let acting = $state('');
-  let target = $state<'brain' | 'both' | 'director'>('both');
+  let sessions = $state<BrainSession[]>([]);
+  let sessionId = $state('');
+  let session = $state<BrainSession | null>(null);
+  let sessionMenu = $state(false);
+  let renaming = $state(false);
+  let renameText = $state('');
+  let sessionBusy = $state('');
+  let pendingDelete = $state(false);
+  let menuEl = $state<HTMLDivElement | undefined>(undefined);
+  let sessionBtnEl = $state<HTMLButtonElement | undefined>(undefined);
+  let sessionsAt = 0;
   let timer: number | undefined;
+  let loadTimer: number | undefined;
   let phaseTimer: number | undefined;
   let feedEl = $state<HTMLUListElement>();
-  let inputEl = $state<HTMLInputElement>();
+  let inputEl = $state<HTMLTextAreaElement>();
   let panelEl = $state<HTMLElement>();
   let source: EventSource | null = null;
 
@@ -82,6 +94,20 @@
     { id: 'validator', label: 'Validate' },
     { id: 'pivot', label: 'Pivot' }
   ] as const;
+  const SLASH_COMMANDS = [
+    { cmd: '/new', hint: 'start a fresh chat session', arg: false },
+    { cmd: '/brain', hint: 'ask Helix only, no hunt action', arg: true },
+    { cmd: '/queue', hint: 'queue a director instruction', arg: true },
+    { cmd: '/stop', hint: 'stop the active cast', arg: false },
+    { cmd: '/help', hint: 'list composer commands', arg: false }
+  ] as const;
+  let slashIndex = $state(0);
+  const showSlash = $derived(input.startsWith('/') && !input.includes(' '));
+  const slashMatches = $derived(
+    showSlash
+      ? SLASH_COMMANDS.filter((item) => item.cmd.startsWith(input.toLowerCase()))
+      : []
+  );
 
   const stateLabel = $derived(
     loop ? (loop.paused ? 'Paused' : loop.running ? 'Autonomous' : 'Idle') : 'Standby'
@@ -282,11 +308,22 @@
   });
 
   $effect(() => {
+    if (!sessionMenu) return;
+    const closeMenu = (event: PointerEvent) => {
+      const node = event.target as Node | null;
+      if (node && (menuEl?.contains(node) || sessionBtnEl?.contains(node))) return;
+      sessionMenu = false;
+    };
+    document.addEventListener('pointerdown', closeMenu, true);
+    return () => document.removeEventListener('pointerdown', closeMenu, true);
+  });
+
+  $effect(() => {
     if (open) {
-      armPoll(1500);
+      armPoll(8000);
       queueMicrotask(() => inputEl?.focus());
     } else {
-      armPoll(4000);
+      armPoll(20000);
     }
   });
 
@@ -312,14 +349,151 @@
     return COMPANION;
   }
 
+  async function ensureSession(missionId: string) {
+    if (sessionId) return;
+    try {
+      const page = await api.brainSessions(missionId);
+      sessions = page.items || [];
+      sessionsAt = Date.now();
+      let chosen = sessions[0];
+      if (!chosen) {
+        chosen = await api.brainSessionCreate({
+          mission_id: missionId,
+          title: 'New chat',
+          agent: 'helix',
+          permission: 'full'
+        });
+        sessions = [chosen, ...sessions];
+      }
+      sessionId = chosen.id;
+      session = chosen;
+    } catch {
+      /* an older server has no session store; the journal still works */
+    }
+  }
+
+  async function newChat() {
+    try {
+      const missionId = (loop?.mission_id || '').trim();
+      const created = await api.brainSessionCreate({
+        mission_id: missionId,
+        title: 'New chat',
+        agent: 'helix',
+        permission: 'full'
+      });
+      sessions = [created, ...sessions.filter((item) => item.id !== created.id)];
+      sessionsAt = Date.now();
+      sessionId = created.id;
+      session = created;
+      feed = [];
+      await load();
+      queueMicrotask(() => inputEl?.focus());
+    } catch (exc) {
+      store.toast('error', exc instanceof Error ? exc.message : 'could not start a new chat');
+    }
+  }
+
+  async function switchSession() {
+    session = sessions.find((item) => item.id === sessionId) ?? null;
+    renaming = false;
+    sessionMenu = false;
+    await load();
+  }
+
+  /** Coalesce SSE bursts into one refresh; eight events in a second used to
+   *  mean eight brain reads. */
+  function scheduleLoad() {
+    if (loadTimer) window.clearTimeout(loadTimer);
+    loadTimer = window.setTimeout(() => void load(), 900);
+  }
+
+  function startRename() {
+    if (!session) return;
+    renaming = true;
+    renameText = session.title || 'New chat';
+    sessionMenu = false;
+  }
+
+  async function saveRename() {
+    if (!session || sessionBusy) return;
+    const title = renameText.trim();
+    if (!title) return;
+    sessionBusy = 'rename';
+    try {
+      const updated = await api.brainSessionPatch(session.id, { title });
+      sessions = sessions.map((item) => (item.id === updated.id ? updated : item));
+      session = updated;
+      renaming = false;
+      store.toast('ok', 'chat renamed');
+    } catch (exc) {
+      store.toast('error', exc instanceof Error ? exc.message : 'could not rename the chat');
+    } finally {
+      sessionBusy = '';
+    }
+  }
+
+  async function forkSession() {
+    if (!session || sessionBusy) return;
+    sessionBusy = 'fork';
+    try {
+      const created = await api.brainSessionFork(session.id, `${session.title || 'Chat'} (fork)`);
+      sessions = [created, ...sessions.filter((item) => item.id !== created.id)];
+      sessionId = created.id;
+      session = created;
+      sessionMenu = false;
+      await load();
+      store.toast('ok', 'chat forked');
+    } catch (exc) {
+      store.toast('error', exc instanceof Error ? exc.message : 'could not fork the chat');
+    } finally {
+      sessionBusy = '';
+    }
+  }
+
+  async function deleteSession() {
+    if (!session || sessionBusy) return;
+    sessionBusy = 'delete';
+    try {
+      await api.brainSessionDelete(session.id);
+      sessions = sessions.filter((item) => item.id !== session?.id);
+      sessionId = sessions[0]?.id ?? '';
+      session = sessions[0] ?? null;
+      pendingDelete = false;
+      await load();
+      store.toast('ok', 'chat deleted');
+    } catch (exc) {
+      store.toast('error', exc instanceof Error ? exc.message : 'could not delete the chat');
+    } finally {
+      sessionBusy = '';
+    }
+  }
+
+  function pickSlash(item: (typeof SLASH_COMMANDS)[number]) {
+    slashIndex = 0;
+    input = item.arg ? `${item.cmd} ` : item.cmd;
+    queueMicrotask(() => inputEl?.focus());
+    if (!item.arg) void send();
+  }
+
   async function load() {
     try {
       const missionId = (loop?.mission_id || '').trim();
-      const result = await api.brainLive(100, missionId);
+      if (session && missionId && session.mission_id && session.mission_id !== missionId) {
+        sessionId = '';
+        session = null;
+      }
+      await ensureSession(missionId);
+      const result = await api.brainLive(100, missionId, sessionId);
       feed = [...(result.items || [])].reverse();
       timeline = result.timeline || [];
       if (result.loop && Object.keys(result.loop).length) {
         loop = result.loop;
+      }
+      if (sessionId && Date.now() - sessionsAt > 15000) {
+        const page = await api.brainSessions(missionId);
+        sessions = page.items || sessions;
+        sessionsAt = Date.now();
+        session = sessions.find((item) => item.id === sessionId) ?? session;
       }
       ticker = (result.logs || [])
         .slice(0, 14)
@@ -338,7 +512,8 @@
     } catch {
       /* fall back to journal-only so the dock still works */
       try {
-        const result = await api.brainJournal(60);
+        const missionId = (loop?.mission_id || '').trim();
+        const result = await api.brainJournal(60, missionId, sessionId);
         feed = [...result.items].reverse();
         loop = result.loop;
         timeline = feed.map((turn) => ({
@@ -350,6 +525,8 @@
           focus: turn.focus,
           provider: turn.provider,
           model: turn.model,
+          chat_provider: turn.chat_provider,
+          chat_model: turn.chat_model,
           source: turn.source,
           actions: turn.actions,
           mission_id: turn.mission_id,
@@ -395,25 +572,64 @@
   }
 
   async function send() {
-    const message = input.trim();
+    let message = input.trim();
     if (!message || busy) return;
+    const missionId = (loop?.mission_id || '').trim();
+    // One chat surface. The old target dropdown is gone; explicit slash
+    // commands replace it, and the default is the useful one: Helix plus the
+    // hunt when a mission is active, Helix alone otherwise.
+    let target: 'brain' | 'both' | 'director' = missionId ? 'both' : 'brain';
+    if (message.startsWith('/')) {
+      const [command, ...rest] = message.split(/\s+/);
+      const argument = rest.join(' ').trim();
+      const name = command.toLowerCase();
+      if (name === '/help') {
+        store.toast('ok', 'commands: /new  /brain <text>  /queue <text>  /stop  /help');
+        return;
+      }
+      if (name === '/new') {
+        await newChat();
+        return;
+      }
+      if (name === '/stop') {
+        const runId = (store.activeRunId || store.liveRunId || '').trim();
+        if (!runId) {
+          store.toast('warn', 'no active run to stop');
+          return;
+        }
+        try {
+          await api.stopRun(runId);
+          store.toast('ok', `stop requested for ${runId}`);
+        } catch (exc) {
+          store.toast('error', exc instanceof Error ? exc.message : 'stop failed');
+        }
+        return;
+      }
+      if (name === '/brain' || name === '/queue') {
+        target = name === '/brain' ? 'brain' : 'director';
+        message = argument;
+        if (!message) {
+          store.toast('warn', `${command} needs a message`);
+          return;
+        }
+      } else {
+        store.toast('warn', `unknown command ${command}; try /help`);
+        return;
+      }
+    }
+    if (target !== 'brain' && !missionId) {
+      store.toast('error', 'pick an active mission before directing the hunt');
+      return;
+    }
     busy = true;
     pendingText = message;
     input = '';
     stickToBottom = true;
     armBufferPhases();
     try {
-      const missionId = (loop?.mission_id || '').trim();
       const body: Record<string, unknown> = { target, act: true };
       if (missionId) body.mission_id = missionId;
-      else if (target !== 'brain') {
-        store.toast('error', 'pick an active mission before directing the hunt');
-        busy = false;
-        pendingText = '';
-        clearBufferPhases();
-        input = message;
-        return;
-      }
+      if (sessionId) body.session_id = sessionId;
       await api.instruct(message, body);
       await load();
     } catch (exc) {
@@ -423,6 +639,41 @@
       pendingText = '';
       clearBufferPhases();
     }
+  }
+
+  function onComposerKey(event: KeyboardEvent) {
+    if (slashMatches.length) {
+      if (event.key === 'ArrowDown') {
+        event.preventDefault();
+        slashIndex = (slashIndex + 1) % slashMatches.length;
+        return;
+      }
+      if (event.key === 'ArrowUp') {
+        event.preventDefault();
+        slashIndex = (slashIndex - 1 + slashMatches.length) % slashMatches.length;
+        return;
+      }
+      if (event.key === 'Enter') {
+        event.preventDefault();
+        pickSlash(slashMatches[Math.min(slashIndex, slashMatches.length - 1)]);
+        return;
+      }
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        input = '';
+        return;
+      }
+    }
+    if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) {
+      event.preventDefault();
+      void send();
+    }
+  }
+
+  function growComposer() {
+    if (!inputEl) return;
+    inputEl.style.height = 'auto';
+    inputEl.style.height = `${Math.min(inputEl.scrollHeight, 132)}px`;
   }
 
   async function control(action: string) {
@@ -461,7 +712,7 @@
             type.includes('swarm') ||
             type.includes('mission')
           ) {
-            void load();
+            scheduleLoad();
           }
         } catch {
           /* ignore */
@@ -477,7 +728,13 @@
   }
 
   function onKey(event: KeyboardEvent) {
-    if (event.key === 'Escape' && layout.fullscreen) {
+    if (event.key !== 'Escape') return;
+    if (sessionMenu || renaming) {
+      sessionMenu = false;
+      renaming = false;
+      return;
+    }
+    if (layout.fullscreen) {
       layout = { ...layout, fullscreen: false };
       persistLayout();
     }
@@ -493,6 +750,7 @@
 
   onDestroy(() => {
     if (timer) window.clearInterval(timer);
+    if (loadTimer) window.clearTimeout(loadTimer);
     clearBufferPhases();
     source?.close();
     window.removeEventListener('keydown', onKey);
@@ -540,6 +798,12 @@
           </span>
         </div>
         <div class="nc-brain-meta">
+          {#if session}
+            <span class="nc-brain-session-title" title={session.title}>{session.title}</span>
+            <span class="nc-brain-sep" aria-hidden="true">-</span>
+            <span class="nc-brain-session-mode" title="agent and permission mode">{session.agent} / {session.permission}</span>
+            <span class="nc-brain-sep" aria-hidden="true">-</span>
+          {/if}
           {#if loop}
             <span>{loop.turns} turns</span>
             <span class="nc-brain-sep" aria-hidden="true">-</span>
@@ -548,6 +812,68 @@
         </div>
       </div>
       <div class="nc-brain-controls">
+        {#if sessions.length}
+          <select
+            class="nc-brain-session-pick"
+            bind:value={sessionId}
+            onchange={() => void switchSession()}
+            aria-label="chat session"
+            disabled={busy || sessionBusy !== ''}
+          >
+            {#each sessions as item (item.id)}
+              <option value={item.id}>{item.title || 'New chat'}</option>
+            {/each}
+          </select>
+          <div class="nc-brain-session-wrap">
+            <button
+              class="nc-brain-icon"
+              type="button"
+              title="Chat actions"
+              aria-label="chat actions"
+              aria-expanded={sessionMenu}
+              aria-haspopup="menu"
+              bind:this={sessionBtnEl}
+              disabled={!session || busy}
+              onclick={() => (sessionMenu = !sessionMenu)}
+            >
+              <svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true">
+                <circle cx="3" cy="8" r="1.1" fill="currentColor"/>
+                <circle cx="8" cy="8" r="1.1" fill="currentColor"/>
+                <circle cx="13" cy="8" r="1.1" fill="currentColor"/>
+              </svg>
+            </button>
+            {#if sessionMenu}
+              <div class="nc-brain-menu" role="menu" aria-label="chat actions" bind:this={menuEl}>
+                <button type="button" role="menuitem" onclick={startRename} disabled={!session}>rename</button>
+                <button
+                  type="button"
+                  role="menuitem"
+                  onclick={() => void forkSession()}
+                  disabled={!session || sessionBusy !== ''}
+                >fork</button>
+                <button
+                  class="danger"
+                  type="button"
+                  role="menuitem"
+                  onclick={() => {
+                    sessionMenu = false;
+                    pendingDelete = true;
+                  }}
+                  disabled={!session || sessionBusy !== ''}
+                >delete</button>
+              </div>
+            {/if}
+          </div>
+        {/if}
+        <button
+          class="nc-brain-action"
+          type="button"
+          title="Start a new chat"
+          disabled={busy}
+          onclick={() => void newChat()}
+        >
+          New
+        </button>
         <button
           class="nc-brain-icon"
           type="button"
@@ -609,6 +935,33 @@
         </button>
       </div>
     </header>
+
+    {#if renaming && session}
+      <form
+        class="nc-brain-rename"
+        onsubmit={(event) => {
+          event.preventDefault();
+          void saveRename();
+        }}
+      >
+        <input
+          bind:value={renameText}
+          maxlength="80"
+          placeholder="chat title"
+          aria-label="chat title"
+          onkeydown={(event) => {
+            if (event.key === 'Escape') {
+              event.preventDefault();
+              renaming = false;
+            }
+          }}
+        />
+        <button type="submit" disabled={sessionBusy === 'rename' || !renameText.trim()}>
+          {sessionBusy === 'rename' ? 'saving' : 'save'}
+        </button>
+        <button type="button" onclick={() => (renaming = false)}>cancel</button>
+      </form>
+    {/if}
 
     <nav class="nc-brain-mesh" aria-label="agent mesh lanes">
       {#each meshRoles as role}
@@ -689,15 +1042,29 @@
               <span class="nc-brain-chan-tag">{entry.channel}</span>
               {#if entry.focus}
                 <span class="nc-brain-focus">{entry.focus}</span>
-              {:else if entry.provider || entry.model}
-                <span class="nc-brain-focus">{[entry.provider, entry.model].filter(Boolean).join(' / ')}</span>
+              {/if}
+              {#if entry.provider || entry.chat_model}
+                <span class="nc-brain-focus nc-brain-models" title="planner / chat lane">
+                  {[entry.provider, entry.model].filter(Boolean).join(' / ')}{#if entry.chat_model} + {entry.chat_model}{/if}
+                </span>
               {/if}
             </header>
             <p class="nc-brain-text">{entry.text}</p>
             {#if entry.actions && entry.actions.length}
               <div class="nc-brain-actions">
                 {#each entry.actions as action}
-                  <span class:refused={!action.applied}>{action.kind}</span>
+                  {#if action.result}
+                    <details class="nc-brain-action-card">
+                      <summary class:refused={!action.applied}>
+                        {action.kind}{#if action.detail} - {String(action.detail).slice(0, 90)}{/if}
+                      </summary>
+                      <pre>{JSON.stringify(action.result, null, 2).slice(0, 1800)}</pre>
+                    </details>
+                  {:else}
+                    <span class:refused={!action.applied}>
+                      {action.kind}{#if action.detail} - {String(action.detail).slice(0, 90)}{/if}
+                    </span>
+                  {/if}
                 {/each}
               </div>
             {/if}
@@ -743,22 +1110,37 @@
     </section>
 
     <footer class="nc-brain-composer" class:locked={busy}>
-      <select class="nc-brain-target" bind:value={target} aria-label="instruction target" disabled={busy}>
-        <option value="both">{COMPANION} + hunt</option>
-        <option value="brain">{COMPANION} only</option>
-        <option value="director">Hunt queue</option>
-      </select>
-      <input
+      {#if slashMatches.length}
+        <div class="nc-brain-slash" role="listbox" aria-label="composer commands">
+          {#each slashMatches as item, i (item.cmd)}
+            <button
+              class="nc-brain-slash-item"
+              class:active={i === slashIndex}
+              type="button"
+              role="option"
+              aria-selected={i === slashIndex}
+              onmousedown={(event) => {
+                event.preventDefault();
+                pickSlash(item);
+              }}
+            >
+              <b>{item.cmd}</b>
+              <span>{item.hint}</span>
+            </button>
+          {/each}
+        </div>
+      {/if}
+      <textarea
         class="nc-brain-input"
         bind:this={inputEl}
         bind:value={input}
-        placeholder={busy ? `${COMPANION} is responding...` : 'Steer mid-hunt - pivot auth, skip CDN, deepen IDOR...'}
-        aria-label="instruct {COMPANION} or hunt mid-engagement"
+        rows="1"
+        placeholder={busy ? `${COMPANION} is responding...` : 'Message Helix - /help for commands'}
+        aria-label="message {COMPANION}"
         disabled={busy}
-        onkeydown={(event) => {
-          if (event.key === 'Enter') void send();
-        }}
-      />
+        onkeydown={onComposerKey}
+        oninput={growComposer}
+      ></textarea>
       <button
         class="nc-brain-send"
         class:is-busy={busy}
@@ -770,7 +1152,7 @@
           <span class="nc-brain-send-spin" aria-hidden="true"></span>
           Wait
         {:else}
-          Instruct
+          Send
         {/if}
       </button>
     </footer>
@@ -786,6 +1168,17 @@
       onpointercancel={onResizeEnd}
     ></div>
   </section>
+
+  {#if pendingDelete && session}
+    <Confirm
+      title="Delete this chat?"
+      body={`"${session.title || 'New chat'}" and its turns will be removed. This cannot be undone.`}
+      confirmLabel="delete chat"
+      danger
+      onConfirm={() => void deleteSession()}
+      onCancel={() => (pendingDelete = false)}
+    />
+  {/if}
 {/if}
 
 <button
@@ -1021,6 +1414,143 @@
     align-items: center;
     gap: 6px;
     flex: none;
+  }
+
+  .nc-brain-session-pick {
+    max-width: 150px;
+    padding: 4px 6px;
+    border: 1px solid rgba(245, 233, 220, 0.12);
+    border-radius: 7px;
+    background: rgba(0, 0, 0, 0.35);
+    color: var(--obs-text-2);
+    font: inherit;
+    font-size: 10px;
+    outline: none;
+  }
+
+  .nc-brain-session-pick:focus-visible {
+    border-color: rgba(200, 248, 26, 0.35);
+    box-shadow: var(--obs-focus);
+  }
+
+  .nc-brain-session-wrap {
+    position: relative;
+    display: inline-flex;
+  }
+
+  .nc-brain-menu {
+    position: absolute;
+    top: calc(100% + 6px);
+    right: 0;
+    z-index: 6;
+    display: flex;
+    flex-direction: column;
+    min-width: 156px;
+    padding: 4px;
+    border: 1px solid rgba(245, 233, 220, 0.12);
+    border-radius: 10px;
+    background: rgba(11, 9, 18, 0.98);
+    box-shadow: 0 18px 44px rgba(0, 0, 0, 0.55);
+  }
+
+  .nc-brain-menu button {
+    padding: 7px 10px;
+    border: 0;
+    border-radius: 7px;
+    background: transparent;
+    color: var(--obs-text-2);
+    font: inherit;
+    font-size: 11px;
+    text-align: left;
+    cursor: pointer;
+  }
+
+  .nc-brain-menu button:hover {
+    background: rgba(245, 233, 220, 0.06);
+    color: var(--obs-text);
+  }
+
+  .nc-brain-menu button:focus-visible,
+  .nc-brain-rename button:focus-visible,
+  .nc-brain-action:focus-visible,
+  .nc-brain-send:focus-visible,
+  .nc-brain-icon:focus-visible,
+  .nc-brain-slash-item:focus-visible {
+    outline: none;
+    box-shadow: var(--obs-focus);
+  }
+
+  .nc-brain-menu button:disabled {
+    opacity: 0.4;
+    cursor: default;
+  }
+
+  .nc-brain-menu button.danger {
+    color: var(--obs-red);
+  }
+
+  .nc-brain-rename {
+    position: relative;
+    z-index: 2;
+    display: flex;
+    gap: 6px;
+    padding: 9px 14px;
+    border-bottom: 1px solid rgba(245, 233, 220, 0.06);
+    background: rgba(0, 0, 0, 0.22);
+  }
+
+  .nc-brain-rename input {
+    flex: 1;
+    min-width: 0;
+    padding: 6px 9px;
+    border: 1px solid rgba(245, 233, 220, 0.12);
+    border-radius: 8px;
+    background: rgba(0, 0, 0, 0.4);
+    color: var(--obs-text);
+    font: inherit;
+    font-size: 12px;
+    outline: none;
+  }
+
+  .nc-brain-rename input:focus-visible {
+    border-color: rgba(200, 248, 26, 0.35);
+    box-shadow: var(--obs-focus);
+  }
+
+  .nc-brain-rename button {
+    padding: 6px 10px;
+    border: 1px solid rgba(245, 233, 220, 0.1);
+    border-radius: 8px;
+    background: rgba(245, 233, 220, 0.03);
+    color: var(--obs-text-2);
+    font: inherit;
+    font-size: 11px;
+    cursor: pointer;
+  }
+
+  .nc-brain-rename button[type='submit'] {
+    border-color: rgba(200, 248, 26, 0.3);
+    color: var(--obs-acid);
+  }
+
+  .nc-brain-rename button:disabled {
+    opacity: 0.4;
+    cursor: default;
+  }
+
+  .nc-brain-session-title {
+    overflow: hidden;
+    max-width: 190px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--obs-text-2);
+  }
+
+  .nc-brain-session-mode {
+    flex: 0 0 auto;
+    color: var(--obs-faint);
+    font-size: 9px;
+    letter-spacing: 0.04em;
   }
 
   .nc-brain-action,
@@ -1356,6 +1886,15 @@
     color: var(--obs-violet-3);
   }
 
+  .nc-brain-models {
+    flex: 0 0 auto;
+    margin-left: auto;
+    max-width: 46%;
+    color: var(--obs-faint);
+    font-size: 9px;
+    letter-spacing: 0.04em;
+  }
+
   .nc-brain-text {
     margin: 0;
     font-size: 12.5px;
@@ -1386,6 +1925,36 @@
     color: var(--obs-red);
   }
 
+  .nc-brain-action-card {
+    max-width: 100%;
+    border: 1px solid rgba(245, 233, 220, 0.09);
+    border-radius: 8px;
+    padding: 4px 8px;
+    background: rgba(0, 0, 0, 0.24);
+  }
+
+  .nc-brain-action-card summary {
+    cursor: pointer;
+    font-family: var(--mono);
+    font-size: 9px;
+    letter-spacing: 0.04em;
+    color: var(--obs-acid);
+  }
+
+  .nc-brain-action-card summary.refused {
+    color: var(--obs-red);
+  }
+
+  .nc-brain-action-card pre {
+    margin: 6px 0 0;
+    max-height: 220px;
+    overflow: auto;
+    white-space: pre-wrap;
+    font-size: 10px;
+    line-height: 1.45;
+    color: var(--obs-text-2);
+  }
+
   .nc-brain-empty {
     border-style: dashed !important;
     color: var(--obs-muted);
@@ -1397,7 +1966,7 @@
     position: relative;
     z-index: 1;
     display: grid;
-    grid-template-columns: auto 1fr auto;
+    grid-template-columns: minmax(0, 1fr) auto;
     gap: 8px;
     flex: none;
     border-top: 1px solid rgba(245, 233, 220, 0.07);
@@ -1406,38 +1975,83 @@
     transition: opacity 160ms ease;
   }
 
+  .nc-brain-slash {
+    position: absolute;
+    left: 14px;
+    right: 14px;
+    bottom: calc(100% + 6px);
+    z-index: 5;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding: 5px;
+    border: 1px solid rgba(245, 233, 220, 0.12);
+    border-radius: 11px;
+    background: rgba(11, 9, 18, 0.98);
+    box-shadow: 0 18px 44px rgba(0, 0, 0, 0.55);
+  }
+
+  .nc-brain-slash-item {
+    display: flex;
+    align-items: baseline;
+    gap: 9px;
+    padding: 7px 9px;
+    border: 0;
+    border-radius: 7px;
+    background: transparent;
+    color: var(--obs-text-2);
+    font: inherit;
+    font-size: 11px;
+    text-align: left;
+    cursor: pointer;
+  }
+
+  .nc-brain-slash-item b {
+    flex: 0 0 auto;
+    font-family: var(--mono);
+    font-size: 10.5px;
+    font-weight: 560;
+    color: var(--obs-acid);
+  }
+
+  .nc-brain-slash-item span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--obs-faint);
+    font-size: 10.5px;
+  }
+
+  .nc-brain-slash-item:hover,
+  .nc-brain-slash-item.active {
+    background: rgba(200, 248, 26, 0.07);
+  }
+
   .nc-brain-composer.locked {
     opacity: 0.78;
   }
 
-  .nc-brain-composer.locked .nc-brain-input,
-  .nc-brain-composer.locked .nc-brain-target {
+  .nc-brain-composer.locked .nc-brain-input {
     cursor: wait;
   }
 
-  .nc-brain-target,
   .nc-brain-input {
+    min-width: 0;
+    max-height: 132px;
+    padding: 9px 12px;
     border: 1px solid rgba(245, 233, 220, 0.1);
     border-radius: 10px;
     background: rgba(0, 0, 0, 0.35);
     color: var(--obs-text);
     outline: none;
-  }
-
-  .nc-brain-target {
-    max-width: 128px;
-    padding: 8px 10px;
-    font-size: 11px;
-  }
-
-  .nc-brain-input {
-    min-width: 0;
-    padding: 8px 12px;
+    resize: none;
+    overflow-y: auto;
+    font: inherit;
     font-size: 12.5px;
+    line-height: 1.45;
   }
 
-  .nc-brain-input:focus-visible,
-  .nc-brain-target:focus-visible {
+  .nc-brain-input:focus-visible {
     outline: none;
     border-color: rgba(200, 248, 26, 0.35);
     box-shadow: var(--obs-focus);
@@ -1588,11 +2202,7 @@
     }
 
     .nc-brain-composer {
-      grid-template-columns: 1fr;
-    }
-
-    .nc-brain-target {
-      max-width: none;
+      grid-template-columns: minmax(0, 1fr) auto;
     }
 
     .nc-brain-pill {
@@ -1602,10 +2212,41 @@
       transform: none;
       max-width: none;
       justify-content: center;
+      gap: 7px;
+      padding: 7px 12px;
     }
 
     .nc-brain-pill:hover {
       transform: translateY(-1px);
+    }
+  }
+
+  @media (max-width: 560px) {
+    .nc-brain-pill-focus {
+      display: none;
+    }
+
+    .nc-brain-pill-meta {
+      font-size: 8.5px;
+    }
+
+    .nc-brain-session-pick {
+      max-width: 104px;
+    }
+
+    .nc-brain-session-title {
+      max-width: 120px;
+    }
+
+    /* On a phone the plane ticker eats the feed; the same lines remain in
+       the Logs channel. Keep the conversation readable instead. */
+    .nc-brain-ops {
+      display: none;
+    }
+
+    .nc-brain-mesh {
+      gap: 5px;
+      padding: 8px 12px 10px;
     }
   }
 

@@ -38,6 +38,7 @@ class Store {
   toastSeq = 0;
   lastSync = $state(0);
   syncState = $state<'idle' | 'syncing' | 'error'>('idle');
+  syncStarted = $state(0);
   liveStream = $state(false);
   heartbeat: number | undefined;
   liveRunId = $state('');
@@ -51,6 +52,7 @@ class Store {
       this.netCursor = readNetCursor();
       window.addEventListener('nc:locked', () => {
         this.locked = true;
+        this.stopHeartbeat();
       });
       window.addEventListener('hashchange', () => this.applyHash());
     }
@@ -77,6 +79,12 @@ class Store {
     if (!known.includes(legacy)) return false;
     this.screen = legacy;
     if (id) this.activeRunId = id;
+    else if (legacy === 'live' && this.runs.length) {
+      // A bare #/live means "the live screen", not "an empty screen even
+      // though something is running". Reopen an active cast automatically.
+      const live = this.runs.find((run) => run.status === 'running' || run.status === 'queued');
+      if (live) this.activeRunId = live.id;
+    }
     return true;
   }
 
@@ -87,11 +95,35 @@ class Store {
   }
 
   async boot(): Promise<void> {
+    // Silent session probe first. A locked dashboard must not call /meta or
+    // open the event stream before the operator signs in; that was a 401
+    // console storm and two wasted requests on every visit.
+    try {
+      const session = await api.sessionState();
+      if (!session.authenticated) {
+        this.locked = true;
+        this.ready = true;
+        return;
+      }
+    } catch {
+      /* an older server has no probe; fall through to the normal boot */
+    }
     const linked = this.applyHash();
     const work = (async () => {
       this.meta = await api.meta();
       await Promise.all([this.refreshTotals(), this.refreshRuns()]);
-      if (linked) return;
+      if (linked) {
+        // applyHash ran before runs were available, so a bare #/live could not
+        // pick a cast. Resolve it once the run list has landed.
+        if (this.screen === 'live' && !this.activeRunId) {
+          const live = this.runs.find(
+            (run) => run.status === 'running' || run.status === 'queued'
+          ) ?? this.runs[0];
+          if (live) this.activeRunId = live.id;
+        }
+        this.syncHash();
+        return;
+      }
       const running = this.runs.find((run) => run.status === 'running');
       if (running) {
         this.activeRunId = running.id;
@@ -120,6 +152,10 @@ class Store {
   go(screen: Screen, runId = ''): void {
     this.screen = screen;
     if (runId) this.activeRunId = runId;
+    else if (screen === 'live' && !this.runs.some((run) => run.id === this.activeRunId)) {
+      const live = this.runs.find((run) => run.status === 'running' || run.status === 'queued');
+      if (live) this.activeRunId = live.id;
+    }
     this.syncHash();
     window.scrollTo({ top: 0, behavior: 'instant' as ScrollBehavior });
   }
@@ -163,8 +199,19 @@ class Store {
   /** Poll the small control-plane endpoints so every screen feels alive.
    *  Active runs get a faster cadence; an idle dashboard stays quiet. */
   async refreshPulse(): Promise<void> {
-    if (this.syncState === 'syncing') return;
+    if (this.syncState === 'syncing') {
+      // A hung request must not freeze the whole shell forever. After the
+      // watchdog window, let the next tick start a fresh pulse; the old one
+      // is harmless if it ever returns.
+      if (this.syncStarted && Date.now() - this.syncStarted > 20000) {
+        this.syncState = 'error';
+        this.syncStarted = 0;
+      } else {
+        return;
+      }
+    }
     this.syncState = 'syncing';
+    this.syncStarted = Date.now();
     try {
       const [totals, page] = await Promise.all([api.totals(), api.runs('?size=25')]);
       this.totals = totals;
@@ -179,6 +226,8 @@ class Store {
       this.syncState = 'idle';
     } catch {
       this.syncState = 'error';
+    } finally {
+      this.syncStarted = 0;
     }
   }
 
@@ -189,7 +238,7 @@ class Store {
   }
 
   startHeartbeat(): void {
-    if (this.heartbeat) return;
+    if (this.heartbeat || this.locked) return;
     this.startLiveStream();
     const tick = async () => {
       if (typeof document === 'undefined' || !document.hidden) await this.refreshPulse();
@@ -210,7 +259,7 @@ class Store {
   /** One global SSE connection feeds the shell's live status rail. The
    *  inspector opens its own run-scoped stream so history can replay. */
   startLiveStream(): void {
-    if (this.source) return;
+    if (this.source || this.locked) return;
     try {
       const stream = new EventSource(api.eventsUrl());
       stream.onopen = () => {

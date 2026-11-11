@@ -4,6 +4,155 @@ Notable changes to NetCast3r, newest first.
 
 ## Unreleased
 
+### Exploit chains and autonomous escalation
+
+- **Typed chain workflow**: `chain_execute` runs ordered steps - `extract`,
+  `auth_profile`, `http`, `tool`, `script`, `assert`, `pivot`, `exploit_run` -
+  with variable binding and masked secrets. Built-in templates cover
+  `.git -> source audit`, token -> auth profile -> pivot, forged JWT -> auth
+  profile, and UNION SQLi -> evidence.
+- **JWT forging**: `jwt_forge` signs HS256/384/512 tokens from a recovered key,
+  with custom claims and `API_TIME`/`exp`, so an exposed signing key can be
+  validated against the target without external tooling.
+- **Exploit execution is in the mesh**: the attacker/scout roles now see
+  `exploit_catalog`, `exploit_search`, `exploit_plan`, `exploit_run`,
+  `candidates_list`, `chain_templates`, and `chain_execute`. A module stages a
+  candidate with raw evidence; promotion stays human-gated.
+- **Director exploit mode**: a mission with a staged candidate and matching
+  module can be scheduled as `exploit` instead of another hunt/swarm. Kill and
+  reconcile paths understand the exploit runner.
+- **New catalog class**: exposed `.git` -> source/secret disclosure, built from
+  the confirmed bca chain, plus `git_dump` as a verifier action.
+- **Mission isolation**: brain context now filters hypotheses and candidates by
+  mission, and the mesh recalls only mission-scoped lessons. This stops atir
+  from inheriting bca paths/leads.
+
+### Helix toolsmith and post-exploitation
+
+- **Writes its own tools**: `script_write` stores a named Python or bash
+  automation under the state directory; `script_run` executes it without a
+  shell, with the mission id and scope in the environment, a bounded timeout,
+  and a tool-call audit row. `script_list` and `tool_list` make the toolbox
+  visible to the planner.
+- **Studies installed tools**: `tool_study` resolves a tool, reads its version
+  and help, and records a durable note and lesson in shared memory. It does not
+  install or execute the studied tool.
+- **Remembers what worked**: script run/success/failure counters, last status,
+  tool notes, and missions are included in Helix's context, so a later turn can
+  reuse the same automation instead of rebuilding it.
+- **Source recovery is a tool**: `git_dump` verifies an in-scope `.git/HEAD`,
+  runs `git-dumper`, writes the repository under the artifact tree, and feeds
+  the recovered tree to codeaudit and REA. It refuses out-of-scope targets and
+  non-empty destinations without `force`.
+- **Post-exploitation doctrine**: Helix and the mesh can call `postex_plan` to
+  rank graph-backed next moves and `token_pivot` to check where a recovered
+  token is valid. Host/tool actions stay mission-scoped and audited.
+
+### Helix is a full operator, not a narrator
+
+- **Chat sessions**: Helix conversations are now first-class sessions with a
+  title, mission, agent, model, and permission mode. `New chat`, session
+  switching, fork, rename, delete, and per-session history are available
+  through `/api/v1/brain/sessions`; the planner receives the session's prior
+  turns instead of relying on client-sent history.
+- **One composer, no mode dropdown**: the unexplained `Helix only / Helix +
+  hunt / Hunt queue` select is gone. The default is Helix plus the hunt when a
+  mission is active, Helix alone otherwise. `/brain`, `/queue`, `/new`, and
+  `/stop` are explicit commands, `/help` lists them.
+- **Multiline composer**: Enter sends, Shift+Enter adds a line, and the box
+  grows to a bounded height instead of clipping.
+- **Tool result cards**: an action that ran a tool or API call renders a
+  collapsible card with its real result, not just a label.
+- **Own API calls**: Helix can now call any internal `/api/v1` route with
+  `api_call` (`method`, `path`, `query`, JSON `body`). Calls use the real
+  in-process router, so they pass the same auth, validation, scope, and audit
+  checks as the browser. Recursive `brain`/`instruct` calls are refused.
+- **Any registered tool**: `tool_call` runs any MCP tool with full policy on an
+  active autonomous mission, including `http_request`, `http_probe`,
+  hypothesis/notes/graph/KB tools, and `host_shell`. Every call lands in the
+  tool-call audit. Approval decisions and admin tools stay human-only.
+- **Chat lane split**: simple conversation and acknowledgement now run on
+  light free models (nemotron/mimo), while DeepSeek owns planning, evidence
+  checks, and complex reasoning. The voice is phrased by the light model from
+  DeepSeek's plan; if the light lane fails, the planner's answer is kept.
+- **Transparent models**: each Helix turn records both the planner and the chat
+  model, and the console shows `planner / model + chat model`.
+
+### Control-plane safety and cancellation
+
+- **One live server per state directory**: `build_server` now honors
+  `NETCAST3R_BASE`, `netcast3r ui` gained `--base`, and `serve` refuses to boot
+  over a live owner or an existing process lease. `--force` is available only
+  for a genuinely stale plane.
+- **No cross-process recovery**: `JobManager.recover()` runs only when no other
+  live NetCast3r process owns the base, so a staging instance can never mark a
+  live hunt's runs interrupted again.
+- **No autonomous QA instances**: `netcast3r ui --no-autopilot` skips the
+  director, trainer, and brain loops for isolated staging.
+- **Fast stop**: swarm cancellation is checked before every tool call and
+  before the strategist/scribe model calls, not only once per full round.
+- **Stuck runs are reconciled**: stopping a row with no live worker marks it
+  `interrupted` after a 10-second grace window instead of leaving it `running`
+  forever.
+
+### Silent login and connection recovery
+
+- **No pre-login 401 storm**: the shell probes the new unauthenticated
+  `GET /api/v1/session`, shows the unlock screen, and does not call protected
+  endpoints or open the event stream until authenticated.
+- **No frozen sync state**: a pulse that hangs past 20 seconds releases the
+  sync gate so the next tick can recover; the connection banner clears on the
+  next successful pulse.
+
+### Dashboard UI/UX audit
+
+- **The net cursor is now the topmost app layer** (`z-index: 1200`), above
+  Helix, toasts, and the radial menu, so the reticle stays visible over every
+  panel. When a real top-layer dialog or popover opens, the engine parks the
+  canvas and hands the native pointer back instead of drawing a second cursor.
+- **Dropdowns no longer kill the cursor**: focusing a `<select>` is an ordinary
+  control interaction, not an OS picker, so it no longer pauses and hides the
+  net for the rest of the session. Only date/time/month/week/color pickers do.
+- **Live opens a live cast**: navigating to `#/live` without a run id selects
+  the running (or newest) cast once the run list lands, and the top bar now
+  reflects the run being watched rather than whichever run was newest.
+- **Cast history is windowed**: 1,168 rows became a 120-row window with a
+  `load more` control. The page dropped from ~84,000px to ~9,400px and stopped
+  rendering 6,145 interactive elements at once; KPIs and the activity chart
+  still use the full history.
+- **Mobile top bar**: the breadcrumb now keeps its full label at 390, 360, and
+  320px. The duplicate live chip, freshness label, palette glyph, findings
+  shortcut, and (at ultra-narrow width) the clock step out of the way by
+  breakpoint instead of squeezing the crumb to one character.
+- **Mobile findings are cards**: below 720px each table row becomes a card with
+  severity, state, title, masked value, confidence, and age in a deliberate
+  reading order. No more 860px table or horizontal scroll trap; tapping a card
+  opens the detail drawer.
+- **Accessible consoles**: the brain input, host working directory, and host
+  command now carry explicit labels.
+- **Findings search is local again**: typing in the findings box filters the
+  table without losing keystrokes to a store round-trip, the top-bar search
+  still hands its query to the screen, and clearing either box restores every
+  row.
+- **Destructive actions ask first**: bulk triage, mission close, report/ledger
+  deletion, and Helix chat deletion open a native confirm dialog that focuses
+  `cancel`, closes on Escape, and restores focus on close.
+- **Helix chats are manageable**: the dock can create a chat, switch sessions,
+  rename, fork, and delete one, with busy states, a click-away menu, and
+  Escape handling that keeps the dock open while dismissing its own menus.
+- **Timestamps explain themselves**: live trace rows, findings, missions,
+  casts, and the reports ledger expose an absolute UTC time on hover instead
+  of only a relative age.
+- **No tablet overflow**: below 900px the redundant top-bar primary action
+  leaves the header, and the findings table keeps its own horizontal scroll
+  inside the card, so 768px and 390px layouts have no document overflow.
+- **Mobile Helix is readable**: the plane ticker collapses into the Logs
+  channel on phones, giving the conversation feed the reclaimed height, and
+  the composer keeps its session controls and slash menu inside the viewport.
+- **PoC drafts preview without a finding**: a recorded `report_path` now serves
+  the markdown preview and download, with the path constrained under the
+  reports root.
+
 ### Endless autonomous runs
 
 - **No early stop**: a swarm or autopilot started without an explicit cap is

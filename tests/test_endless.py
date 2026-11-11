@@ -30,6 +30,39 @@ def reply(payload, provider="p1"):
 
 
 class EndlessSwarmTests(unittest.TestCase):
+    def test_cancel_mid_round_stops_before_the_next_tool(self):
+        """A stop request must not wait for a whole multi-tool round."""
+        reg = FakeRegistry()
+
+        def model(role, messages, exclude=None):
+            if role == "strategist":
+                return reply({"objectives": [
+                    {"owner": "attacker", "goal": "probe one",
+                     "target": "http://127.0.0.1:9/a"},
+                    {"owner": "attacker", "goal": "probe two",
+                     "target": "http://127.0.0.1:9/b"},
+                    {"owner": "attacker", "goal": "probe three",
+                     "target": "http://127.0.0.1:9/c"},
+                ]})
+            if role == "validator":
+                return reply({"verdict": "inconclusive", "reason": "test"})
+            if role == "scribe":
+                return reply({"notes": []})
+            return reply({"action": "http_probe",
+                          "args": {"target": "http://127.0.0.1:9/x"},
+                          "why": "test"})
+
+        def should_stop():
+            return len(reg.calls) >= 1
+
+        mesh = swarm.Swarm(reg, model, mission(), endless=True, max_steps=50,
+                           max_seconds=60, run_id="run_cancel_mid_round",
+                           should_stop=should_stop)
+        result = mesh.run()
+        self.assertEqual(result["stop"], "cancelled")
+        probes = [call for call in reg.calls if call[0] == "http_probe"]
+        self.assertLessEqual(len(probes), 1)
+
     def test_endless_swarm_ignores_done_and_keeps_rotating(self):
         reg = FakeRegistry()
 

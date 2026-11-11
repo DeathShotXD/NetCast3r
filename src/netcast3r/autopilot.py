@@ -18,6 +18,7 @@ import hashlib
 import json
 import re
 import time
+from urllib.parse import urlsplit
 
 from .agents import _first_json
 from .directives import matches_enough, terms_for
@@ -46,6 +47,9 @@ ACTIONS = {
     "evidence_pack": "write redacted observations as a durable evidence pack",
     "path_traversal_probe": "test one file parameter for traversal depth and encodings",
     "source_disclosure_scan": "read application source through a confirmed file read",
+    "git_dump": "recover an exposed .git repository with git-dumper and audit it",
+    "postex_plan": "rank post-exploitation objectives from the observed graph",
+    "token_pivot": "check where a recovered token or cookie is valid across in-scope hosts",
     "auth_cookie_probe": "test whether identity cookies authenticate without validation",
     "chain_run": "lead a file read through source disclosure and auth-bypass steps",
     "oracle_extract": "extract a value through a boolean, status, or time oracle",
@@ -68,6 +72,13 @@ ACTIONS = {
     "agent_notes_list": "read prior operator notes",
     "lessons_record": "record a lesson you actually observed",
     "lessons_list": "recall lessons for this target",
+    "exploit_catalog": "read the typed exploit module catalog",
+    "exploit_search": "rank exploit modules for a signal",
+    "exploit_plan": "match exploit modules to this mission's observed surface",
+    "exploit_run": "run one gated exploit module and stage a candidate if it supports",
+    "candidates_list": "read staged candidates for this mission",
+    "chain_templates": "list typed exploit-chain templates",
+    "chain_execute": "run a typed chain from a confirmed primitive to a session or pivot",
     "threatintel_query": "search public threat intelligence",
     "inbox_create": "create a disposable mailbox for in-scope signup flows",
     "inbox_list": "list disposable mailboxes already created",
@@ -247,6 +258,30 @@ def _selection(payload, key: str, limit: int = 5) -> list:
     if not isinstance(value, list):
         return []
     return [_small(item) for item in value[:limit]]
+
+
+def _normalize_target(raw: str) -> str:
+    """Fix the weak-model mistake of appending a hostname as a path.
+
+    ``https://bca.example/webmail.bca.example`` is almost always a request for
+    ``https://webmail.bca.example/``. Promoting the segment keeps the request
+    meaningful instead of burning it on a guaranteed 404.
+    """
+    value = str(raw or "").strip()
+    if "://" not in value:
+        return value
+    try:
+        parts = urlsplit(value)
+    except ValueError:
+        return value
+    host = (parts.hostname or "").lower()
+    path = parts.path or "/"
+    first = path.lstrip("/").split("/", 1)[0]
+    if first and "." in first and host and (
+            first.lower() == host or first.lower().endswith("." + host)):
+        rest = path.lstrip("/")[len(first):].lstrip("/")
+        return f"{parts.scheme}://{first}/{rest}"
+    return value
 
 
 class Autopilot:
@@ -449,6 +484,8 @@ class Autopilot:
                 clean[key] = value
         if "mission_id" in props and self.mission_id:
             clean["mission_id"] = self.mission_id
+        if "target" in clean:
+            clean["target"] = _normalize_target(str(clean.get("target") or ""))
         return clean
 
     def _tool(self, name: str, args: dict) -> tuple[dict, bool, dict]:
@@ -491,8 +528,13 @@ class Autopilot:
         brief["techniques"] = _selection(payload, "items", 12)
         payload, _, _ = self._tool("chain_plan", {"target": self.target, "limit": 4})
         brief["chains"] = _selection(payload, "items", 4)
-        payload, _, _ = self._tool("lessons_list", {"limit": 6})
+        payload, _, _ = self._tool("lessons_list", {"mission_id": self.mission_id, "limit": 6})
         brief["lessons"] = _selection(payload, "items", 6)
+        payload, _, _ = self._tool("exploit_plan", {"mission_id": self.mission_id,
+                                                   "limit": 8, "build": False})
+        brief["exploit_modules"] = _selection(payload, "items", 8)
+        payload, _, _ = self._tool("chain_templates", {})
+        brief["chain_templates"] = _selection(payload, "items", 8)
         payload, _, _ = self._tool("skill_packs", {})
         brief["skills"] = _selection(payload, "items", 8)
         payload, _, _ = self._tool("agent_notes_list", {"mission_id": self.mission_id, "limit": 12})

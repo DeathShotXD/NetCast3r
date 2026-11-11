@@ -8,7 +8,11 @@
 
   function formOpenTarget(node: EventTarget | null): boolean {
     if (!(node instanceof Element)) return false;
-    return Boolean(node.closest('select, input[type="date"], input[type="time"], input[type="datetime-local"], input[type="month"], input[type="week"], input[type="color"]'));
+    // Only controls that open an OS-level picker pause the net. A <select>
+    // stays a normal in-page control: pausing on select focus hid the cursor
+    // for the whole app until focus moved, which read as the reticle vanishing
+    // every time a dropdown was clicked.
+    return Boolean(node.closest('input[type="date"], input[type="time"], input[type="datetime-local"], input[type="month"], input[type="week"], input[type="color"]'));
   }
 
   function setFormOpen(open: boolean) {

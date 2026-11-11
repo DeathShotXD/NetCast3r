@@ -84,6 +84,13 @@ export function clock(ts: number | string): string {
   return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 }
 
+/** Absolute timestamp with an explicit zone, for hover labels. */
+export function utcStamp(ts: number | string): string {
+  const ms = typeof ts === 'number' ? ts * 1000 : isoMs(ts);
+  if (!Number.isFinite(ms)) return '';
+  return `${new Date(ms).toISOString().replace('T', ' ').slice(0, 19)} UTC`;
+}
+
 export function statusLabel(status: string): string {
   return (
     {

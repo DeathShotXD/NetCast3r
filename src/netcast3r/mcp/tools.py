@@ -19,9 +19,12 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import hmac
 import json
 import os
 import re
+import shutil
+import subprocess
 from concurrent.futures import ThreadPoolExecutor
 import socket
 import ssl
@@ -760,6 +763,17 @@ def exploit_plan(ctx: ToolContext, args: dict) -> dict:
                  query={"mission_id": mission_id, "limit": args.get("limit", 8)})
 
 
+def chain_templates(ctx: ToolContext, args: dict) -> dict:
+    return _call(ctx, "GET", "/api/v1/chains/templates")
+
+
+def chain_execute(ctx: ToolContext, args: dict) -> dict:
+    body = {key: args[key] for key in
+            ("mission_id", "steps", "template", "variables", "policy", "dry_run")
+            if key in args}
+    return _call(ctx, "POST", "/api/v1/chains/execute", body=body)
+
+
 def exploit_run(ctx: ToolContext, args: dict) -> dict:
     body = {"module_id": args["module_id"],
             "policy": args.get("policy", "supervised")}
@@ -1491,6 +1505,147 @@ def path_traversal_probe(ctx: ToolContext, args: dict) -> dict:
         "verdict": ("traversal-confirmed" if confirmed else "not-confirmed"),
         "note": ("A readable source or config file is a file-read primitive. "
                  "It is not code execution."),
+    }
+
+
+def jwt_forge(ctx: ToolContext, args: dict) -> dict:
+    """Forge an HS256/384/512 JWT from a key the operator has recovered."""
+    key = str(args.get("key") or "")
+    if not key:
+        raise ToolError("invalid_arguments", "key required")
+    algorithm = str(args.get("algorithm") or "HS256").upper()
+    if algorithm not in {"HS256", "HS384", "HS512"}:
+        raise ToolError("invalid_arguments",
+                        "algorithm must be HS256, HS384, or HS512")
+    header = {"typ": "JWT", "alg": algorithm}
+    extra_header = args.get("header")
+    if isinstance(extra_header, dict):
+        header.update({str(k): v for k, v in extra_header.items()
+                       if str(k).lower() not in {"alg"}})
+    claims = args.get("claims")
+    claims = dict(claims) if isinstance(claims, dict) else {}
+    if args.get("api_time", True) and "API_TIME" not in claims:
+        claims["API_TIME"] = int(time.time())
+    if args.get("expires_in") is not None:
+        claims["exp"] = int(time.time()) + int(args["expires_in"])
+    pad = bool(args.get("pad", True))
+
+    def encode(raw: bytes) -> bytes:
+        value = base64.urlsafe_b64encode(raw).rstrip(b"=")
+        return value + (b"=" * (-len(value) % 4)) if pad else value
+
+    header_seg = encode(json.dumps(header, separators=(",", ":")).encode())
+    claims_seg = encode(json.dumps(claims, separators=(",", ":")).encode())
+    signing = header_seg + b"." + claims_seg
+    digest = {"HS256": hashlib.sha256, "HS384": hashlib.sha384,
+              "HS512": hashlib.sha512}[algorithm]
+    signature = encode(hmac.new(key.encode(), signing, digest).digest())
+    token = (signing + b"." + signature).decode()
+    return {"token": token, "header": header, "claims": claims,
+            "algorithm": algorithm,
+            "note": ("Local crypto only. Confirm the token against the "
+                     "authorized target; never replay it elsewhere.")}
+
+
+def git_dump(ctx: ToolContext, args: dict) -> dict:
+    """Recover an exposed Git repository with git-dumper, then audit it."""
+    target = str(args.get("target") or "").strip()
+    mission_id = str(args.get("mission_id") or "")
+    if not target:
+        raise ToolError("invalid_arguments", "target required")
+    url = target if "://" in target else "https://" + target
+    parts = urlsplit(url)
+    if parts.scheme not in {"http", "https"} or not parts.hostname:
+        raise ToolError("invalid_arguments", "target must be an http(s) URL or host")
+    _require_scope(ctx, target, mission_id, probe=True)
+    _deny_metadata(target)
+    git_url = url if parts.path.rstrip("/").endswith(".git") else \
+        url.rstrip("/") + "/.git/"
+    probe = http_request(ctx, {
+        "target": git_url + "HEAD", "mission_id": mission_id, "method": "GET",
+        "max_bytes": 4096, "timeout": 15, "follow_redirects": False})
+    status = int(probe.get("status") or 0)
+    body = str(probe.get("body") or "").strip()
+    if status != 200 or not (body.startswith("ref:")
+                             or body.startswith("tree ")
+                             or "refs/heads" in body):
+        raise ToolError("not_exposed",
+                        f"no readable git HEAD at {git_url} (status {status})")
+    binary = shutil.which("git-dumper")
+    if not binary:
+        raise ToolError("missing_tool",
+                        "git-dumper is not installed on this host")
+    base = Path(ctx.base or (Path.home() / ".netcast3r"))
+    root = (base / "artifacts" / "git").resolve()
+    root.mkdir(parents=True, exist_ok=True)
+    host = (parts.hostname or "target").lower()
+    if args.get("dest"):
+        dest = Path(str(args["dest"])).expanduser().resolve()
+        try:
+            dest.relative_to(root)
+        except ValueError:
+            raise ToolError("invalid_arguments",
+                            f"dest must stay under {root}")
+    else:
+        dest = root / f"{host}-{time.strftime('%Y%m%d-%H%M%S')}"
+    if dest.exists() and any(dest.iterdir()) and not args.get("force"):
+        raise ToolError("invalid_arguments",
+                        f"destination is not empty: {dest}; pass force=true")
+    dest.mkdir(parents=True, exist_ok=True)
+    jobs = max(1, min(int(args.get("jobs") or 4), 6))
+    per_request = max(1, min(int(args.get("timeout") or 20), 60))
+    max_seconds = max(30, min(int(args.get("max_seconds") or 300), 900))
+    command = [binary, git_url, str(dest), "-j", str(jobs), "-t",
+               str(per_request), "-u", "NetCast3r/0.1"]
+    timed_out = False
+    try:
+        proc = subprocess.run(command, capture_output=True, text=True,
+                              timeout=max_seconds, cwd=str(root))
+        code, stdout, stderr = proc.returncode, proc.stdout, proc.stderr
+    except subprocess.TimeoutExpired as exc:
+        timed_out = True
+        code = -1
+        stdout = (exc.stdout or "") if isinstance(exc.stdout, str) else ""
+        stderr = (exc.stderr or "") if isinstance(exc.stderr, str) else ""
+    except OSError as exc:
+        raise ToolError("git_dump_failed", f"could not run git-dumper: {exc}")
+    head = ""
+    try:
+        rev = subprocess.run(["git", "-C", str(dest), "rev-parse", "HEAD"],
+                             capture_output=True, text=True, timeout=20)
+        head = (rev.stdout or "").strip()
+    except (OSError, subprocess.SubprocessError):
+        pass
+    tracked = 0
+    try:
+        ls = subprocess.run(["git", "-C", str(dest), "ls-files"],
+                            capture_output=True, text=True, timeout=20)
+        tracked = len([line for line in (ls.stdout or "").splitlines() if line.strip()])
+    except (OSError, subprocess.SubprocessError):
+        pass
+    audit = {}
+    if args.get("audit", True):
+        try:
+            audit = codeaudit.scan(dest, max_files=int(args.get("max_files") or 5000))
+        except Exception as exc:  # noqa: BLE001 - an audit failure must not hide the dump
+            audit = {"error": f"{type(exc).__name__}: {exc}"}
+    rea = {}
+    if args.get("rea", True):
+        try:
+            rea = reveng.analyze("source", str(dest),
+                                 max_files=int(args.get("max_files") or 5000))
+        except Exception as exc:  # noqa: BLE001 - REA must not hide the dump
+            rea = {"error": f"{type(exc).__name__}: {exc}"}
+    return {
+        "target": target, "git_url": git_url, "dest": str(dest),
+        "exit_code": code, "timed_out": timed_out,
+        "head": head, "tracked_files": tracked,
+        "audit": audit, "rea": rea,
+        "stdout": (stdout or "")[-3000:],
+        "stderr": (stderr or "")[-2000:],
+        "note": ("Repository recovered locally. Source and secret values stay "
+                 "in the artifact tree; do not publish them raw. Promote only "
+                 "a confirmed, reproducible impact as a finding."),
     }
 
 
@@ -4115,6 +4270,8 @@ _HANDLERS.update({
     "exploit_search": exploit_search,
     "exploit_plan": exploit_plan,
     "exploit_run": exploit_run,
+    "chain_templates": chain_templates,
+    "chain_execute": chain_execute,
     "candidates_list": candidates_list,
     "candidate_promote": candidate_promote,
     "candidate_dismiss": candidate_dismiss,
@@ -4202,6 +4359,8 @@ _HANDLERS.update({
     "test_case_run": test_case_run,
     "path_traversal_probe": path_traversal_probe,
     "source_disclosure_scan": source_disclosure_scan,
+    "git_dump": git_dump,
+    "jwt_forge": jwt_forge,
     "auth_cookie_probe": auth_cookie_probe,
     "chain_run": chain_run,
     "hypothesis_create": hypothesis_create,
@@ -4740,6 +4899,23 @@ TOOLS: tuple[Tool, ...] = (
                   "limit": _integer("modules", 1, 40, 5),
                   "build": _boolean("create hypotheses for ready modules", True)},
                  ["mission_id"]), "exploit_plan"),
+    Tool("chain_templates", "List exploit-chain templates",
+         "Read the built-in chain templates: git-to-source-audit, "
+         "token-to-auth-profile, jwt-forge-to-auth-profile, sqli-union-to-data.",
+         "low", "missions", _schema({}, []), "chain_templates"),
+    Tool("chain_execute", "Run a typed exploit chain",
+         "Execute ordered steps: extract, auth_profile, http, tool, script, "
+         "assert, pivot, exploit_run. Scope, risk, and approval gates apply to "
+         "every step. A chain stages observations/candidates, never findings.",
+         "medium", "missions",
+         _schema({"mission_id": _string("mission id"),
+                  "steps": _array("typed steps", {"type": "object"}),
+                  "template": _string("built-in template name"),
+                  "variables": _object("template variables"),
+                  "policy": {"type": "string",
+                             "enum": ["readonly", "supervised", "full"]},
+                  "dry_run": _boolean("validate without executing", False)},
+                 ["mission_id"]), "chain_execute", open_world=True),
     Tool("exploit_run", "Run an exploit module against a mission",
          "Execute one module's typed steps in order through the same scoped, "
          "risk-gated tools every caller uses, judged by an independent model. "
@@ -5426,6 +5602,36 @@ TOOLS: tuple[Tool, ...] = (
                   "max_bytes": _integer("response cap", 1024, 524288, 65536),
                   "timeout": _integer("timeout in seconds", 1, 60, 20)},
                  ["target"]), "path_traversal_probe", open_world=True),
+    Tool("jwt_forge", "Forge a JWT from a recovered key",
+         "Build an HS256/384/512 token from a key recovered from source or an "
+         "artifact. Local crypto only; use it against an authorized target and "
+         "validate the exact claims the target trusts. Never replay it elsewhere.",
+         "medium", "web",
+         _schema({"key": _string("recovered signing key"),
+                  "claims": _object("claims to sign"),
+                  "header": _object("extra JOSE header fields"),
+                  "algorithm": {"type": "string", "enum": ["HS256", "HS384", "HS512"]},
+                  "api_time": _boolean("add an API_TIME claim", True),
+                  "expires_in": _integer("add exp = now + seconds", 1, 86400, None),
+                  "pad": _boolean("base64url padding", True)},
+                 ["key"]), "jwt_forge"),
+    Tool("git_dump", "Recover an exposed Git repository",
+         "Verify an in-scope .git/HEAD, run git-dumper into the local artifact tree, "
+         "and audit the recovered tree for secrets, SQL concatenation, cookie trust, "
+         "upload handlers, and command sinks. Read-only against the target; writes only "
+         "local artifacts. Values stay local and are not published.",
+         "medium", "web",
+         _schema({"target": _string("in-scope host or URL"),
+                  "mission_id": _string("mission whose scope authorizes the download"),
+                  "dest": _string("destination under the git artifact root"),
+                  "jobs": _integer("parallel download jobs", 1, 6, 4),
+                  "timeout": _integer("per-request timeout", 1, 60, 20),
+                  "max_seconds": _integer("total dump budget", 30, 900, 300),
+                  "max_files": _integer("source audit file cap", 1, 20000, 5000),
+                  "audit": _boolean("run the source audit", True),
+                  "rea": _boolean("run the REA source analysis", True),
+                  "force": _boolean("write into a non-empty destination", False)},
+                 ["target"]), "git_dump", open_world=True),
     Tool("source_disclosure_scan", "Read application source through a file read",
          "Fetch a bounded list of common application source and config paths through a "
          "confirmed file-read template. Classify each file and scan it for credential-shaped "

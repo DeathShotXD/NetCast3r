@@ -6,6 +6,7 @@ pageable, and diffable, and it remembers triage so a re-scan does not lose it.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import secrets
@@ -390,6 +391,7 @@ CREATE TABLE IF NOT EXISTS director_state (
     runs_started INTEGER DEFAULT 0,
     stop_reason TEXT DEFAULT '',
     note TEXT DEFAULT '',
+    scope_hosts_json TEXT DEFAULT '[]',
     active_json TEXT DEFAULT '{}',
     engaged_at TEXT,
     last_tick TEXT,
@@ -531,12 +533,64 @@ CREATE TABLE IF NOT EXISTS brain_log (
     focus TEXT DEFAULT '',
     provider TEXT DEFAULT '',
     model TEXT DEFAULT '',
+    chat_provider TEXT DEFAULT '',
+    chat_model TEXT DEFAULT '',
     source TEXT DEFAULT '',
     actions_json TEXT DEFAULT '[]'
 );
 CREATE INDEX IF NOT EXISTS idx_brain_log_id ON brain_log(id DESC);
 CREATE INDEX IF NOT EXISTS idx_brain_log_mission
     ON brain_log(mission_id, id DESC);
+
+CREATE TABLE IF NOT EXISTS brain_sessions (
+    id TEXT PRIMARY KEY,
+    title TEXT DEFAULT '',
+    mission_id TEXT DEFAULT '',
+    agent TEXT DEFAULT 'helix',
+    model TEXT DEFAULT '',
+    permission TEXT DEFAULT 'full',
+    created_at TEXT,
+    updated_at TEXT,
+    archived INTEGER DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_brain_sessions_updated
+    ON brain_sessions(archived, updated_at DESC);
+
+CREATE TABLE IF NOT EXISTS helix_scripts (
+    id TEXT PRIMARY KEY,
+    name TEXT UNIQUE,
+    purpose TEXT DEFAULT '',
+    language TEXT DEFAULT 'python',
+    path TEXT DEFAULT '',
+    content TEXT DEFAULT '',
+    sha256 TEXT DEFAULT '',
+    tags_json TEXT DEFAULT '[]',
+    mission_id TEXT DEFAULT '',
+    source TEXT DEFAULT 'helix',
+    created_at TEXT,
+    updated_at TEXT,
+    runs INTEGER DEFAULT 0,
+    successes INTEGER DEFAULT 0,
+    failures INTEGER DEFAULT 0,
+    last_run_at TEXT,
+    last_status TEXT DEFAULT ''
+);
+CREATE INDEX IF NOT EXISTS idx_helix_scripts_updated
+    ON helix_scripts(updated_at DESC);
+
+CREATE TABLE IF NOT EXISTS helix_tool_notes (
+    id TEXT PRIMARY KEY,
+    tool TEXT UNIQUE,
+    path TEXT DEFAULT '',
+    version TEXT DEFAULT '',
+    summary TEXT DEFAULT '',
+    help_text TEXT DEFAULT '',
+    tags_json TEXT DEFAULT '[]',
+    created_at TEXT,
+    updated_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_helix_tool_notes_updated
+    ON helix_tool_notes(updated_at DESC);
 
 CREATE TABLE IF NOT EXISTS mission_coverage (
     mission_id TEXT,
@@ -714,10 +768,24 @@ class Index:
         approvals = {row["name"] for row in self.conn.execute("PRAGMA table_info(approvals)")}
         if "used_at" not in approvals:
             self.conn.execute("ALTER TABLE approvals ADD COLUMN used_at TEXT")
+        director = {row["name"] for row in
+                    self.conn.execute("PRAGMA table_info(director_state)")}
+        if director and "scope_hosts_json" not in director:
+            self.conn.execute(
+                "ALTER TABLE director_state ADD COLUMN scope_hosts_json TEXT DEFAULT '[]'")
         brain = {row["name"] for row in self.conn.execute("PRAGMA table_info(brain_log)")}
         if brain and "source" not in brain:
             self.conn.execute(
                 "ALTER TABLE brain_log ADD COLUMN source TEXT DEFAULT ''")
+        if brain and "session_id" not in brain:
+            self.conn.execute(
+                "ALTER TABLE brain_log ADD COLUMN session_id TEXT DEFAULT ''")
+        if brain and "chat_provider" not in brain:
+            self.conn.execute(
+                "ALTER TABLE brain_log ADD COLUMN chat_provider TEXT DEFAULT ''")
+        if brain and "chat_model" not in brain:
+            self.conn.execute(
+                "ALTER TABLE brain_log ADD COLUMN chat_model TEXT DEFAULT ''")
         skills = {row["name"] for row in self.conn.execute("PRAGMA table_info(skills)")}
         for column, ddl in (
             ("status", "ALTER TABLE skills ADD COLUMN status TEXT DEFAULT 'active'"),
@@ -804,7 +872,10 @@ class Index:
 
     def get_run(self, run_id: str) -> dict | None:
         with self._lock:
-            row = self.conn.execute("SELECT * FROM runs WHERE id = ?", (run_id,)).fetchone()
+            row = self.conn.execute(
+                "SELECT runs.*, (SELECT COUNT(*) FROM findings "
+                "WHERE findings.run_id = runs.id) AS finding_count "
+                "FROM runs WHERE runs.id = ?", (run_id,)).fetchone()
         return self._run_row(row) if row else None
 
     def running_run_ids(self) -> list[str]:
@@ -827,7 +898,9 @@ class Index:
         with self._lock:
             total = self.conn.execute(f"SELECT COUNT(*) FROM runs {clause}", params).fetchone()[0]  # codeaudit: ignore py-sql-fstring -- clause is built from fixed strings, values are bound
             rows = self.conn.execute(
-                f"SELECT * FROM runs {clause} ORDER BY created_at DESC LIMIT ? OFFSET ?",
+                f"SELECT runs.*, (SELECT COUNT(*) FROM findings "
+                f"WHERE findings.run_id = runs.id) AS finding_count "
+                f"FROM runs {clause} ORDER BY runs.created_at DESC LIMIT ? OFFSET ?",
                 [*params, limit, offset],
             ).fetchall()
         return [self._run_row(row) for row in rows], total
@@ -2590,6 +2663,9 @@ class Index:
                     raise ValueError(f"unknown director scope filter: {value}")
                 sets.append(f"{key} = ?")
                 values.append(value)
+        if "scope_hosts" in fields and fields["scope_hosts"] is not None:
+            sets.append("scope_hosts_json = ?")
+            values.append(json.dumps(list(fields["scope_hosts"]), default=str))
         if "active" in fields and fields["active"] is not None:
             sets.append("active_json = ?")
             values.append(json.dumps(fields["active"], default=str))
@@ -2644,39 +2720,318 @@ class Index:
     # operator can read what it decided and why.
     def add_brain_turn(self, role: str, text: str, mission_id: str = "",
                        focus: str = "", provider: str = "", model: str = "",
-                       actions: list | None = None, source: str = "") -> dict:
+                       actions: list | None = None, source: str = "",
+                       chat_provider: str = "", chat_model: str = "",
+                       session_id: str = "") -> dict:
         now = _now()
         with self._lock:
             cursor = self.conn.execute(
-                "INSERT INTO brain_log (ts, mission_id, role, text, focus, "
-                "provider, model, source, actions_json) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                (now, str(mission_id or ""), str(role or "brain")[:24],
+                "INSERT INTO brain_log (ts, mission_id, session_id, role, text, "
+                "focus, provider, model, chat_provider, chat_model, source, "
+                "actions_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (now, str(mission_id or ""), str(session_id or ""),
+                 str(role or "brain")[:24],
                  str(text or "")[:8000], str(focus or "")[:400],
                  str(provider or "")[:80], str(model or "")[:120],
+                 str(chat_provider or "")[:80], str(chat_model or "")[:120],
                  str(source or "")[:24], json.dumps(actions or [], default=str)),
             )
             row_id = cursor.lastrowid
             self.conn.execute(
                 "DELETE FROM brain_log WHERE id < ?", (row_id - 4000,))
+            if session_id:
+                self.conn.execute(
+                    "UPDATE brain_sessions SET updated_at = ? WHERE id = ?",
+                    (now, str(session_id)))
+                if role == "operator":
+                    self.conn.execute(
+                        "UPDATE brain_sessions SET title = ? WHERE id = ? "
+                        "AND (title IS NULL OR TRIM(title) = '' OR title = 'New chat')",
+                        (str(text or "").strip()[:80] or "New chat",
+                         str(session_id)))
             self.conn.commit()
             row = self.conn.execute(
                 "SELECT * FROM brain_log WHERE id = ?", (row_id,)).fetchone()
         return self._brain_log_row(row) if row else {}
 
-    def list_brain_log(self, limit: int = 60, mission_id: str = "") -> list[dict]:
+    def list_brain_log(self, limit: int = 60, mission_id: str = "",
+                       session_id: str = "") -> list[dict]:
         limit = max(1, min(int(limit or 60), 1000))
+        clauses = []
+        params: list = []
         if mission_id:
-            with self._lock:
-                rows = self.conn.execute(
-                    "SELECT * FROM brain_log WHERE mission_id = ? "
-                    "ORDER BY id DESC LIMIT ?", (mission_id, limit)).fetchall()
-        else:
-            with self._lock:
-                rows = self.conn.execute(
-                    "SELECT * FROM brain_log ORDER BY id DESC LIMIT ?",
-                    (limit,)).fetchall()
+            clauses.append("mission_id = ?")
+            params.append(mission_id)
+        if session_id:
+            clauses.append("session_id = ?")
+            params.append(session_id)
+        where = ("WHERE " + " AND ".join(clauses)) if clauses else ""
+        with self._lock:
+            rows = self.conn.execute(
+                f"SELECT * FROM brain_log {where} ORDER BY id DESC LIMIT ?",
+                [*params, limit]).fetchall()
         return [self._brain_log_row(row) for row in rows]
+
+    # -- Helix chat sessions ----------------------------------------------
+    def create_brain_session(self, title: str = "", mission_id: str = "",
+                             agent: str = "helix", model: str = "",
+                             permission: str = "full") -> dict:
+        now = _now()
+        session_id = "bhs_" + secrets.token_hex(8)
+        with self._lock:
+            self.conn.execute(
+                "INSERT INTO brain_sessions (id, title, mission_id, agent, model, "
+                "permission, created_at, updated_at, archived) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0)",
+                (session_id, str(title or "New chat")[:120],
+                 str(mission_id or ""), str(agent or "helix")[:40],
+                 str(model or "")[:120], str(permission or "full")[:20],
+                 now, now))
+            self.conn.commit()
+            row = self.conn.execute(
+                "SELECT * FROM brain_sessions WHERE id = ?", (session_id,)).fetchone()
+        return dict(row) if row else {}
+
+    def get_brain_session(self, session_id: str) -> dict | None:
+        with self._lock:
+            row = self.conn.execute(
+                "SELECT * FROM brain_sessions WHERE id = ?",
+                (str(session_id or ""),)).fetchone()
+        return dict(row) if row else None
+
+    def list_brain_sessions(self, limit: int = 30, mission_id: str = "",
+                            include_archived: bool = False) -> list[dict]:
+        limit = max(1, min(int(limit or 30), 200))
+        where = []
+        params: list = []
+        if not include_archived:
+            where.append("archived = 0")
+        if mission_id:
+            where.append("mission_id = ?")
+            params.append(str(mission_id))
+        clause = ("WHERE " + " AND ".join(where)) if where else ""
+        with self._lock:
+            rows = self.conn.execute(
+                f"SELECT * FROM brain_sessions {clause} "
+                "ORDER BY updated_at DESC LIMIT ?", [*params, limit]).fetchall()
+        return [dict(row) for row in rows]
+
+    def patch_brain_session(self, session_id: str, **fields) -> dict | None:
+        allowed = ("title", "mission_id", "agent", "model", "permission",
+                   "archived")
+        updates = {key: value for key, value in fields.items() if key in allowed}
+        if not updates:
+            return self.get_brain_session(session_id)
+        updates["updated_at"] = _now()
+        assignments = ", ".join(f"{key} = ?" for key in updates)
+        with self._lock:
+            cursor = self.conn.execute(
+                f"UPDATE brain_sessions SET {assignments} WHERE id = ?",
+                [*updates.values(), str(session_id or "")])
+            self.conn.commit()
+            if not cursor.rowcount:
+                return None
+            row = self.conn.execute(
+                "SELECT * FROM brain_sessions WHERE id = ?",
+                (str(session_id or ""),)).fetchone()
+        return dict(row) if row else None
+
+    def delete_brain_session(self, session_id: str) -> bool:
+        with self._lock:
+            cursor = self.conn.execute(
+                "DELETE FROM brain_sessions WHERE id = ?",
+                (str(session_id or ""),))
+            self.conn.execute(
+                "DELETE FROM brain_log WHERE session_id = ?",
+                (str(session_id or ""),))
+            self.conn.commit()
+        return bool(cursor.rowcount)
+
+    def list_brain_messages(self, session_id: str, limit: int = 200) -> list[dict]:
+        limit = max(1, min(int(limit or 200), 2000))
+        with self._lock:
+            rows = self.conn.execute(
+                "SELECT * FROM brain_log WHERE session_id = ? "
+                "ORDER BY id ASC LIMIT ?",
+                (str(session_id or ""), limit)).fetchall()
+        return [self._brain_log_row(row) for row in rows]
+
+    def fork_brain_session(self, session_id: str, title: str = "") -> dict | None:
+        source = self.get_brain_session(session_id)
+        if not source:
+            return None
+        forked = self.create_brain_session(
+            title=title or f"{source.get('title') or 'Chat'} (fork)",
+            mission_id=str(source.get("mission_id") or ""),
+            agent=str(source.get("agent") or "helix"),
+            model=str(source.get("model") or ""),
+            permission=str(source.get("permission") or "full"))
+        with self._lock:
+            rows = self.conn.execute(
+                "SELECT ts, mission_id, role, text, focus, provider, model, "
+                "chat_provider, chat_model, source, actions_json FROM brain_log "
+                "WHERE session_id = ? ORDER BY id ASC",
+                (str(session_id or ""),)).fetchall()
+            for row in rows:
+                self.conn.execute(
+                    "INSERT INTO brain_log (ts, mission_id, session_id, role, "
+                    "text, focus, provider, model, chat_provider, chat_model, "
+                    "source, actions_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    (row["ts"], row["mission_id"], forked["id"], row["role"],
+                     row["text"], row["focus"], row["provider"], row["model"],
+                     row["chat_provider"], row["chat_model"], row["source"],
+                     row["actions_json"]))
+            self.conn.commit()
+        return self.get_brain_session(forked["id"])
+
+    # -- Helix toolsmith ---------------------------------------------------
+    @staticmethod
+    def _helix_script_row(row: sqlite3.Row) -> dict:
+        item = dict(row)
+        item["tags"] = _loads(item.pop("tags_json"), [])
+        return item
+
+    def save_helix_script(self, name: str, purpose: str, content: str,
+                          language: str = "python", path: str = "",
+                          tags: list | None = None, mission_id: str = "",
+                          source: str = "helix") -> dict:
+        name = str(name or "").strip().lower()
+        content = str(content or "")
+        if not name:
+            raise ValueError("script name required")
+        if not content.strip():
+            raise ValueError("script content required")
+        if len(content) > 200_000:
+            raise ValueError("script content is larger than 200 KB")
+        now = _now()
+        digest = hashlib.sha256(content.encode("utf-8")).hexdigest()
+        tags = [str(tag) for tag in (tags or []) if str(tag).strip()][:20]
+        existing = self.get_helix_script(name)
+        script_id = str((existing or {}).get("id") or ("scr_" + secrets.token_hex(8)))
+        with self._lock:
+            self.conn.execute(
+                "INSERT INTO helix_scripts (id, name, purpose, language, path, "
+                "content, sha256, tags_json, mission_id, source, created_at, "
+                "updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
+                "ON CONFLICT(name) DO UPDATE SET purpose = excluded.purpose, "
+                "language = excluded.language, path = excluded.path, "
+                "content = excluded.content, sha256 = excluded.sha256, "
+                "tags_json = excluded.tags_json, mission_id = excluded.mission_id, "
+                "source = excluded.source, updated_at = excluded.updated_at",
+                (script_id, name, str(purpose or "")[:600],
+                 str(language or "python")[:20], str(path or "")[:1000],
+                 content, digest, json.dumps(tags), str(mission_id or ""),
+                 str(source or "helix")[:40], now, now))
+            self.conn.commit()
+            row = self.conn.execute(
+                "SELECT * FROM helix_scripts WHERE name = ?", (name,)).fetchone()
+        return self._helix_script_row(row) if row else {}
+
+    def get_helix_script(self, name_or_id: str) -> dict | None:
+        key = str(name_or_id or "").strip()
+        if not key:
+            return None
+        with self._lock:
+            row = self.conn.execute(
+                "SELECT * FROM helix_scripts WHERE id = ? OR name = ?",
+                (key, key.lower())).fetchone()
+        return self._helix_script_row(row) if row else None
+
+    def list_helix_scripts(self, query: str = "", limit: int = 50) -> list[dict]:
+        limit = max(1, min(int(limit or 50), 200))
+        where, params = "", []
+        if query:
+            needle = f"%{str(query).strip()}%"
+            where = ("WHERE name LIKE ? OR purpose LIKE ? OR content LIKE ? "
+                     "OR tags_json LIKE ?")
+            params = [needle, needle, needle, needle]
+        with self._lock:
+            rows = self.conn.execute(
+                f"SELECT * FROM helix_scripts {where} "
+                "ORDER BY updated_at DESC LIMIT ?", [*params, limit]).fetchall()
+        return [self._helix_script_row(row) for row in rows]
+
+    def record_helix_script_run(self, script_id: str, success: bool,
+                                status: str = "", output: str = "",
+                                error: str = "", duration_ms: int = 0) -> dict | None:
+        now = _now()
+        with self._lock:
+            row = self.conn.execute(
+                "SELECT * FROM helix_scripts WHERE id = ?",
+                (str(script_id or ""),)).fetchone()
+            if not row:
+                return None
+            self.conn.execute(
+                "UPDATE helix_scripts SET runs = runs + 1, "
+                "successes = successes + ?, failures = failures + ?, "
+                "last_run_at = ?, last_status = ? WHERE id = ?",
+                (1 if success else 0, 0 if success else 1, now,
+                 str(status or ("ok" if success else "error"))[:40],
+                 str(script_id)))
+            self.conn.commit()
+            row = self.conn.execute(
+                "SELECT * FROM helix_scripts WHERE id = ?",
+                (str(script_id),)).fetchone()
+        return self._helix_script_row(row) if row else None
+
+    def delete_helix_script(self, name_or_id: str) -> bool:
+        script = self.get_helix_script(name_or_id)
+        if not script:
+            return False
+        with self._lock:
+            self.conn.execute("DELETE FROM helix_scripts WHERE id = ?",
+                              (script["id"],))
+            self.conn.commit()
+        return True
+
+    def save_tool_note(self, tool: str, path: str = "", version: str = "",
+                       summary: str = "", help_text: str = "",
+                       tags: list | None = None) -> dict:
+        tool = str(tool or "").strip()
+        if not tool:
+            raise ValueError("tool required")
+        now = _now()
+        note_id = "tln_" + secrets.token_hex(8)
+        tags = [str(tag) for tag in (tags or []) if str(tag).strip()][:20]
+        with self._lock:
+            self.conn.execute(
+                "INSERT INTO helix_tool_notes (id, tool, path, version, summary, "
+                "help_text, tags_json, created_at, updated_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) "
+                "ON CONFLICT(tool) DO UPDATE SET path = excluded.path, "
+                "version = excluded.version, summary = excluded.summary, "
+                "help_text = excluded.help_text, tags_json = excluded.tags_json, "
+                "updated_at = excluded.updated_at",
+                (note_id, tool, str(path or "")[:1000], str(version or "")[:200],
+                 str(summary or "")[:4000], str(help_text or "")[:12000],
+                 json.dumps(tags), now, now))
+            self.conn.commit()
+            row = self.conn.execute(
+                "SELECT * FROM helix_tool_notes WHERE tool = ?", (tool,)).fetchone()
+        if not row:
+            return {}
+        item = dict(row)
+        item["tags"] = _loads(item.pop("tags_json"), [])
+        return item
+
+    def list_tool_notes(self, query: str = "", limit: int = 50) -> list[dict]:
+        limit = max(1, min(int(limit or 50), 200))
+        where, params = "", []
+        if query:
+            needle = f"%{str(query).strip()}%"
+            where = ("WHERE tool LIKE ? OR summary LIKE ? OR help_text LIKE ? "
+                     "OR tags_json LIKE ?")
+            params = [needle, needle, needle, needle]
+        with self._lock:
+            rows = self.conn.execute(
+                f"SELECT * FROM helix_tool_notes {where} "
+                "ORDER BY updated_at DESC LIMIT ?", [*params, limit]).fetchall()
+        items = []
+        for row in rows:
+            item = dict(row)
+            item["tags"] = _loads(item.pop("tags_json"), [])
+            items.append(item)
+        return items
 
     def clear_brain_log(self) -> None:
         with self._lock:
@@ -2738,6 +3093,7 @@ class Index:
     def _director_state_row(row: sqlite3.Row) -> dict:
         item = dict(row)
         item["active"] = _loads(item.pop("active_json"), {})
+        item["scope_hosts"] = _loads(item.pop("scope_hosts_json", None), [])
         item["engaged"] = bool(item.get("engaged"))
         item["paused"] = bool(item.get("paused"))
         return item

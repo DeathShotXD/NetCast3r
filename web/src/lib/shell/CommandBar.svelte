@@ -27,7 +27,14 @@
   };
 
   const running = $derived(
-    store.runs.find((run) => run.status === 'running' || run.status === 'queued') ?? store.liveRun ?? null
+    store.runs.find(
+      (run) =>
+        run.id === store.activeRunId &&
+        (run.status === 'running' || run.status === 'queued')
+    ) ??
+      store.runs.find((run) => run.status === 'running' || run.status === 'queued') ??
+      store.liveRun ??
+      null
   );
   const status = $derived(running?.status ?? '');
   const scanActive = $derived(status === 'running' || status === 'queued');
@@ -166,7 +173,7 @@
     type="button"
     onclick={() => (store.palette = true)}
     title="open the command palette"
-    aria-label="open command palette"
+    aria-label="command palette (Ctrl K)"
   >
     Ctrl K
   </button>

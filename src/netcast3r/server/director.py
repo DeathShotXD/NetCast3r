@@ -256,7 +256,8 @@ class Director:
 
     def tune(self, tick_seconds: float | None = None,
              max_concurrent: int | None = None,
-             scope_filter: str | None = None) -> dict:
+             scope_filter: str | None = None,
+             scope_hosts: list[str] | None = None) -> dict:
         fields: dict = {}
         if tick_seconds is not None:
             fields["tick_seconds"] = int(self._clamp_tick(tick_seconds))
@@ -265,6 +266,13 @@ class Director:
                                                   MAX_CONCURRENT))
         if scope_filter is not None:
             fields["scope_filter"] = str(scope_filter)
+        if scope_hosts is not None:
+            cleaned = []
+            for value in scope_hosts:
+                host = str(value or "").strip().lower().lstrip(".")
+                if host and "/" not in host and " " not in host:
+                    cleaned.append(host)
+            fields["scope_hosts"] = cleaned
         if fields:
             self.server.index.patch_director_state(**fields)
             # Keep the running loop in step with the change.
@@ -288,6 +296,8 @@ class Director:
             try:
                 if runner == "hunt":
                     self.server._hunts().cancel(run_id)
+                elif runner == "exploit":
+                    self.server._exploits().cancel(run_id)
                 else:
                     self.server._solvers().cancel(run_id)
                 cancelled.append(run_id)
@@ -328,6 +338,7 @@ class Director:
             "engaged": bool(state.get("engaged")),
             "paused": bool(state.get("paused")),
             "scope_filter": state.get("scope_filter") or "autonomous",
+            "scope_hosts": state.get("scope_hosts") or [],
             "tick_seconds": int(state.get("tick_seconds") or 15),
             "max_concurrent": int(state.get("max_concurrent") or 8),
             "cycles": int(state.get("cycles") or 0),
@@ -477,6 +488,8 @@ class Director:
                 break
             if chosen is None:
                 break
+            if self._exploit_choice(chosen["mission_id"]):
+                chosen = {**chosen, "mode": "exploit"}
             started.append(self._start(chosen, active, state))
             active = (self.server.index.ensure_director_state().get("active") or {})
             busy = self._busy_run_count(active.get("runs") or {})
@@ -532,6 +545,16 @@ class Director:
                 pass
         if not str(mission.get("target") or "").strip():
             return "no target"
+        allowed_hosts = state.get("scope_hosts") or []
+        if allowed_hosts:
+            try:
+                host = (urlsplit(str(mission.get("target") or "")).hostname
+                        or "").lower().rstrip(".")
+            except ValueError:
+                host = ""
+            if not any(host == item or host.endswith("." + item)
+                       for item in allowed_hosts):
+                return f"outside portfolio hosts: {host or 'unknown'}"
         return ""
 
     # -- bookkeeping -------------------------------------------------------
@@ -596,6 +619,9 @@ class Director:
 
     def _priority_run_mode(self, mission_id: str, active: dict) -> str:
         """Next brain for a locked mission. Never idle, never parked."""
+        choice = self._exploit_choice(mission_id)
+        if choice:
+            return "exploit"
         entry = (active.get("missions") or {}).get(mission_id) or {}
         mode = str(entry.get("next_priority_mode") or "hunt")
         if mode == "deepen":
@@ -603,6 +629,26 @@ class Director:
         if mode not in {"hunt", "swarm"}:
             return "hunt"
         return mode
+
+    def _exploit_choice(self, mission_id: str) -> dict:
+        """Pick a module for a staged candidate, not a blind catalog walk."""
+        try:
+            from .. import exploits as exploits_module
+
+            candidates = self.server.index.list_candidates(
+                mission_id=mission_id, status="candidate", limit=10)
+            for candidate in candidates or []:
+                module_id = str(candidate.get("module_id") or "")
+                payload = candidate.get("payload")
+                if not module_id and isinstance(payload, dict):
+                    module_id = str(payload.get("module_id") or "")
+                if module_id and exploits_module.get_module(module_id):
+                    return {"module_id": module_id,
+                            "candidate_id": candidate.get("id"),
+                            "reason": "staged candidate"}
+        except Exception:  # noqa: BLE001 - a broken candidate must not stop the hunt
+            return {}
+        return {}
 
     def _advance_priority_ladder(self, mission_id: str, mstate: dict,
                                  entry: dict, run: dict | None,
@@ -1207,6 +1253,21 @@ class Director:
         if mode == "hunt":
             run = self.server._hunts().start(mission_id)
             runner = "hunt"
+        elif mode == "exploit":
+            choice = self._exploit_choice(mission_id)
+            module_id = str(row.get("module_id") or
+                            (choice or {}).get("module_id") or "")
+            if not module_id:
+                mode = "hunt"
+                run = self.server._hunts().start(mission_id)
+                runner = "hunt"
+            else:
+                run = self.server._exploits().start(
+                    mission_id, module_id,
+                    {"policy": policy,
+                     "target": str(row.get("target") or
+                                   mission.get("target") or "")})
+                runner = "exploit"
         else:
             options = {"mode": mode, "policy": policy, "goal": goal}
             options.update(MODE_BUDGETS.get(mode, {}))

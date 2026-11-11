@@ -19,7 +19,7 @@
   --obs-text: #f5e9dc;
   --obs-text-2: #d8cbbb;
   --obs-muted: #a89591;
-  --obs-faint: #746c74;
+  --obs-faint: #8a818a;
   --obs-acid: #c8f81a;
   --obs-acid-2: #e2ff77;
   --obs-acid-soft: rgba(200, 248, 26, 0.085);
@@ -929,10 +929,13 @@ body {
 .nc-canvas {
   position: fixed;
   inset: 0;
-  /* Above every app overlay (palette veil 60, toasts 50, drawer 40) so the
-     pointer is never dimmed by a veil. The top layer still paints above it,
-     which is why the engine hands the native cursor back there. */
-  z-index: 1000;
+  /* The pointer is the topmost thing the operator owns. Draw above every app
+     layer, including Helix (1050 / fullscreen 1140), toasts (1130), and the
+     radial menu (1160). Without this the canvas painted behind Helix and the
+     hidden native cursor made the reticle disappear over the panel. The top
+     layer (dialog / popover / fullscreen) still paints above any z-index, so
+     the engine hands the native cursor back there. */
+  z-index: 1200;
   pointer-events: none;
   mix-blend-mode: screen;
 }
@@ -940,12 +943,11 @@ body {
 /* When the net overlay is paused, the native pointer MUST come back.
    Hiding .nc-canvas while html.nc-live still forces cursor:none leaves the
    operator with no cursor at all (the click/drop glitch). Helix stays out of
-   this list on purpose: its panel is raised above the canvas; suppressing the
-   whole net while Helix is open stranded the reticle. */
+   this list on purpose: its panel now sits below the canvas, so the net can
+   hunt inside the panel. A focused <select> is NOT a pause: it is an ordinary
+   control, and pausing on it hid the reticle after every dropdown click. */
 html.nc-live:is(
     .nc-form-open,
-    :has(select:focus),
-    :has(select:open),
     :has(.obs-drawer),
     :has(.obs-modal-veil),
     :has(.palette-veil),
@@ -953,8 +955,6 @@ html.nc-live:is(
   ),
 html.nc-live:is(
     .nc-form-open,
-    :has(select:focus),
-    :has(select:open),
     :has(.obs-drawer),
     :has(.obs-modal-veil),
     :has(.palette-veil),
@@ -965,8 +965,6 @@ html.nc-live:is(
 
 html.nc-live:is(
     .nc-form-open,
-    :has(select:focus),
-    :has(select:open),
     :has(.obs-drawer),
     :has(.obs-modal-veil),
     :has(.palette-veil),
@@ -979,8 +977,6 @@ html.nc-live:is(
 
 html.nc-live:is(
     .nc-form-open,
-    :has(select:focus),
-    :has(select:open),
     :has(.obs-drawer),
     :has(.obs-modal-veil),
     :has(.palette-veil),
@@ -1047,7 +1043,7 @@ html.nc-live:is(
   position: fixed;
   top: 0;
   left: 0;
-  z-index: 1001;
+  z-index: 1201;
   display: none;
   padding: 3px 6px;
   pointer-events: none;
@@ -1422,6 +1418,78 @@ html.nc-native .nc-tag {
   }
 }
 
+/* Tablets keep the hamburger rail, so the topbar primary is redundant and
+   was pushing the viewport 9px wide at 768. */
+@media (max-width: 900px) {
+  .obs-topbar .obs-btn-primary {
+    display: none;
+  }
+}
+
+/* Below 560px the top bar has more controls than room. Drop the freshness
+   label and the idle status pill (a live cast keeps its clock), give the
+   crumb the remaining flex space, and hide the palette glyph - the palette
+   is a keyboard affordance and does not belong on a phone. Without this the
+   crumb collapsed to a single character at 390px. */
+@media (max-width: 560px) {
+  .obs-topbar {
+    gap: 7px;
+    padding: 0 12px;
+  }
+
+  .obs-crumbs {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+
+  .obs-crumbs strong {
+    flex: 1 1 auto;
+    min-width: 0;
+    max-width: none;
+  }
+
+  /* The status pill already says "live". The chip inside the crumb was
+     eating the breadcrumb's width on a phone. */
+  .obs-crumbs .obs-chip {
+    display: none;
+  }
+
+  .obs-sync {
+    display: none;
+  }
+
+  .obs-status:not(.acid) {
+    display: none;
+  }
+
+  .obs-status.acid {
+    max-width: none;
+    padding: 0 8px;
+  }
+
+  .obs-topbar .obs-palette-glyph {
+    display: none;
+  }
+
+  .obs-topbar .obs-search-icon {
+    margin-left: 0;
+  }
+}
+
+/* Narrow phones: the findings search shortcut is a nicety, not a necessity. */
+@media (max-width: 460px) {
+  .obs-topbar .obs-search-icon {
+    display: none;
+  }
+}
+
+/* Ultra-narrow: keep the breadcrumb legible even if the live clock goes. */
+@media (max-width: 360px) {
+  .obs-topbar .obs-status {
+    display: none;
+  }
+}
+
 .obs-conn-banner {
   display: flex;
   align-items: center;
@@ -1651,6 +1719,10 @@ html.nc-native .nc-tag {
 @media (max-width: 720px) {
   .obs-kpis {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .obs-kpi:last-child {
+    grid-column: 1 / -1;
   }
 
   .obs-kpi {
@@ -2525,6 +2597,18 @@ html.nc-native .nc-tag {
   overflow-x: auto;
 }
 
+/* The recent-findings table carries six columns. On a phone, asset and
+   confidence are reference detail; hiding them keeps severity, finding,
+   state, and the open arrow on screen without a sideways scroll. */
+@media (max-width: 560px) {
+  .obs-table th:nth-child(3),
+  .obs-table td:nth-child(3),
+  .obs-table th:nth-child(4),
+  .obs-table td:nth-child(4) {
+    display: none;
+  }
+}
+
 .obs-table {
   width: 100%;
   border-collapse: collapse;
@@ -2987,6 +3071,12 @@ html.nc-native .nc-tag {
 }
 
 /* ---------------- model mesh ---------------- */
+
+.obs-provider-list {
+  max-height: 322px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
 
 .obs-provider {
   display: flex;
@@ -3645,6 +3735,8 @@ html.nc-native .nc-tag {
   top: 76px;
   max-height: calc(100vh - 96px);
   overflow-y: auto;
+  scroll-margin-top: 84px;
+  outline: none;
 }
 
 .obs-mission-detail-head {
@@ -4331,6 +4423,9 @@ html.nc-native .nc-tag {
 .obs-agent-tools {
   display: flex;
   flex-direction: column;
+  max-height: 60vh;
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
 .obs-agent-tool-group + .obs-agent-tool-group {
@@ -6213,6 +6308,23 @@ html.nc-native .nc-tag {
   gap: 6px;
 }
 
+.obs-hist-more {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  padding: 16px 0 6px;
+  color: var(--obs-faint);
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.obs-hist-more .btn {
+  min-height: 30px;
+}
+
 .obs-hist-run {
   position: relative;
   display: flex;
@@ -6908,15 +7020,21 @@ html.nc-native .nc-tag {
 
 .obs-director-log {
   display: grid;
+  /* A plain auto column sizes to the longest log line, which made each row
+     thousands of pixels wide and clipped the message before its ellipsis.
+     Pin the column to the card so the log scrolls vertically only. */
+  grid-template-columns: minmax(0, 1fr);
   gap: 2px;
   max-height: 132px;
   overflow-y: auto;
+  overflow-x: hidden;
   border-top: 1px solid var(--obs-line);
   padding-top: 8px;
 }
 
 .obs-director-log li {
   display: flex;
+  min-width: 0;
   align-items: baseline;
   gap: 8px;
   color: var(--obs-muted);
@@ -8661,6 +8779,125 @@ select.obs-field option:checked,
   vertical-align: middle;
 }
 
+/* A table this wide cannot be read on a phone: it forced a horizontal scroll
+   with no affordance and clipped the finding title. Below 720px each row
+   becomes a card with a deliberate reading order. */
+@media (max-width: 720px) {
+  .obs-findings-table-wrap {
+    max-height: none;
+    overflow: visible;
+  }
+
+  .obs-findings-table {
+    display: block;
+    min-width: 0;
+  }
+
+  .obs-findings-table thead {
+    display: none;
+  }
+
+  .obs-findings-table tbody {
+    display: block;
+    padding: 10px;
+  }
+
+  .obs-findings-table tbody tr {
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    grid-template-areas:
+      'pick sev state'
+      'title title title'
+      'value value value'
+      'conf conf seen';
+    gap: 9px 10px;
+    align-items: center;
+    margin-bottom: 10px;
+    padding: 12px;
+    border: 1px solid var(--obs-line);
+    border-radius: 10px;
+    background: var(--obs-panel);
+  }
+
+  .obs-findings-table tbody tr:last-child {
+    margin-bottom: 0;
+  }
+
+  .obs-findings-table td {
+    display: block;
+    padding: 0;
+    border: 0;
+  }
+
+  .obs-findings-table tbody tr:hover td:first-child,
+  .obs-findings-table tbody tr:focus-within td:first-child {
+    box-shadow: none;
+  }
+
+  .obs-pick-col {
+    grid-area: pick;
+    width: auto;
+    padding: 0 !important;
+    text-align: left;
+  }
+
+  .obs-f-sev {
+    grid-area: sev;
+    justify-self: start;
+  }
+
+  .obs-f-title {
+    grid-area: title;
+    max-width: none;
+  }
+
+  .obs-f-title .obs-findings-title-text {
+    font-size: 13px;
+    -webkit-line-clamp: 3;
+  }
+
+  .obs-f-value {
+    grid-area: value;
+    max-width: none;
+    font-size: 11px;
+  }
+
+  .obs-f-conf {
+    grid-area: conf;
+    justify-self: start;
+  }
+
+  .obs-f-state {
+    grid-area: state;
+    justify-self: end;
+    text-align: right;
+  }
+
+  .obs-f-seen {
+    grid-area: seen;
+    justify-self: end;
+  }
+
+  .obs-f-value::before,
+  .obs-f-conf::before {
+    display: block;
+    margin-bottom: 3px;
+    color: var(--obs-faint);
+    font-family: var(--mono);
+    font-size: 8px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+  }
+
+  .obs-f-value::before {
+    content: 'value';
+  }
+
+  .obs-f-conf::before {
+    content: 'confidence';
+  }
+}
+
 .obs-drawer-veil {
   position: fixed;
   inset: 0;
@@ -9011,14 +9248,37 @@ textarea:focus-visible, [tabindex]:focus-visible, summary:focus-visible {
   text-transform: uppercase; color: var(--obs-acid);
 }
 .trace-ok.no { color: var(--obs-red); }
-.trace-note { color: var(--obs-muted); font-size: 10.5px; }
+.trace-note {
+  min-width: 0;
+  color: var(--obs-muted);
+  font-size: 10.5px;
+  overflow-wrap: anywhere;
+}
+.trace-detail-wrap {
+  position: relative;
+  margin: 0 12px 8px 108px;
+}
 .trace-detail {
-  margin: 0 12px 8px 108px; padding: 8px 10px;
+  margin: 0; padding: 8px 10px;
   background: var(--obs-panel-3); border: 1px solid var(--obs-line);
   border-radius: 8px; font-family: var(--mono); font-size: 10.5px;
   color: var(--obs-text-2); white-space: pre-wrap; overflow-wrap: anywhere;
   max-height: 220px; overflow-y: auto;
 }
+.trace-copy {
+  position: absolute; top: 6px; right: 6px; z-index: 1;
+  padding: 2px 7px; border: 1px solid var(--obs-line); border-radius: 6px;
+  background: var(--obs-panel); color: var(--obs-ash); font-family: var(--mono);
+  font-size: 9px; letter-spacing: 0.08em; text-transform: uppercase; cursor: pointer;
+}
+.trace-copy:hover { color: var(--obs-acid); border-color: var(--obs-acid); }
+.trace-older { padding: 6px 0; text-align: center; }
+.trace-older button {
+  padding: 3px 10px; border: 1px solid var(--obs-line); border-radius: 999px;
+  background: var(--obs-panel-2); color: var(--obs-ash); font-family: var(--mono);
+  font-size: 9.5px; letter-spacing: 0.06em; cursor: pointer;
+}
+.trace-older button:hover { color: var(--obs-acid); border-color: var(--obs-acid); }
 .trace-agent-card { padding: 8px 14px; border-bottom: 1px solid color-mix(in srgb, var(--obs-line) 55%, transparent); }
 .trace-agent-card:last-child { border-bottom: 0; }
 .trace-agent-thought {

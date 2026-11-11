@@ -11,6 +11,7 @@ export interface Run {
   results_dir?: string;
   options: Record<string, unknown>;
   counts: Record<string, number>;
+  finding_count?: number;
   error?: string;
 }
 
@@ -495,6 +496,9 @@ export interface BrainAction {
   kind: string;
   applied?: boolean;
   reason?: string;
+  detail?: string;
+  tool?: string;
+  result?: unknown;
   direction_id?: string;
   run_id?: string;
 }
@@ -505,6 +509,9 @@ export interface BrainReply {
   actions: BrainAction[];
   provider: string;
   model: string;
+  chat_provider?: string;
+  chat_model?: string;
+  reasoning?: boolean;
   findings: number;
 }
 
@@ -517,6 +524,8 @@ export interface BrainTurn {
   focus: string;
   provider: string;
   model: string;
+  chat_provider?: string;
+  chat_model?: string;
   source: string;
   actions: BrainAction[];
 }
@@ -535,6 +544,18 @@ export interface BrainLoopStatus {
   mission_id: string;
 }
 
+export interface BrainSession {
+  id: string;
+  title: string;
+  mission_id: string;
+  agent: string;
+  model: string;
+  permission: string;
+  created_at: string;
+  updated_at: string;
+  archived: number;
+}
+
 export interface BrainLiveEntry {
   id: string;
   channel: 'journal' | 'mesh' | 'run' | 'log' | string;
@@ -544,6 +565,9 @@ export interface BrainLiveEntry {
   focus?: string;
   provider?: string;
   model?: string;
+  chat_provider?: string;
+  chat_model?: string;
+  reasoning?: boolean;
   source?: string;
   actions?: BrainAction[];
   mission_id?: string;

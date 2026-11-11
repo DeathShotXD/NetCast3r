@@ -1096,6 +1096,7 @@
           class="obs-console-input"
           bind:value={brainInput}
           placeholder="ask the brain, or steer the hunt..."
+          aria-label="ask the brain or steer the hunt"
           onkeydown={(event) => { if (event.key === 'Enter') void sendBrain(); }}
         />
         <button class="obs-btn obs-btn-primary" type="button" disabled={brainBusy || !brainInput.trim()} onclick={() => void sendBrain()}>
@@ -1128,13 +1129,16 @@
         </div>
       </div>
       <div class="obs-console-actions">
-        <input class="obs-console-input obs-host-cwd" bind:value={hostCwd} placeholder="working directory" />
+        <input class="obs-console-input obs-host-cwd" bind:value={hostCwd} placeholder="working directory" aria-label="host console working directory" />
       </div>
       <div class="obs-console-actions">
         <input
           class="obs-console-input"
           bind:value={hostCmd}
           placeholder="command..."
+          aria-label="host console command"
+          autocomplete="off"
+          spellcheck="false"
           onkeydown={(event) => { if (event.key === 'Enter') void runHost(); }}
         />
         <button class="obs-btn obs-btn-danger" type="button" disabled={hostBusy || !hostCmd.trim()} onclick={() => void runHost()}>
@@ -1795,23 +1799,25 @@
             <button class="obs-btn obs-btn-sm" type="button" onclick={() => store.go('keys')}>Add provider</button>
           </div>
         {:else}
-          {#each providers as provider (provider.id)}
-            <div class="obs-provider">
-              <span class="obs-provider-dot" class:ok={provider.healthy} aria-hidden="true"></span>
-              <span class="obs-provider-name">{provider.name}</span>
-              <span class="obs-provider-meta">
-                {provider.models.length} models - {provider.key_set ? 'key set' : 'no key'}
-              </span>
-              <button
-                class="obs-btn obs-btn-ghost"
-                type="button"
-                disabled={testing === provider.id || !provider.key_set}
-                onclick={() => void testProvider(provider)}
-              >
-                {testing === provider.id ? '...' : 'test'}
-              </button>
-            </div>
-          {/each}
+          <div class="obs-provider-list">
+            {#each providers as provider (provider.id)}
+              <div class="obs-provider">
+                <span class="obs-provider-dot" class:ok={provider.healthy} aria-hidden="true"></span>
+                <span class="obs-provider-name">{provider.name}</span>
+                <span class="obs-provider-meta">
+                  {provider.models.length} models - {provider.key_set ? 'key set' : 'no key'}
+                </span>
+                <button
+                  class="obs-btn obs-btn-ghost"
+                  type="button"
+                  disabled={testing === provider.id || !provider.key_set}
+                  onclick={() => void testProvider(provider)}
+                >
+                  {testing === provider.id ? '...' : 'test'}
+                </button>
+              </div>
+            {/each}
+          </div>
         {/if}
 
         <footer class="obs-mesh-foot">
@@ -1880,8 +1886,8 @@
           <span class="obs-ledger-metric" style="color:{(run.counts?.candidates ?? 0) > 0 ? 'var(--obs-violet)' : 'var(--obs-faint)'}">
             {run.counts?.candidates ?? 0}
           </span>
-          <span class="obs-ledger-metric" style="color:{(run.counts?.findings ?? 0) > 0 ? 'var(--obs-acid)' : 'var(--obs-faint)'}">
-            {run.counts?.findings ?? 0}
+          <span class="obs-ledger-metric" style="color:{(run.finding_count ?? run.counts?.findings ?? 0) > 0 ? 'var(--obs-acid)' : 'var(--obs-faint)'}">
+            {run.finding_count ?? run.counts?.findings ?? 0}
           </span>
           <Icon name="arrow-right" size={11} class="obs-ledger-go" />
         </button>

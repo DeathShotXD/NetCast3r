@@ -220,8 +220,15 @@ def cmd_providers(args) -> int:
 
 def cmd_ui(args) -> int:
     from .server import serve
-    serve(host=args.host, port=args.port, open_browser=not args.no_open,
-          results_dir=Path(args.out or "results"), auth_required=not args.no_auth)
+    try:
+        serve(host=args.host, port=args.port, open_browser=not args.no_open,
+              results_dir=Path(args.out or "results"),
+              base=Path(args.base).expanduser() if args.base else None,
+              auth_required=not args.no_auth, force=args.force,
+              autonomous=not args.no_autopilot)
+    except RuntimeError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
     return 0
 
 
@@ -363,6 +370,11 @@ def build_parser() -> argparse.ArgumentParser:
     ui_parser.add_argument("--host", default="127.0.0.1", help="bind address")
     ui_parser.add_argument("--port", type=int, default=7857, help="bind port")
     ui_parser.add_argument("--out", help="results directory (default: results)")
+    ui_parser.add_argument("--base", help="state directory (default: ~/.netcast3r or NETCAST3R_BASE)")
+    ui_parser.add_argument("--force", action="store_true",
+                           help="boot even when the control plane still names a live process")
+    ui_parser.add_argument("--no-autopilot", action="store_true",
+                           help="do not start the director, trainer, or brain loops (isolated staging)")
     ui_parser.add_argument("--no-open", action="store_true", help="do not open a browser")
     ui_parser.add_argument("--no-auth", action="store_true", help="disable the session token")
     ui_parser.set_defaults(func=cmd_ui)

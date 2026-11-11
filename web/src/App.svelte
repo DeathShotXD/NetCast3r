@@ -127,7 +127,9 @@
           store.palette = false;
           return;
         }
-        if (store.brainDock) {
+        const insideOverlay =
+          !!target && (target.closest('.nc-brain-panel') !== null || target.closest('dialog') !== null);
+        if (store.brainDock && !insideOverlay) {
           store.brainDock = false;
           return;
         }

@@ -370,6 +370,48 @@ class Server:
         self.jobs.submit(run["id"], target, options)
         return self.index.get_run(run["id"])
 
+    def _live_worker_ids(self) -> set[str]:
+        """Run ids that a live in-process worker currently owns."""
+        live: set[str] = set()
+        try:
+            live.update(self.jobs.active() or [])
+        except Exception:  # noqa: BLE001 - a broken registry must not hide workers
+            pass
+        for attr in ("hunt_runner", "solver_runner", "lab_runner",
+                     "path_runner", "exploit_runner"):
+            runner = getattr(self, attr, None)
+            handles = getattr(runner, "_handles", None)
+            if isinstance(handles, dict):
+                live.update(handles.keys())
+        return live
+
+    def _reconcile_stuck_run(self, run_id: str, run: dict) -> bool:
+        """Mark a running row interrupted when no live worker owns it.
+
+        Cancel is cooperative and fast for a healthy worker. A row whose worker
+        crashed, was reaped, or never registered would otherwise report
+        ``running`` forever and keep a mission looking busy. Require a short
+        grace window so a just-submitted run is never mistaken for a ghost.
+        """
+        if str(run.get("status") or "") != "running":
+            return False
+        if run_id in self._live_worker_ids():
+            return False
+        stamp = str(run.get("started_at") or run.get("created_at") or "")
+        try:
+            from datetime import datetime, timezone
+
+            started = datetime.strptime(stamp, "%Y-%m-%dT%H:%M:%SZ").replace(
+                tzinfo=timezone.utc)
+            age = (datetime.now(timezone.utc) - started).total_seconds()
+        except (TypeError, ValueError):
+            age = 60.0
+        if age < 10.0:
+            return False
+        self.index.update_run(run_id, status="interrupted", finished_at=_utc(),
+                              error="stopped: no live worker was running this scan")
+        return True
+
     def _remove_run_output(self, run: dict, run_id: str) -> bool:
         """Delete a finished run's evidence directory when it is safe to do so."""
         raw = ((run.get("counts") or {}).get("results_dir")
@@ -532,7 +574,12 @@ class Server:
                 stopped = False
             if not stopped:
                 stopped = self.jobs.cancel(ctx.params["id"])
-            return _json({"stopped": stopped})
+            reconciled = False
+            if not stopped:
+                run = self.index.get_run(ctx.params["id"]) or {}
+                reconciled = self._reconcile_stuck_run(ctx.params["id"], run)
+                stopped = reconciled
+            return _json({"stopped": stopped, "reconciled": reconciled})
 
         @add("POST", r"/api/v1/runs/(?P<id>[A-Za-z0-9_]+)/rerun")
         def rerun(ctx):
@@ -1161,7 +1208,8 @@ class Server:
                 return _json(director.tune(
                     tick_seconds=body.get("tick_seconds"),
                     max_concurrent=body.get("max_concurrent"),
-                    scope_filter=body.get("scope_filter")))
+                    scope_filter=body.get("scope_filter"),
+                    scope_hosts=body.get("scope_hosts")))
             if action == "tick":
                 decision = director._tick(force=bool(body.get("force")))
                 return _json({"decision": decision, **director.status()})
@@ -1291,6 +1339,41 @@ class Server:
                     "stats": exploits_module.stats()})
             return _json({"items": exploits_module.catalog(),
                           "stats": exploits_module.stats()})
+
+        @add("GET", r"/api/v1/chains/templates")
+        def chain_templates(ctx):
+            from .. import chain_workflow
+
+            return _json({"items": chain_workflow.list_templates()})
+
+        @add("POST", r"/api/v1/chains/execute")
+        def chain_execute(ctx):
+            from .. import chain_workflow
+
+            body = ctx.json()
+            body = body if isinstance(body, dict) else {}
+            mission_id = str(body.get("mission_id") or "").strip()
+            if not mission_id:
+                return _problem(400, "mission_id required")
+            steps = body.get("steps")
+            if not steps and body.get("template"):
+                template = chain_workflow.TEMPLATES.get(str(body["template"]))
+                if not template:
+                    return _problem(400, "unknown chain template")
+                steps = template["steps"]
+            if not isinstance(steps, list) or not steps:
+                return _problem(400, "steps or a known template required")
+            values = body.get("variables")
+            values = values if isinstance(values, dict) else {}
+            try:
+                result = chain_workflow.execute(
+                    self, mission_id, steps,
+                    policy=str(body.get("policy") or "full"),
+                    dry_run=bool(body.get("dry_run", False)),
+                    variables=values)
+            except chain_workflow.ChainError as exc:
+                return _problem(400, str(exc))
+            return _json(result)
 
         @add("GET", r"/api/v1/exploits/plan")
         def exploits_plan(ctx):
@@ -1695,17 +1778,176 @@ class Server:
             message = str(body.get("message") or "").strip()
             if not message:
                 return _problem(400, "message required")
+            mission_id = str(body.get("mission_id") or "")
+            session_id = str(body.get("session_id") or "").strip()
+            if not session_id:
+                session = self.index.create_brain_session(
+                    title=message[:80], mission_id=mission_id,
+                    agent=str(body.get("agent") or "helix"),
+                    model=str(body.get("model") or ""),
+                    permission=str(body.get("permission") or "full"))
+                session_id = session.get("id", "")
             try:
                 result = brain_module.chat(
                     self, self.index, self._director(), message,
                     history=body.get("history") if isinstance(body.get("history"), list) else [],
-                    mission_id=str(body.get("mission_id") or ""),
+                    mission_id=mission_id,
                     act=bool(body.get("act", True)),
-                    source=self._client_source(ctx.headers))
+                    source=self._client_source(ctx.headers),
+                    session_id=session_id)
             except Exception as exc:  # noqa: BLE001 - report, do not crash the API
                 return _problem(502, f"brain error: {type(exc).__name__}: {exc}")
+            result["session"] = self.index.get_brain_session(session_id)
             self._publish_brain_turn(result, role="brain")
             return _json(result)
+
+        @add("GET", r"/api/v1/brain/sessions")
+        def brain_sessions(ctx):
+            items = self.index.list_brain_sessions(
+                limit=int(ctx.query.get("limit") or 40),
+                mission_id=str(ctx.query.get("mission_id") or ""),
+                include_archived=str(ctx.query.get("archived") or "").lower()
+                in {"1", "true", "yes"})
+            return _json({"items": items})
+
+        @add("POST", r"/api/v1/brain/sessions")
+        def brain_session_create(ctx):
+            body = ctx.json()
+            body = body if isinstance(body, dict) else {}
+            session = self.index.create_brain_session(
+                title=str(body.get("title") or "New chat"),
+                mission_id=str(body.get("mission_id") or ""),
+                agent=str(body.get("agent") or "helix"),
+                model=str(body.get("model") or ""),
+                permission=str(body.get("permission") or "full"))
+            return _json(session, 201)
+
+        @add("GET", r"/api/v1/brain/sessions/(?P<id>[A-Za-z0-9_]+)")
+        def brain_session_get(ctx):
+            session = self.index.get_brain_session(ctx.params["id"])
+            return _json(session) if session else _problem(404, "session not found")
+
+        @add("PATCH", r"/api/v1/brain/sessions/(?P<id>[A-Za-z0-9_]+)")
+        def brain_session_patch(ctx):
+            body = ctx.json()
+            body = body if isinstance(body, dict) else {}
+            fields = {key: body[key] for key in
+                      ("title", "mission_id", "agent", "model", "permission",
+                       "archived") if key in body}
+            session = self.index.patch_brain_session(ctx.params["id"], **fields)
+            return _json(session) if session else _problem(404, "session not found")
+
+        @add("DELETE", r"/api/v1/brain/sessions/(?P<id>[A-Za-z0-9_]+)")
+        def brain_session_delete(ctx):
+            return _json({"deleted": self.index.delete_brain_session(ctx.params["id"])})
+
+        @add("POST", r"/api/v1/brain/sessions/(?P<id>[A-Za-z0-9_]+)/fork")
+        def brain_session_fork(ctx):
+            body = ctx.json()
+            body = body if isinstance(body, dict) else {}
+            session = self.index.fork_brain_session(
+                ctx.params["id"], title=str(body.get("title") or ""))
+            return _json(session, 201) if session else _problem(404, "session not found")
+
+        @add("GET", r"/api/v1/brain/sessions/(?P<id>[A-Za-z0-9_]+)/messages")
+        def brain_session_messages(ctx):
+            if not self.index.get_brain_session(ctx.params["id"]):
+                return _problem(404, "session not found")
+            items = self.index.list_brain_messages(
+                ctx.params["id"], limit=int(ctx.query.get("limit") or 500))
+            return _json({"items": items})
+
+        # -- Helix toolsmith ------------------------------------------------
+        @add("GET", r"/api/v1/helix/scripts")
+        def helix_scripts(ctx):
+            items = self.index.list_helix_scripts(
+                query=str(ctx.query.get("q") or ""),
+                limit=int(ctx.query.get("limit") or 50))
+            return _json({"items": items})
+
+        @add("POST", r"/api/v1/helix/scripts")
+        def helix_script_write(ctx):
+            from .. import toolshed
+
+            body = ctx.json()
+            body = body if isinstance(body, dict) else {}
+            mission_id = str(body.get("mission_id") or "")
+            if mission_id and not self.index.get_mission(mission_id):
+                return _problem(404, "mission not found")
+            try:
+                record = toolshed.write_script(
+                    self.index, self.base,
+                    str(body.get("name") or ""), str(body.get("content") or ""),
+                    purpose=str(body.get("purpose") or ""),
+                    language=str(body.get("language") or "python"),
+                    tags=body.get("tags") if isinstance(body.get("tags"), list) else [],
+                    mission_id=mission_id,
+                    source=self._client_source(ctx.headers) or "ui")
+            except ValueError as exc:
+                return _problem(400, str(exc))
+            return _json(record, 201)
+
+        @add("GET", r"/api/v1/helix/scripts/(?P<id>[A-Za-z0-9_]+)")
+        def helix_script_get(ctx):
+            record = self.index.get_helix_script(ctx.params["id"])
+            return _json(record) if record else _problem(404, "script not found")
+
+        @add("DELETE", r"/api/v1/helix/scripts/(?P<id>[A-Za-z0-9_]+)")
+        def helix_script_delete(ctx):
+            from .. import toolshed
+
+            return _json({"deleted": toolshed.delete_script(
+                self.index, self.base, ctx.params["id"])})
+
+        @add("POST", r"/api/v1/helix/scripts/(?P<id>[A-Za-z0-9_]+)/run")
+        def helix_script_run(ctx):
+            from .. import toolshed
+
+            body = ctx.json()
+            body = body if isinstance(body, dict) else {}
+            args = body.get("args")
+            args = [str(item) for item in args] if isinstance(args, list) else []
+            mission_id = str(body.get("mission_id") or "")
+            if mission_id and not self.index.get_mission(mission_id):
+                return _problem(404, "mission not found")
+            try:
+                result = toolshed.run_script(
+                    self.index, self.base, ctx.params["id"], args=args,
+                    timeout=int(body.get("timeout") or 60),
+                    mission_id=mission_id)
+            except ValueError as exc:
+                return _problem(400, str(exc))
+            return _json(result)
+
+        @add("GET", r"/api/v1/helix/tools")
+        def helix_tools(ctx):
+            from .. import host as host_module
+            from .. import toolshed
+
+            query = str(ctx.query.get("q") or "")
+            return _json({
+                "capabilities": host_module.capabilities(),
+                "catalog": toolshed.study_tool(self.index, query=query),
+                "notes": self.index.list_tool_notes(query=query, limit=50),
+            })
+
+        @add("POST", r"/api/v1/helix/tools/study")
+        def helix_tool_study(ctx):
+            from .. import toolshed
+
+            body = ctx.json()
+            body = body if isinstance(body, dict) else {}
+            tool = str(body.get("tool") or "").strip()
+            query = str(body.get("query") or "").strip()
+            if not tool and not query:
+                return _problem(400, "tool or query required")
+            return _json(toolshed.study_tool(self.index, name=tool, query=query))
+
+        @add("GET", r"/api/v1/helix/tools/notes")
+        def helix_tool_notes(ctx):
+            return _json({"items": self.index.list_tool_notes(
+                query=str(ctx.query.get("q") or ""),
+                limit=int(ctx.query.get("limit") or 50))})
 
         @add("POST", r"/api/v1/instruct")
         def instruct(ctx):
@@ -1724,6 +1966,7 @@ class Server:
             if mission_id and not self.index.get_mission(mission_id):
                 return _problem(404, "mission not found")
             out: dict = {"target": target, "mission_id": mission_id}
+            session_id = str(body.get("session_id") or "").strip()
             # Explicit mission_id on an instruct always locks Helix/director
             # focus so autonomy cannot wander to Ably/Bambu mid-priority hunt.
             if mission_id:
@@ -1750,15 +1993,25 @@ class Server:
                     created_by=self._client_source(ctx.headers) or "operator")
                 out["direction"] = direction
             if target in {"brain", "both"}:
+                if not session_id:
+                    session = self.index.create_brain_session(
+                        title=message[:80], mission_id=mission_id,
+                        agent=str(body.get("agent") or "helix"),
+                        model=str(body.get("model") or ""),
+                        permission=str(body.get("permission") or "full"))
+                    session_id = session.get("id", "")
                 try:
                     result = brain_module.chat(
                         self, self.index, self._director(), message,
                         mission_id=mission_id, act=True,
-                        source=self._client_source(ctx.headers) or "instruct")
+                        source=self._client_source(ctx.headers) or "instruct",
+                        session_id=session_id)
                     out["brain"] = result
+                    out["session"] = self.index.get_brain_session(session_id)
                     self._publish_brain_turn(result, role="brain")
                 except Exception as exc:  # noqa: BLE001
                     out["brain_error"] = f"{type(exc).__name__}: {exc}"
+            out["session_id"] = session_id
             try:
                 from .events import Event
                 self.bus.publish(Event(
@@ -1773,9 +2026,11 @@ class Server:
         def brain_journal(ctx):
             limit = int(ctx.query.get("limit", "60") or 60)
             mission_id = str(ctx.query.get("mission_id", "") or "")
+            session_id = str(ctx.query.get("session_id", "") or "")
             return _json({
                 "items": self.index.list_brain_log(limit=limit,
-                                                   mission_id=mission_id),
+                                                   mission_id=mission_id,
+                                                   session_id=session_id),
                 "loop": self._brain_loop().status(),
             })
 
@@ -1786,9 +2041,10 @@ class Server:
 
             limit = int(ctx.query.get("limit", "80") or 80)
             mission_id = str(ctx.query.get("mission_id", "") or "")
+            session_id = str(ctx.query.get("session_id", "") or "")
             payload = brain_module.live_feed(
                 self.index, self._director(),
-                mission_id=mission_id, limit=limit)
+                mission_id=mission_id, limit=limit, session_id=session_id)
             payload["loop"] = self._brain_loop().status()
             return _json(payload)
 
@@ -2998,8 +3254,39 @@ class Server:
                 return _problem(404, "submission not found")
             finding_id = str(submission.get("finding_id") or "")
             if not finding_id:
-                return _problem(404, "no finding",
-                                "link this submission to a finding to build a PoC")
+                # A recorded report file is a valid PoC on its own: drafts carry
+                # no finding link but still have markdown on disk. Keep the path
+                # inside the workspace reports directory.
+                report_path = str(submission.get("report_path") or "").strip()
+                if not report_path:
+                    return _problem(404, "no finding",
+                                    "link this submission to a finding to build a PoC")
+                from pathlib import Path
+
+                if self.base is None:
+                    return _problem(400, "report path refused",
+                                    "server has no reports root")
+                reports_root = (Path(str(self.base)) / "reports").resolve()
+                try:
+                    target = Path(report_path).resolve()
+                    target.relative_to(reports_root)
+                except (OSError, ValueError):
+                    return _problem(400, "report path refused",
+                                    "the recorded report is outside the reports directory")
+                try:
+                    markdown = target.read_text(encoding="utf-8")
+                except OSError:
+                    return _problem(404, "report file missing",
+                                    "the recorded report file no longer exists")
+                if str(ctx.query.get("download") or "").lower() in {"1", "true", "yes"}:
+                    return Response(status=200, body=markdown.encode("utf-8"),
+                                    content_type="text/markdown; charset=utf-8",
+                                    headers={"Content-Disposition":
+                                             f'attachment; filename="{target.name}"'})
+                return _json({"submission_id": submission.get("id", ""),
+                              "finding_id": "",
+                              "report_path": report_path,
+                              "markdown": markdown})
             detail = investigations_module.finding_detail(self.index, finding_id)
             if not detail:
                 return _problem(404, "finding not found")
@@ -3296,6 +3583,15 @@ class Server:
             return _problem(401, "bad credentials",
                             "that username and password were not accepted")
 
+        @add("GET", r"/api/v1/session")
+        def session_state(ctx):
+            """A silent gate check: 200 either way, so the shell can decide to
+            show the unlock screen without generating a console 401 storm."""
+            authenticated = (not self.auth_required
+                             or self._token_ok(ctx.query, ctx.headers))
+            return _json({"authenticated": authenticated,
+                          "auth_required": self.auth_required})
+
         @add("GET", r"/api/v1/auth")
         def auth_state(ctx):
             from .. import dashauth
@@ -3589,6 +3885,9 @@ class Server:
                     "focus": str(result.get("focus") or "")[:400],
                     "model": str(result.get("model") or ""),
                     "provider": str(result.get("provider") or ""),
+                    "chat_model": str(result.get("chat_model") or ""),
+                    "chat_provider": str(result.get("chat_provider") or ""),
+                    "reasoning": bool(result.get("reasoning", True)),
                     "mission_id": str(result.get("mission_id") or ""),
                     "actions": result.get("actions") or [],
                 }))
@@ -3882,7 +4181,10 @@ def build_server(results_dir: str | Path = "results", base: Path | None = None,
     from . import runner as runner_module
     from .runner import DashboardBridge, run_scan
 
-    base = Path(base) if base else Path.home() / ".netcast3r"
+    # NETCAST3R_BASE must select the whole state directory, not just the
+    # control-plane reader. Ignoring it here once let a staging instance attach
+    # to the live index and recover the live hunt's runs.
+    base = control.base_dir(base)
     try:
         from .. import dashauth
 
@@ -3898,7 +4200,9 @@ def build_server(results_dir: str | Path = "results", base: Path | None = None,
     jobs = JobManager(index, bus, runner or run_scan, workers=workers)
     server = Server(index, bus, jobs, keys, config=config, token=secrets.token_urlsafe(24),
                     base=base)
-    if recover:
+    # Recovery means "a previous process died mid-run". When another live
+    # server owns this base, these runs are not abandoned and must stay as-is.
+    if recover and control.live_owner(base, exclude_pid=os.getpid()) is None:
         jobs.recover()
     try:
         from ..providers import diversify_tokenharbor_catalogs
@@ -3911,8 +4215,28 @@ def build_server(results_dir: str | Path = "results", base: Path | None = None,
 
 def serve(host: str = "127.0.0.1", port: int = 7857, *, open_browser: bool = True,
           results_dir: str | Path = "results", base: Path | None = None,
-          runner=None, config=None, auth_required: bool = True) -> Server:
-    server = build_server(results_dir=results_dir, base=base, runner=runner, config=config)
+          runner=None, config=None, auth_required: bool = True,
+          force: bool = False, autonomous: bool = True) -> Server:
+    base = control.base_dir(base)
+    owner = control.live_owner(base, exclude_pid=os.getpid())
+    if owner is not None:
+        raise RuntimeError(
+            f"another NetCast3r server (pid {owner.get('pid')}) already owns "
+            f"{base} at {owner.get('url')}; stop it first, use --base for a "
+            "separate instance, or pass --force only if that process is gone"
+        )
+    lease = control.acquire_base_lock(base)
+    if lease is None:
+        raise RuntimeError(
+            f"another NetCast3r process holds the server lease on {base}; "
+            "stop it or use --base for a separate instance"
+        )
+    try:
+        server = build_server(results_dir=results_dir, base=base, runner=runner,
+                              config=config)
+    except Exception:
+        control.release_base_lock(lease)
+        raise
     _restore_session_token(server)
     server.auth_required = auth_required
     httpd = ThreadingHTTPServer((host, port), _Handler)
@@ -3945,25 +4269,28 @@ def serve(host: str = "127.0.0.1", port: int = 7857, *, open_browser: bool = Tru
         "version": _version(),
     })
     server.started.set()
-    # The director is the harness itself: it starts with the control plane and
-    # schedules only what the scope filter and each mission's autonomy allow.
-    try:
-        server._director().start()
-    except Exception:  # noqa: BLE001 - the API must still come up
-        pass
-    # Continuous lab trainer: learn-lane TokenHarbor keys grind Academy /
-    # Juice Shop / Acunetix and peers without burning the hunt pool.
-    try:
-        server._training_director().start()
-    except Exception:  # noqa: BLE001 - the API must still come up
-        pass
-    # The main brain thinks on its own loop beside the director: it reads the
-    # whole plane, decides the next move, and steers. It respects its own pause
-    # and never creates a finding.
-    try:
-        server._brain_loop().start()
-    except Exception:  # noqa: BLE001 - the API must still come up
-        pass
+    if autonomous:
+        # The director is the harness itself: it starts with the control plane
+        # and schedules only what the scope filter and each mission's autonomy
+        # allow. Isolated staging boots skip every autonomous loop so a QA
+        # instance can never launch outbound work behind the operator's back.
+        try:
+            server._director().start()
+        except Exception:  # noqa: BLE001 - the API must still come up
+            pass
+        # Continuous lab trainer: learn-lane TokenHarbor keys grind Academy /
+        # Juice Shop / Acunetix and peers without burning the hunt pool.
+        try:
+            server._training_director().start()
+        except Exception:  # noqa: BLE001 - the API must still come up
+            pass
+        # The main brain thinks on its own loop beside the director: it reads
+        # the whole plane, decides the next move, and steers. It respects its
+        # own pause and never creates a finding.
+        try:
+            server._brain_loop().start()
+        except Exception:  # noqa: BLE001 - the API must still come up
+            pass
     if open_browser:
         try:
             webbrowser.open(url)
@@ -3996,4 +4323,5 @@ def serve(host: str = "127.0.0.1", port: int = 7857, *, open_browser: bool = Tru
         server.index.close()
         httpd.server_close()
         control.remove_control_plane(server.base, pid=os.getpid())
+        control.release_base_lock(lease)
     return server
