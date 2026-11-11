@@ -60,6 +60,21 @@ class HuntRunner:
         self._handles: dict[str, threading.Event] = {}
         self._lock = threading.Lock()
 
+    def _live_run_for(self, mission_id: str) -> dict | None:
+        """An already-live hunt for this mission, if one exists.
+
+        A handle is authoritative: it is removed in the runner's ``finally``,
+        so a match means a worker is genuinely active right now.
+        """
+        with self._lock:
+            run_ids = list(self._handles.keys())
+        for run_id in run_ids:
+            row = self.server.index.get_run(run_id) or {}
+            options = row.get("options") or {}
+            if str(options.get("mission_id") or "") == mission_id:
+                return row
+        return None
+
     def start(self, mission_id: str) -> dict:
         mission = self.server.index.get_mission(mission_id)
         if not mission:
@@ -69,6 +84,13 @@ class HuntRunner:
         target = str(mission.get("target") or "").strip()
         if not target:
             raise ValueError("mission has no target")
+        existing = self._live_run_for(mission_id)
+        if existing:
+            # One live hunt per mission. A duplicate hunt would double traffic
+            # against the same target and split the operator's attention.
+            out = dict(existing)
+            out["already_running"] = True
+            return out
         run = self.server.index.create_run(
             target, {"mode": "hunt", "mission_id": mission_id})
         self.server.index.add_mission_run(mission_id, run["id"])

@@ -329,11 +329,11 @@ class Director:
         active = state.get("active") or {}
         runs = active.get("runs") or {}
         missions = active.get("missions") or {}
-        live = set()
-        try:
-            live.update(self.server.jobs.active() or [])
-        except Exception:  # noqa: BLE001
-            pass
+        # Runner handles are authoritative. ``jobs.active()`` only knows about
+        # the generic JobManager, so a solver/hunt/lab/path/exploit worker would
+        # otherwise report live=false while genuinely running -- and Helix only
+        # trusts live=true entries when deciding whether a mission is busy.
+        live = self._live_run_ids()
         payload = {
             "engaged": bool(state.get("engaged")),
             "paused": bool(state.get("paused")),
@@ -1303,6 +1303,32 @@ class Director:
                     options[key] = budget[key]
             run = self.server._solvers().start(mission_id, options)
             runner = "solver"
+        if run.get("already_running"):
+            # A live worker already owns this mission+mode (often a run the
+            # brain started directly). Adopt it so the director tracks it, but
+            # do not count a new start or reset its age.
+            stamp = str(run.get("started_at") or run.get("created_at") or "")
+            try:
+                began = float(calendar.timegm(
+                    time.strptime(stamp, "%Y-%m-%dT%H:%M:%SZ")))
+            except (TypeError, ValueError):
+                began = time.time()
+            runs[run["id"]] = {
+                "mission_id": mission_id, "mode": mode, "runner": runner,
+                "started": began, "started_at": stamp or self._stamp(),
+            }
+            active["runs"] = runs
+            self.server.index.patch_director_state(active=active)
+            try:
+                self.server.index.add_director_log(
+                    "adopt",
+                    f"{mode} already live on {mission.get('title', mission_id)}",
+                    mission_id=mission_id, run_id=run["id"])
+            except Exception:  # noqa: BLE001
+                pass
+            return {"action": "wait", "mission_id": mission_id, "mode": mode,
+                    "requested_mode": requested_mode, "run_id": run["id"],
+                    "reason": "already in flight"}
         if queued:
             # Mark the directions consumed so a later run does not repeat them.
             self.server.index.consume_directions(mission_id, limit=3,

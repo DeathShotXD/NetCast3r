@@ -1832,6 +1832,10 @@ def _apply(index, director, action, default_mission: str = "") -> dict:
                 return {"kind": kind, "applied": False,
                         "reason": "mission is outside the director portfolio allowlist"}
             run = server._hunts().start(mission_id)
+            if run.get("already_running"):
+                return {"kind": kind, "applied": False,
+                        "run_id": run.get("id"), "mission_id": mission_id,
+                        "reason": "a hunt is already live for this mission"}
             return {"kind": kind, "applied": True, "run_id": run.get("id"),
                     "mission_id": mission_id}
         if kind == "start_swarm":
@@ -1852,6 +1856,10 @@ def _apply(index, director, action, default_mission: str = "") -> dict:
             run = server._solvers().start(mission_id, {
                 "mode": "swarm", "endless": True,
             })
+            if run.get("already_running"):
+                return {"kind": kind, "applied": False,
+                        "run_id": run.get("id"), "mission_id": mission_id,
+                        "reason": "a swarm is already live for this mission"}
             return {"kind": kind, "applied": True, "run_id": run.get("id"),
                     "mission_id": mission_id}
         if kind == "stop_run":

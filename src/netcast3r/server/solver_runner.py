@@ -47,6 +47,24 @@ class SolverRunner:
             bus.config = config
         return bus
 
+    def _live_run_for(self, mission_id: str, mode: str) -> dict | None:
+        """An already-live run for this mission and mode, if one exists.
+
+        A handle is authoritative: it is removed in the runner's ``finally``,
+        so a match means a worker is genuinely active right now. The brain can
+        ask for a "fresh swarm" on every cognition turn; without this guard each
+        request forked another concurrent mesh on the same target.
+        """
+        with self._lock:
+            run_ids = list(self._handles.keys())
+        for run_id in run_ids:
+            row = self.server.index.get_run(run_id) or {}
+            options = row.get("options") or {}
+            if (str(options.get("mission_id") or "") == mission_id
+                    and str(options.get("mode") or "") == mode):
+                return row
+        return None
+
     def start(self, mission_id: str, options: dict | None = None) -> dict:
         mission = self.server.index.get_mission(mission_id)
         if not mission:
@@ -73,6 +91,14 @@ class SolverRunner:
         endless = bool(options.get("endless",
                                    (not explicit_cap) and mode in ("swarm", "autopilot")))
         options["endless"] = endless
+        existing = self._live_run_for(mission_id, mode)
+        if existing:
+            # One live run per mission and mode: cast + swarm + hunt may still
+            # coexist, but a second swarm (or hunt) would duplicate traffic and
+            # split the operator's attention on the same engagement.
+            out = dict(existing)
+            out["already_running"] = True
+            return out
         run = self.server.index.create_run(target, {
             "mode": mode, "mission_id": mission_id,
             "max_steps": 0 if endless else options.get("max_steps", defaults),
