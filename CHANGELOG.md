@@ -140,6 +140,9 @@ Notable changes to NetCast3r, newest first.
 - **Report modals keep the keyboard**: the submission composer, ledger editor,
   and PoC preview focus themselves on open, wrap Tab inside the dialog, close
   on Escape, and return focus to the button that opened them.
+- **Command palette keeps its promise**: a screen name always selects the real
+  screen on Enter, the Helix row sits after matching destinations, and section
+  order follows the keyboard cursor instead of a hardcoded group order.
 - **Helix chats are manageable**: the dock can create a chat, switch sessions,
   rename, fork, and delete one, with busy states, a click-away menu, and
   Escape handling that keeps the dock open while dismissing its own menus.

@@ -129,9 +129,10 @@
         item.group.toLowerCase().includes(needle)
     );
     // Free text that is not a navigation label is an instruction for Helix.
+    // Keep real matches first so Enter never sends a screen name to the model.
     const looksLikeInstruction = needle.includes(' ') || matches.length === 0;
     if (looksLikeInstruction) {
-      matches.unshift({
+      const ask: Item = {
         label: `Ask Helix: ${q.trim()}`,
         hint: 'send as an operator instruction',
         glyph: '?',
@@ -140,22 +141,26 @@
           store.brainPrefill = q.trim();
           store.brainDock = true;
         }
-      });
+      };
+      if (matches.length === 0) {
+        matches.unshift(ask);
+      } else {
+        matches.push(ask);
+      }
     }
     return matches;
   });
 
   const sections = $derived.by(() => {
-    const order = ['Ask', 'Actions', 'Navigate'];
     const grouped = new Map<string, { item: Item; index: number }[]>();
     items.forEach((item, index) => {
       const rows = grouped.get(item.group) ?? [];
       rows.push({ item, index });
       grouped.set(item.group, rows);
     });
-    return order
-      .filter((name) => grouped.has(name))
-      .map((name) => ({ name, rows: grouped.get(name)! }));
+    // Preserve item order so the highlighted row, keyboard cursor, and the
+    // visible list never disagree.
+    return [...grouped.entries()].map(([name, rows]) => ({ name, rows }));
   });
 
   const sel = $derived(Math.min(cursor, Math.max(0, items.length - 1)));
