@@ -479,6 +479,33 @@ class CognitionTests(unittest.TestCase):
         self.assertFalse(result["applied"])
         self.assertIn("unknown module", result["reason"])
 
+    def test_priority_refuses_training_and_off_portfolio_missions(self):
+        director = self.server._director()
+        director.tune(scope_hosts=["gov.pk"])
+        lab = self.index.create_mission(
+            "Training lab: portswigger", "https://portswigger.net/",
+            status="active", autonomy="autonomous", scope=["portswigger.net"])
+        outside = self.index.create_mission(
+            "Outside", "https://example.com/", status="active",
+            autonomy="autonomous", scope=["example.com"])
+        inside = self.index.create_mission(
+            "Inside", "https://bca.gov.pk/", status="active",
+            autonomy="autonomous", scope=["bca.gov.pk"])
+        for blocked in (lab, outside):
+            result = brain._apply(
+                self.index, director,
+                {"kind": "prioritize_mission", "mission_id": blocked["id"]},
+                self.mission["id"])
+            self.assertFalse(result["applied"])
+        self.assertEqual(brain.operator_priority(self.index), {})
+        allowed = brain._apply(
+            self.index, director,
+            {"kind": "prioritize_mission", "mission_id": inside["id"]},
+            self.mission["id"])
+        self.assertTrue(allowed["applied"])
+        self.assertEqual(brain.operator_priority(self.index)["mission_id"],
+                         inside["id"])
+
     def test_an_unknown_lab_solve_is_refused(self):
         result = brain._apply(
             self.index, self.server._director(),

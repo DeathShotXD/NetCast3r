@@ -159,6 +159,10 @@ Notable changes to NetCast3r, newest first.
   now endless. The step, time, and round budgets are effectively unbounded, and
   the UI buttons and director start runs with `endless: true`. A run ends only
   when the operator stops it.
+- **Off-portfolio locks cannot starve the hunt**: Helix refuses to lock operator
+  priority onto a training or out-of-portfolio mission, and the director now
+  ignores a pre-existing lab/off-portfolio lock (with a throttled log) instead
+  of waiting forever. Eligible in-scope missions keep starting.
 - **Never idle**: when the strategist says `done`, returns an empty plan, or
   repeats work, the mesh seeds a fresh batch from a 24-family technique
   rotation (IDOR, access control, auth flows, CORS, injection, reflection,

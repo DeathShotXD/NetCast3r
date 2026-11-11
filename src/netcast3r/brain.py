@@ -1795,6 +1795,19 @@ def _apply(index, director, action, default_mission: str = "") -> dict:
             if not mission_id:
                 return {"kind": kind, "applied": False,
                         "reason": "prioritize_mission needs mission_id"}
+            mission_row = index.get_mission(mission_id) or {}
+            if not mission_row:
+                return {"kind": kind, "applied": False,
+                        "reason": "prioritize_mission targets an unknown mission"}
+            if mission_row.get("training"):
+                return {"kind": kind, "applied": False,
+                        "reason": "training missions are never operator priority"}
+            if str(mission_row.get("status") or "") != "active":
+                return {"kind": kind, "applied": False,
+                        "reason": "mission is not active"}
+            if not _portfolio_allows(director, str(mission_row.get("target") or "")):
+                return {"kind": kind, "applied": False,
+                        "reason": "mission is outside the director portfolio allowlist"}
             locked = set_operator_priority(
                 index, mission_id,
                 reason=str(action.get("reason") or "helix prioritize")[:400])

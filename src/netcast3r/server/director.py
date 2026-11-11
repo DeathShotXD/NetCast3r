@@ -447,25 +447,51 @@ class Director:
         except Exception:  # noqa: BLE001
             priority_id = ""
         if priority_id:
-            if priority_id not in eligible:
+            priority_reason = ""
+            try:
+                priority_mission = self.server.index.get_mission(priority_id) or {}
+                priority_reason = self._ineligible_reason(priority_mission, state)
+            except Exception:  # noqa: BLE001 - a stale row must not stop the tick
+                priority_reason = ""
+            if (priority_reason == "training mission"
+                    or priority_reason.startswith("outside portfolio hosts")):
+                # A lab or off-portfolio lock can never be scheduled. Holding
+                # every other mission behind it would stop the hunt forever.
+                active_meta = dict(active.get("meta") or {})
+                now_ts = time.time()
+                if now_ts - float(active_meta.get("priority_ignored_at") or 0.0) > 600:
+                    active_meta["priority_ignored_at"] = now_ts
+                    active["meta"] = active_meta
+                    try:
+                        self.server.index.add_director_log(
+                            "priority-ignored",
+                            f"operator priority {priority_id} cannot run "
+                            f"({priority_reason}); keeping eligible missions live",
+                            mission_id=priority_id)
+                        self.server.index.patch_director_state(active=active)
+                    except Exception:  # noqa: BLE001
+                        pass
+                priority_id = ""
+            elif priority_id not in eligible:
                 self._touch(active, state)
                 return {"action": "wait",
                         "reason": f"operator priority {priority_id} not eligible"}
-            if self._busy(priority_id, active):
+            elif self._busy(priority_id, active):
                 self._touch(active, state)
                 return {"action": "wait",
                         "reason": f"operator priority {priority_id} already in flight"}
-            mission = self.server.index.get_mission(priority_id) or {}
-            # Zero-progress lock escalates hunt -> swarm -> deepen. The next
-            # mode is chosen in _reap; a soft 429 never closes this gate.
-            chosen = {
-                "mission_id": priority_id,
-                "mode": self._priority_run_mode(priority_id, active),
-                "score": 999,
-                "autonomy": mission.get("autonomy") or "autonomous",
-                "objective": {"goal": "operator priority hunt"},
-            }
-            return self._start(chosen, active, state)
+            else:
+                mission = self.server.index.get_mission(priority_id) or {}
+                # Zero-progress lock escalates hunt -> swarm -> deepen. The next
+                # mode is chosen in _reap; a soft 429 never closes this gate.
+                chosen = {
+                    "mission_id": priority_id,
+                    "mode": self._priority_run_mode(priority_id, active),
+                    "score": 999,
+                    "autonomy": mission.get("autonomy") or "autonomous",
+                    "objective": {"goal": "operator priority hunt"},
+                }
+                return self._start(chosen, active, state)
         if not eligible:
             self._touch(active, state)
             return {"action": "idle", "reason": "no eligible mission"}

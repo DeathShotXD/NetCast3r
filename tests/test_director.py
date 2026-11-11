@@ -548,6 +548,36 @@ class DirectorTests(unittest.TestCase):
         self.assertEqual(self.hunts.started, [])
         self.assertEqual(self.solvers.started, [])
 
+    def test_training_priority_is_ignored_so_live_missions_keep_running(self):
+        from netcast3r import brain as brain_module
+
+        lab = self.server.index.create_mission(
+            "Training lab: portswigger", "https://portswigger.net/",
+            status="active", autonomy="autonomous", scope=["portswigger.net"])
+        live = self.mission("live")
+        brain_module.set_operator_priority(self.server.index, lab["id"],
+                                           reason="helix focus")
+        decision = self.director._tick(force=True)
+        self.assertEqual(decision["action"], "start")
+        self.assertEqual(decision["mission_id"], live["id"])
+        self.assertEqual(len(self.hunts.started), 1)
+
+    def test_off_portfolio_priority_is_ignored_so_inside_missions_run(self):
+        from netcast3r import brain as brain_module
+
+        self.director.tune(scope_hosts=["gov.pk"])
+        outside = self.server.index.create_mission(
+            "Outside", "https://example.com/", status="active",
+            autonomy="autonomous", scope=["example.com"])
+        inside = self.server.index.create_mission(
+            "Inside", "https://bca.gov.pk/", status="active",
+            autonomy="autonomous", scope=["bca.gov.pk"])
+        brain_module.set_operator_priority(self.server.index, outside["id"],
+                                           reason="helix focus")
+        decision = self.director._tick(force=True)
+        self.assertEqual(decision["action"], "start")
+        self.assertEqual(decision["mission_id"], inside["id"])
+
     def test_locked_priority_starts_only_that_mission(self):
         from netcast3r import brain as brain_module
 
