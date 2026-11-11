@@ -147,7 +147,7 @@
       >
         <span class="obs-pulse" aria-hidden="true"></span>
         <span class="obs-castbar-count">{casts.length}</span>
-        <span class="hidden sm:inline">live</span>
+        <span class="obs-castbar-label">live</span>
       </button>
       {#if castMenu}
         <button

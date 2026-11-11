@@ -1490,6 +1490,40 @@ html.nc-native .nc-tag {
   }
 }
 
+/* Under 760px the inline search yields to the icon shortcut. Between there
+   and a full desktop the row can still be crowded once several casts run, so
+   the search field and the live status pill shrink instead of pushing the
+   breadcrumb and Engage off the edge. */
+@media (max-width: 1240px) {
+  .obs-search {
+    width: auto;
+    flex: 0 1 240px;
+    min-width: 120px;
+  }
+}
+
+@media (max-width: 1240px) {
+  .obs-castbar-label {
+    display: none;
+  }
+}
+
+@media (min-width: 1241px) {
+  .obs-castbar-label {
+    display: inline;
+  }
+}
+
+@media (max-width: 1100px) {
+  .obs-search {
+    flex: 0 1 168px;
+  }
+
+  .obs-status.acid .obs-status-target {
+    display: none;
+  }
+}
+
 .obs-conn-banner {
   display: flex;
   align-items: center;
