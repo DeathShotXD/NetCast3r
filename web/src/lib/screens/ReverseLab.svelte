@@ -319,7 +319,7 @@
                   </button>
                 </div>
                 {#if expanded === item.id}
-                  <div class="mt-2 rounded-sm border border-line/60 bg-ink/40 p-3">
+                  <div class="mt-2 rounded-[6px] border border-line/60 bg-ink/40 p-3">
                     <p class="mono break-words text-[11px] text-bone">{item.evidence}</p>
                     <p class="mt-2 text-[11px] text-ash">{item.recommendation}</p>
                   </div>

@@ -19,7 +19,7 @@
         <span class="ladder-line" aria-hidden="true"></span>
       {/if}
       <span
-        class="z-[1] grid h-8 w-8 shrink-0 place-items-center rounded-lg border bg-void-soft text-violet transition-[border-color,color,box-shadow] duration-150 group-hover:border-acid group-hover:text-acid group-hover:shadow-[0_0_14px_-4px_rgba(200,248,26,0.55)]"
+        class="z-[1] grid h-8 w-8 shrink-0 place-items-center rounded-[6px] border bg-void-soft text-violet transition-[border-color,color,box-shadow] duration-150 group-hover:border-acid group-hover:text-acid group-hover:shadow-[0_0_14px_-4px_rgba(200,248,26,0.55)]"
         aria-hidden="true"
       >
         <StageGlyph stage={stage.key} class="h-4 w-4" />

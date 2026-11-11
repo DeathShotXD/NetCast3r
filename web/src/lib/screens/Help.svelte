@@ -121,7 +121,7 @@
   <section class="panel p-5">
     <p class="eyebrow">from the terminal</p>
     <pre
-      class="mono mt-3 overflow-x-auto rounded-lg border border-indigo-deep bg-void px-4 py-3 text-xs leading-relaxed text-bone-dust">netcast3r ui                 # this dashboard, then open the printed link
+      class="mono mt-3 overflow-x-auto rounded-[6px] border border-indigo-deep bg-void px-4 py-3 text-xs leading-relaxed text-bone-dust">netcast3r ui                 # this dashboard, then open the printed link
 netcast3r run TARGET         # the same pipeline, straight to the console
 netcast3r run --tier write   # impact proof (writes) - only on targets you own
 netcast3r dashboard          # the single-file HTML report for a finished run</pre>

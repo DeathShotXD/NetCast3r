@@ -121,6 +121,17 @@
   let results = $state<Record<string, { ok: boolean; text: string; models?: string[] }>>({});
   let deletingKey = $state('');
   let deletingProvider = $state('');
+  // The pool holds dozens of providers. Keep every row to one line and reveal
+  // a provider's models on demand, instead of painting a wall of chips that
+  // ran this page to six thousand pixels.
+  let expanded = $state<Set<string>>(new Set());
+
+  function toggleExpanded(id: string) {
+    const next = new Set(expanded);
+    if (next.has(id)) next.delete(id);
+    else next.add(id);
+    expanded = next;
+  }
 
   const preset = $derived(PRESETS.find((item) => item.id === selected) ?? null);
   const enabledCount = $derived(providers.filter((item) => item.enabled !== 0).length);
@@ -464,7 +475,7 @@
     <div class="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4">
       {#each PRESETS as item (item.id)}
         <button
-          class="group flex flex-col items-start rounded-lg border px-3 py-2.5 text-left transition"
+          class="group flex flex-col items-start rounded-[6px] border px-3 py-2.5 text-left transition"
           class:border-acid={selected === item.id}
           class:bg-acid-abyss={selected === item.id}
           class:border-indigo-deep={selected !== item.id}
@@ -521,7 +532,7 @@
       </form>
 
       {#if connectResult}
-        <div class="mt-4 rounded-lg border px-4 py-3" class:border-acid={connectResult.ok} class:border-indigo-deep={!connectResult.ok}>
+        <div class="mt-4 rounded-[6px] border px-4 py-3" class:border-acid={connectResult.ok} class:border-indigo-deep={!connectResult.ok}>
           <div class="flex flex-wrap items-center gap-3">
             <span class="chip" class:text-acid={connectResult.ok} class:text-violet={!connectResult.ok}>
               <span class="h-2 w-2 rounded-full" class:bg-acid={connectResult.ok} class:bg-violet={!connectResult.ok}></span>
@@ -534,7 +545,7 @@
             <div class="mt-2 flex flex-wrap gap-1.5">
               {#each connectResult.models as model (model)}
                 <button
-                  class="mono rounded-full border px-2.5 py-1 text-[11px] transition"
+                  class="mono rounded-[2px] border px-2.5 py-1 text-[11px] transition"
                   class:border-acid={chosen.includes(model)}
                   class:bg-acid-abyss={chosen.includes(model)}
                   class:text-acid={chosen.includes(model)}
@@ -588,7 +599,7 @@
       <ul class="mt-4 flex flex-col gap-2">
         {#each providers as item, i (item.id)}
           <li
-            class="rounded-lg border border-indigo-deep px-4 py-3 transition"
+            class="rounded-[6px] border border-indigo-deep px-4 py-3 transition"
             class:opacity-60={item.enabled === 0}
           >
             <div class="flex flex-wrap items-center gap-3">
@@ -603,6 +614,15 @@
               <span class="mono min-w-0 flex-1 truncate text-xs text-bone-dust">{item.base_url || '-'}</span>
               <span class="mono text-xs text-ash">{item.masked || 'no key'}</span>
               <span class="mono text-[11px] text-ash">p{item.priority}</span>
+              <button
+                class="btn btn-quiet shrink-0 px-2! py-0.5! text-[11px]"
+                type="button"
+                aria-expanded={expanded.has(item.id)}
+                onclick={() => toggleExpanded(item.id)}
+              >
+                {providerModels(item).length} model{providerModels(item).length === 1 ? '' : 's'}
+                <span aria-hidden="true">{expanded.has(item.id) ? '^' : 'v'}</span>
+              </button>
               <span class="flex shrink-0 items-center gap-1">
                 <button class="btn btn-quiet px-2! py-0.5! text-xs" type="button" disabled={i === 0} onclick={() => void move(i, -1)} aria-label="move up">^</button>
                 <button class="btn btn-quiet px-2! py-0.5! text-xs" type="button" disabled={i === providers.length - 1} onclick={() => void move(i, 1)} aria-label="move down">v</button>
@@ -628,22 +648,25 @@
                 </button>
               </span>
             </div>
-            <div class="mt-2 flex flex-wrap gap-1.5">
-              {#each providerModels(item) as model (model)}
-                <button
-                  class="mono group flex items-center gap-1 rounded-full border border-indigo-deep px-2 py-0.5 text-[11px] text-bone-dust"
-                  type="button"
-                  title="click to drop this model"
-                  onclick={() => void dropModel(item, model)}
-                >
-                  {model}
-                  <span class="text-slate group-hover:text-violet" aria-hidden="true">x</span>
-                </button>
-              {/each}
-              {#if providerModels(item).length === 0}
+            {#if providerModels(item).length === 0}
+              <div class="mt-2">
                 <span class="mono text-[11px] text-violet">no models - this provider is skipped</span>
-              {/if}
-            </div>
+              </div>
+            {:else if expanded.has(item.id)}
+              <div class="mt-2 flex flex-wrap gap-1.5">
+                {#each providerModels(item) as model (model)}
+                  <button
+                    class="mono group flex items-center gap-1 rounded-[2px] border border-indigo-deep px-2 py-0.5 text-[11px] text-bone-dust"
+                    type="button"
+                    title="click to drop this model"
+                    onclick={() => void dropModel(item, model)}
+                  >
+                    {model}
+                    <span class="text-slate group-hover:text-violet" aria-hidden="true">x</span>
+                  </button>
+                {/each}
+              </div>
+            {/if}
             {#if results[item.id]}
               <div class="mt-2 flex flex-wrap items-center gap-3">
                 <span class="mono text-xs" class:text-acid={results[item.id].ok} class:text-violet={!results[item.id].ok}>
@@ -663,7 +686,7 @@
     {/if}
   </section>
 
-  <section class="grid gap-5 lg:grid-cols-2">
+  <section class="grid gap-5">
     <div class="panel p-5">
       <p class="eyebrow">stored keys</p>
       <h2 class="mt-1 text-lg text-bone">One machine, one keyring</h2>
@@ -709,9 +732,9 @@
         {#if keys.length === 0}
           <p class="mt-2 text-sm text-bone-dust">No keys stored yet.</p>
         {:else}
-          <ul class="mt-2 flex flex-col gap-1">
+          <ul class="mt-2 grid gap-1 sm:grid-cols-2 lg:grid-cols-3">
             {#each keys as key (key.name)}
-              <li class="flex flex-wrap items-center gap-3 rounded-lg border border-indigo-deep px-3 py-2">
+              <li class="flex flex-wrap items-center gap-3 rounded-[6px] border border-indigo-deep px-3 py-2">
                 <span class="mono text-sm text-bone">{key.name}</span>
                 <span class="mono text-xs text-acid-dim">{key.masked}</span>
                 <span class="mono ml-auto text-[11px] text-ash">{key.source}</span>
