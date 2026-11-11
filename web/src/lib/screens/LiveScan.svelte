@@ -1236,7 +1236,7 @@
       </div>
     </section>
 
-    <section class="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4" aria-label="counters">
+    <section class="grid grid-cols-2 gap-3 sm:grid-cols-4" aria-label="counters">
       {#if isSolve}
         {#each [['steps', 'steps'], ['actions', 'actions'], ['model calls', 'model_calls'], ['findings', 'findings']] as [label, key] (key)}
           <div class="panel kpi px-4 py-3">

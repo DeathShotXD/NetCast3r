@@ -193,6 +193,43 @@
     </div>
   </section>
 
+  {#if !result && !busy}
+    <section class="obs-card obs-reveng-intro" aria-label="what the lab reads">
+      <div class="obs-card-head">
+        <div>
+          <div class="obs-card-title">What the lab reads</div>
+          <div class="obs-card-sub">Four artifact kinds, one read-only pass each. Pick a kind, or leave it on auto.</div>
+        </div>
+      </div>
+      <div class="obs-card-body">
+        <div class="obs-reveng-grid">
+          {#each EXAMPLES as example}
+            <button
+              class="obs-reveng-card"
+              type="button"
+              title={example.note}
+              onclick={() => useExample(example)}
+            >
+              <span class="obs-reveng-glyph">
+                <Icon
+                  name={example.kind === 'apk' ? 'bug' : example.kind === 'source' ? 'code' : example.kind === 'contract' ? 'flow' : 'database'}
+                  size={16}
+                />
+              </span>
+              <strong>{example.kind}</strong>
+              <span class="obs-reveng-note">{example.note}</span>
+              <code>{example.path}</code>
+            </button>
+          {/each}
+        </div>
+        <p class="obs-reveng-foot">
+          Analysis runs on this machine only. Observations are leads; record one as a
+          finding after a live request confirms it.
+        </p>
+      </div>
+    </section>
+  {/if}
+
   {#if result}
     <section class="grid grid-cols-2 gap-3 md:grid-cols-4" aria-label="analysis totals">
       <article class="obs-card">

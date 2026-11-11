@@ -23,6 +23,7 @@
   let quality = $state<{ score: number; grade: string; artifacts: number; note: string; checks: { name: string; points: number; ok: boolean; hint: string }[] } | null>(null);
   let qualityBusy = $state(false);
   let retesting = $state(false);
+  let pendingRetest = $state(false);
   let error = $state('');
   let pendingReject = $state<Finding | null>(null);
   let pendingBulk = $state<{ status: string; message: string; label: string; count: number } | null>(null);
@@ -453,7 +454,7 @@
         </ol>
         <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:10px">
           <button class="obs-btn obs-btn-primary" type="button" disabled={qualityBusy} onclick={() => void verifyFinding()}>{qualityBusy ? 'Scoring...' : 'Verify evidence'}</button>
-          <button class="obs-btn" type="button" disabled={retesting || !selected.run_id} title={selected.run_id ? 'Rerun the cast that produced this finding' : 'No source run recorded'} onclick={() => void retestFinding()}>{retesting ? 'Starting retest...' : 'Retest via rerun'}</button>
+          <button class="obs-btn" type="button" disabled={retesting || !selected.run_id} title={selected.run_id ? 'Rerun the cast that produced this finding' : 'No source run recorded'} onclick={() => (pendingRetest = true)}>{retesting ? 'Starting retest...' : 'Retest via rerun'}</button>
         </div>
         {#if quality}
           <div class="obs-quality" role="status">
@@ -530,6 +531,19 @@
       </div>
     </div>
   </aside>
+{/if}
+
+{#if pendingRetest}
+  <Confirm
+    title="Retest this finding?"
+    body={`This starts a fresh cast of the run that produced "${selected?.title ?? 'this finding'}" and spectates it live. It is a real cast against the target.`}
+    confirmLabel="start retest"
+    onConfirm={() => {
+      pendingRetest = false;
+      void retestFinding();
+    }}
+    onCancel={() => (pendingRetest = false)}
+  />
 {/if}
 
 {#if pendingBulk}

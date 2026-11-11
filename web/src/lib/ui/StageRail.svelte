@@ -30,7 +30,7 @@
     ></div>
   </div>
 
-  <ol class="stagger grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6" aria-label="pipeline stages">
+  <ol class="stagger grid grid-cols-2 gap-2 {stages.length === 4 ? 'sm:grid-cols-4' : 'sm:grid-cols-3 lg:grid-cols-6'}" aria-label="pipeline stages">
     {#each stages as stage, i}
       {@const done = finished.includes(stage.key) || (currentAt >= 0 && i < currentAt)}
       {@const active = stage.key === current}

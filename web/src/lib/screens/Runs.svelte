@@ -19,6 +19,7 @@
   let statusFilter = $state('all');
   let sortBy = $state('newest');
   let pendingDelete = $state<string | null>(null);
+  let pendingLive = $state<{ id: string; target: string; kind: 'rerun' | 'continue' } | null>(null);
   let reportRun = $state<string | null>(null);
 
   // The ledger can hold thousands of casts. Keep every row in memory for the
@@ -446,9 +447,9 @@
               <div class="obs-hist-run-actions">
                 <button class="obs-hist-act primary" type="button" onclick={() => store.watch(run.id)}>open</button>
                 {#if run.status === 'stopped' || run.status === 'interrupted' || run.status === 'failed'}
-                  <button class="obs-hist-act" type="button" onclick={() => void resume(run.id)}>continue</button>
+                  <button class="obs-hist-act" type="button" onclick={() => (pendingLive = { id: run.id, target: run.target, kind: 'continue' })}>continue</button>
                 {/if}
-                <button class="obs-hist-act" type="button" onclick={() => void rerun(run.id)}>rerun</button>
+                <button class="obs-hist-act" type="button" onclick={() => (pendingLive = { id: run.id, target: run.target, kind: 'rerun' })}>rerun</button>
                 <button class="obs-hist-act" type="button" onclick={() => (reportRun = run.id)}>report</button>
                 <button class="obs-hist-act danger" type="button" onclick={() => (pendingDelete = run.id)}>delete</button>
               </div>
@@ -469,6 +470,25 @@
     {/if}
   {/if}
 </div>
+
+{#if pendingLive}
+  <Confirm
+    title={pendingLive.kind === 'continue' ? 'Continue this operation?' : 'Rerun this cast?'}
+    body={pendingLive.kind === 'continue'
+      ? `Resuming picks up where the cast on ${pendingLive.target} stopped. It runs live under the current scope and writes to the audit trail.`
+      : `A fresh cast starts against ${pendingLive.target}, live under the current scope, and writes to the audit trail.`}
+    confirmLabel={pendingLive.kind === 'continue' ? 'continue cast' : 'rerun cast'}
+    onConfirm={() => {
+      const job = pendingLive;
+      pendingLive = null;
+      if (job) {
+        if (job.kind === 'continue') void resume(job.id);
+        else void rerun(job.id);
+      }
+    }}
+    onCancel={() => (pendingLive = null)}
+  />
+{/if}
 
 {#if pendingDelete}
   <Confirm

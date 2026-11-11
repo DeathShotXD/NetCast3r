@@ -84,6 +84,7 @@
   let candidateBusy = $state('');
   let composer = $state(false);
   let pendingClose = $state(false);
+  let pendingExploit = $state<{ id: string; name: string; risk: string } | null>(null);
   let busy = $state('');
   let form = $state({
     title: '',
@@ -1578,7 +1579,7 @@
                           <span class="obs-chip" style="color:{riskColor(module.risk)}">{module.risk}</span>
                           <span class="obs-graph-path-title">{module.name}</span>
                           <span class="obs-chip">{module.category}</span>
-                          <button class="obs-btn obs-btn-ghost" type="button" disabled={!module.ready || exploitBusy !== ''} onclick={() => void runModule(module)}>
+                          <button class="obs-btn obs-btn-ghost" type="button" disabled={!module.ready || exploitBusy !== ''} onclick={() => (pendingExploit = { id: module.id, name: module.name, risk: module.risk })}>
                             {exploitBusy === module.id ? 'Starting...' : 'Run'}
                           </button>
                         </div>
@@ -2133,6 +2134,21 @@
     </div>
   {/if}
 </div>
+
+{#if pendingExploit}
+  <Confirm
+    title="Run this exploit module?"
+    body={`${pendingExploit.name} (${pendingExploit.risk} risk) starts a live, scoped cast against ${selected?.target ?? 'the target'}. Every step is audited and stops on any approval gate.`}
+    confirmLabel="run module"
+    danger={pendingExploit.risk === 'critical' || pendingExploit.risk === 'high'}
+    onConfirm={() => {
+      const job = pendingExploit;
+      pendingExploit = null;
+      if (job) void runModule({ id: job.id });
+    }}
+    onCancel={() => (pendingExploit = null)}
+  />
+{/if}
 
 {#if pendingClose}
   <Confirm
