@@ -145,7 +145,7 @@
         title="{casts.length} casts in flight"
         onclick={() => (castMenu = !castMenu)}
       >
-        <span class="obs-pulse" aria-hidden="true"></span>
+        <span class="obs-castbar-signal" aria-hidden="true"></span>
         <span class="obs-castbar-count">{casts.length}</span>
         <span class="obs-castbar-label">live</span>
       </button>

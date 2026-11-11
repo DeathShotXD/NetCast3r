@@ -135,7 +135,7 @@
 
 <aside class="obs-sidebar" class:is-open={open} aria-label="primary navigation">
   <div class="obs-brand">
-    <span class="obs-brand-mark">
+    <span class="obs-brand-mark" class:is-live={liveCasts > 0}>
       <BrandMark size={24} />
     </span>
     <div>
@@ -214,10 +214,7 @@
               <span class="obs-nav-badge hot" title="{pendingApprovals} approvals waiting">{pendingApprovals}</span>
             {/if}
             {#if item.id === 'live' && liveCasts > 0}
-              <span class="obs-nav-live" aria-hidden="true"></span>
-              {#if liveCasts > 1}
-                <span class="obs-nav-badge hot" title="{liveCasts} casts in flight">{liveCasts}</span>
-              {/if}
+              <span class="obs-nav-badge hot pulse" title="{liveCasts} cast{liveCasts === 1 ? '' : 's'} in flight">{liveCasts}</span>
             {/if}
           </button>
         {/each}
