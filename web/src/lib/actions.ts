@@ -116,7 +116,7 @@ export function pauseOffscreen(node: HTMLElement) {
  * focus back to the opener when it unmounts. The dialog element gets focus
  * itself so assistive tech announces the heading before the controls.
  */
-export function focusTrap(node: HTMLElement) {
+export function focusTrap(node: HTMLElement, initial = '') {
   const previous = document.activeElement as HTMLElement | null;
   const selector =
     'a[href],button:not([disabled]),input:not([disabled]),select:not([disabled]),' +
@@ -127,7 +127,10 @@ export function focusTrap(node: HTMLElement) {
       (el) => el.offsetWidth > 0 || el.offsetHeight > 0 || el.getClientRects().length > 0
     );
 
-  queueMicrotask(() => node.focus());
+  queueMicrotask(() => {
+    const target = initial ? node.querySelector<HTMLElement>(initial) : null;
+    (target ?? node).focus();
+  });
 
   const onKey = (event: KeyboardEvent) => {
     if (event.key !== 'Tab') return;

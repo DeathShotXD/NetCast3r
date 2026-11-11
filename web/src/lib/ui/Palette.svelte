@@ -1,6 +1,7 @@
 <script lang="ts">
   import { store } from '../state.svelte';
   import { ago } from '../format';
+  import { focusTrap } from '../actions';
   import type { Screen } from '../types';
 
   type Item = { label: string; hint: string; glyph: string; group: string; run: () => void };
@@ -203,8 +204,15 @@
       aria-label="command palette"
       aria-modal="true"
       tabindex="-1"
+      use:focusTrap={'input'}
       onclick={(event) => event.stopPropagation()}
-      onkeydown={(event) => event.stopPropagation()}
+      onkeydown={(event) => {
+        if (event.key === 'Escape') {
+          event.preventDefault();
+          store.palette = false;
+        }
+        event.stopPropagation();
+      }}
     >
       <div class="palette-panel panel overflow-hidden">
         <div class="flex items-center gap-3 border-b border-indigo-deep px-4">

@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount, tick } from 'svelte';
   import { api } from '../api';
+  import { focusTrap } from '../actions';
   import { store } from '../state.svelte';
   import { ago, sevColor, statusLabel, utcStamp } from '../format';
   import type { AgentStatus, Approval, Autonomy, Campaign, Candidate, CoverageSummary, Direction, ExploitPlan, GraphNode, GraphPath, Hypothesis, HypothesisEvidence, Mission, MissionAgent, MissionGraph, MissionStatus, ProgramImport, ProgramPreview, ToolCall , ThreatMap } from '../types';
@@ -2151,8 +2152,15 @@
       aria-modal="true"
       aria-label="new mission"
       tabindex="-1"
+      use:focusTrap={'.obs-modal-body input'}
       onclick={(event) => event.stopPropagation()}
-      onkeydown={(event) => event.stopPropagation()}
+      onkeydown={(event) => {
+        if (event.key === 'Escape') {
+          event.preventDefault();
+          composer = false;
+        }
+        event.stopPropagation();
+      }}
     >
       <header class="obs-modal-head">
         <div>

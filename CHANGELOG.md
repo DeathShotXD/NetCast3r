@@ -137,9 +137,10 @@ Notable changes to NetCast3r, newest first.
 - **Destructive actions ask first**: bulk triage, mission close, report/ledger
   deletion, and Helix chat deletion open a native confirm dialog that focuses
   `cancel`, closes on Escape, and restores focus on close.
-- **Report modals keep the keyboard**: the submission composer, ledger editor,
-  and PoC preview focus themselves on open, wrap Tab inside the dialog, close
-  on Escape, and return focus to the button that opened them.
+- **Every modal keeps the keyboard**: the submission composer, ledger editor,
+  PoC preview, command palette, mission composer, and live agent spotlight
+  focus themselves on open, wrap Tab inside the dialog, close on Escape from
+  any control, and return focus to the button that opened them.
 - **Command palette keeps its promise**: a screen name always selects the real
   screen on Enter, the Helix row sits after matching destinations, and section
   order follows the keyboard cursor instead of a hardcoded group order.

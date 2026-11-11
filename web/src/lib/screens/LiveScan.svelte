@@ -13,7 +13,7 @@
   import RunScope from '../ui/RunScope.svelte';
   import StageRail from '../ui/StageRail.svelte';
   import StageSignal from '../ui/StageSignal.svelte';
-  import { countup, spotlight } from '../actions';
+  import { countup, focusTrap, spotlight } from '../actions';
 
   const stages = STAGES as unknown as { key: string; label: string }[];
   const LAB_STAGES = [
@@ -1984,8 +1984,15 @@
       aria-label="{spotlightAgent} live thinking"
       tabindex="-1"
       bind:this={panelEl}
+      use:focusTrap
       onclick={(event) => event.stopPropagation()}
-      onkeydown={(event) => event.stopPropagation()}
+      onkeydown={(event) => {
+        if (event.key === 'Escape') {
+          event.preventDefault();
+          spotlightAgent = '';
+        }
+        event.stopPropagation();
+      }}
     >
       <header class="obs-spot-head">
         <span class="lane-led" style="--agent:{color}" aria-hidden="true"></span>
