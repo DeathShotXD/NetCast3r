@@ -1783,7 +1783,7 @@ class Server:
             session_id = str(body.get("session_id") or "").strip()
             if not session_id:
                 session = self.index.create_brain_session(
-                    title=message[:80], mission_id=mission_id,
+                    title=_session_title(message), mission_id=mission_id,
                     agent=str(body.get("agent") or "helix"),
                     model=str(body.get("model") or ""),
                     permission=str(body.get("permission") or "full"))
@@ -4105,6 +4105,23 @@ def _restore_session_token(server: Server) -> bool:
 def _utc() -> str:
     import time
     return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+
+
+def _session_title(message: str) -> str:
+    """A short, neutral chat title from the first message.
+
+    Helix is a general operator harness, not a task-scoped assistant, so the
+    title must not read like a work order. Strip a leading slash command, keep
+    the first sentence, and cap it at a few words.
+    """
+    text = re.sub(r"^/\w+", "", str(message or "").strip()).strip()
+    if not text:
+        return "New chat"
+    text = re.split(r"[\n.!?]", text, 1)[0].strip()
+    title = " ".join(text.split()[:7])
+    if len(title) > 56:
+        title = title[:56].rsplit(" ", 1)[0].strip()
+    return title or "New chat"
 
 
 class _ThreadingHTTPServer(ThreadingHTTPServer):

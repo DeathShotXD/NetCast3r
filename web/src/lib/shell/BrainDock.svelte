@@ -767,7 +767,7 @@
     class:awaiting={busy}
     bind:this={panelEl}
     style={panelStyle}
-    aria-label="{COMPANION} hunt steward"
+    aria-label="{COMPANION} operator harness"
     aria-busy={busy}
   >
     <div class="nc-brain-sheen" aria-hidden="true"></div>
@@ -791,7 +791,7 @@
         <span class="nc-brain-grip" aria-hidden="true"></span>
         <div class="nc-brain-identity">
           <span class="nc-brain-wordmark">{COMPANION}</span>
-          <span class="nc-brain-role-tag">Hunt steward</span>
+          <span class="nc-brain-role-tag">Operator harness</span>
           <span class="nc-brain-badge" data-tone={stateTone}>
             <span class="nc-brain-dot" class:paused={loop?.paused} class:off={!loop?.running}></span>
             {stateLabel}
@@ -1135,7 +1135,7 @@
         bind:this={inputEl}
         bind:value={input}
         rows="1"
-        placeholder={busy ? `${COMPANION} is responding...` : 'Message Helix - /help for commands'}
+        placeholder={busy ? `${COMPANION} is responding...` : `Tell ${COMPANION} anything - /help for commands`}
         aria-label="message {COMPANION}"
         disabled={busy}
         onkeydown={onComposerKey}
