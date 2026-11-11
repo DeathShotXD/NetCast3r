@@ -36,6 +36,12 @@ def _inline(text, value: str = "") -> str:
     return _scrub(text, value).replace("\r", " ").replace("\n", " ").strip()
 
 
+def _block(text, value: str = "") -> str:
+    """Secret-free multi-line field: keep the author's markdown structure."""
+    return (_scrub(text, value).replace("\r\n", "\n").replace("\r", "\n")
+            .strip("\n"))
+
+
 def _fence(body, value: str = "") -> list[str]:
     """Wrap content in a fence longer than any backtick run inside it."""
     body = _scrub(body, value)
@@ -335,6 +341,53 @@ def _poc_curl(req: dict) -> str:
     return " ".join(_shell(part) for part in parts)
 
 
+def _poc_evidence_curl(evidence: str) -> str:
+    """Use a curl block already written in the evidence when no call was logged.
+
+    Manual findings often carry their reproduction command inside the evidence
+    markdown. Prefer a fenced block that starts with curl so the generated PoC
+    stays runnable instead of replacing it with a placeholder.
+    """
+    for match in re.finditer(r"```[A-Za-z0-9_-]*\s*\n(.*?)```", evidence or "",
+                             re.S):
+        body = match.group(1).strip()
+        if body.lower().startswith("curl "):
+            return body
+    return ""
+
+
+def _demote_headings(text: str, levels: int = 2) -> str:
+    """Nest headings from embedded evidence below the section that carries them.
+
+    Evidence is written as a standalone markdown document, so it starts at h1
+    and uses h2 for its own sections. Inserting it verbatim under ``## Proof``
+    would collide with the generated document's headings. Demote every ATX
+    heading by ``levels`` (never past h6) and leave fenced code untouched.
+    """
+    out: list[str] = []
+    fence = ""
+    for line in text.split("\n"):
+        stripped = line.lstrip()
+        if stripped.startswith("```") or stripped.startswith("~~~"):
+            marker = stripped[:3]
+            if not fence:
+                fence = marker
+            elif fence == marker:
+                fence = ""
+            out.append(line)
+            continue
+        if fence:
+            out.append(line)
+            continue
+        match = re.match(r"^(#{1,6})(\s+.*)$", line)
+        if match:
+            hashes = "#" * min(6, len(match.group(1)) + levels)
+            out.append(hashes + match.group(2))
+        else:
+            out.append(line)
+    return "\n".join(out)
+
+
 def _interesting(req: dict) -> bool:
     """Rank the exploit request above the reconnaissance ones."""
     target = str(req.get("target") or "")
@@ -370,9 +423,9 @@ def render_finding_poc(finding: dict, mission: dict | None = None,
     created = _inline(finding.get("created_at", ""))
 
     impact = _inline(finding.get("impact", ""))
-    evidence = _inline(finding.get("evidence", ""))
+    evidence = _block(finding.get("evidence", ""))
     source = _inline(finding.get("source", ""))
-    notes = _inline(finding.get("notes", ""))
+    notes = _block(finding.get("notes", ""))
 
     requests = _poc_chain_requests(finding)
     key_request = None
@@ -385,9 +438,6 @@ def render_finding_poc(finding: dict, mission: dict | None = None,
     summary_lines: list[str] = []
     if impact:
         summary_lines.append(impact)
-    if evidence:
-        summary_lines.append("")
-        summary_lines.append(evidence)
     if not summary_lines:
         summary_lines.append(
             "This finding was recorded without a written impact statement. "
@@ -399,7 +449,7 @@ def render_finding_poc(finding: dict, mission: dict | None = None,
     elif requests:
         asset = str(requests[0]["target"])
     if not asset:
-        asset = source or target
+        asset = target or source
 
     step_lines: list[str] = []
     for index, req in enumerate(requests, start=1):
@@ -421,7 +471,9 @@ def render_finding_poc(finding: dict, mission: dict | None = None,
         python_lines.append("print(response.status_code)")
         python_lines.append("print(response.text[:400])")
         python_lines.append("")
-    curl_text = "\n\n".join(curl_blocks) or "# no request was recorded for this finding"
+    evidence_curl = _poc_evidence_curl(evidence)
+    curl_text = ("\n\n".join(curl_blocks) or evidence_curl
+                 or "# no structured request was recorded; use the proof below")
     python_text = "\n".join(python_lines).strip()
 
     lines: list[str] = [f"# {title}", ""]
@@ -457,8 +509,8 @@ def render_finding_poc(finding: dict, mission: dict | None = None,
             lines.append(f"{len(requests) + 1}. {extra} further probe(s) were recorded; "
                          "the full request log is in the evidence on file.")
     else:
-        lines.append("1. No request step was recorded on this finding. Re-derive "
-                     "the request from the evidence below before filing.")
+        lines.append("1. No structured request step was recorded on this finding. "
+                     "Use the manual verification or the proof below to replay it.")
     lines.append("")
 
     lines.append("## Manual verification")
@@ -469,17 +521,18 @@ def render_finding_poc(finding: dict, mission: dict | None = None,
     lines.append(curl_text)
     lines.append("```")
     lines.append("")
-    lines.append("### python")
-    lines.append("")
-    lines.append("```python")
-    lines.append(python_text)
-    lines.append("```")
-    lines.append("")
+    if requests:
+        lines.append("### python")
+        lines.append("")
+        lines.append("```python")
+        lines.append(python_text)
+        lines.append("```")
+        lines.append("")
 
     if evidence:
         lines.append("## Proof")
         lines.append("")
-        lines.append(evidence)
+        lines.append(_demote_headings(evidence))
         lines.append("")
 
     artifacts = [a for a in (finding.get("artifacts") or []) if isinstance(a, dict)]
