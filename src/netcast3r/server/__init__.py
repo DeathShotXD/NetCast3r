@@ -14,6 +14,7 @@ import os
 import re
 import secrets
 import shutil
+import sys
 import threading
 import webbrowser
 from dataclasses import dataclass, field
@@ -4106,6 +4107,17 @@ def _utc() -> str:
     return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
 
 
+class _ThreadingHTTPServer(ThreadingHTTPServer):
+    """A UI server that does not treat a closed tab as a crash."""
+
+    def handle_error(self, request, client_address):
+        exc = sys.exc_info()[1]
+        if isinstance(exc, (BrokenPipeError, ConnectionResetError,
+                            ConnectionAbortedError)):
+            return
+        super().handle_error(request, client_address)
+
+
 class _Handler(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
     server_version = "NetCast3r"
@@ -4152,7 +4164,19 @@ class _Handler(BaseHTTPRequestHandler):
             self.send_header(key, value)
         self.end_headers()
         if method != "HEAD":
-            self.wfile.write(result.body)
+            try:
+                self.wfile.write(result.body)
+            except (BrokenPipeError, ConnectionResetError):
+                # The browser navigated away mid-response; not a server fault.
+                pass
+
+    def handle_one_request(self):
+        try:
+            super().handle_one_request()
+        except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError):
+            # A tab closed during the request line or headers. Stop quietly
+            # instead of letting socketserver print a traceback for it.
+            self.close_connection = True
 
     def do_GET(self):
         self._dispatch("GET")
@@ -4239,7 +4263,7 @@ def serve(host: str = "127.0.0.1", port: int = 7857, *, open_browser: bool = Tru
         raise
     _restore_session_token(server)
     server.auth_required = auth_required
-    httpd = ThreadingHTTPServer((host, port), _Handler)
+    httpd = _ThreadingHTTPServer((host, port), _Handler)
     httpd.app = server  # type: ignore[attr-defined]
     httpd.daemon_threads = True
     url = f"http://{host}:{httpd.server_address[1]}/"

@@ -9153,9 +9153,10 @@ select.obs-field option:checked,
 .nc-brain-panel {
   width: min(520px, calc(100vw - 28px));
   max-height: min(620px, calc(100vh - 110px));
-  border-radius: 16px;
+  border-radius: 12px;
   background: var(--obs-glass);
-  box-shadow: var(--obs-elev-3);
+  /* Depth is a hairline, never a drop shadow (DESIGN.md 5). */
+  box-shadow: 0 0 0 1px var(--obs-line), inset 0 1px 0 rgba(0, 0, 0, 0.6);
   animation: obs-palette-in 200ms var(--ease) both;
 }
 
@@ -9381,7 +9382,7 @@ textarea:focus-visible, [tabindex]:focus-visible, summary:focus-visible {
 .nc-brain-channel[data-channel='mesh'] i { background: var(--obs-violet-3, #b47ae0); }
 .nc-brain-channel[data-channel='run'] i { background: var(--obs-gold, #efe4b1); }
 .nc-brain-channel[data-channel='log'] i { background: var(--obs-faint); border-radius:2px; }
-.nc-brain-jump { position:absolute; right:14px; bottom:12px; z-index:4; display:inline-flex; align-items:center; gap:6px; border:1px solid rgba(200,248,26,.4); border-radius:999px; padding:6px 11px; background:rgba(10,12,4,.94); color:var(--obs-acid); font-family:var(--mono); font-size:10px; cursor:pointer; box-shadow:0 10px 28px rgba(0,0,0,.5); }
+.nc-brain-jump { position:absolute; right:14px; bottom:12px; z-index:4; display:inline-flex; align-items:center; gap:6px; border:1px solid rgba(200,248,26,.4); border-radius:999px; padding:6px 11px; background:rgba(10,12,4,.94); color:var(--obs-acid); font-family:var(--mono); font-size:10px; cursor:pointer; box-shadow:0 0 0 1px rgba(200,248,26,.14); }
 .nc-brain-jump:hover { background:rgba(200,248,26,.14); }
 .nc-brain-chan-tag { font-family:var(--mono); font-size:8px; letter-spacing:.1em; text-transform:uppercase; border-radius:99px; padding:1px 6px; box-shadow:inset 0 0 0 1px rgba(245,233,220,.12); color:var(--obs-faint); flex:none; }
 

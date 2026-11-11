@@ -266,10 +266,33 @@
     }
     return { pages: pages.size, js_files: scripts.size };
   });
+
+  // The focus run is often a swarm, which crawls nothing, so its own counts
+  // read 0 pages even after a cast mapped dozens. Fall back to the best map
+  // any run on this mission achieved, so the surface KPI reflects the hunt.
+  const missionSurface = $derived.by(() => {
+    const missionId = String((focusRun?.options as Record<string, unknown>)?.mission_id ?? '');
+    const target = focusRun?.target ?? '';
+    const rows = store.runs.filter((run) =>
+      missionId
+        ? String((run.options as Record<string, unknown>)?.mission_id ?? '') === missionId
+        : run.target === target
+    );
+    const pick = (key: string): number => {
+      let best = 0;
+      for (const run of rows) {
+        const value = Number((run.counts as Record<string, number> | undefined)?.[key] ?? 0);
+        if (value > best) best = value;
+      }
+      return best;
+    };
+    return { pages: pick('pages'), js_files: pick('js_files'), endpoints: pick('endpoints') };
+  });
   const viewCounts = $derived.by<Record<string, number>>(() => ({
     ...counts,
-    pages: Math.max(counts.pages ?? 0, eventSurface.pages),
-    js_files: Math.max(counts.js_files ?? 0, eventSurface.js_files)
+    pages: Math.max(counts.pages ?? 0, eventSurface.pages, missionSurface.pages),
+    js_files: Math.max(counts.js_files ?? 0, eventSurface.js_files, missionSurface.js_files),
+    endpoints: Math.max(counts.endpoints ?? 0, missionSurface.endpoints)
   }));
 
   const rawSignals = $derived(Math.max(signals.length, viewCounts.candidates ?? 0));

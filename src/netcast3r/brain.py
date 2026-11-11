@@ -732,6 +732,10 @@ def context(index, director=None, mission_id: str = "", limit: int = 8) -> dict:
                 "scope": mission.get("scope", []),
                 "autonomy": mission.get("autonomy", ""),
                 "latest_run_id": latest_run,
+                # The latest run is often a swarm, which crawls nothing, so a
+                # per-run read is 0 even after a cast mapped the surface. Report
+                # the best map any run on this mission achieved.
+                "surface": _mission_surface(recent_runs),
                 "recent_events": recent_events,
                 "notes": [{"kind": n.get("kind"), "title": n.get("title")}
                           for n in index.list_agent_notes(mission_id, limit=10)],
@@ -956,6 +960,25 @@ def _needs_reasoning(message: str, act: bool = True) -> bool:
     return any(hint in text for hint in _REASONING_HINTS)
 
 
+def _mission_surface(runs: list | None) -> dict:
+    """Best page/script/endpoint map any run on a mission achieved.
+
+    A swarm or exploit run crawls nothing, so reading the latest run reports 0
+    pages even after a cast mapped the surface. Take the max across the runs.
+    """
+    best = {"pages": 0, "js_files": 0, "endpoints": 0}
+    for row in runs or []:
+        counts = row.get("counts") or {}
+        for key in best:
+            try:
+                value = int(counts.get(key) or 0)
+            except (TypeError, ValueError):
+                value = 0
+            if value > best[key]:
+                best[key] = value
+    return best
+
+
 def _compact_context(snapshot: dict) -> dict:
     """A small snapshot for the light chat model: enough to be truthful
     without paying a 60k-token reasoning prompt."""
@@ -968,12 +991,15 @@ def _compact_context(snapshot: dict) -> dict:
         focus = missions[0]
     return {
         "focus_mission": focus,
+        "publish_gate": snapshot.get("publish_gate") or {},
         "plane": snapshot.get("plane") or {},
         "open_leads": (snapshot.get("leads") or [])[:5],
         "recent_tools": (snapshot.get("traffic") or [])[:5],
         "last_helix": (snapshot.get("helix_journal") or [])[-1:] or [],
         "note": ("Use only these facts. A 200 is reachability, not a bug. "
-                 "0 confirmed means 0 confirmed."),
+                 "0 confirmed means 0 confirmed. To answer why a finding is "
+                 "blocked, read publish_gate.blocked and quote its missing "
+                 "reason instead of guessing."),
     }
 
 
@@ -1462,8 +1488,22 @@ def _progress_reply(index, mission_id: str) -> tuple[str, str]:
         open_leads = 0
     findings = int(mission.get("finding_count") or 0)
     status = str(latest.get("status") or "")
-    pages = int(counts.get("pages") or 0)
-    leads = int(counts.get("leads") or 0)
+    # The latest run is often a swarm, which maps no pages, so a per-run read
+    # reports 0 even after a cast mapped the surface. Report the best map any
+    # run on this mission achieved.
+    def _best(key: str) -> int:
+        best = 0
+        for row in runs:
+            try:
+                value = int((row.get("counts") or {}).get(key) or 0)
+            except (TypeError, ValueError):
+                value = 0
+            if value > best:
+                best = value
+        return best
+
+    pages = _best("pages")
+    leads = _best("leads")
     if status == "running":
         reply = (f"Hunting {host}: {pages} pages mapped, {open_leads} open leads, "
                  f"{findings} confirmed finding(s).")
