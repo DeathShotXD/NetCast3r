@@ -137,6 +137,9 @@ Notable changes to NetCast3r, newest first.
 - **Destructive actions ask first**: bulk triage, mission close, report/ledger
   deletion, and Helix chat deletion open a native confirm dialog that focuses
   `cancel`, closes on Escape, and restores focus on close.
+- **Report modals keep the keyboard**: the submission composer, ledger editor,
+  and PoC preview focus themselves on open, wrap Tab inside the dialog, close
+  on Escape, and return focus to the button that opened them.
 - **Helix chats are manageable**: the dock can create a chat, switch sessions,
   rename, fork, and delete one, with busy states, a click-away menu, and
   Escape handling that keeps the dock open while dismissing its own menus.

@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { api } from '../api';
+  import { focusTrap } from '../actions';
   import { ago, sevColor, utcStamp } from '../format';
   import { store } from '../state.svelte';
   import type {
@@ -537,8 +538,15 @@
       aria-modal="true"
       aria-label="record submission"
       tabindex="-1"
+      use:focusTrap
       onclick={(event) => event.stopPropagation()}
-      onkeydown={(event) => event.stopPropagation()}
+      onkeydown={(event) => {
+        if (event.key === 'Escape') {
+          event.preventDefault();
+          composer = false;
+        }
+        event.stopPropagation();
+      }}
     >
       <header class="obs-modal-head">
         <div>
@@ -682,8 +690,15 @@
       aria-modal="true"
       aria-label="edit submission"
       tabindex="-1"
+      use:focusTrap
       onclick={(event) => event.stopPropagation()}
-      onkeydown={(event) => event.stopPropagation()}
+      onkeydown={(event) => {
+        if (event.key === 'Escape') {
+          event.preventDefault();
+          editing = null;
+        }
+        event.stopPropagation();
+      }}
     >
       <header class="obs-modal-head">
         <div>
@@ -812,8 +827,15 @@
       aria-modal="true"
       aria-label="PoC report"
       tabindex="-1"
+      use:focusTrap
       onclick={(event) => event.stopPropagation()}
-      onkeydown={(event) => event.stopPropagation()}
+      onkeydown={(event) => {
+        if (event.key === 'Escape') {
+          event.preventDefault();
+          closePoc();
+        }
+        event.stopPropagation();
+      }}
     >
       <header class="obs-modal-head">
         <div>

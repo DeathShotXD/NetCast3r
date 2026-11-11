@@ -110,3 +110,50 @@ export function pauseOffscreen(node: HTMLElement) {
     }
   };
 }
+
+/**
+ * Modal keyboard discipline: focus the dialog, keep Tab inside it, and hand
+ * focus back to the opener when it unmounts. The dialog element gets focus
+ * itself so assistive tech announces the heading before the controls.
+ */
+export function focusTrap(node: HTMLElement) {
+  const previous = document.activeElement as HTMLElement | null;
+  const selector =
+    'a[href],button:not([disabled]),input:not([disabled]),select:not([disabled]),' +
+    'textarea:not([disabled]),[tabindex]:not([tabindex="-1"])';
+
+  const focusables = () =>
+    [...node.querySelectorAll<HTMLElement>(selector)].filter(
+      (el) => el.offsetWidth > 0 || el.offsetHeight > 0 || el.getClientRects().length > 0
+    );
+
+  queueMicrotask(() => node.focus());
+
+  const onKey = (event: KeyboardEvent) => {
+    if (event.key !== 'Tab') return;
+    const items = focusables();
+    if (!items.length) {
+      event.preventDefault();
+      node.focus();
+      return;
+    }
+    const first = items[0];
+    const last = items[items.length - 1];
+    const active = document.activeElement;
+    if (event.shiftKey && (active === first || active === node)) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && active === last) {
+      event.preventDefault();
+      first.focus();
+    }
+  };
+
+  node.addEventListener('keydown', onKey);
+  return {
+    destroy() {
+      node.removeEventListener('keydown', onKey);
+      previous?.focus?.();
+    }
+  };
+}
