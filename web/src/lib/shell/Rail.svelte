@@ -47,6 +47,7 @@
     store.runs.find((run) => run.status === 'running' || run.status === 'queued') ??
       (store.liveRun && ['running', 'queued'].includes(store.liveRun.status) ? store.liveRun : null)
   );
+  const liveCasts = $derived(store.activeCasts.length);
 
   const openCount = $derived(
     (store.totals?.triage?.new ?? 0) + (store.totals?.triage?.in_progress ?? 0)
@@ -212,8 +213,11 @@
             {#if item.id === 'home' && pendingApprovals > 0}
               <span class="obs-nav-badge hot" title="{pendingApprovals} approvals waiting">{pendingApprovals}</span>
             {/if}
-            {#if item.id === 'live' && running}
+            {#if item.id === 'live' && liveCasts > 0}
               <span class="obs-nav-live" aria-hidden="true"></span>
+              {#if liveCasts > 1}
+                <span class="obs-nav-badge hot" title="{liveCasts} casts in flight">{liveCasts}</span>
+              {/if}
             {/if}
           </button>
         {/each}
