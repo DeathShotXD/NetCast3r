@@ -770,6 +770,13 @@
 
   async function loadReport() {
     if (!run) return;
+    // A cast only writes a report when it has something to report. Ask the
+    // API only when the run says one exists, so the tab does not log a 404.
+    if (!counts.report) {
+      report = '';
+      reportErr = '';
+      return;
+    }
     try {
       report = await api.runReport(run.id);
       reportErr = '';
@@ -1957,7 +1964,9 @@
             <p class="text-sm text-slate">
               {running
                 ? 'the report is written when the run finishes - this preview will refresh on its own.'
-                : 'loading the report...'}
+                : counts.report
+                  ? 'loading the report...'
+                  : 'this cast did not write a report.'}
             </p>
           {/if}
         </div>

@@ -137,6 +137,16 @@
     }
     const open =
       (store.totals?.triage?.new ?? 0) + (store.totals?.triage?.in_progress ?? 0);
+    const approvals = store.totals?.pending_approvals ?? 0;
+    if (approvals > 0) {
+      list.push({
+        label: `Review ${approvals} approval${approvals === 1 ? '' : 's'}`,
+        hint: 'a policy gate is waiting on you',
+        glyph: '!',
+        group: 'Actions',
+        run: () => store.go('home')
+      });
+    }
     if (open > 0) {
       list.push({
         label: 'Review the human queue',

@@ -7,6 +7,7 @@
     { keys: ['Ctrl', 'K'], label: 'Command palette', hint: 'jump, search, or ask Helix' },
     { keys: ['/'], label: 'Search findings', hint: 'focus the top search field' },
     { keys: ['B'], label: 'Toggle Helix', hint: 'open the hunt steward' },
+    { keys: ['[', ']'], label: 'Cycle casts', hint: 'switch between casts in flight' },
     { keys: ['F'], label: 'Focus mode', hint: 'hide the sidebar for a live cast' },
     { keys: ['?'], label: 'Shortcut sheet', hint: 'this list' },
     { keys: ['Esc'], label: 'Close', hint: 'dismiss an overlay or dialog' },

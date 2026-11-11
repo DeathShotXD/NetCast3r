@@ -107,7 +107,7 @@
     void store.boot().then(() => store.startHeartbeat());
 
     const onKey = (event: KeyboardEvent) => {
-      const target = event.target as HTMLElement | null;
+      const target = event.target instanceof HTMLElement ? event.target : null;
       const typing =
         !!target &&
         (target.tagName === 'INPUT' ||
@@ -162,6 +162,18 @@
       if ((event.key === 'b' || event.key === 'B') && !typing && !event.metaKey && !event.ctrlKey && !event.altKey) {
         event.preventDefault();
         store.brainDock = !store.brainDock;
+        return;
+      }
+      if ((event.key === '[' || event.key === ']') && !typing && !event.metaKey && !event.ctrlKey && !event.altKey) {
+        const casts = store.activeCasts;
+        if (casts.length > 1) {
+          event.preventDefault();
+          const index = casts.findIndex((cast) => cast.id === store.activeRunId);
+          const step = event.key === ']' ? 1 : -1;
+          const next = (index + step + casts.length) % casts.length;
+          store.watch(casts[next].id);
+        }
+        return;
       }
     };
 
