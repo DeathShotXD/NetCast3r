@@ -4054,7 +4054,7 @@ def _connect_info(server: "Server", ctx) -> dict:
                 "header": "X-NetCast3r-Token",
                 "token_file": str(base / "control-plane.json"),
                 "example": ("curl -H \"X-NetCast3r-Token: <token>\" "
-                            + url + "/api/v1/status"),
+                            + url + "/api/v1/healthz"),
             },
             "notes": ("Read the token from the 0600 control-plane file. Prefer "
                       "loopback; a remote bind needs TLS and a reverse proxy."),
