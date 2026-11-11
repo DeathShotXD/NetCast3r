@@ -4,7 +4,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from netcast3r.report import public_finding, redact, render, save_sarif
+from netcast3r.report import (public_finding, redact, render, render_finding_poc,
+                              save_sarif)
 
 AWS_KEY = "AKIA" + "IOSFODNN7EXAMPLE"
 STRIPE_KEY = "sk_" + "live_" + "abcdefghijklmnopqrstuvwx"
@@ -169,6 +170,48 @@ class RenderTests(unittest.TestCase):
         workdir = Path(tempfile.mkdtemp())
         path = save_sarif(workdir, findings)
         self.assertNotIn(pair, path.read_text())
+
+
+class FindingPocTests(unittest.TestCase):
+    def test_manual_evidence_keeps_its_lines_and_nests_its_headings(self):
+        finding = {
+            "id": "fnd_test", "title": "t", "severity": "critical",
+            "secret_type": "sqli", "impact": "impact line",
+            "source": "manual",
+            "evidence": ("# Confirmed\n\n## Summary\nline one\nline two\n\n"
+                         "```\nGET /x\n```"),
+        }
+        text = render_finding_poc(finding, mission={"target": "https://target/"})
+        self.assertIn("### Confirmed", text)
+        self.assertIn("#### Summary", text)
+        self.assertIn("line one\nline two", text)
+        self.assertEqual(text.count("line one"), 1)
+        self.assertIn("## Affected asset\n\n`https://target/`", text)
+        self.assertNotIn("### python", text)
+
+    def test_recorded_request_keeps_the_python_replay(self):
+        finding = {
+            "id": "fnd_test", "title": "t", "severity": "high",
+            "secret_type": "x", "evidence": "# proof",
+            "evidence_chain": [{
+                "kind": "tool_call", "tool": "http_request",
+                "request": {"target": "https://target/a", "method": "GET"},
+                "response": {"status": 500}, "at": "2026-01-01T00:00:00Z",
+            }],
+        }
+        text = render_finding_poc(finding, mission={"target": "https://target/"})
+        self.assertIn("### python", text)
+        self.assertIn("requests.request('GET', 'https://target/a')", text)
+        self.assertIn("assert response.status_code == 500", text)
+
+    def test_evidence_fence_is_not_used_as_the_manual_curl(self):
+        finding = {
+            "id": "fnd_test", "title": "t", "severity": "low",
+            "secret_type": "x",
+            "evidence": "```\nGET /only-text\n```",
+        }
+        text = render_finding_poc(finding)
+        self.assertIn("no structured request was recorded", text)
 
 
 if __name__ == "__main__":
