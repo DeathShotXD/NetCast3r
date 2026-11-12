@@ -96,6 +96,9 @@ RESOURCES = (
     ("netcast3r://helix/scripts", "Toolsmith scripts",
      "The durable scripts Helix wrote for itself, with their last run.",
      "application/json"),
+    ("netcast3r://continuity", "Continuity",
+     "The current process, the previous boot's uptime, and what was resumed.",
+     "application/json"),
     ("netcast3r://mcp", "MCP server",
      "The MCP server's live state: policy, client, advertised capabilities.",
      "application/json"),
@@ -143,6 +146,7 @@ _STATIC_RESOURCES: dict[str, tuple[str, dict]] = {
     "netcast3r://checklists": ("/api/v1/checklists", {}),
     "netcast3r://agents": ("/api/v1/agents", {}),
     "netcast3r://helix/scripts": ("/api/v1/helix/scripts", {"limit": 50}),
+    "netcast3r://continuity": ("/api/v1/continuity", {}),
     "netcast3r://mcp": ("/api/v1/mcp", {}),
 }
 

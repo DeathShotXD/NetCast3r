@@ -736,6 +736,16 @@ class MCPIntegrationTests(unittest.TestCase):
                       completion["result"]["completion"]["values"])
         server.close()
 
+    def test_continuity_resource_reads_the_live_boot(self):
+        server = MCPServer(plane=self.plane, policy=DEFAULT_POLICY, base=self.tmp)
+        got = server.handle({"jsonrpc": "2.0", "id": 1, "method": "resources/read",
+                             "params": {"uri": "netcast3r://continuity"}})
+        self.assertIn("result", got, got)
+        payload = json.loads(got["result"]["contents"][0]["text"])
+        self.assertIn("current", payload)
+        self.assertIn("run_counts", payload)
+        server.close()
+
     def test_resource_subscription_validates_and_tracks(self):
         server = MCPServer(plane=self.plane, policy=DEFAULT_POLICY, base=self.tmp)
         ok = server.handle({"jsonrpc": "2.0", "id": 1, "method": "resources/subscribe",

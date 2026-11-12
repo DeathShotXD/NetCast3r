@@ -698,6 +698,17 @@ class Server:
                 return _problem(404, "run not found")
             if parent.get("status") in ("running", "queued"):
                 return _problem(409, "run is still active", "stop it before resuming")
+            # A swarm checkpoints its planner state, so an explicit resume
+            # continues the same run id and transcript instead of forking a
+            # derived run that starts from zero.
+            try:
+                solvers = self._solvers()
+                if solvers.resumable(parent["id"]):
+                    row = solvers.resume(parent["id"])
+                    if row:
+                        return _json(row, 200)
+            except Exception:  # noqa: BLE001 - fall back to a derived run
+                pass
             options = dict(parent.get("options") or {})
             options["resume"] = True
             options["resume_from"] = parent["id"]
@@ -705,6 +716,31 @@ class Server:
                 options.setdefault("results_dir", str(getattr(self.config, "results_dir", "results")))
             return _json(self._start_run(parent["target"], options,
                                          parent_run_id=parent["id"]), 201)
+
+        @add("GET", r"/api/v1/continuity")
+        def continuity(ctx):
+            """What the framework remembers across a restart."""
+            items = self.index.list_director_log(limit=80)
+            boot = next((entry for entry in items
+                         if entry.get("kind") == "boot"
+                         and str(entry.get("message") or "").startswith("continuity")),
+                        None)
+            plane = control.read_control_plane(getattr(self, "base", None)) or {}
+            counts = {}
+            for status in ("running", "queued", "interrupted", "done",
+                           "stopped", "failed"):
+                _rows, total = self.index.list_runs(status=status, limit=1)
+                counts[status] = total
+            return _json({
+                "current": {"pid": os.getpid(),
+                            "started_at": plane.get("started_at") or "",
+                            "url": plane.get("url") or "",
+                            "version": plane.get("version") or ""},
+                "last_boot": boot,
+                "run_counts": counts,
+                "note": ("A restarted swarm resumes the same run id from its "
+                         "checkpoint; the note names what was resumed."),
+            })
 
         @add("GET", r"/api/v1/runs/(?P<id>[A-Za-z0-9_]+)/inventory")
         def run_inventory(ctx):

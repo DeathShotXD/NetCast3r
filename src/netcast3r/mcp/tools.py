@@ -5590,8 +5590,10 @@ TOOLS: tuple[Tool, ...] = (
          "medium", "runs", _schema({"run_id": _string("run id")}, ["run_id"]),
          "runs_stop", destructive=True),
     Tool("runs_resume", "Resume run",
-         "Start a resume run from a finished run's checkpoint and evidence store.",
-         "medium", "runs", _schema({"run_id": _string("parent run id")}, ["run_id"]),
+         "Resume a finished or interrupted run. A swarm continues the same run id "
+         "from its checkpoint; any other run starts a derived resume run from its "
+         "evidence store.",
+         "medium", "runs", _schema({"run_id": _string("run id")}, ["run_id"]),
          "runs_resume", open_world=True),
     Tool("runs_delete", "Delete run",
          "Delete a run, its findings, events, and (when no other run uses it) its evidence "

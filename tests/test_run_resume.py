@@ -6,6 +6,7 @@ view shows one continuous hunt rather than a fresh one.
 """
 
 import os
+import json
 import tempfile
 import threading
 import unittest
@@ -29,6 +30,11 @@ class _RecordingPool:
 
     def shutdown(self, wait=False, cancel_futures=False):
         return None
+
+
+def _noop_runner(run_id, target, options, emit, should_stop):
+    """A scan runner that does no network work, for route-level tests."""
+    return {"target": target, "pages": 0, "js_files": 0, "endpoints": 0}
 
 
 class SwarmCheckpointTests(unittest.TestCase):
@@ -81,7 +87,7 @@ class RunResumeTests(unittest.TestCase):
     def setUp(self):
         self.tmp = Path(tempfile.mkdtemp())
         self.server = build_server(results_dir=str(self.tmp / "results"),
-                                   base=self.tmp, recover=False)
+                                   base=self.tmp, runner=_noop_runner, recover=False)
         self.runner = self.server._solvers()
 
     def tearDown(self):
@@ -172,6 +178,34 @@ class RunResumeTests(unittest.TestCase):
         self.assertEqual(result["resumed"], [endless["id"]])
         self.assertIn(bounded["id"], result["skipped"])
         self.assertEqual(self.server.orphaned_runs, [])
+
+    def _post(self, path):
+        headers = {"host": "127.0.0.1:7857",
+                   "x-netcast3r-token": self.server.token}
+        return self.server.route("POST", path, {}, headers, b"")
+
+    def test_resume_route_continues_the_same_swarm_run(self):
+        mission = self._mission()
+        run = self._run(mission["id"], endless=True)
+        self.server.index.update_run(run["id"], status="interrupted")
+        self.server.index.set_run_checkpoint(
+            run["id"], {"v": 1, "rounds": 8})
+        self.runner.pool = _RecordingPool()
+        response = self._post(f"/api/v1/runs/{run['id']}/resume")
+        self.assertEqual(response.status, 200)
+        body = json.loads(response.body.decode())
+        # The route returns the same run id, not a derived run.
+        self.assertEqual(body["id"], run["id"])
+
+    def test_resume_route_forks_a_bounded_run(self):
+        mission = self._mission()
+        run = self._run(mission["id"])  # bounded: not a resumable swarm
+        self.server.index.update_run(run["id"], status="done")
+        response = self._post(f"/api/v1/runs/{run['id']}/resume")
+        self.assertEqual(response.status, 201)
+        body = json.loads(response.body.decode())
+        self.assertNotEqual(body["id"], run["id"])
+        self.assertEqual((body.get("options") or {}).get("resume_from"), run["id"])
 
 
 if __name__ == "__main__":
