@@ -16,7 +16,7 @@
   class="nc-brandmark {klass}"
   width={size}
   height={size}
-  viewBox="-79.9 -0.4 961.9 961.9"
+  viewBox="-82.1 156 967 967"
   fill="none"
   role="img"
   aria-label="NetCast3r"

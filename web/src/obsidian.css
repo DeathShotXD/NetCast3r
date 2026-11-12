@@ -171,39 +171,39 @@ body {
 .obs-brand-mark {
   position: relative;
   display: grid;
-  width: 36px;
-  height: 36px;
-  flex: 0 0 36px;
+  width: 38px;
+  height: 38px;
+  flex: 0 0 38px;
   place-items: center;
-  border: 1px solid var(--obs-line-acid);
-  border-radius: 6px;
-  background:
-    radial-gradient(circle at 32% 22%, rgba(200, 248, 26, 0.2), transparent 66%),
-    linear-gradient(158deg, rgba(159, 35, 221, 0.18), rgba(5, 6, 10, 0.7) 62%);
-  box-shadow:
-    inset 0 0 18px rgba(200, 248, 26, 0.06),
-    0 6px 18px -12px rgba(200, 248, 26, 0.5);
+  isolation: isolate;
 }
 
-.obs-brand-mark::after {
+/* The monogram sits in a bare pocket of the rail. A soft acid fog rises
+   behind the brushstroke so the N reads as neon emerging from a deep hollow
+   rather than a badge pinned to a frame. */
+.obs-brand-mark::before {
   content: '';
   position: absolute;
-  inset: 0;
-  border-radius: inherit;
-  padding: 1px;
-  background: linear-gradient(150deg, rgba(226, 255, 119, 0.5), transparent 45%, rgba(159, 35, 221, 0.4));
-  -webkit-mask:
-    linear-gradient(#000 0 0) content-box,
-    linear-gradient(#000 0 0);
-  -webkit-mask-composite: xor;
-  mask-composite: exclude;
+  inset: -4px;
+  z-index: -1;
+  border-radius: 50%;
+  background: radial-gradient(
+    circle at 50% 54%,
+    rgba(200, 248, 26, 0.18) 0%,
+    rgba(200, 248, 26, 0.07) 38%,
+    rgba(200, 248, 26, 0.02) 62%,
+    transparent 74%
+  );
+  filter: blur(3px);
+  opacity: 0.85;
+  transition: opacity 180ms var(--ease);
   pointer-events: none;
 }
 
 .obs-brand-mark .nc-brandmark {
-  width: 27px;
-  height: 27px;
-  filter: drop-shadow(0 0 7px rgba(200, 248, 26, 0.45));
+  width: 30px;
+  height: 30px;
+  filter: drop-shadow(0 0 10px rgba(200, 248, 26, 0.32));
 }
 
 .obs-brand-name {
@@ -549,8 +549,7 @@ body {
 /* A live hunt is reported by the brand mark itself: the monogram breathes
    neon while casts are in flight, so the sidebar reads as awake without a
    stray dot floating in a nav row. */
-.obs-brand-mark.is-live {
-  border-color: rgba(200, 248, 26, 0.38);
+.obs-brand-mark.is-live::before {
   animation: obs-brand-breathe 3.6s var(--ease) infinite;
 }
 
@@ -559,13 +558,13 @@ body {
 }
 
 @keyframes obs-brand-breathe {
-  0%, 100% { box-shadow: inset 0 0 18px rgba(200, 248, 26, 0.06), 0 0 0 rgba(200, 248, 26, 0); }
-  50% { box-shadow: inset 0 0 24px rgba(200, 248, 26, 0.15), 0 0 24px -4px rgba(200, 248, 26, 0.4); }
+  0%, 100% { opacity: 0.55; transform: scale(0.97); }
+  50% { opacity: 1; transform: scale(1.05); }
 }
 
 @keyframes obs-brand-glyph {
-  0%, 100% { filter: drop-shadow(0 0 6px rgba(200, 248, 26, 0.4)); }
-  50% { filter: drop-shadow(0 0 13px rgba(200, 248, 26, 0.8)); }
+  0%, 100% { filter: drop-shadow(0 0 8px rgba(200, 248, 26, 0.28)); }
+  50% { filter: drop-shadow(0 0 14px rgba(200, 248, 26, 0.35)); }
 }
 
 .obs-nav-badge.pulse {
@@ -6371,7 +6370,7 @@ html.nc-native .nc-tag {
   .obs-page,
   .screen-in,
   .obs-page .screen-in,
-  .obs-brand-mark.is-live,
+  .obs-brand-mark::before,
   .obs-brand-mark.is-live .nc-brandmark,
   .obs-nav-badge.pulse,
   .obs-castbar-signal::after,
@@ -8799,14 +8798,9 @@ html.nc-native .nc-tag {
   box-shadow: inset 2px 0 0 var(--obs-acid);
 }
 
-.obs-brand-mark {
-  transition: border-color 180ms var(--ease), box-shadow 180ms var(--ease);
-}
-
-.obs-sidebar:hover .obs-brand-mark,
-.obs-brand:focus-within .obs-brand-mark {
-  border-color: rgba(200, 248, 26, 0.55);
-  box-shadow: inset 0 0 22px rgba(200, 248, 26, 0.08), 0 0 18px rgba(200, 248, 26, 0.08);
+.obs-sidebar:hover .obs-brand-mark::before,
+.obs-brand:focus-within .obs-brand-mark::before {
+  opacity: 1;
 }
 
 .obs-card {
