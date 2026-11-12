@@ -249,6 +249,43 @@ class MCPIntegrationTests(unittest.TestCase):
         self.assertEqual(fetched["encoding"], "text")
         self.assertIn("response", fetched["content"])
 
+    def test_helix_toolsmith_scripts_write_read_and_run(self):
+        mission = self.create_mission()
+        written = self.registry.call("helix_script_write", {
+            "name": "probe-echo", "content": 'print("helix-ok")\n',
+            "purpose": "round-trip", "language": "python",
+            "tags": ["smoke"], "mission_id": mission["id"]}, actor="test/1")[0]
+        self.assertEqual(written["name"], "probe-echo")
+        self.assertEqual(written["language"], "python")
+
+        listing = self.call("helix_scripts_list", q="probe", limit=10)[0]
+        self.assertEqual(len(listing["items"]), 1)
+        self.assertEqual(listing["items"][0]["id"], written["id"])
+
+        fetched = self.call("helix_script_get", script_id=written["id"])[0]
+        self.assertIn("helix-ok", fetched["content"])
+
+        # Supervised policy: running code is high risk, so it is held for an approval.
+        payload, is_error = self.call("helix_script_run", script_id=written["id"])
+        self.assertTrue(is_error)
+        self.assertEqual(payload["error"]["code"], "approval_required")
+
+        # A full-policy registry still needs an explicit confirm.
+        ctx = ToolContext(plane=self.plane, policy="full", base=self.tmp)
+        registry = ToolRegistry(ctx)
+        payload, is_error = registry.call(
+            "helix_script_run", {"script_id": written["id"]}, actor="test")
+        self.assertTrue(is_error)
+        self.assertEqual(payload["error"]["code"], "confirm_required")
+        result = registry.call(
+            "helix_script_run", {"script_id": written["id"], "confirm": True},
+            actor="test")[0]
+        self.assertEqual(result["exit_code"], 0)
+        self.assertIn("helix-ok", result["stdout"])
+
+        catalogue = self.call("helix_tools", q="curl")[0]
+        self.assertIn("capabilities", catalogue)
+
     def test_submission_ledger_tools_record_real_rows(self):
         mission = self.create_mission()
         payload, is_error = self.call(

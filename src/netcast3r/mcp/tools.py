@@ -1214,6 +1214,45 @@ def harness_tick(ctx: ToolContext, args: dict) -> dict:
     return _call(ctx, "POST", "/api/v1/harness/tick", body=body)
 
 
+def helix_scripts_list(ctx: ToolContext, args: dict) -> dict:
+    query = {key: args[key] for key in ("q", "limit") if key in args}
+    return _call(ctx, "GET", "/api/v1/helix/scripts", query=query or None)
+
+
+def helix_script_get(ctx: ToolContext, args: dict) -> dict:
+    return _call(ctx, "GET", f"/api/v1/helix/scripts/{args['script_id']}")
+
+
+def helix_script_write(ctx: ToolContext, args: dict) -> dict:
+    body = {key: args[key] for key in
+            ("name", "content", "purpose", "language", "tags", "mission_id")
+            if key in args}
+    return _call(ctx, "POST", "/api/v1/helix/scripts", body=body)
+
+
+def helix_script_run(ctx: ToolContext, args: dict) -> dict:
+    body = {key: args[key] for key in ("args", "timeout", "mission_id")
+            if key in args}
+    return _call(ctx, "POST", f"/api/v1/helix/scripts/{args['script_id']}/run",
+                 body=body)
+
+
+def helix_script_delete(ctx: ToolContext, args: dict) -> dict:
+    body = {key: args[key] for key in ("confirm",) if key in args}
+    return _call(ctx, "DELETE", f"/api/v1/helix/scripts/{args['script_id']}",
+                 body=body)
+
+
+def helix_tools(ctx: ToolContext, args: dict) -> dict:
+    query = {key: args[key] for key in ("q",) if key in args}
+    return _call(ctx, "GET", "/api/v1/helix/tools", query=query or None)
+
+
+def helix_tool_study(ctx: ToolContext, args: dict) -> dict:
+    body = {key: args[key] for key in ("tool", "query") if key in args}
+    return _call(ctx, "POST", "/api/v1/helix/tools/study", body=body)
+
+
 def finding_artifact_add(ctx: ToolContext, args: dict) -> dict:
     body = {key: args[key] for key in ("name", "content", "encoding", "content_type")
             if key in args}
@@ -4425,6 +4464,13 @@ _HANDLERS.update({
     "harness_develop": harness_develop,
     "harness_recall": harness_recall,
     "harness_tick": harness_tick,
+    "helix_scripts_list": helix_scripts_list,
+    "helix_script_get": helix_script_get,
+    "helix_script_write": helix_script_write,
+    "helix_script_run": helix_script_run,
+    "helix_script_delete": helix_script_delete,
+    "helix_tools": helix_tools,
+    "helix_tool_study": helix_tool_study,
     "postex_plan": postex_plan,
     "agent_notes_write": agent_notes_write,
     "agent_notes_list": agent_notes_list,
@@ -5528,6 +5574,61 @@ TOOLS: tuple[Tool, ...] = (
          "medium", "learning",
          _schema({"mission_id": _string("optional mission id")}),
          "harness_tick"),
+    Tool("helix_scripts_list", "List toolsmith scripts",
+         "List the durable scripts Helix has written for itself: the name, purpose, "
+         "language, tags, and the last run's outcome. These are the operator's own "
+         "automation, reusable across turns.",
+         "low", "helix",
+         _schema({"q": _string("filter by name, purpose, or tag"),
+                  "limit": _integer("max rows", 1, 200, 50)}),
+         "helix_scripts_list", read_only=True),
+    Tool("helix_script_get", "Read a toolsmith script",
+         "Return one script's source and metadata, so it can be reviewed before it runs.",
+         "low", "helix",
+         _schema({"script_id": _string("script id or name")}, ["script_id"]),
+         "helix_script_get", read_only=True),
+    Tool("helix_script_write", "Write a toolsmith script",
+         "Store a script under the state directory for later runs. The name is "
+         "validated, the language is python, bash, or sh, and every write is recorded. "
+         "Writing is not running: run it with helix_script_run.",
+         "medium", "helix",
+         _schema({"name": _string("3-64 lowercase letters, digits, '-' or '_'"),
+                  "content": _string("the source"),
+                  "purpose": _string("what it is for"),
+                  "language": _string("python, bash, or sh", enum=["python", "bash", "sh"]),
+                  "tags": _array("free-form tags"),
+                  "mission_id": _string("optional mission id")},
+                 ["name", "content"]), "helix_script_write"),
+    Tool("helix_script_run", "Run a toolsmith script",
+         "Execute a stored script without a shell, bounded by a timeout, with the "
+         "mission context in the environment. Output is capped and every run is "
+         "recorded. High risk: it runs code, so it needs an approved approval in "
+         "supervised mode or confirm=true in full mode.",
+         "high", "helix",
+         _schema({"script_id": _string("script id or name"),
+                  "args": _array("positional arguments"),
+                  "timeout": _integer("seconds", 1, 300, 60),
+                  "mission_id": _string("optional mission id")},
+                 ["script_id"]),
+         "helix_script_run", destructive=True, open_world=True),
+    Tool("helix_script_delete", "Delete a toolsmith script",
+         "Remove a stored script and its file. High risk; needs an approval or a confirm.",
+         "high", "helix",
+         _schema({"script_id": _string("script id or name")}, ["script_id"]),
+         "helix_script_delete", destructive=True),
+    Tool("helix_tools", "Toolsmith catalogue",
+         "The installed-tool catalogue grouped by category, the local host's "
+         "capabilities, and the study notes Helix has kept about each tool.",
+         "low", "helix",
+         _schema({"q": _string("filter by tool or note text")}),
+         "helix_tools", read_only=True),
+    Tool("helix_tool_study", "Study a tool",
+         "Record what a tool is for and how to drive it, or search the notes. Keeps "
+         "the operator's tool knowledge durable across missions.",
+         "low", "helix",
+         _schema({"tool": _string("tool name"),
+                  "query": _string("or a free-text search")}),
+         "helix_tool_study"),
     Tool("finding_artifact_add", "Attach evidence",
          "Store a text or base64 evidence file with a finding. Files are written 0600 "
          "under the NetCast3r base directory, hashed, and listed with a download URL. "
