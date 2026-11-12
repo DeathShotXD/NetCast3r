@@ -9,6 +9,8 @@
     BenchResult,
     HarnessDiagnose,
     HarnessStatus,
+    HelixScript,
+    HelixScriptRun,
     McpInfo,
     McpTool,
     ToolCall,
@@ -16,6 +18,7 @@
   } from '../types';
   import Icon from '../ui/Icon.svelte';
   import Buffering from '../ui/Buffering.svelte';
+  import Confirm from '../ui/Confirm.svelte';
 
   const statusOrder: ToolCallStatus[] = [
     'ok',
@@ -73,6 +76,11 @@
   let harnessBusy = $state('');
   let roster = $state<AgentRoster | null>(null);
   let rosterLane = $state<'all' | 'brain' | 'hunt' | 'learn'>('all');
+  let scripts = $state<HelixScript[]>([]);
+  let scriptBusy = $state('');
+  let scriptError = $state('');
+  let scriptRun = $state<HelixScriptRun | null>(null);
+  let pendingScript = $state<{ action: 'run' | 'delete'; script: HelixScript } | null>(null);
 
   const tools = $derived(info?.tools ?? []);
   const server = $derived(info?.server ?? null);
@@ -104,6 +112,15 @@
       if (a.routed !== b.routed) return a.routed ? -1 : 1;
       return a.agent.localeCompare(b.agent);
     });
+  });
+  const scriptTotals = $derived.by(() => {
+    let runs = 0;
+    let ok = 0;
+    for (const script of scripts) {
+      runs += script.runs || 0;
+      ok += script.successes || 0;
+    }
+    return { count: scripts.length, runs, ok };
   });
 
   const categories = $derived.by(() => {
@@ -178,12 +195,13 @@
       error = '';
     }
     try {
-      const [nextInfo, audit, approvalPage, nextHarness, nextRoster] = await Promise.all([
+      const [nextInfo, audit, approvalPage, nextHarness, nextRoster, scriptPage] = await Promise.all([
         api.mcpInfo(),
         api.toolCalls(auditQuery()),
         api.approvals('?status=pending&size=50'),
         api.harnessStatus().catch(() => null),
-        api.agents().catch(() => null)
+        api.agents().catch(() => null),
+        api.helixScripts('?limit=50').catch(() => ({ items: [] }))
       ]);
       info = nextInfo;
       calls = audit.items;
@@ -191,6 +209,7 @@
       approvals = approvalPage.items;
       harness = nextHarness;
       roster = nextRoster;
+      scripts = scriptPage.items;
       if (selectedTool) {
         selectedTool = nextInfo.tools.find((tool) => tool.name === selectedTool?.name) ?? null;
       }
@@ -199,6 +218,38 @@
     } finally {
       loading = false;
       refreshing = false;
+    }
+  }
+
+  async function refreshScripts() {
+    scriptError = '';
+    try {
+      scripts = (await api.helixScripts('?limit=50')).items;
+    } catch (exc) {
+      scriptError = exc instanceof Error ? exc.message : 'could not read the toolsmith';
+    }
+  }
+
+  async function applyScriptAction() {
+    const pending = pendingScript;
+    if (!pending) return;
+    scriptBusy = pending.script.id;
+    scriptError = '';
+    try {
+      if (pending.action === 'run') {
+        scriptRun = await api.helixScriptRun(pending.script.id, {
+          mission_id: pending.script.mission_id || ''
+        });
+      } else {
+        await api.helixScriptDelete(pending.script.id);
+        if (scriptRun?.script === pending.script.name) scriptRun = null;
+      }
+      await refreshScripts();
+    } catch (exc) {
+      scriptError = exc instanceof Error ? exc.message : 'the toolsmith action failed';
+    } finally {
+      scriptBusy = '';
+      pendingScript = null;
     }
   }
 
@@ -618,6 +669,88 @@
               <p class="obs-agent-fine">{roster.note}</p>
             {:else}
               <p class="obs-detail-note">The roster could not be read. It does not gate any control; retry on the next refresh.</p>
+            {/if}
+          </div>
+        </section>
+
+        <section class="obs-card obs-toolsmith" aria-label="toolsmith scripts">
+          <header class="obs-card-head">
+            <div>
+              <div class="obs-card-title"><Icon name="code" size={13} />Toolsmith</div>
+              <div class="obs-card-sub">
+                Scripts Helix wrote for itself: durable, sandboxed, and reused across missions.
+                {scriptTotals.count} script{scriptTotals.count === 1 ? '' : 's'}, {scriptTotals.runs} run{scriptTotals.runs === 1 ? '' : 's'}, {scriptTotals.ok} clean.
+              </div>
+            </div>
+            <button class="obs-btn obs-btn-ghost" type="button" disabled={refreshing} onclick={() => void refreshScripts()}>
+              <Icon name="refresh" size={12} />
+              refresh
+            </button>
+          </header>
+          <div class="obs-card-body">
+            {#if scriptError}
+              <div class="obs-agent-note is-warn" role="status">{scriptError}</div>
+            {/if}
+            {#if scripts.length}
+              <div class="obs-scripts">
+                {#each scripts as script (script.id)}
+                  <div class="obs-script-row">
+                    <div class="obs-script-main">
+                      <div class="obs-script-head">
+                        <span class="obs-script-name">{script.name}</span>
+                        <span class="obs-script-lang">{script.language}</span>
+                        {#if script.last_status}
+                          <span class="obs-script-status" data-status={script.last_status}>{script.last_status}</span>
+                        {/if}
+                      </div>
+                      {#if script.purpose}<p class="obs-script-purpose">{script.purpose}</p>{/if}
+                      <div class="obs-script-meta">
+                        <span>{script.runs} run{script.runs === 1 ? '' : 's'}</span>
+                        <span>{script.successes} ok</span>
+                        {#if script.failures}<span class="is-bad">{script.failures} failed</span>{/if}
+                        {#if script.mission_id}<span class="mono">{script.mission_id}</span>{/if}
+                      </div>
+                    </div>
+                    <div class="obs-script-actions">
+                      <button
+                        class="obs-btn obs-btn-sm"
+                        type="button"
+                        disabled={scriptBusy === script.id}
+                        onclick={() => (pendingScript = { action: 'run', script })}
+                      >
+                        {scriptBusy === script.id ? 'running' : 'run'}
+                      </button>
+                      <button
+                        class="obs-btn obs-btn-sm obs-btn-quiet"
+                        type="button"
+                        disabled={scriptBusy === script.id}
+                        onclick={() => (pendingScript = { action: 'delete', script })}
+                      >
+                        delete
+                      </button>
+                    </div>
+                  </div>
+                {/each}
+              </div>
+              {#if scriptRun}
+                <div class="obs-script-output" aria-label="last script run">
+                  <div class="obs-script-output-head">
+                    <span class="mono">{scriptRun.script}</span>
+                    <span class="obs-script-status" data-status={scriptRun.status}>{scriptRun.status}</span>
+                    <span class="mono">exit {scriptRun.exit_code} / {scriptRun.elapsed_ms} ms{scriptRun.timed_out ? ' / timed out' : ''}</span>
+                    <button class="obs-icon-btn" type="button" aria-label="dismiss output" onclick={() => (scriptRun = null)}>
+                      <Icon name="x" size={12} />
+                    </button>
+                  </div>
+                  {#if scriptRun.stdout}<pre class="obs-script-stdout">{scriptRun.stdout.trim()}</pre>{/if}
+                  {#if scriptRun.stderr}<pre class="obs-script-stderr">{scriptRun.stderr.trim()}</pre>{/if}
+                  {#if !scriptRun.stdout && !scriptRun.stderr}<p class="obs-detail-note">The script produced no output.</p>{/if}
+                </div>
+              {/if}
+            {:else}
+              <p class="obs-detail-note">
+                No scripts yet. Helix writes one when no installed tool fits a job; each is stored here with its runs and last status.
+              </p>
             {/if}
           </div>
         </section>
@@ -1052,3 +1185,16 @@
     </section>
   {/if}
 </div>
+
+{#if pendingScript}
+  <Confirm
+    title={pendingScript.action === 'run' ? 'Run this script?' : 'Delete this script?'}
+    body={pendingScript.action === 'run'
+      ? `Run ${pendingScript.script.name} in the toolshed sandbox, bounded by its timeout. Every run is recorded.`
+      : `Delete ${pendingScript.script.name} and its file. This cannot be undone.`}
+    confirmLabel={pendingScript.action === 'run' ? 'run' : 'delete'}
+    danger={pendingScript.action === 'delete'}
+    onConfirm={() => void applyScriptAction()}
+    onCancel={() => (pendingScript = null)}
+  />
+{/if}

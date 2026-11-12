@@ -939,6 +939,37 @@ export interface AgentRoster {
   note: string;
 }
 
+export interface HelixScript {
+  id: string;
+  name: string;
+  purpose: string;
+  language: string;
+  path: string;
+  mission_id: string;
+  source: string;
+  tags: string[];
+  runs: number;
+  successes: number;
+  failures: number;
+  last_run_at: string;
+  last_status: string;
+  created_at: string;
+  updated_at: string;
+  sha256: string;
+  content?: string;
+}
+
+export interface HelixScriptRun {
+  script: string;
+  path: string;
+  exit_code: number;
+  timed_out: boolean;
+  elapsed_ms: number;
+  status: string;
+  stdout: string;
+  stderr: string;
+}
+
 export interface McpServerState {
   schema?: number;
   pid?: number;
