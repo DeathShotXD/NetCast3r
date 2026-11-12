@@ -4559,7 +4559,7 @@ TOOLS: tuple[Tool, ...] = (
     Tool("mission_start_run", "Start mission scan",
          "Start a scan for a mission. The target must match the mission scope. "
          "The mission becomes active and the run is linked automatically.",
-         "medium", "missions",
+         "medium", "runs",
          _schema({"mission_id": _string("mission id"),
                   "target": _string("optional target override, must be in scope"),
                   "options": _object("scan options: depth, tier, rate, timeout, ...")},
@@ -4567,7 +4567,7 @@ TOOLS: tuple[Tool, ...] = (
     Tool("agent_status", "Mission agent status",
          "Read the bounded mission runtime: state, plan, task timeline, independent "
          "verification, budget use, and model calls. Read-only.",
-         "low", "missions",
+         "low", "agents",
          _schema({"mission_id": _string("mission id")}, ["mission_id"]),
          "agent_status", read_only=True),
     Tool("model_solve", "Run a bounded model action loop",
@@ -4575,7 +4575,7 @@ TOOLS: tuple[Tool, ...] = (
          "calls for a mission. Only low and medium read and probe tools are on the "
          "allow-list; the loop cannot spend an approval or create a finding. It "
          "runs as a live run with Reason/Act/Observe/Decide stages.",
-         "medium", "missions",
+         "medium", "agents",
          _schema({"mission_id": _string("mission id"),
                   "max_steps": _integer("model steps", 1, 6, 3),
                   "max_seconds": _integer("wall-clock cap", 10, 600, 240),
@@ -4587,7 +4587,7 @@ TOOLS: tuple[Tool, ...] = (
          "and write durable notes. This is NetCast3r operating as its own harness: "
          "It creates hypotheses and "
          "notes, never findings.",
-         "medium", "missions",
+         "medium", "agents",
          _schema({"mission_id": _string("mission id"),
                   "max_steps": _integer("moves", 1, 30, 8),
                   "max_seconds": _integer("wall-clock cap", 30, 1800, 600),
@@ -4601,7 +4601,7 @@ TOOLS: tuple[Tool, ...] = (
          "scribe writes durable memory. Each role can be routed to a different "
          "provider or model, and a supported verdict can be cross-checked with a "
          "second provider. It creates hypotheses and notes, never findings.",
-         "medium", "missions",
+         "medium", "agents",
          _schema({"mission_id": _string("mission id"),
                   "max_steps": _integer("moves", 1, 36, 10),
                   "max_seconds": _integer("wall-clock cap", 30, 1800, 600),
@@ -4615,7 +4615,7 @@ TOOLS: tuple[Tool, ...] = (
          "brain that should run it. Set advise=true to also ask the configured "
          "model for a second opinion; the model can reorder, never change "
          "eligibility or scope. Reads only, creates nothing.",
-         "low", "missions",
+         "low", "director",
          _schema({"advise": _boolean("ask the model to re-rank", False)}),
          "prime_portfolio"),
     Tool("director_status", "Read the autonomous director",
@@ -4625,7 +4625,7 @@ TOOLS: tuple[Tool, ...] = (
          "the mission moved. This returns its state, what is in flight, per-mission "
          "cooldowns and parks, and the eligible-mission count. Set portfolio=true "
          "to include the current ranking.",
-         "low", "missions",
+         "low", "director",
          _schema({"portfolio": _boolean("include the Prime ranking", False)}),
          "director_status"),
     Tool("director_control", "Control the autonomous director",
@@ -4635,7 +4635,7 @@ TOOLS: tuple[Tool, ...] = (
          "filter (autonomous, supervised, or all); kill is the kill switch and "
          "cancels what the director started, plus every run when all=true. The "
          "director never creates a finding or decides an approval.",
-         "medium", "missions",
+         "medium", "director",
          _schema({"action": {"type": "string", "description": "what to do",
                              "enum": ["engage", "disengage", "pause", "resume",
                                       "tune", "tick", "advise", "kill"]},
@@ -4651,7 +4651,7 @@ TOOLS: tuple[Tool, ...] = (
          "Newest-first log of what the director did: boots, control changes, "
          "which mission and mode it started, and how each run finished, including "
          "the no-progress and park decisions. This is the record, not a summary.",
-         "low", "missions",
+         "low", "director",
          _schema({"limit": _integer("entries", 1, 2000, 100)}), "director_log"),
     Tool("graph_build", "Build the mission evidence graph",
          "Derive the attack-surface graph for one mission from stored, real "
@@ -4660,21 +4660,21 @@ TOOLS: tuple[Tool, ...] = (
          "impact. Every edge records its provenance and confidence, so nothing is "
          "presented as a fact without evidence. Idempotent; rebuild after new "
          "runs. Creates nothing but graph rows.",
-         "medium", "missions",
+         "medium", "graph",
          _schema({"mission_id": _string("mission id")}, ["mission_id"]),
          "graph_build"),
     Tool("mission_graph", "Read a mission's evidence graph",
          "Return the nodes, edges, and candidate paths for one mission. Nodes are "
          "typed (target, host, ip, endpoint, service, technology, identity, "
          "credential, hypothesis, finding) and edges carry their evidence.",
-         "low", "missions",
+         "low", "graph",
          _schema({"mission_id": _string("mission id")}, ["mission_id"]),
          "mission_graph"),
     Tool("threat_map_get", "Read the scored mission threat map",
          "Return the evidence-backed threat map for one mission: scored hosts, "
          "endpoints, auth surfaces, open leads, findings, edges, and candidate "
          "paths. Prefer this over a flat asset list.",
-         "low", "missions",
+         "low", "graph",
          _schema({"mission_id": _string("mission id"),
                   "limit": _integer("max nodes", 8, 200, 80)},
                  ["mission_id"]),
@@ -4683,7 +4683,7 @@ TOOLS: tuple[Tool, ...] = (
          "Return the candidate paths derived for one mission, each with its steps "
          "and verification state (candidate, verifying, verified, partial, "
          "refuted, blocked, inconclusive).",
-         "low", "missions",
+         "low", "graph",
          _schema({"mission_id": _string("mission id")}, ["mission_id"]),
          "paths_list"),
     Tool("path_verify", "Verify an attack path step by step",
@@ -4691,7 +4691,7 @@ TOOLS: tuple[Tool, ...] = (
          "risk-gated tools every other caller uses, and record what each "
          "observation supports, refutes, or leaves inconclusive. It appears in "
          "Live Runs. It never creates a finding.",
-         "medium", "missions",
+         "medium", "graph",
          _schema({"path_id": _string("path id"),
                   "policy": {"type": "string", "description": "tool policy",
                              "enum": ["readonly", "supervised", "full"]}},
@@ -4701,7 +4701,7 @@ TOOLS: tuple[Tool, ...] = (
          "identity, or a credential (mask the secret value). Use confidence "
          "'hypothesis' for a claim that is not yet observed. Idempotent by "
          "(mission, kind, key).",
-         "medium", "missions",
+         "medium", "graph",
          _schema({"mission_id": _string("mission id"),
                   "kind": _string("node kind"),
                   "key": _string("stable natural key"),
@@ -4715,7 +4715,7 @@ TOOLS: tuple[Tool, ...] = (
          "Record a relationship between two graph nodes, with the evidence that "
          "supports it. Use the node ids returned by mission_graph or "
          "graph_node_add.",
-         "medium", "missions",
+         "medium", "graph",
          _schema({"mission_id": _string("mission id"),
                   "src": _string("source node id"),
                   "dst": _string("destination node id"),
@@ -4814,7 +4814,7 @@ TOOLS: tuple[Tool, ...] = (
                  ["mission_id", "hosts"]), "surface_seed", open_world=True),
     Tool("schedules_list", "List mission schedules",
          "List Once/Weekly/verify-again schedules for a mission.",
-         "low", "missions",
+         "low", "schedules",
          _schema({"mission_id": _string("mission id"),
                   "status": _string("active|done|paused"),
                   "limit": _integer("rows", 1, 100, 50)},
@@ -4822,7 +4822,7 @@ TOOLS: tuple[Tool, ...] = (
     Tool("schedule_create", "Create a verify-again schedule",
          "Schedule a Once or Weekly verify-again pass that queues a director "
          "direction when due. Never widens scope and never creates findings.",
-         "medium", "missions",
+         "medium", "schedules",
          _schema({"mission_id": _string("mission id"),
                   "name": _string("schedule name"),
                   "mode": {"type": "string",
@@ -4834,7 +4834,7 @@ TOOLS: tuple[Tool, ...] = (
                  ["mission_id"]), "schedule_create"),
     Tool("schedule_fire", "Fire a schedule now",
          "Queue the schedule's verify-again direction immediately.",
-         "medium", "missions",
+         "medium", "schedules",
          _schema({"schedule_id": _string("schedule id")}, ["schedule_id"]),
          "schedule_fire"),
     Tool("mission_report_pdf", "Export a mission PDF report",
@@ -4857,21 +4857,21 @@ TOOLS: tuple[Tool, ...] = (
          "Which stage the engagement is in - recon, fingerprint, surface, "
          "hypotheses, verify, chain, or report - why, and which brain should "
          "run next. Computed from stored evidence only.",
-         "low", "missions",
+         "low", "campaign",
          _schema({"mission_id": _string("mission id")}, ["mission_id"]),
          "campaign_status"),
     Tool("direction_add", "Queue an operator direction for a mission",
          "Inject a queued instruction into a mission. The director and the "
          "brains pick it up as a priority objective. Mention a specific lead "
          "or finding with @lead:<id> or @finding:<id>.",
-         "medium", "missions",
+         "medium", "director",
          _schema({"mission_id": _string("mission id"),
                   "body": _string("the direction"),
                   "created_by": _string("who queued it")},
                  ["mission_id", "body"]), "direction_add"),
     Tool("directions_list", "List a mission's queued directions",
          "Show queued, consumed, and done operator directions for a mission.",
-         "low", "missions",
+         "low", "director",
          _schema({"mission_id": _string("mission id"),
                   "status": {"type": "string",
                              "enum": ["queued", "consumed", "done"]},
@@ -4883,7 +4883,7 @@ TOOLS: tuple[Tool, ...] = (
          "preconditions, the evidence it must gather first, the tool steps that "
          "test it, and the observation that turns a test into a lead. Every "
          "module plans and tests; none asserts a finding.",
-         "low", "missions",
+         "low", "exploit",
          _schema({"q": _string("optional free-text filter"),
                   "limit": _integer("modules", 1, 200, 50)}, []),
          "exploit_catalog"),
@@ -4891,7 +4891,7 @@ TOOLS: tuple[Tool, ...] = (
          "Rank the catalog against a technology, a signal, or a category. Use it "
          "to pick the right test for the surface you actually observed, rather "
          "than a scanner's fixed list.",
-         "low", "missions",
+         "low", "exploit",
          _schema({"q": _string("query, e.g. idor jwt ssrf"),
                   "limit": _integer("modules", 1, 200, 20)}, ["q"]),
          "exploit_search"),
@@ -4900,7 +4900,7 @@ TOOLS: tuple[Tool, ...] = (
          "(build=true) turn the ready modules into falsifiable hypotheses the "
          "mesh can test. 'ready' means the mission already carries the evidence "
          "the module needs. It creates leads, never findings.",
-         "medium", "missions",
+         "medium", "exploit",
          _schema({"mission_id": _string("mission id"),
                   "limit": _integer("modules", 1, 40, 5),
                   "build": _boolean("create hypotheses for ready modules", True)},
@@ -4908,12 +4908,12 @@ TOOLS: tuple[Tool, ...] = (
     Tool("chain_templates", "List exploit-chain templates",
          "Read the built-in chain templates: git-to-source-audit, "
          "token-to-auth-profile, jwt-forge-to-auth-profile, sqli-union-to-data.",
-         "low", "missions", _schema({}, []), "chain_templates"),
+         "low", "exploit", _schema({}, []), "chain_templates"),
     Tool("chain_execute", "Run a typed exploit chain",
          "Execute ordered steps: extract, auth_profile, http, tool, script, "
          "assert, pivot, exploit_run. Scope, risk, and approval gates apply to "
          "every step. A chain stages observations/candidates, never findings.",
-         "medium", "missions",
+         "medium", "exploit",
          _schema({"mission_id": _string("mission id"),
                   "steps": _array("typed steps", {"type": "object"}),
                   "template": _string("built-in template name"),
@@ -4928,7 +4928,7 @@ TOOLS: tuple[Tool, ...] = (
          "When a step supports, it stages a **candidate** with the raw evidence "
          "attached - never a finding. It appears in Live Runs. Promote a "
          "candidate to a finding yourself when you have reproduced it.",
-         "medium", "missions",
+         "medium", "exploit",
          _schema({"mission_id": _string("mission id"),
                   "module_id": _string("module id from exploit_search"),
                   "target": _string("a specific in-scope endpoint to test"),
@@ -4938,7 +4938,7 @@ TOOLS: tuple[Tool, ...] = (
     Tool("candidates_list", "List staged finding candidates",
          "Reproducible differences exploit tests observed, with the raw evidence. "
          "A candidate is not a finding; promotion is a separate operator action.",
-         "low", "missions",
+         "low", "candidates",
          _schema({"mission_id": _string("mission id"),
                   "status": {"type": "string",
                              "enum": ["candidate", "promoted", "dismissed"]},
@@ -4949,7 +4949,7 @@ TOOLS: tuple[Tool, ...] = (
          "exists (recorded request steps). Pass force=true with notes to "
          "override a missing PoC; pass verify=true to demand a live assertion "
          "pass first. An agent never promotes on its own.",
-         "medium", "missions",
+         "medium", "candidates",
          _schema({"candidate_id": _string("candidate id"),
                   "severity": _string("override severity"),
                   "impact": _string("impact statement"),
@@ -4959,7 +4959,7 @@ TOOLS: tuple[Tool, ...] = (
                  ["candidate_id"]), "candidate_promote"),
     Tool("candidate_dismiss", "Dismiss a candidate",
          "Mark a staged candidate as dismissed when it does not reproduce.",
-         "low", "missions",
+         "low", "candidates",
          _schema({"candidate_id": _string("candidate id")}, ["candidate_id"]),
          "candidate_dismiss"),
     Tool("params_extract", "Extract observed parameters",
@@ -5013,7 +5013,7 @@ TOOLS: tuple[Tool, ...] = (
          "JSON, or pasted brief and show exactly which assets are already "
          "covered, which exclusions would be added, and which new in-scope "
          "assets would expand the mission's authorisation. It writes nothing.",
-         "low", "missions",
+         "low", "programs",
          _schema({"mission_id": _string("mission id"),
                   "brief": _string("CSV, JSON, or pasted program brief"),
                   "filename": _string("optional filename, used to detect platform"),
@@ -5027,7 +5027,7 @@ TOOLS: tuple[Tool, ...] = (
          "parsed in-scope and out-of-scope assets, rules, the applied diff, "
          "filename, actor, and time. The mission's live scope remains the "
          "authorisation; this is its audit trail.",
-         "low", "missions",
+         "low", "programs",
          _schema({"mission_id": _string("mission id"),
                   "limit": _integer("entries", 1, 500, 50)},
                  ["mission_id"]), "program_imports", read_only=True),
@@ -5037,7 +5037,7 @@ TOOLS: tuple[Tool, ...] = (
          "asset is held back unless allow_expand is explicitly true; that flag "
          "changes the mission's authorisation boundary, so it needs a human "
          "decision in supervised mode. Never creates a finding.",
-         "high", "missions",
+         "high", "programs",
          _schema({"mission_id": _string("mission id"),
                   "brief": _string("CSV, JSON, or pasted program brief"),
                   "filename": _string("optional filename, used to detect platform"),
@@ -5127,7 +5127,7 @@ TOOLS: tuple[Tool, ...] = (
          "The compact snapshot the main brain reasons over: missions and their "
          "stage, the director, recent runs and stops, the tool-call audit, shared "
          "knowledge, open leads, candidates, the host, and the MCP connections.",
-         "low", "missions",
+         "low", "brain",
          _schema({"mission_id": _string("optional focus mission")}, []),
          "brain_context"),
     Tool("brain_chat", "Talk to the main brain",
@@ -5135,7 +5135,7 @@ TOOLS: tuple[Tool, ...] = (
          "live snapshot of the whole control plane and can steer the hunt: queue "
          "a direction for a mission, engage, pause, or tune the director, or run "
          "one exploit module. It never creates a finding or submits a report.",
-         "medium", "missions",
+         "medium", "brain",
          _schema({"message": _string("what to ask or instruct"),
                   "mission_id": _string("optional focus mission"),
                   "history": _array("prior turns", {"type": "object"}),
@@ -5146,7 +5146,7 @@ TOOLS: tuple[Tool, ...] = (
          "target=brain talks to the main brain; director queues a mission "
          "direction; both does both. Optional @agent:name mentions steer a "
          "specific swarm role. Spectators see the instruct event on the live bus.",
-         "medium", "missions",
+         "medium", "brain",
          _schema({"message": _string("mid-hunt follow-up"),
                   "mission_id": _string("required for director/both/swarm/hunt"),
                   "target": {"type": "string",
@@ -5160,7 +5160,7 @@ TOOLS: tuple[Tool, ...] = (
          "The main brain's own memory: every operator message, every autonomous "
          "cognition turn, and every steering action it applied, newest first, "
          "with the loop state.",
-         "low", "missions",
+         "low", "brain",
          _schema({"limit": _integer("turns", 1, 1000, 60),
                   "mission_id": _string("optional focus mission")}, []),
          "brain_journal"),
@@ -5168,7 +5168,7 @@ TOOLS: tuple[Tool, ...] = (
          "The never-ending cognition loop that runs beside the director: it "
          "observes the whole plane on a cadence and decides the next move. "
          "Actions: status (default), pause, engage, tick (think now), interval.",
-         "medium", "missions",
+         "medium", "brain",
          _schema({"action": {"type": "string",
                              "enum": ["status", "pause", "engage", "tick", "interval"],
                              "description": "what to do with the loop"},
@@ -5180,18 +5180,18 @@ TOOLS: tuple[Tool, ...] = (
          "the API Top 10 2023, the LLM Top 10 2025, the 2025 research classes, "
          "cloud, mobile, and supply chain, with the modules, tools, evidence, "
          "and expected impact for each.",
-         "low", "missions", _schema({}), "checklist_catalog"),
+         "low", "coverage", _schema({}), "checklist_catalog"),
     Tool("coverage_get", "Read a mission's coverage",
          "Per-mission checklist state: counts by status, per-category progress, "
          "the percentage closed, and the next highest-impact items to test.",
-         "low", "missions",
+         "low", "coverage",
          _schema({"mission_id": _string("mission id")}, ["mission_id"]),
          "coverage_get"),
     Tool("coverage_mark", "Close or move a checklist item",
          "Record the state of one checklist item against the evidence you have. "
          "Statuses: untested, in_progress, covered, vulnerable, blocked. A "
          "`vulnerable` item is a lead, not a finding.",
-         "medium", "missions",
+         "medium", "coverage",
          _schema({"mission_id": _string("mission id"),
                   "item_id": _string("checklist item id"),
                   "status": {"type": "string",
@@ -5206,7 +5206,7 @@ TOOLS: tuple[Tool, ...] = (
          "autonomous mission scoped to that host and engages the director, which "
          "then drives the whole campaign and keeps going. Talk to the brain to "
          "steer it; pause the director to stop.",
-         "medium", "missions",
+         "medium", "campaign",
          _schema({"target": _string("domain or URL"),
                   "domains": _array("start one campaign per target", {"type": "string"}),
                   "title": _string("optional title"),
@@ -5234,7 +5234,7 @@ TOOLS: tuple[Tool, ...] = (
          "propose ordered post-exploitation objectives - AD, cloud, and lateral "
          "movement - each with its preconditions and the evidence it still needs. "
          "It plans only; every objective is a gated module.",
-         "low", "missions",
+         "low", "post-exploitation",
          _schema({"mission_id": _string("mission id"),
                   "limit": _integer("objectives", 1, 40, 10)},
                  ["mission_id"]), "postex_plan"),
@@ -5242,7 +5242,7 @@ TOOLS: tuple[Tool, ...] = (
          "Run a deterministic read-only hunt for a mission: scope, fingerprint, "
          "safe surface paths, technique and chain ranking, and explicit "
          "hypotheses. It does not need an external agent and creates no finding.",
-         "medium", "missions",
+         "medium", "runs",
          _schema({"mission_id": _string("mission id")}, ["mission_id"]),
          "mission_hunt", open_world=True),
     Tool("agent_start", "Start mission agent",
@@ -5250,7 +5250,7 @@ TOOLS: tuple[Tool, ...] = (
          "inventory of existing evidence, an optional model analysis, and an "
          "independent verifier. Every action is a typed, audited tool call. The "
          "runtime never creates a finding, widens scope, or spends an approval.",
-         "medium", "missions",
+         "medium", "agents",
          _schema({"mission_id": _string("mission id"),
                   "use_model": _boolean("ask a model for one advisory analysis"),
                   "max_tasks": _integer("task cap", 4, 20, 8),
@@ -5265,18 +5265,18 @@ TOOLS: tuple[Tool, ...] = (
                  ["mission_id"]), "agent_start", open_world=True),
     Tool("agent_pause", "Pause mission agent",
          "Pause after the current task. The durable task list and evidence stay put.",
-         "low", "missions",
+         "low", "agents",
          _schema({"mission_id": _string("mission id")}, ["mission_id"]),
          "agent_pause"),
     Tool("agent_resume", "Resume mission agent",
          "Continue a paused or interrupted plan from its first unfinished task.",
-         "low", "missions",
+         "low", "agents",
          _schema({"mission_id": _string("mission id")}, ["mission_id"]),
          "agent_resume"),
     Tool("agent_stop", "Stop mission agent",
          "Cooperatively stop the mission runtime. Pending tasks are marked skipped and "
          "the stop is audited. Always low risk so any policy can kill a run.",
-         "low", "missions",
+         "low", "agents",
          _schema({"mission_id": _string("mission id")}, ["mission_id"]),
          "agent_stop"),
     Tool("scan_start", "Start ad-hoc scan",
@@ -5687,7 +5687,7 @@ TOOLS: tuple[Tool, ...] = (
          "nodes, and finding link so a human can see exactly what happened. "
          "The progress label distinguishes untested from supported, refuted, "
          "inconclusive, and promoted. A lead is not a finding.",
-         "low", "missions",
+         "low", "leads",
          _schema({"hypothesis_id": _string("hypothesis id"),
                   "limit": _integer("evidence entries", 1, 1000, 200)},
                  ["hypothesis_id"]), "hypothesis_evidence", read_only=True),
@@ -5697,7 +5697,7 @@ TOOLS: tuple[Tool, ...] = (
          "It never invents a lead: the note id is stored in the rationale, "
          "duplicates are skipped, and the result is still a hypothesis, not a "
          "finding.",
-         "medium", "missions",
+         "medium", "leads",
          _schema({"mission_id": _string("mission id"),
                   "limit": _integer("maximum new leads", 1, 20, 3)},
                  ["mission_id"]), "leads_sync"),
@@ -6128,7 +6128,7 @@ TOOLS: tuple[Tool, ...] = (
          "Persist one durable note for a mission: a plan, an observation, a blocked "
          "path, or a reflection. Notes survive across runs and are recalled by the "
          "native operator before it plans again.",
-         "low", "missions",
+         "low", "notes",
          _schema({"mission_id": _string("mission id"),
                   "kind": _string("plan, observation, reflection, blocked, or summary"),
                   "title": _string("short label"),
@@ -6139,14 +6139,14 @@ TOOLS: tuple[Tool, ...] = (
     Tool("agent_notes_list", "Read operator memory",
          "List the notes the native operator and harnesses have written for a mission, "
          "oldest first. Read this before planning so a repeated dead end is not retried.",
-         "low", "missions",
+         "low", "notes",
          _schema({"mission_id": _string("mission id"),
                   "limit": _integer("notes", 1, 500, 100)},
                  ["mission_id"]), "agent_notes_list", read_only=True),
     Tool("agent_notes_clear", "Clear operator memory",
          "Delete every operator note for a mission. Use only when the memory is stale "
          "or wrong, never to hide a failed step.",
-         "medium", "missions",
+         "medium", "notes",
          _schema({"mission_id": _string("mission id")},
                  ["mission_id"]), "agent_notes_clear"),
     Tool("lessons_record", "Record a lesson",
