@@ -221,6 +221,9 @@ class Server:
         self.director = None
         self.training_director = None
         self.brain_loop = None
+        # Runs that were live when the previous process died. serve() resumes
+        # the resumable ones after boot; tests that build a server never do.
+        self.orphaned_runs: list[str] = []
         self._training_director_lock = threading.Lock()
         self._routes = self._build_routes()
         try:
@@ -278,6 +281,41 @@ class Server:
                     runtime = SolverRunner(self)
                     self.solver_runner = runtime
         return runtime
+
+    def resume_orphaned_runs(self) -> dict:
+        """Continue swarms a restart killed, from their durable checkpoint.
+
+        Only runs that were live when the previous process died are considered.
+        Bounded runs, finished runs, and runs the operator stopped are never
+        resurrected. A run ends up with its original id and transcript, so the
+        live view shows one continuous hunt rather than a fresh one.
+        """
+        resume: list[str] = []
+        skipped: list[str] = []
+        pending = list(self.orphaned_runs)
+        self.orphaned_runs = []
+        if not pending:
+            return {"resumed": resume, "skipped": skipped}
+        solvers = self._solvers()
+        for run_id in pending:
+            try:
+                if not solvers.resumable(run_id):
+                    skipped.append(run_id)
+                    continue
+                row = solvers.resume(run_id)
+            except Exception:  # noqa: BLE001 - one bad row must not stop boot
+                skipped.append(run_id)
+                continue
+            if row:
+                resume.append(run_id)
+                try:
+                    self.index.add_director_log(
+                        "resume", f"resumed run {run_id} from its checkpoint")
+                except Exception:  # noqa: BLE001
+                    pass
+            else:
+                skipped.append(run_id)
+        return {"resumed": resume, "skipped": skipped}
 
     def _director(self):
         """The supervisor. Constructed lazily; its thread starts in serve()."""
@@ -4296,6 +4334,10 @@ def build_server(results_dir: str | Path = "results", base: Path | None = None,
     # Recovery means "a previous process died mid-run". When another live
     # server owns this base, these runs are not abandoned and must stay as-is.
     if recover and control.live_owner(base, exclude_pid=os.getpid()) is None:
+        try:
+            server.orphaned_runs = list(index.running_run_ids())
+        except Exception:  # noqa: BLE001 - a read failure must not block boot
+            server.orphaned_runs = []
         jobs.recover()
     try:
         from ..providers import diversify_tokenharbor_catalogs
@@ -4332,6 +4374,14 @@ def serve(host: str = "127.0.0.1", port: int = 7857, *, open_browser: bool = Tru
         raise
     _restore_session_token(server)
     server.auth_required = auth_required
+    # A restart should not lose a live engagement: resume swarms that were
+    # running when the previous process died, from their checkpoint.
+    try:
+        resumed = server.resume_orphaned_runs()
+        if resumed.get("resumed"):
+            print(f"resumed {len(resumed['resumed'])} run(s) from checkpoint")
+    except Exception:  # noqa: BLE001 - resume must never block serving
+        pass
     httpd = _ThreadingHTTPServer((host, port), _Handler)
     httpd.app = server  # type: ignore[attr-defined]
     httpd.daemon_threads = True

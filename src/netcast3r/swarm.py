@@ -290,7 +290,8 @@ class Swarm(Autopilot):
                  max_seconds: float = DEFAULT_SECONDS,
                  max_model_calls: int = DEFAULT_MODEL_CALLS,
                  run_id: str = "", on_step=None, should_stop=None,
-                 directive_source=None, endless: bool = False):
+                 directive_source=None, endless: bool = False,
+                 resume: dict | None = None, on_checkpoint=None):
         super().__init__(registry, lambda messages: {}, mission,
                          max_steps=max_steps, max_seconds=max_seconds,
                          max_model_calls=max_model_calls, run_id=run_id,
@@ -329,10 +330,96 @@ class Swarm(Autopilot):
         # Cached (host, path) anchors parsed once from the latest hunt.map so a
         # no-model round can still aim a raw-capture move at a real surface.
         self._portal_anchor_cache: list[str] | None = None
+        # Durable planner state. A restart rebuilds the mesh, restores this,
+        # and continues the same engagement instead of starting over.
+        self._seen: set[str] = set()
+        self.on_checkpoint = on_checkpoint
+        if isinstance(resume, dict) and resume:
+            self.restore(resume)
 
     def _emit(self, stage: str, payload: dict) -> None:
         with self._emit_lock:
             super()._emit(stage, payload)
+
+    # -- durability --------------------------------------------------------
+    def checkpoint(self) -> dict:
+        """Serializable planner state: enough to resume the same engagement."""
+        with self._lock:
+            return {
+                "v": 1,
+                "rounds": self.rounds,
+                "rotation": self.rotation,
+                "model_calls": self.model_calls,
+                "hypotheses_recorded": self.hypotheses_recorded,
+                "role_calls": dict(self.role_calls),
+                "role_actions": dict(self.role_actions),
+                "verdicts": dict(self.verdicts),
+                "corroborated": self.corroborated,
+                "contested": self.contested,
+                "observations": list(self._observations[-40:]),
+                "skip_rules": list(self._skip_rules[-40:]),
+                "skip_next": list(self._skip_next[-20:]),
+                "skip_ids": dict(list(self._skip_ids.items())[-40:]),
+                "focus": list(self._focus[-20:]),
+                "directives_applied": self.directives_applied,
+                "directive_seen": list(self._directive_seen)[-200:],
+                "seen": list(self._seen)[-400:],
+            }
+
+    def restore(self, state: dict) -> None:
+        """Apply a checkpoint. Every field is coerced, never trusted blindly."""
+        def as_int(value, default=0) -> int:
+            try:
+                return int(value)
+            except (TypeError, ValueError):
+                return default
+
+        def as_dict(value) -> dict:
+            return value if isinstance(value, dict) else {}
+
+        def as_list(value) -> list:
+            return value if isinstance(value, list) else []
+
+        self.rounds = max(self.rounds, as_int(state.get("rounds")))
+        self.rotation = as_int(state.get("rotation"))
+        self.model_calls = as_int(state.get("model_calls"))
+        self.hypotheses_recorded = as_int(state.get("hypotheses_recorded"))
+        self.corroborated = as_int(state.get("corroborated"))
+        self.contested = as_int(state.get("contested"))
+        self.directives_applied = as_int(state.get("directives_applied"))
+        calls = as_dict(state.get("role_calls"))
+        for role in ROLE_ORDER:
+            if role in calls:
+                self.role_calls[role] = as_int(calls.get(role))
+        actions = as_dict(state.get("role_actions"))
+        for role in ROLE_ORDER:
+            if role in actions:
+                self.role_actions[role] = as_int(actions.get(role))
+        verdicts = as_dict(state.get("verdicts"))
+        for key in ("supports", "refutes", "inconclusive"):
+            if key in verdicts:
+                self.verdicts[key] = as_int(verdicts.get(key))
+        self._observations = [row for row in as_list(state.get("observations"))
+                              if isinstance(row, dict)][-40:]
+        self._skip_rules = [row for row in as_list(state.get("skip_rules"))
+                            if isinstance(row, dict)][-40:]
+        self._skip_next = [row for row in as_list(state.get("skip_next"))
+                           if isinstance(row, dict)][-20:]
+        self._skip_ids = {str(k): v for k, v in as_dict(state.get("skip_ids")).items()
+                          if isinstance(v, dict)}
+        self._focus = [row for row in as_list(state.get("focus"))
+                       if isinstance(row, dict)][-20:]
+        self._directive_seen = {str(item) for item in as_list(state.get("directive_seen"))}
+        self._seen = {str(item) for item in as_list(state.get("seen"))}
+
+    def _save_ckpt(self) -> None:
+        sink = self.on_checkpoint
+        if sink is None:
+            return
+        try:
+            sink(self.checkpoint())
+        except Exception:  # noqa: BLE001 - a full disk must not stop the mesh
+            pass
 
     # -- model -------------------------------------------------------------
     def _ask(self, role: str, payload: dict,
@@ -1338,7 +1425,7 @@ class Swarm(Autopilot):
         empty_rounds = 0
         stop = "step budget reached"
         summary = ""
-        seen: set[str] = set()
+        seen = self._seen
         targets = 0
 
         self._emit("reason", {"agent": "strategist", "text": "convening the mesh"})
@@ -1424,6 +1511,7 @@ class Swarm(Autopilot):
                         "text": "no specialist proposed a move; rotating technique families"})
                     self.rotation += 3
                     time.sleep(min(10, 1 + self.rounds % 5))
+                    self._save_ckpt()
                     continue
                 stop = "no specialist proposed a usable move"
                 break
@@ -1565,6 +1653,7 @@ class Swarm(Autopilot):
                         "agent": "strategist",
                         "text": "the surface is pushing back; backing off and rotating"})
                     time.sleep(min(20, 2 + self.rounds % 6))
+                    self._save_ckpt()
                     continue
                 break
             # A round that ran nothing is a wasted round. One can happen when a
@@ -1580,11 +1669,14 @@ class Swarm(Autopilot):
                     self.rotation += 3
                     empty_rounds = 0
                     time.sleep(min(10, 1 + self.rounds % 5))
+                    self._save_ckpt()
                     continue
                 stop = "three rounds with no executed move"
                 summary = ("the strategist repeated work the mesh had already "
                            "done; stopped before spending the model budget")
                 break
+
+            self._save_ckpt()
 
         if not summary:
             summary = self._mesh_summary(executed)

@@ -641,6 +641,11 @@ CREATE INDEX IF NOT EXISTS idx_schedules_due
     ON mission_schedules(status, run_at);
 CREATE INDEX IF NOT EXISTS idx_schedules_mission
     ON mission_schedules(mission_id, status);
+CREATE TABLE IF NOT EXISTS run_checkpoints (
+    run_id TEXT PRIMARY KEY,
+    state_json TEXT,
+    updated_at REAL
+);
 """
 
 SEVERITY_ORDER = {"critical": 0, "high": 1, "medium": 2, "low": 3, "info": 4, "unknown": 5}
@@ -987,6 +992,32 @@ class Index:
                 event["progress"] = progress
             events.append(event)
         return events
+
+    # -- durable run checkpoints ------------------------------------------
+    def set_run_checkpoint(self, run_id: str, state: dict) -> None:
+        """Persist a swarm's planner state so a restart resumes the same run."""
+        with self._lock:
+            self.conn.execute(
+                "INSERT OR REPLACE INTO run_checkpoints (run_id, state_json, updated_at) "
+                "VALUES (?, ?, ?)",
+                (run_id, json.dumps(state, default=str), time.time()))
+            self.conn.commit()
+
+    def get_run_checkpoint(self, run_id: str) -> dict | None:
+        with self._lock:
+            row = self.conn.execute(
+                "SELECT state_json FROM run_checkpoints WHERE run_id = ?",
+                (run_id,)).fetchone()
+        if not row:
+            return None
+        data = _loads(row["state_json"], None)
+        return data if isinstance(data, dict) else None
+
+    def clear_run_checkpoint(self, run_id: str) -> None:
+        with self._lock:
+            self.conn.execute(
+                "DELETE FROM run_checkpoints WHERE run_id = ?", (run_id,))
+            self.conn.commit()
 
     # -- findings ---------------------------------------------------------
     def add_findings(self, run_id: str, findings: list[dict]) -> int:

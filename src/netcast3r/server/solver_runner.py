@@ -7,6 +7,7 @@ reason -> act -> observe -> decide cycle. The runner creates no finding.
 
 from __future__ import annotations
 
+import json
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -46,6 +47,144 @@ class SolverRunner:
         else:
             bus.config = config
         return bus
+
+    def _ckpt_key(self, run_id: str) -> str:
+        return run_id
+
+    def _save_checkpoint(self, run_id: str, state: dict) -> None:
+        try:
+            self.server.index.set_run_checkpoint(run_id, state)
+        except Exception:  # noqa: BLE001 - a full disk must not stop the mesh
+            pass
+
+    def load_checkpoint(self, run_id: str) -> dict | None:
+        try:
+            state = self.server.index.get_run_checkpoint(run_id)
+        except Exception:  # noqa: BLE001
+            return None
+        return state if isinstance(state, dict) and state else None
+
+    def _clear_checkpoint(self, run_id: str) -> None:
+        try:
+            self.server.index.clear_run_checkpoint(run_id)
+        except Exception:  # noqa: BLE001
+            pass
+
+    def _seed_checkpoint_from_events(self, run_id: str) -> dict | None:
+        """Rebuild a planner checkpoint from a run's persisted transcript.
+
+        A run that started before checkpointing existed has no stored state.
+        Its events still describe the completed rounds, so this derives the
+        same fields the swarm would have written, letting it resume without
+        repeating recent moves or resetting its counters.
+        """
+        try:
+            events = self.server.index.list_events(run_id, limit=4000)
+        except Exception:  # noqa: BLE001
+            return None
+        if not events:
+            return None
+        rounds = 0
+        role_calls: dict[str, int] = {}
+        role_actions: dict[str, int] = {}
+        verdicts = {"supports": 0, "refutes": 0, "inconclusive": 0}
+        observations: list[dict] = []
+        seen: list[str] = []
+        for event in events:
+            stage = str(event.get("stage") or "")
+            payload = event.get("payload") or {}
+            agent = str(payload.get("agent") or event.get("agent") or "")
+            try:
+                rounds = max(rounds, int(payload.get("round") or 0))
+            except (TypeError, ValueError):
+                pass
+            if stage == "act":
+                tool = str(payload.get("tool") or "")
+                actions = payload.get("args") or {}
+                if not tool:
+                    continue
+                if agent:
+                    role_actions[agent] = role_actions.get(agent, 0) + 1
+                if len(seen) < 400:
+                    seen.append(tool + json.dumps(actions, sort_keys=True, default=str))
+            elif stage == "model":
+                if agent and str(payload.get("kind") or "") == "done" and payload.get("ok"):
+                    role_calls[agent] = role_calls.get(agent, 0) + 1
+            elif stage == "observe":
+                verdict = str(payload.get("verdict") or "")
+                if verdict in verdicts:
+                    verdicts[verdict] += 1
+                if len(observations) < 40:
+                    observations.append({
+                        "agent": agent,
+                        "action": str(payload.get("tool") or ""),
+                        "ok": bool(payload.get("ok")),
+                        "result": payload.get("result"),
+                        "verdict": verdict,
+                        "reason": str(payload.get("text") or "")[:200],
+                    })
+        if not (rounds or role_actions or seen):
+            return None
+        return {
+            "v": 1,
+            "rounds": rounds,
+            # The total call count is what the budget check reads, so carry it.
+            "model_calls": sum(role_calls.values()),
+            "role_calls": role_calls,
+            "role_actions": role_actions,
+            "verdicts": verdicts,
+            "observations": observations[-40:],
+            "seen": seen[-400:],
+            "derived_from_events": len(events),
+        }
+
+    def resumable(self, run_id: str) -> bool:
+        """A run whose checkpoint lets it continue under the same id.
+
+        Only the swarm checkpoints its planner state, so only the swarm is
+        resumed. A hunt or autopilot run is left interrupted rather than
+        relaunched without its in-flight state.
+        """
+        row = self.server.index.get_run(run_id) or {}
+        options = row.get("options") or {}
+        mode = str(options.get("mode") or "").lower()
+        return mode == "swarm" and bool(
+            options.get("endless") or options.get("resumable"))
+
+    def resume(self, run_id: str) -> dict | None:
+        """Relaunch a resumable run under its original id.
+
+        A swarm that was live when the process died keeps its transcript in the
+        database. This rebuilds the mesh from its checkpoint and continues the
+        same run instead of creating a new one, so the operator sees the hunt
+        pick up where it stopped.
+        """
+        row = self.server.index.get_run(run_id)
+        if not row:
+            return None
+        if not self.resumable(run_id):
+            return None
+        options = dict(row.get("options") or {})
+        mode = str(options.get("mode") or "swarm").lower()
+        mission_id = str(options.get("mission_id") or "")
+        mission = self.server.index.get_mission(mission_id)
+        if not mission:
+            return None
+        with self._lock:
+            if run_id in self._handles:
+                return row  # already live under this id
+            cancel = threading.Event()
+            self._handles[run_id] = cancel
+            directives = DirectiveQueue(run_id)
+            self._directives[run_id] = directives
+            self._trim_directives_locked()
+        state = (self.load_checkpoint(run_id)
+                 or self._seed_checkpoint_from_events(run_id)
+                 or {"v": 1})
+        seconds = float(options.get("max_seconds") or swarm.DEFAULT_SECONDS)
+        self.pool.submit(self._run, run_id, mission_id, mission, options, cancel,
+                         mode, seconds, directives, state)
+        return row
 
     def _live_run_for(self, mission_id: str, mode: str) -> dict | None:
         """An already-live run for this mission and mode, if one exists.
@@ -224,9 +363,20 @@ class SolverRunner:
     def _run(self, run_id: str, mission_id: str, mission: dict,
              options: dict, cancel: threading.Event, mode: str = "solve",
              default_seconds: float = model_solver.DEFAULT_SECONDS,
-             directives: DirectiveQueue | None = None) -> None:
+             directives: DirectiveQueue | None = None,
+             resume: dict | None = None) -> None:
         emit = self._emit(run_id)
-        self.server.index.update_run(run_id, status="running", started_at=_now())
+        # A resume clears the interrupted marker but keeps the original start
+        # time and every event already in the transcript.
+        fields: dict = {"status": "running", "finished_at": None, "error": None}
+        if resume is None:
+            fields["started_at"] = _now()
+        self.server.index.update_run(run_id, **fields)
+        if resume:
+            emit(Event(type="run.resumed", stage="reason",
+                       payload={"rounds": int(resume.get("rounds") or 0),
+                                "model_calls": int(resume.get("model_calls") or 0),
+                                "text": "resuming the same run from its checkpoint"}))
         emit(Event(type="run.state", stage="reason", payload={"status": "running"}))
         try:
             from ..mcp.tools import POLICIES, ToolContext, ToolRegistry
@@ -284,7 +434,8 @@ class SolverRunner:
                                                 swarm.DEFAULT_MODEL_CALLS),
                     run_id=run_id, on_step=on_step, should_stop=cancel.is_set,
                     directive_source=directives.drain if directives else None,
-                    endless=endless)
+                    endless=endless, resume=resume,
+                    on_checkpoint=lambda state: self._save_checkpoint(run_id, state))
                 result = mesh.run()
             else:
                 solver = model_solver.Solver(
@@ -342,6 +493,9 @@ class SolverRunner:
         finally:
             with self._lock:
                 self._handles.pop(run_id, None)
+            # A worker that exited cleanly has nothing left to resume. A killed
+            # process never reaches here, so its checkpoint survives for boot.
+            self._clear_checkpoint(run_id)
 
 
 def _now() -> str:
