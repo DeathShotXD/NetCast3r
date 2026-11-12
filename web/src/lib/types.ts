@@ -1032,6 +1032,13 @@ export interface Upgrade {
   updated_at: string;
 }
 
+export interface Continuity {
+  current: { pid: number; started_at: string; url: string; version: string };
+  last_boot: DirectorLogEntry | null;
+  run_counts: Record<string, number>;
+  note: string;
+}
+
 export interface McpServerState {
   schema?: number;
   pid?: number;

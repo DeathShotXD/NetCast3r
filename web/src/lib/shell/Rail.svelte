@@ -28,7 +28,7 @@
       label: 'Intelligence',
       items: [
         { id: 'runs', label: 'Cast History', icon: 'layers', hint: 'every cast, its results, and a rerun' },
-        { id: 'core', label: 'Core', icon: 'sparkles', hint: 'self-model, gaps, integrity, upgrades' },
+        { id: 'core', label: 'Core', icon: 'eye', hint: 'self-model, gaps, integrity, upgrades' },
         { id: 'reveng', label: 'Reverse Lab', icon: 'code', hint: 'source, APK, contracts, drivers' },
         { id: 'reports', label: 'Reports', icon: 'file', hint: 'submissions, outcomes, payouts' },
         { id: 'agent', label: 'Agent Studio', icon: 'bot', hint: 'MCP tools, policy, audit' },
