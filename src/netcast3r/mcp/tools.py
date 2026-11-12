@@ -2226,6 +2226,23 @@ def selfmodel_evolve(ctx: ToolContext, args: dict) -> dict:
                  body={"limit": args.get("limit", 3)})
 
 
+def second_brain_status(ctx: ToolContext, args: dict) -> dict:
+    return _call(ctx, "GET", "/api/v1/second-brain")
+
+
+def second_brain_sync(ctx: ToolContext, args: dict) -> dict:
+    body = {key: args[key] for key in ("mission_id", "peer_note", "peer_name")
+            if key in args}
+    return _call(ctx, "POST", "/api/v1/second-brain/sync", body=body)
+
+
+def second_brain_upgrade(ctx: ToolContext, args: dict) -> dict:
+    body = {key: args[key] for key in
+            ("title", "rationale", "body", "area", "apply_code", "filename")
+            if key in args}
+    return _call(ctx, "POST", "/api/v1/second-brain/upgrade", body=body)
+
+
 def upgrade_propose(ctx: ToolContext, args: dict) -> dict:
     body = {key: args[key] for key in
             ("title", "rationale", "evidence", "area", "priority") if key in args}
@@ -4556,6 +4573,9 @@ _HANDLERS.update({
     "selfmodel_snapshot": selfmodel_snapshot,
     "selfmodel_gaps": selfmodel_gaps,
     "selfmodel_evolve": selfmodel_evolve,
+    "second_brain_status": second_brain_status,
+    "second_brain_sync": second_brain_sync,
+    "second_brain_upgrade": second_brain_upgrade,
     "upgrade_propose": upgrade_propose,
     "upgrade_list": upgrade_list,
     "upgrade_update": upgrade_update,
@@ -6207,6 +6227,32 @@ TOOLS: tuple[Tool, ...] = (
          "medium", "learning",
          _schema({"limit": _integer("how many gaps", 1, 10, 3)}),
          "selfmodel_evolve"),
+    Tool("second_brain_status", "Peer harness role",
+         "Whether a heavy MCP harness (OpenCode, Cursor, Claude Code) is attached, "
+         "and whether Helix is the primary steward or the second brain. Upgrade "
+         "authorization is never granted by the peer.",
+         "low", "governance", _schema({}), "second_brain_status", read_only=True),
+    Tool("second_brain_sync", "Share a peer insight",
+         "Run a mutual learning tick and optionally ingest a peer harness note into "
+         "the shared lesson memory, attributed to the peer.",
+         "medium", "learning",
+         _schema({"mission_id": _string("optional mission id"),
+                  "peer_note": _string("the insight to record"),
+                  "peer_name": _string("the peer harness name")}),
+         "second_brain_sync"),
+    Tool("second_brain_upgrade", "Propose a peer upgrade",
+         "Record an upgrade proposal and quarantine any generated code for human "
+         "review. Code is never imported or executed; a human moves a reviewed file "
+         "out of quarantine.",
+         "medium", "governance",
+         _schema({"title": _string("short title"),
+                  "rationale": _string("why it matters"),
+                  "body": _string("optional code or design body"),
+                  "area": _string("capability area"),
+                  "apply_code": _boolean("quarantine the body as code"),
+                  "filename": _string("file name for the quarantined code")},
+                 ["title", "rationale"]),
+         "second_brain_upgrade"),
     Tool("upgrade_propose", "Propose a framework upgrade",
          "Write a human-gated improvement proposal with evidence. Nothing is applied "
          "automatically; an operator decides whether to implement it.",

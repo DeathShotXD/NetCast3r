@@ -286,6 +286,26 @@ class MCPIntegrationTests(unittest.TestCase):
         catalogue = self.call("helix_tools", q="curl")[0]
         self.assertIn("capabilities", catalogue)
 
+    def test_second_brain_tools_expose_peer_role_without_authorization(self):
+        status = self.call("second_brain_status")[0]
+        self.assertIn("helix_role", status)
+        self.assertFalse(status["can_apply_code"])
+
+        synced = self.call(
+            "second_brain_sync", peer_note="Parser differential beat the route gate.",
+            peer_name="opencode")[0]
+        self.assertIn("learned", synced)
+        self.assertTrue(synced.get("peer_lesson"))
+
+        upgrade = self.call(
+            "second_brain_upgrade", title="Add a parser probe",
+            rationale="A peer needs a reusable parser-differential check.",
+            body="def probe():\n    pass\n", apply_code=True,
+            filename="parser_probe.py")[0]
+        self.assertTrue(upgrade["written"]["quarantined"])
+        self.assertFalse(upgrade["can_self_upgrade"])
+        self.assertTrue(upgrade["written"]["path"].endswith("parser_probe.py"))
+
     def test_submission_ledger_tools_record_real_rows(self):
         mission = self.create_mission()
         payload, is_error = self.call(
