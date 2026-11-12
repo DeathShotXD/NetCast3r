@@ -662,6 +662,31 @@ class MCPIntegrationTests(unittest.TestCase):
         self.assertTrue(updated, events)
         server.close()
 
+    def test_logging_level_gates_notifications(self):
+        server = MCPServer(plane=self.plane, policy=DEFAULT_POLICY, base=self.tmp)
+        events: list[dict] = []
+        server.set_notifier(lambda message: events.append(message))
+        bad = server.handle({"jsonrpc": "2.0", "id": 1, "method": "logging/setLevel",
+                             "params": {"level": "nonsense"}})
+        self.assertEqual(bad["error"]["code"], protocol.INVALID_PARAMS)
+
+        server.handle({"jsonrpc": "2.0", "id": 2, "method": "logging/setLevel",
+                       "params": {"level": "warning"}})
+        server.handle({"jsonrpc": "2.0", "id": 3, "method": "tools/call",
+                       "params": {"name": "missions_get", "arguments": {}}})
+        warned = [e for e in events if e["method"] == "notifications/message"]
+        self.assertTrue(warned, events)
+        self.assertEqual(warned[-1]["params"]["level"], "warning")
+
+        events.clear()
+        server.handle({"jsonrpc": "2.0", "id": 4, "method": "logging/setLevel",
+                       "params": {"level": "critical"}})
+        server.handle({"jsonrpc": "2.0", "id": 5, "method": "tools/call",
+                       "params": {"name": "missions_get", "arguments": {}}})
+        self.assertEqual(
+            [e for e in events if e["method"] == "notifications/message"], [])
+        server.close()
+
     def test_stdio_newline_and_content_length_framing(self):
         newline = io.BytesIO(b'{"jsonrpc":"2.0","id":1,"method":"ping"}\n')
         self.assertEqual(protocol.read_message(newline)["method"], "ping")

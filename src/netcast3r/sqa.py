@@ -15,6 +15,10 @@ from pathlib import Path
 from .browser import find_chromium
 from .control import base_dir, read_private_json
 
+# A long-lived stream the SPA tears down on navigation. An abort on one of
+# these is expected, never a failed request.
+_STREAM_ABORT = re.compile(r"/stream(?:[/?#]|$)")
+
 
 def _plane(base: str | Path | None) -> tuple[str, str]:
     root = base_dir(base)
@@ -96,8 +100,9 @@ def audit_pages(base: str | Path | None = None, routes: list | None = None,
             if not req.failure:
                 return
             url = str(req.url or "")
-            # SPA route changes abort the long-lived SSE stream; not a defect.
-            if "/api/v1/events/stream" in url and "ERR_ABORTED" in str(req.failure):
+            # SPA route changes abort any long-lived stream - the workspace feed
+            # or a run's event stream - and an intentional abort is not a defect.
+            if "ERR_ABORTED" in str(req.failure) and _STREAM_ABORT.search(url):
                 return
             failed.append(f"{req.method} {url} {req.failure}")
 

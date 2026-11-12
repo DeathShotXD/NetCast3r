@@ -33,6 +33,12 @@ from .tools import (
 
 SERVER_NAME = "netcast3r"
 SERVER_TITLE = "NetCast3r"
+# MCP logging levels, in syslog order. A client moves the bar with
+# logging/setLevel; the server emits notifications/message at or above it.
+LOG_LEVELS = ("debug", "info", "notice", "warning", "error",
+              "critical", "alert", "emergency")
+LOG_RANK = {name: index for index, name in enumerate(LOG_LEVELS)}
+DEFAULT_LOG_LEVEL = "info"
 INSTRUCTIONS = """NetCast3r is a proof-first bug bounty workspace. You are driving its real \
 control plane through MCP.
 
@@ -185,6 +191,7 @@ class MCPServer:
         self.protocol_version = protocol.LATEST_PROTOCOL
         self.client_info: dict = {}
         self._notifier = None  # set by run(), so a call can emit progress
+        self.log_level = DEFAULT_LOG_LEVEL
         # Resource subscriptions: uri -> last serialised content. A watcher
         # thread polls them and emits notifications/resources/updated on change.
         self._subs: dict[str, str] = {}
@@ -275,6 +282,12 @@ class MCPServer:
 
         @dispatcher.method("logging/setLevel")
         def set_level(params):
+            level = str(params.get("level") or "").strip().lower()
+            if level not in LOG_LEVELS:
+                raise RpcError(protocol.INVALID_PARAMS,
+                               f"unknown log level: {level}")
+            self.log_level = level
+            self._write_state()
             return {}
 
         @dispatcher.method("tools/list")
@@ -301,6 +314,12 @@ class MCPServer:
                 payload, is_error = exc.payload(), True
             self._notify_progress(
                 token, 1, 1, f"{name} {'failed' if is_error else 'done'}")
+            if is_error:
+                code = ""
+                if isinstance(payload, dict):
+                    code = str((payload.get("error") or {}).get("code") or "")
+                self._log("warning", "netcast3r.tools",
+                          {"tool": name, "error": code or "error"})
             self.calls += 1
             self.last_call_at = _now()
             self._write_state()
@@ -403,6 +422,13 @@ class MCPServer:
             "progressToken": token, "progress": progress,
             "total": total, "message": message})
 
+    def _log(self, level: str, logger: str, data) -> None:
+        """Emit notifications/message when the level clears the client's bar."""
+        if LOG_RANK.get(level, len(LOG_LEVELS)) < LOG_RANK.get(self.log_level, 1):
+            return
+        self._notify("notifications/message",
+                     {"level": level, "logger": logger, "data": data})
+
     # -- resource subscriptions -------------------------------------------
     def _resource_state(self, uri: str) -> str:
         return json.dumps(self._read_resource(uri), sort_keys=True, default=str)
@@ -429,6 +455,7 @@ class MCPServer:
                         if uri in self._subs:
                             self._subs[uri] = current
                     self._notify("notifications/resources/updated", {"uri": uri})
+                    self._log("debug", "netcast3r.resources", {"uri": uri})
 
     # -- resources ---------------------------------------------------------
     def _read_resource(self, uri: str) -> dict:
