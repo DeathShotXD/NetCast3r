@@ -57,6 +57,9 @@ them.
 6. Browse with resources instead of guessing ids: read netcast3r://missions, then a \
 template like netcast3r://missions/{mission_id}, netcast3r://runs/{run_id}/events, or \
 netcast3r://findings/{finding_id}. Use completion/complete to autocomplete those ids.
+7. Two tools call back to you, the client. sampling_complete runs a completion on your \
+own model (you may decline), and client_roots lists the filesystem roots you expose. \
+Both need the matching client capability advertised at initialize.
 """
 
 RESOURCES = (
@@ -199,8 +202,17 @@ class MCPServer:
         self._write_lock = threading.Lock()
         self._watcher: threading.Thread | None = None
         self._stop = threading.Event()
+        # Client transport, filled in by run(). Enables server->client requests
+        # (sampling, roots); anything else received while waiting is queued so
+        # the main loop handles it, never a reentrant handler.
+        self._stdin = None
+        self._stdout = None
+        self._inbox: list[dict] = []
+        self._req_seq = 0
+        self.client_capabilities: dict = {}
         self.registry = ToolRegistry(ToolContext(
             plane=plane, policy=policy, base=base, actor=actor))
+        self.registry.ctx.client = self
         self.state_path = control.mcp_state_path(base)
         self.dispatcher = self._build_dispatcher()
 
@@ -220,6 +232,7 @@ class MCPServer:
                 "tools": self.registry.ctx.tool_count,
                 "protocol_version": self.protocol_version,
                 "client": self.client_info,
+                "client_capabilities": sorted(self.client_capabilities),
                 "initialized": self.initialized,
                 "version": __version__,
                 "base": str(self.base or ""),
@@ -244,6 +257,8 @@ class MCPServer:
             name = str(info.get("name") or "mcp")[:80]
             version = str(info.get("version") or "")[:40]
             self.client_info = {"name": name, "version": version}
+            caps = params.get("capabilities")
+            self.client_capabilities = caps if isinstance(caps, dict) else {}
             # A local stdio client is the operator on this machine, so it may
             # manage mission lifecycles. A remote HTTP peer is an agent unless
             # it overrides the actor explicitly.
@@ -429,6 +444,64 @@ class MCPServer:
         self._notify("notifications/message",
                      {"level": level, "logger": logger, "data": data})
 
+    # -- server -> client requests (sampling, roots) -----------------------
+    def _supports(self, capability: str) -> bool:
+        caps = self.client_capabilities
+        return isinstance(caps, dict) and capability in caps
+
+    def request(self, method: str, params: dict, timeout: float = 30.0) -> dict:
+        """Send a request to the client and wait for its matching response.
+
+        The client's answer arrives on the same stdin, so anything else that
+        arrives while waiting is queued for the main loop instead of being
+        handled reentrantly. The timeout is checked between reads: a client
+        that never answers and never writes blocks until the stream closes.
+        """
+        if self._stdin is None or self._stdout is None:
+            raise ToolError("no_client", "no client transport is attached")
+        self._req_seq += 1
+        request_id = f"srv-{self._req_seq}"
+        with self._write_lock:
+            write_message(self._stdout, {
+                "jsonrpc": "2.0", "id": request_id,
+                "method": method, "params": params})
+        deadline = time.monotonic() + max(1.0, float(timeout))
+        while True:
+            try:
+                incoming = protocol.read_message(self._stdin)
+            except protocol.ParseError as exc:
+                raise ToolError("client_error", f"malformed client JSON: {exc}")
+            if incoming is None:
+                raise ToolError("client_closed", "the client closed the stream")
+            if (incoming.get("id") == request_id
+                    and ("result" in incoming or "error" in incoming)):
+                if incoming.get("error"):
+                    error = incoming.get("error") or {}
+                    raise ToolError("client_error",
+                                    str(error.get("message") or "client error"))
+                result = incoming.get("result")
+                return result if isinstance(result, dict) else {"result": result}
+            self._inbox.append(incoming)
+            if time.monotonic() >= deadline:
+                raise ToolError("client_timeout",
+                                "the client did not answer in time")
+
+    def sample(self, params: dict, timeout: float = 45.0) -> dict:
+        """Ask the client to run a completion on its own model (MCP sampling)."""
+        if not self._supports("sampling"):
+            raise ToolError(
+                "unsupported",
+                "the client did not advertise the sampling capability")
+        return self.request("sampling/createMessage", params, timeout=timeout)
+
+    def client_roots(self, timeout: float = 20.0) -> dict:
+        """Ask the client for its filesystem roots (MCP roots)."""
+        if not self._supports("roots"):
+            raise ToolError(
+                "unsupported",
+                "the client did not advertise the roots capability")
+        return self.request("roots/list", {}, timeout=timeout)
+
     # -- resource subscriptions -------------------------------------------
     def _resource_state(self, uri: str) -> str:
         return json.dumps(self._read_resource(uri), sort_keys=True, default=str)
@@ -570,16 +643,12 @@ class MCPServer:
     def run(self, stdin=None, stdout=None) -> None:
         stdin = stdin or sys.stdin.buffer
         stdout = stdout or sys.stdout.buffer
+        self._stdin, self._stdout = stdin, stdout
         self.set_notifier(lambda message: write_message(stdout, message))
         self._write_state()
         try:
             while True:
-                try:
-                    message = protocol.read_message(stdin)
-                except protocol.ParseError as exc:
-                    write_message(stdout, error_response(
-                        None, RpcError(protocol.PARSE_ERROR, str(exc))))
-                    continue
+                message = self._next_message(stdin)
                 if message is None:
                     break
                 response = self.handle(message)
@@ -589,6 +658,23 @@ class MCPServer:
             pass
         finally:
             self.close()
+
+    def _next_message(self, stdin):
+        """The next inbound message: queued first, then the stream."""
+        while True:
+            if self._inbox:
+                return self._inbox.pop(0)
+            try:
+                return protocol.read_message(stdin)
+            except protocol.ParseError as exc:
+                if self._stdout is None:
+                    return None
+                try:
+                    write_message(self._stdout, error_response(
+                        None, RpcError(protocol.PARSE_ERROR, str(exc))))
+                except Exception:  # noqa: BLE001 - a dead stream ends the loop
+                    return None
+                continue
 
 
 def run_stdio(plane, policy: str = DEFAULT_POLICY, base: Path | None = None) -> None:

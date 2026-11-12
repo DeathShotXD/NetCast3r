@@ -687,6 +687,54 @@ class MCPIntegrationTests(unittest.TestCase):
             [e for e in events if e["method"] == "notifications/message"], [])
         server.close()
 
+    def test_sampling_and_roots_round_trip_with_the_client(self):
+        lines = [
+            {"jsonrpc": "2.0", "id": 1, "method": "initialize",
+             "params": {"protocolVersion": "2025-06-18",
+                        "clientInfo": {"name": "fake", "version": "1"},
+                        "capabilities": {"sampling": {},
+                                         "roots": {"listChanged": True}}}},
+            {"jsonrpc": "2.0", "id": 2, "method": "tools/call",
+             "params": {"name": "sampling_complete",
+                        "arguments": {"prompt": "hi"}}},
+            {"jsonrpc": "2.0", "id": "srv-1",
+             "result": {"model": "client-model",
+                        "content": {"type": "text", "text": "hello from the client"}}},
+            {"jsonrpc": "2.0", "id": 3, "method": "tools/call",
+             "params": {"name": "client_roots", "arguments": {}}},
+            {"jsonrpc": "2.0", "id": "srv-2",
+             "result": {"roots": [{"uri": "file:///work", "name": "work"}]}},
+        ]
+        stdin = io.BytesIO(
+            "".join(json.dumps(line) + "\n" for line in lines).encode())
+        stdout = io.BytesIO()
+        server = MCPServer(plane=self.plane, policy=DEFAULT_POLICY, base=self.tmp)
+        server.run(stdin=stdin, stdout=stdout)
+        out = [json.loads(line) for line in
+               stdout.getvalue().decode("utf-8").splitlines() if line.strip()]
+        by_id = {item.get("id"): item for item in out}
+        sampling = by_id[2]["result"]["structuredContent"]
+        self.assertEqual(sampling["text"], "hello from the client")
+        self.assertEqual(sampling["model"], "client-model")
+        roots = by_id[3]["result"]["structuredContent"]
+        self.assertEqual(roots["roots"][0]["uri"], "file:///work")
+        methods = [item.get("method") for item in out if item.get("method")]
+        self.assertIn("sampling/createMessage", methods)
+        self.assertIn("roots/list", methods)
+
+    def test_sampling_without_client_capability_is_refused(self):
+        server = MCPServer(plane=self.plane, policy=DEFAULT_POLICY, base=self.tmp)
+        server.handle({"jsonrpc": "2.0", "id": 1, "method": "initialize",
+                       "params": {"protocolVersion": "2025-06-18",
+                                  "clientInfo": {"name": "no-caps"}}})
+        # A client that does not advertise the capability is told so, not guessed at.
+        got = server.handle({"jsonrpc": "2.0", "id": 2, "method": "tools/call",
+                             "params": {"name": "client_roots", "arguments": {}}})
+        self.assertTrue(got["result"]["isError"], got)
+        self.assertEqual(
+            got["result"]["structuredContent"]["error"]["code"], "unsupported")
+        server.close()
+
     def test_stdio_newline_and_content_length_framing(self):
         newline = io.BytesIO(b'{"jsonrpc":"2.0","id":1,"method":"ping"}\n')
         self.assertEqual(protocol.read_message(newline)["method"], "ping")

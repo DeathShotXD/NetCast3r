@@ -289,6 +289,10 @@ class ToolContext:
     # Scope is still enforced by every handler, approval decisions stay
     # human-only, and every authorized call is audited.
     authorized: bool = False
+    # The MCP client transport, when one is attached. It lets a tool request a
+    # client-side completion (sampling) or the client's filesystem roots. None
+    # for an embedded or test registry.
+    client: object | None = None
 
 
 def _call(ctx: ToolContext, method: str, path: str, query: dict | None = None, body=None):
@@ -2468,6 +2472,55 @@ def agents_catalog(ctx: ToolContext, args: dict) -> dict:
     return _call(ctx, "GET", "/api/v1/agents", {})
 
 
+def _sampling_text(result: dict) -> str:
+    content = result.get("content")
+    if isinstance(content, dict):
+        return str(content.get("text") or "")
+    if isinstance(content, list):
+        return "".join(str(part.get("text") or "") for part in content
+                       if isinstance(part, dict))
+    return str(result.get("text") or "")
+
+
+def sampling_complete(ctx: ToolContext, args: dict) -> dict:
+    """Ask the MCP client to run one completion on its own model.
+
+    This is MCP sampling: NetCast3r does not spend its own key. The client sees
+    the prompt and decides whether to answer, so nothing is sent without its
+    consent.
+    """
+    client = getattr(ctx, "client", None)
+    if client is None:
+        raise ToolError("no_client", "this server has no client transport")
+    prompt = str(args.get("prompt") or "").strip()
+    if not prompt:
+        raise ToolError("invalid_arguments", "prompt is required")
+    messages = []
+    system = str(args.get("system") or "").strip()
+    if system:
+        messages.append({"role": "system",
+                         "content": {"type": "text", "text": system}})
+    messages.append({"role": "user", "content": {"type": "text", "text": prompt}})
+    params: dict = {"messages": messages,
+                    "maxTokens": int(args.get("max_tokens") or 512)}
+    if args.get("temperature") is not None:
+        params["temperature"] = float(args["temperature"])
+    result = client.sample(params, timeout=float(args.get("timeout") or 45))
+    return {"model": str(result.get("model") or ""),
+            "stopReason": str(result.get("stopReason") or ""),
+            "text": _sampling_text(result)}
+
+
+def client_roots(ctx: ToolContext, args: dict) -> dict:
+    """List the filesystem roots the MCP client exposes (MCP roots)."""
+    client = getattr(ctx, "client", None)
+    if client is None:
+        raise ToolError("no_client", "this server has no client transport")
+    result = client.client_roots(timeout=float(args.get("timeout") or 20))
+    roots = result.get("roots") if isinstance(result, dict) else []
+    return {"roots": roots or []}
+
+
 def approval_request(ctx: ToolContext, args: dict) -> dict:
     mission_id = args["mission_id"]
     _mission(ctx, mission_id)
@@ -4437,6 +4490,8 @@ _HANDLERS.update({
     "submissions_delete": submissions_delete,
     "approvals_list": approvals_list,
     "agents_catalog": agents_catalog,
+    "sampling_complete": sampling_complete,
+    "client_roots": client_roots,
     "approval_request": approval_request,
     "approval_decide": approval_decide,
     "providers_list": providers_list,
@@ -6059,7 +6114,7 @@ TOOLS: tuple[Tool, ...] = (
          "dropped capabilities, non-root user, 256 MB memory, and no host mount. Use it to "
          "read or reproduce a PoC without touching the host or a target. High risk: needs "
          "an approval under supervised policy.",
-         "high", "sandbox",
+         "high", "host",
          _schema({"image": _string("allowlisted image", enum=list(integrations.SANDBOX_IMAGES)),
                   "command": _array("argv, no shell", {"type": "string"}),
                   "stdin": _string("optional script or data on stdin"),
@@ -6334,6 +6389,20 @@ TOOLS: tuple[Tool, ...] = (
          "List the agents: the pipeline roles, the mesh roles, and the steward, "
          "with the lane and provider/model each resolves to.",
          "low", "governance", _schema({}), "agents_catalog", read_only=True),
+    Tool("sampling_complete", "Ask the client's model",
+         "Run one completion on the MCP client's own model (MCP sampling), so "
+         "NetCast3r spends no key. The client sees the prompt and may decline.",
+         "medium", "agents",
+         _schema({"prompt": _string("the user prompt"),
+                  "system": _string("optional system prompt"),
+                  "max_tokens": _integer("max tokens", 1, 8192, 512),
+                  "temperature": {"type": "number", "description": "sampling temperature"},
+                  "timeout": _integer("seconds to wait", 1, 600, 45)}),
+         "sampling_complete", read_only=True, open_world=True),
+    Tool("client_roots", "List the client's roots",
+         "List the filesystem roots the MCP client exposes (MCP roots), to scope "
+         "host reads and writes.",
+         "low", "workspace", _schema({}), "client_roots", read_only=True),
     Tool("approval_request", "Request approval",
          "Ask a human to approve a high-risk action. Pass the exact tool name and "
          "arguments you will use; the approval is bound to their hash and can be spent once.",
@@ -6369,7 +6438,7 @@ TOOLS: tuple[Tool, ...] = (
          "provider_test", open_world=True),
     Tool("scope_check", "Check scope",
          "Classify a target against a mission or explicit scope without sending traffic.",
-         "low", "scope",
+         "low", "governance",
          _schema({"target": _string("host or URL"),
                   "mission_id": _string("mission id"),
                   "scope": _array("explicit scope entries")},
@@ -6378,7 +6447,7 @@ TOOLS: tuple[Tool, ...] = (
          "Send one GET or HEAD request to an in-scope target, optionally with custom "
          "headers and scoped redirect following. Response body capped. Metadata and "
          "link-local hosts are refused.",
-         "medium", "scope",
+         "medium", "web",
          _schema({"target": _string("in-scope host or URL"),
                   "mission_id": _string("mission whose scope authorizes the probe"),
                   "scope": _array("explicit scope entries when no mission is used"),
@@ -6583,7 +6652,7 @@ TOOLS: tuple[Tool, ...] = (
     Tool("upload_policy_probe", "Probe benign upload policy",
          "Upload two inert canaries (text and minimal PNG), optionally a script-free SVG, "
          "to compare extension and MIME handling. It never sends executable server code.",
-         "medium", "upload",
+         "medium", "web",
          _schema({"target": _string("in-scope upload URL"),
                   "mission_id": _string("mission whose scope authorizes the uploads"),
                   "scope": _array("explicit scope entries"),
@@ -6600,7 +6669,7 @@ TOOLS: tuple[Tool, ...] = (
     Tool("retest_request", "Retest request consistency",
          "Repeat one scoped request two to five times and compare status, redirects, and "
          "normalized body shape. This records repeatability without changing findings.",
-         "medium", "verification",
+         "medium", "findings",
          _schema({"target": _string("in-scope URL"),
                   "mission_id": _string("mission whose scope authorizes the requests"),
                   "scope": _array("explicit scope entries"),
@@ -6621,7 +6690,7 @@ TOOLS: tuple[Tool, ...] = (
     Tool("evidence_pack", "Write redacted evidence pack",
          "Write up to fifty supplied observations as a versioned JSON evidence pack "
          "inside the workspace. Sensitive request fields are redacted before writing.",
-         "medium", "evidence",
+         "medium", "reports",
          _schema({"mission_id": _string("optional mission id"),
                   "title": _string("evidence pack title"),
                   "observations": _array("request and response observations",
@@ -6681,7 +6750,7 @@ TOOLS: tuple[Tool, ...] = (
          "Connect to an explicit port list on one scoped host, collect banners "
          "and TLS certificate details, and report which ports are open. At most "
          "64 ports; this is a precise banner grab, not a full port scan.",
-         "medium", "network",
+         "medium", "recon",
          _schema({"target": _string("in-scope host or URL"),
                   "mission_id": _string("mission whose scope authorizes the probe"),
                   "scope": _array("explicit scope entries when no mission is used"),
@@ -6759,7 +6828,7 @@ TOOLS: tuple[Tool, ...] = (
          "Run the local analyzer on an APK, binary, source tree, JavaScript "
          "bundle, or smart contract and return the observations plus a "
          "kind-specific REA next-step plan and tool set. Local and read-only.",
-         "low", "reverse",
+         "low", "reverse-engineering",
          _schema({"path": _string("local artifact path"),
                   "kind": _string("artifact kind", enum=[
                       "auto", "source", "js", "apk", "contract", "binary"]),

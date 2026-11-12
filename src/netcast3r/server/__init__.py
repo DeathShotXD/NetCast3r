@@ -3496,7 +3496,7 @@ class Server:
                     "last_checked": provider.get("last_checked", ""),
                     "key_set": bool(self._provider_key(provider)),
                 })
-            return _json({"items": items})
+            return _json({"items": items, "total": len(items)})
 
         @add("GET", r"/api/v1/runs/(?P<id>[A-Za-z0-9_]+)/report")
         def run_report(ctx):
