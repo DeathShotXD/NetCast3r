@@ -668,13 +668,14 @@ class MCPIntegrationTests(unittest.TestCase):
 
         prompts = server.handle({"jsonrpc": "2.0", "id": 5,
                                  "method": "prompts/list"})["result"]
-        self.assertEqual(len(prompts["prompts"]), 4)
+        self.assertEqual(len(prompts["prompts"]), 5)
 
         prompt_args = {
             "recon-mission": {"mission_id": "msn_test"},
             "triage-findings": {"mission_id": "msn_test"},
             "write-report": {"run_id": "run_test"},
             "review-approval": {"approval_id": "apr_test"},
+            "choose-next-action": {"mission_id": "msn_test"},
         }
         for index, name in enumerate(prompt_args, start=20):
             got = server.handle({"jsonrpc": "2.0", "id": index, "method": "prompts/get",

@@ -60,6 +60,13 @@ netcast3r://findings/{finding_id}. Use completion/complete to autocomplete those
 7. Two tools call back to you, the client. sampling_complete runs a completion on your \
 own model (you may decline), and client_roots lists the filesystem roots you expose. \
 Both need the matching client capability advertised at initialize.
+8. Keep multi-turn reasoning in a session. brain_session_create returns a session_id; \
+pass it to brain_chat on each later turn. brain_session_fork branches a thread without \
+disturbing the original.
+9. Helix writes and runs its own tools. helix_scripts_list shows them, helix_script_write \
+stores one, and helix_script_run executes it (high risk; sandboxed, bounded, recorded). \
+second_brain_status tells you whether a heavy harness is attached; any upgrade code is \
+quarantined for human review and never applied automatically.
 """
 
 RESOURCES = (
@@ -191,6 +198,12 @@ PROMPTS = (
         "title": "Review an approval",
         "description": "Summarize a pending high-risk action for a human decision.",
         "arguments": [{"name": "approval_id", "description": "Approval id", "required": True}],
+    },
+    {
+        "name": "choose-next-action",
+        "title": "Choose the next action",
+        "description": "Read a mission's ranked next actions and pick one with a falsifiable test.",
+        "arguments": [{"name": "mission_id", "description": "Mission id", "required": True}],
     },
 )
 
@@ -650,6 +663,16 @@ class MCPServer:
                 "the control-plane API, restate the exact action, risk, requester, and bound "
                 "arguments. Do not approve it yourself in supervised mode. End with a clear "
                 "recommendation and the evidence a human needs to decide."
+            )
+        elif name == "choose-next-action":
+            if not mission_id:
+                raise RpcError(protocol.INVALID_PARAMS, "mission_id required")
+            text = (
+                f"Plan the next step for mission {mission_id}. Call next_actions for its "
+                "ranked checks, coverage_get for what is already proven, and findings_list "
+                "for what is claimed. Choose exactly one action, name the falsifiable test "
+                "that would confirm or kill it, and state the smallest read-only probe that "
+                "runs it. Do not step outside the mission scope."
             )
         else:
             raise RpcError(protocol.INVALID_PARAMS, f"unknown prompt: {name}")
