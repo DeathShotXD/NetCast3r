@@ -1,5 +1,5 @@
 import type {
-  AgentRoster, BenchResult, BrainLiveFeed, BrainReply, BrainSession, Campaign, Candidate, ConnectInfo, Approval, CoverageSummary, Direction, DirectorLogEntry, DirectorStatus, ExploitPlan, Finding, HarnessDiagnose, HarnessLearn, HarnessRecall, HarnessStatus, HarnessTick, HelixScript, HelixScriptRun, HostShellResult, Hypothesis, HypothesisEvidence, Inventory, KeyEntry, McpInfo, Meta, Mission, MissionAgent, MissionGraph, Paged, ProgramImport, ProgramPreview, Provider, ProviderHealth, RevengKinds, RevengResult, Run, RunDirective, RunEvent, Submission, SubmissionSummary, ThreatMap, ToolCall, Totals, TrendPoint, BrainTurn, BrainLoopStatus } from './types';
+  AgentRoster, BenchResult, BrainLiveFeed, BrainReply, BrainSession, Campaign, Candidate, ConnectInfo, Approval, CoverageSummary, Direction, DirectorLogEntry, DirectorStatus, ExploitPlan, Finding, HarnessDiagnose, HarnessLearn, HarnessRecall, HarnessStatus, HarnessTick, HelixScript, HelixScriptRun, HostShellResult, Hypothesis, HypothesisEvidence, Inventory, KeyEntry, McpInfo, Meta, Mission, MissionAgent, MissionGraph, Paged, ProgramImport, ProgramPreview, Provider, ProviderHealth, RevengKinds, RevengResult, Run, RunDirective, RunEvent, SelfAudit, SelfGaps, SelfModel, Submission, SubmissionSummary, ThreatMap, ToolCall, Totals, TrendPoint, Upgrade, BrainTurn, BrainLoopStatus } from './types';
 
 const BASE = '/api/v1';
 const DEFAULT_TIMEOUT_MS = 60000;
@@ -333,6 +333,11 @@ export const api = {
     request<RevengResult>('POST', '/reveng/analyze', body, 600000),
   mcpInfo: () => request<McpInfo>('GET', '/mcp'),
   agents: () => request<AgentRoster>('GET', '/agents'),
+  selfModel: () => request<SelfModel>('GET', '/selfmodel'),
+  selfGaps: () => request<SelfGaps>('GET', '/selfmodel/gaps'),
+  selfAudit: () => request<SelfAudit>('GET', '/self-audit'),
+  upgrades: (status = '') =>
+    request<{ items: Upgrade[]; total: number }>('GET', `/upgrades${status ? `?status=${status}` : ''}`),
   helixScripts: (q = '') => request<{ items: HelixScript[] }>('GET', `/helix/scripts${q}`),
   helixScriptRun: (id: string, body: Record<string, unknown>) =>
     request<HelixScriptRun>('POST', `/helix/scripts/${id}/run`, body, 320000),

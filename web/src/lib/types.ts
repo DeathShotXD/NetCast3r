@@ -825,7 +825,8 @@ export type Screen =
   | 'reports'
   | 'keys'
   | 'reveng'
-  | 'help';
+  | 'help'
+  | 'core';
 
 export interface RevengObservation {
   id: string;
@@ -968,6 +969,67 @@ export interface HelixScriptRun {
   status: string;
   stdout: string;
   stderr: string;
+}
+
+export interface SelfDimension {
+  dimension: string;
+  label: string;
+  score: number;
+  level: string;
+  training_total: number;
+  training_solved: number;
+  coverage: number;
+  skills: string[];
+  expertise: string[];
+  exposures: number;
+  findings: number;
+  techniques: number;
+  next_lab: string;
+}
+
+export interface SelfModel {
+  overall: number;
+  level: string;
+  generated_at: string;
+  note: string;
+  counts: Record<string, number>;
+  dimensions: SelfDimension[];
+}
+
+export interface SelfGap {
+  dimension: string;
+  label: string;
+  score: number;
+  gap: string;
+  action: string;
+  tool: string;
+  args: Record<string, unknown>;
+}
+
+export interface SelfGaps {
+  overall: number;
+  generated_at: string;
+  items: SelfGap[];
+}
+
+export interface SelfAudit {
+  grade: string;
+  score: number;
+  note: string;
+  findings: unknown[];
+  checks?: unknown;
+}
+
+export interface Upgrade {
+  id: string;
+  title: string;
+  area: string;
+  priority: string;
+  rationale: string;
+  evidence: string;
+  status: string;
+  created_at: string;
+  updated_at: string;
 }
 
 export interface McpServerState {

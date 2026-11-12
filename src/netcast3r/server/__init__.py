@@ -4353,6 +4353,9 @@ def serve(host: str = "127.0.0.1", port: int = 7857, *, open_browser: bool = Tru
           runner=None, config=None, auth_required: bool = True,
           force: bool = False, autonomous: bool = True) -> Server:
     base = control.base_dir(base)
+    # The previous process's record, read before this one overwrites it: it is
+    # the only memory the framework has of what it was doing when it went down.
+    previous = control.read_control_plane(base) or {}
     owner = control.live_owner(base, exclude_pid=os.getpid())
     if owner is not None:
         raise RuntimeError(
@@ -4378,10 +4381,34 @@ def serve(host: str = "127.0.0.1", port: int = 7857, *, open_browser: bool = Tru
     # running when the previous process died, from their checkpoint.
     try:
         resumed = server.resume_orphaned_runs()
-        if resumed.get("resumed"):
-            print(f"resumed {len(resumed['resumed'])} run(s) from checkpoint")
     except Exception:  # noqa: BLE001 - resume must never block serving
-        pass
+        resumed = {"resumed": [], "skipped": []}
+    if resumed.get("resumed") or previous:
+        try:
+            import time as _time
+
+            uptime = 0
+            started = str(previous.get("started_at") or "")
+            if started:
+                try:
+                    struct = _time.strptime(started, "%Y-%m-%dT%H:%M:%SZ")
+                    uptime = max(0, int(_time.time() - _time.mktime(struct)))
+                except (ValueError, OverflowError):
+                    uptime = 0
+            server.index.add_director_log(
+                "boot",
+                (f"continuity: previous process {previous.get('pid') or '?'} ran "
+                 f"{uptime}s; resumed {len(resumed.get('resumed') or [])} "
+                 f"run(s), skipped {len(resumed.get('skipped') or [])}"),
+                data={"previous_pid": previous.get("pid"),
+                      "previous_uptime_s": uptime,
+                      "resumed": resumed.get("resumed") or [],
+                      "skipped": resumed.get("skipped") or [],
+                      "started_at": _utc()})
+        except Exception:  # noqa: BLE001 - the record is best effort
+            pass
+    if resumed.get("resumed"):
+        print(f"resumed {len(resumed['resumed'])} run(s) from checkpoint")
     httpd = _ThreadingHTTPServer((host, port), _Handler)
     httpd.app = server  # type: ignore[attr-defined]
     httpd.daemon_threads = True

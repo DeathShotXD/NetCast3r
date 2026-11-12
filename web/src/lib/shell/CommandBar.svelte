@@ -23,6 +23,7 @@
     reveng: 'Reverse Lab',
     reports: 'Reports',
     agent: 'Agent Studio',
+    core: 'Core',
     connect: 'Connect',
     keys: 'Providers',
     help: 'Field guide'

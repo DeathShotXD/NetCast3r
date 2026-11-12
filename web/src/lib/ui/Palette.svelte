@@ -17,6 +17,7 @@
     { id: 'reveng', label: 'Reverse Lab', glyph: '</>', hint: 'source, APK, contracts, drivers' },
     { id: 'reports', label: 'Reports', glyph: '=', hint: 'submissions, outcomes, payouts' },
     { id: 'agent', label: 'Agent Studio', glyph: '::', hint: 'MCP tools, policy, audit' },
+    { id: 'core', label: 'Core', glyph: '@', hint: 'self-model, gaps, integrity, upgrades' },
     { id: 'connect', label: 'Connect', glyph: '~', hint: 'OpenCode, Hermes, Agent Zero' },
     { id: 'keys', label: 'Providers', glyph: '^', hint: 'keys, models, health' },
     { id: 'help', label: 'Field guide', glyph: '?', hint: 'what every state means' }

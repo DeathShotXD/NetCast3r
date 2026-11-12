@@ -6,6 +6,7 @@
   import Connect from './lib/screens/Connect.svelte';
   import Rail from './lib/shell/Rail.svelte';
   import AgentStudio from './lib/screens/AgentStudio.svelte';
+  import Core from './lib/screens/Core.svelte';
   import Findings from './lib/screens/Findings.svelte';
   import Help from './lib/screens/Help.svelte';
   import Home from './lib/screens/Home.svelte';
@@ -249,6 +250,8 @@
             <Runs />
           {:else if store.screen === 'agent'}
             <AgentStudio />
+          {:else if store.screen === 'core'}
+            <Core />
           {:else if store.screen === 'connect'}
             <Connect />
           {:else if store.screen === 'reports'}
