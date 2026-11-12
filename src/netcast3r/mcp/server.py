@@ -163,6 +163,7 @@ _COMPLETIONS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     "run_id": ("/api/v1/runs", "size", ("title", "target")),
     "finding_id": ("/api/v1/findings", "size", ("title", "severity")),
     "script_id": ("/api/v1/helix/scripts", "limit", ("name", "purpose")),
+    "session_id": ("/api/v1/brain/sessions", "limit", ("title", "agent")),
 }
 
 PROMPTS = (

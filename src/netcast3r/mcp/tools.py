@@ -976,8 +976,52 @@ def brain_context(ctx: ToolContext, args: dict) -> dict:
 
 def brain_chat(ctx: ToolContext, args: dict) -> dict:
     body = {key: args[key] for key in
-            ("message", "mission_id", "history", "act") if key in args}
+            ("message", "mission_id", "history", "act", "session_id", "agent",
+             "model", "permission") if key in args}
     return _call(ctx, "POST", "/api/v1/brain/chat", body=body)
+
+
+def brain_sessions_list(ctx: ToolContext, args: dict) -> dict:
+    query = {key: args[key] for key in ("limit", "mission_id", "archived")
+             if key in args}
+    return _call(ctx, "GET", "/api/v1/brain/sessions", query=query or None)
+
+
+def brain_session_get(ctx: ToolContext, args: dict) -> dict:
+    return _call(ctx, "GET", f"/api/v1/brain/sessions/{args['session_id']}")
+
+
+def brain_session_create(ctx: ToolContext, args: dict) -> dict:
+    body = {key: args[key] for key in
+            ("title", "mission_id", "agent", "model", "permission")
+            if key in args}
+    return _call(ctx, "POST", "/api/v1/brain/sessions", body=body)
+
+
+def brain_session_update(ctx: ToolContext, args: dict) -> dict:
+    body = {key: args[key] for key in
+            ("title", "mission_id", "agent", "model", "permission", "archived")
+            if key in args}
+    return _call(ctx, "PATCH", f"/api/v1/brain/sessions/{args['session_id']}",
+                 body=body)
+
+
+def brain_session_delete(ctx: ToolContext, args: dict) -> dict:
+    body = {key: args[key] for key in ("confirm",) if key in args}
+    return _call(ctx, "DELETE", f"/api/v1/brain/sessions/{args['session_id']}",
+                 body=body)
+
+
+def brain_session_fork(ctx: ToolContext, args: dict) -> dict:
+    body = {key: args[key] for key in ("title",) if key in args}
+    return _call(ctx, "POST", f"/api/v1/brain/sessions/{args['session_id']}/fork",
+                 body=body)
+
+
+def brain_session_messages(ctx: ToolContext, args: dict) -> dict:
+    query = {key: args[key] for key in ("limit",) if key in args}
+    return _call(ctx, "GET", f"/api/v1/brain/sessions/{args['session_id']}/messages",
+                 query=query or None)
 
 
 def instruct(ctx: ToolContext, args: dict) -> dict:
@@ -4464,6 +4508,13 @@ _HANDLERS.update({
     "host_kill": host_kill,
     "brain_context": brain_context,
     "brain_chat": brain_chat,
+    "brain_sessions_list": brain_sessions_list,
+    "brain_session_get": brain_session_get,
+    "brain_session_create": brain_session_create,
+    "brain_session_update": brain_session_update,
+    "brain_session_delete": brain_session_delete,
+    "brain_session_fork": brain_session_fork,
+    "brain_session_messages": brain_session_messages,
     "instruct": instruct,
     "brain_journal": brain_journal,
     "brain_loop": brain_loop,
@@ -5308,13 +5359,71 @@ TOOLS: tuple[Tool, ...] = (
          "Ask the main brain a question or give it guidance. It answers from a "
          "live snapshot of the whole control plane and can steer the hunt: queue "
          "a direction for a mission, engage, pause, or tune the director, or run "
-         "one exploit module. It never creates a finding or submits a report.",
+         "one exploit module. It never creates a finding or submits a report. Pass "
+         "session_id to continue a stored session; omit it to start a new one.",
          "medium", "brain",
          _schema({"message": _string("what to ask or instruct"),
                   "mission_id": _string("optional focus mission"),
                   "history": _array("prior turns", {"type": "object"}),
-                  "act": _boolean("apply the steering actions", True)},
+                  "act": _boolean("apply the steering actions", True),
+                  "session_id": _string("continue this stored session"),
+                  "agent": _string("session agent label"),
+                  "model": _string("session model override"),
+                  "permission": _string("session permission")},
                  ["message"]), "brain_chat"),
+    Tool("brain_sessions_list", "List brain sessions",
+         "The stored chat sessions: title, mission, agent, model, and last activity.",
+         "low", "brain",
+         _schema({"limit": _integer("max rows", 1, 200, 40),
+                  "mission_id": _string("filter by mission"),
+                  "archived": _boolean("include archived")}),
+         "brain_sessions_list", read_only=True),
+    Tool("brain_session_get", "Read a brain session",
+         "One stored session's metadata.",
+         "low", "brain",
+         _schema({"session_id": _string("session id")}, ["session_id"]),
+         "brain_session_get", read_only=True),
+    Tool("brain_session_create", "Create a brain session",
+         "Start a named chat session bound to an optional mission, so a harness can "
+         "keep multi-turn reasoning separate from the operator's.",
+         "medium", "brain",
+         _schema({"title": _string("session title"),
+                  "mission_id": _string("optional mission id"),
+                  "agent": _string("agent label", default="helix"),
+                  "model": _string("model override"),
+                  "permission": _string("permission")}),
+         "brain_session_create"),
+    Tool("brain_session_update", "Update a brain session",
+         "Rename a session, rebind its mission, or archive it.",
+         "medium", "brain",
+         _schema({"session_id": _string("session id"),
+                  "title": _string("new title"),
+                  "mission_id": _string("new mission id"),
+                  "agent": _string("agent label"),
+                  "model": _string("model override"),
+                  "permission": _string("permission"),
+                  "archived": _boolean("archive the session")},
+                 ["session_id"]), "brain_session_update"),
+    Tool("brain_session_delete", "Delete a brain session",
+         "Remove a stored session and its messages. High risk; needs an approval or "
+         "a confirm.",
+         "high", "brain",
+         _schema({"session_id": _string("session id")}, ["session_id"]),
+         "brain_session_delete", destructive=True),
+    Tool("brain_session_fork", "Fork a brain session",
+         "Copy a session into a new one, so a harness can branch a reasoning thread "
+         "without disturbing the original.",
+         "medium", "brain",
+         _schema({"session_id": _string("session id"),
+                  "title": _string("optional new title")}, ["session_id"]),
+         "brain_session_fork"),
+    Tool("brain_session_messages", "Read session messages",
+         "The stored turns of one session, in order.",
+         "low", "brain",
+         _schema({"session_id": _string("session id"),
+                  "limit": _integer("max messages", 1, 2000, 500)},
+                 ["session_id"]),
+         "brain_session_messages", read_only=True),
     Tool("instruct", "Mid-hunt follow-up for brain and/or hunt queue",
          "Route an operator instruction mid-engagement without restarting. "
          "target=brain talks to the main brain; director queues a mission "

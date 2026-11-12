@@ -306,6 +306,32 @@ class MCPIntegrationTests(unittest.TestCase):
         self.assertFalse(upgrade["can_self_upgrade"])
         self.assertTrue(upgrade["written"]["path"].endswith("parser_probe.py"))
 
+    def test_brain_session_tools_round_trip(self):
+        created = self.call("brain_session_create", title="Operator thread")[0]
+        self.assertEqual(created["title"], "Operator thread")
+        session_id = created["id"]
+        self.assertEqual(self.call("brain_session_get", session_id=session_id)[0]["id"],
+                         session_id)
+
+        renamed = self.call("brain_session_update", session_id=session_id,
+                            title="Renamed")[0]
+        self.assertEqual(renamed["title"], "Renamed")
+
+        forked = self.call("brain_session_fork", session_id=session_id,
+                           title="Branch")[0]
+        self.assertNotEqual(forked["id"], session_id)
+
+        listing = self.call("brain_sessions_list", limit=20)[0]
+        self.assertIn(session_id, [row["id"] for row in listing["items"]])
+
+        messages = self.call("brain_session_messages", session_id=session_id)[0]
+        self.assertEqual(messages["items"], [])
+
+        # Delete is high risk, so supervised policy holds it for an approval.
+        payload, is_error = self.call("brain_session_delete", session_id=session_id)
+        self.assertTrue(is_error)
+        self.assertEqual(payload["error"]["code"], "approval_required")
+
     def test_submission_ledger_tools_record_real_rows(self):
         mission = self.create_mission()
         payload, is_error = self.call(
