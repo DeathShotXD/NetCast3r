@@ -1,5 +1,5 @@
 import type {
-  BenchResult, BrainLiveFeed, BrainReply, BrainSession, Campaign, Candidate, ConnectInfo, Approval, CoverageSummary, Direction, DirectorLogEntry, DirectorStatus, ExploitPlan, Finding, HarnessDiagnose, HarnessLearn, HarnessRecall, HarnessStatus, HarnessTick, HostShellResult, Hypothesis, HypothesisEvidence, Inventory, KeyEntry, McpInfo, Meta, Mission, MissionAgent, MissionGraph, Paged, ProgramImport, ProgramPreview, Provider, ProviderHealth, RevengKinds, RevengResult, Run, RunDirective, RunEvent, Submission, SubmissionSummary, ThreatMap, ToolCall, Totals, TrendPoint, BrainTurn, BrainLoopStatus } from './types';
+  AgentRoster, BenchResult, BrainLiveFeed, BrainReply, BrainSession, Campaign, Candidate, ConnectInfo, Approval, CoverageSummary, Direction, DirectorLogEntry, DirectorStatus, ExploitPlan, Finding, HarnessDiagnose, HarnessLearn, HarnessRecall, HarnessStatus, HarnessTick, HostShellResult, Hypothesis, HypothesisEvidence, Inventory, KeyEntry, McpInfo, Meta, Mission, MissionAgent, MissionGraph, Paged, ProgramImport, ProgramPreview, Provider, ProviderHealth, RevengKinds, RevengResult, Run, RunDirective, RunEvent, Submission, SubmissionSummary, ThreatMap, ToolCall, Totals, TrendPoint, BrainTurn, BrainLoopStatus } from './types';
 
 const BASE = '/api/v1';
 const DEFAULT_TIMEOUT_MS = 60000;
@@ -332,6 +332,7 @@ export const api = {
   revengAnalyze: (body: Record<string, unknown>) =>
     request<RevengResult>('POST', '/reveng/analyze', body, 600000),
   mcpInfo: () => request<McpInfo>('GET', '/mcp'),
+  agents: () => request<AgentRoster>('GET', '/agents'),
   toolCalls: (q = '') => request<Paged<ToolCall>>('GET', `/tool-calls${q}`),
   toolCall: (id: string) => request<ToolCall>('GET', `/tool-calls/${id}`),
   eventsUrl: (runId?: string) =>

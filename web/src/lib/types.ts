@@ -918,6 +918,27 @@ export interface McpTool {
   };
 }
 
+export interface AgentEntry {
+  agent: string;
+  lane: 'brain' | 'hunt' | 'learn' | string;
+  provider: string;
+  model: string;
+  routed: boolean;
+  temperature: number;
+  max_tokens: number;
+  reasoning: boolean;
+  title?: string;
+  menu_size?: number;
+}
+
+export interface AgentRoster {
+  pipeline: AgentEntry[];
+  mesh: AgentEntry[];
+  steward: AgentEntry;
+  counts: { pipeline: number; mesh: number; routed: number };
+  note: string;
+}
+
 export interface McpServerState {
   schema?: number;
   pid?: number;

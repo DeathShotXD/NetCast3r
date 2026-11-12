@@ -4,6 +4,7 @@
   import { ago } from '../format';
   import { store } from '../state.svelte';
   import type {
+    AgentRoster,
     Approval,
     BenchResult,
     HarnessDiagnose,
@@ -70,12 +71,40 @@
   let harness = $state<HarnessStatus | null>(null);
   let harnessIssues = $state<HarnessDiagnose | null>(null);
   let harnessBusy = $state('');
+  let roster = $state<AgentRoster | null>(null);
+  let rosterLane = $state<'all' | 'brain' | 'hunt' | 'learn'>('all');
 
   const tools = $derived(info?.tools ?? []);
   const server = $derived(info?.server ?? null);
   const connected = $derived(Boolean(info?.connected));
   const policy = $derived(server?.policy ?? '');
   const pending = $derived(approvals.filter((approval) => approval.status === 'pending'));
+
+  const rosterEntries = $derived.by(() => {
+    if (!roster) return [];
+    // 'scribe' is both a pipeline agent and a mesh role, so the key carries the
+    // section as well as the name.
+    return [
+      ...roster.pipeline.map((entry) => ({ ...entry, key: `pipeline:${entry.agent}` })),
+      ...roster.mesh.map((entry) => ({ ...entry, key: `mesh:${entry.agent}` }))
+    ];
+  });
+  const rosterLanes = $derived.by(() => {
+    const counts = new Map<string, number>();
+    for (const entry of rosterEntries) {
+      counts.set(entry.lane, (counts.get(entry.lane) ?? 0) + 1);
+    }
+    return [...counts.entries()].sort((a, b) => a[0].localeCompare(b[0]));
+  });
+  const rosterView = $derived.by(() => {
+    const rows = rosterLane === 'all'
+      ? rosterEntries
+      : rosterEntries.filter((entry) => entry.lane === rosterLane);
+    return [...rows].sort((a, b) => {
+      if (a.routed !== b.routed) return a.routed ? -1 : 1;
+      return a.agent.localeCompare(b.agent);
+    });
+  });
 
   const categories = $derived.by(() => {
     const counts = new Map<string, number>();
@@ -149,17 +178,19 @@
       error = '';
     }
     try {
-      const [nextInfo, audit, approvalPage, nextHarness] = await Promise.all([
+      const [nextInfo, audit, approvalPage, nextHarness, nextRoster] = await Promise.all([
         api.mcpInfo(),
         api.toolCalls(auditQuery()),
         api.approvals('?status=pending&size=50'),
-        api.harnessStatus().catch(() => null)
+        api.harnessStatus().catch(() => null),
+        api.agents().catch(() => null)
       ]);
       info = nextInfo;
       calls = audit.items;
       callTotal = audit.total;
       approvals = approvalPage.items;
       harness = nextHarness;
+      roster = nextRoster;
       if (selectedTool) {
         selectedTool = nextInfo.tools.find((tool) => tool.name === selectedTool?.name) ?? null;
       }
@@ -522,6 +553,72 @@
               {/if}
               <div>State file <code>{info?.state_file ?? '-'}</code></div>
             </div>
+          </div>
+        </section>
+
+        <section class="obs-card obs-roster" aria-label="agent roster">
+          <header class="obs-card-head">
+            <div>
+              <div class="obs-card-title"><Icon name="users" size={13} />Agent roster</div>
+              <div class="obs-card-sub">
+                Who runs, which lane, and the provider/model each route resolves to.
+                {#if roster}
+                  {roster.counts.routed}/{roster.counts.pipeline + roster.counts.mesh} routed to a pinned model.
+                {/if}
+              </div>
+            </div>
+            {#if rosterLanes.length > 1}
+              <div class="obs-roster-lanes" role="tablist" aria-label="agent lanes">
+                <button
+                  class="obs-filter"
+                  class:active={rosterLane === 'all'}
+                  type="button"
+                  onclick={() => (rosterLane = 'all')}
+                >
+                  all <span>{rosterEntries.length}</span>
+                </button>
+                {#each rosterLanes as [lane, count] (lane)}
+                  <button
+                    class="obs-filter"
+                    class:active={rosterLane === lane}
+                    type="button"
+                    onclick={() => (rosterLane = lane as typeof rosterLane)}
+                  >
+                    {lane} <span>{count}</span>
+                  </button>
+                {/each}
+              </div>
+            {/if}
+          </header>
+          <div class="obs-card-body">
+            {#if roster}
+              <div class="obs-roster-grid">
+                {#each rosterView as entry (entry.key)}
+                  <div class="obs-roster-row" class:is-unrouted={!entry.routed}>
+                    <div class="obs-roster-id">
+                      <span class="obs-roster-name">{entry.agent}</span>
+                      {#if entry.title}<span class="obs-roster-title">{entry.title}</span>{/if}
+                    </div>
+                    <span class="obs-roster-lane" data-lane={entry.lane}>{entry.lane}</span>
+                    <div class="obs-roster-model">
+                      {#if entry.routed}
+                        <span class="provider">{entry.provider}</span>
+                        <span class="model">{entry.model}</span>
+                      {:else}
+                        <span class="lane-default">lane default</span>
+                      {/if}
+                    </div>
+                    <div class="obs-roster-flags">
+                      {#if entry.reasoning}<span class="is-reason">RSN</span>{/if}
+                      {#if entry.menu_size !== undefined}<span>{entry.menu_size} actions</span>{/if}
+                    </div>
+                  </div>
+                {/each}
+              </div>
+              <p class="obs-agent-fine">{roster.note}</p>
+            {:else}
+              <p class="obs-detail-note">The roster could not be read. It does not gate any control; retry on the next refresh.</p>
+            {/if}
           </div>
         </section>
 
