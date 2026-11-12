@@ -630,6 +630,38 @@ class MCPIntegrationTests(unittest.TestCase):
         self.assertEqual(bad["error"]["code"], protocol.INVALID_PARAMS)
         server.close()
 
+    def test_resource_subscription_validates_and_tracks(self):
+        server = MCPServer(plane=self.plane, policy=DEFAULT_POLICY, base=self.tmp)
+        ok = server.handle({"jsonrpc": "2.0", "id": 1, "method": "resources/subscribe",
+                            "params": {"uri": "netcast3r://status"}})
+        self.assertIn("result", ok, ok)
+        self.assertIn("netcast3r://status", server._subs)
+        gone = server.handle({"jsonrpc": "2.0", "id": 2, "method": "resources/unsubscribe",
+                              "params": {"uri": "netcast3r://status"}})
+        self.assertIn("result", gone)
+        self.assertNotIn("netcast3r://status", server._subs)
+        bad = server.handle({"jsonrpc": "2.0", "id": 3, "method": "resources/subscribe",
+                             "params": {"uri": "netcast3r://nope/xyz"}})
+        self.assertEqual(bad["error"]["code"], protocol.INVALID_PARAMS)
+        server.close()
+
+    def test_watcher_emits_resource_updated_on_change(self):
+        server = MCPServer(plane=self.plane, policy=DEFAULT_POLICY, base=self.tmp)
+        events: list[dict] = []
+        server.set_notifier(lambda message: events.append(message))
+        # A stale cached state makes the first poll a change on purpose.
+        server._subs["netcast3r://status"] = "stale-state"
+        server._ensure_watcher()
+        deadline = time.time() + 7
+        while time.time() < deadline and not events:
+            time.sleep(0.2)
+        server._stop.set()
+        updated = [e for e in events
+                   if e["method"] == "notifications/resources/updated"
+                   and e["params"]["uri"] == "netcast3r://status"]
+        self.assertTrue(updated, events)
+        server.close()
+
     def test_stdio_newline_and_content_length_framing(self):
         newline = io.BytesIO(b'{"jsonrpc":"2.0","id":1,"method":"ping"}\n')
         self.assertEqual(protocol.read_message(newline)["method"], "ping")

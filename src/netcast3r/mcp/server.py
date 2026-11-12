@@ -14,6 +14,7 @@ import os
 import re
 import signal
 import sys
+import threading
 import time
 from pathlib import Path
 
@@ -184,6 +185,13 @@ class MCPServer:
         self.protocol_version = protocol.LATEST_PROTOCOL
         self.client_info: dict = {}
         self._notifier = None  # set by run(), so a call can emit progress
+        # Resource subscriptions: uri -> last serialised content. A watcher
+        # thread polls them and emits notifications/resources/updated on change.
+        self._subs: dict[str, str] = {}
+        self._sub_lock = threading.Lock()
+        self._write_lock = threading.Lock()
+        self._watcher: threading.Thread | None = None
+        self._stop = threading.Event()
         self.registry = ToolRegistry(ToolContext(
             plane=plane, policy=policy, base=base, actor=actor))
         self.state_path = control.mcp_state_path(base)
@@ -213,6 +221,7 @@ class MCPServer:
             pass
 
     def close(self) -> None:
+        self._stop.set()
         control.remove_mcp_state(self.base, pid=os.getpid())
 
     # -- protocol ----------------------------------------------------------
@@ -245,7 +254,7 @@ class MCPServer:
                 "protocolVersion": self.protocol_version,
                 "capabilities": {
                     "tools": {"listChanged": False},
-                    "resources": {"subscribe": False, "listChanged": False},
+                    "resources": {"subscribe": True, "listChanged": False},
                     "prompts": {"listChanged": False},
                     "completions": {},
                 },
@@ -313,6 +322,24 @@ class MCPServer:
         def resource_templates(params):
             return {"resourceTemplates": [dict(item) for item in RESOURCE_TEMPLATES]}
 
+        @dispatcher.method("resources/subscribe")
+        def resources_subscribe(params):
+            uri = str(params.get("uri") or "")
+            if not uri:
+                raise RpcError(protocol.INVALID_PARAMS, "uri required")
+            self._read_resource(uri)  # validate the uri resolves before subscribing
+            with self._sub_lock:
+                self._subs[uri] = self._resource_state(uri)
+            self._ensure_watcher()
+            return {}
+
+        @dispatcher.method("resources/unsubscribe")
+        def resources_unsubscribe(params):
+            uri = str(params.get("uri") or "")
+            with self._sub_lock:
+                self._subs.pop(uri, None)
+            return {}
+
         @dispatcher.method("completion/complete")
         def completion_complete(params):
             ref = params.get("ref")
@@ -358,18 +385,50 @@ class MCPServer:
         """Install the transport's notification writer (stdout for stdio)."""
         self._notifier = notifier
 
-    def _notify_progress(self, token, progress: int, total: int, message: str) -> None:
-        if token is None or self._notifier is None:
+    def _notify(self, method: str, params: dict) -> None:
+        if self._notifier is None:
             return
         try:
-            self._notifier({
-                "jsonrpc": "2.0",
-                "method": "notifications/progress",
-                "params": {"progressToken": token, "progress": progress,
-                           "total": total, "message": message},
-            })
-        except Exception:  # noqa: BLE001 - a progress ping must never break a call
+            # One writer at a time: the watcher thread and a tool call may both
+            # emit, and interleaved framing would corrupt the stream.
+            with self._write_lock:
+                self._notifier({"jsonrpc": "2.0", "method": method, "params": params})
+        except Exception:  # noqa: BLE001 - a ping must never break a call
             pass
+
+    def _notify_progress(self, token, progress: int, total: int, message: str) -> None:
+        if token is None:
+            return
+        self._notify("notifications/progress", {
+            "progressToken": token, "progress": progress,
+            "total": total, "message": message})
+
+    # -- resource subscriptions -------------------------------------------
+    def _resource_state(self, uri: str) -> str:
+        return json.dumps(self._read_resource(uri), sort_keys=True, default=str)
+
+    def _ensure_watcher(self) -> None:
+        if self._watcher is not None and self._watcher.is_alive():
+            return
+        self._stop.clear()
+        self._watcher = threading.Thread(
+            target=self._watch_loop, name="netcast3r-mcp-watch", daemon=True)
+        self._watcher.start()
+
+    def _watch_loop(self) -> None:
+        while not self._stop.wait(4.0):
+            with self._sub_lock:
+                watched = list(self._subs.items())
+            for uri, previous in watched:
+                try:
+                    current = self._resource_state(uri)
+                except Exception:  # noqa: BLE001 - a resource can vanish mid-watch
+                    continue
+                if current != previous:
+                    with self._sub_lock:
+                        if uri in self._subs:
+                            self._subs[uri] = current
+                    self._notify("notifications/resources/updated", {"uri": uri})
 
     # -- resources ---------------------------------------------------------
     def _read_resource(self, uri: str) -> dict:
