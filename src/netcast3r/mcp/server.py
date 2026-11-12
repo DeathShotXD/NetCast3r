@@ -86,6 +86,9 @@ RESOURCES = (
     ("netcast3r://agents", "Agent roster",
      "Pipeline agents, mesh roles, the steward, and the lane/model each uses.",
      "application/json"),
+    ("netcast3r://mcp", "MCP server",
+     "The MCP server's live state: policy, client, advertised capabilities.",
+     "application/json"),
     ("netcast3r://policy", "MCP policy",
      "The active policy and the full tool catalogue.", "application/json"),
 )
@@ -126,6 +129,7 @@ _STATIC_RESOURCES: dict[str, tuple[str, dict]] = {
     "netcast3r://brain": ("/api/v1/brain/loop", {}),
     "netcast3r://checklists": ("/api/v1/checklists", {}),
     "netcast3r://agents": ("/api/v1/agents", {}),
+    "netcast3r://mcp": ("/api/v1/mcp", {}),
 }
 
 # uriTemplate -> regex + resolver for the parameterised resources.
