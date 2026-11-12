@@ -86,6 +86,9 @@ RESOURCES = (
     ("netcast3r://agents", "Agent roster",
      "Pipeline agents, mesh roles, the steward, and the lane/model each uses.",
      "application/json"),
+    ("netcast3r://helix/scripts", "Toolsmith scripts",
+     "The durable scripts Helix wrote for itself, with their last run.",
+     "application/json"),
     ("netcast3r://mcp", "MCP server",
      "The MCP server's live state: policy, client, advertised capabilities.",
      "application/json"),
@@ -113,6 +116,9 @@ RESOURCE_TEMPLATES = (
     {"uriTemplate": "netcast3r://findings/{finding_id}/artifacts", "name": "Finding artifacts",
      "description": "The evidence artifacts attached to one finding.",
      "mimeType": "application/json"},
+    {"uriTemplate": "netcast3r://helix/scripts/{script_id}", "name": "Toolsmith script",
+     "description": "One script Helix wrote for itself, with its source and last run.",
+     "mimeType": "application/json"},
 )
 
 # uri -> (control-plane path, query) for the fixed resources.
@@ -129,6 +135,7 @@ _STATIC_RESOURCES: dict[str, tuple[str, dict]] = {
     "netcast3r://brain": ("/api/v1/brain/loop", {}),
     "netcast3r://checklists": ("/api/v1/checklists", {}),
     "netcast3r://agents": ("/api/v1/agents", {}),
+    "netcast3r://helix/scripts": ("/api/v1/helix/scripts", {"limit": 50}),
     "netcast3r://mcp": ("/api/v1/mcp", {}),
 }
 
@@ -146,7 +153,17 @@ _TEMPLATE_RESOURCES = (
      lambda m: (f"/api/v1/findings/{m.group(1)}/artifacts", {})),
     (re.compile(r"^netcast3r://findings/([^/]+)$"),
      lambda m: (f"/api/v1/findings/{m.group(1)}", {})),
+    (re.compile(r"^netcast3r://helix/scripts/([^/]+)$"),
+     lambda m: (f"/api/v1/helix/scripts/{m.group(1)}", {})),
 )
+
+# argument name -> (list path, page param, label fields) for completion/complete.
+_COMPLETIONS: dict[str, tuple[str, str, tuple[str, ...]]] = {
+    "mission_id": ("/api/v1/missions", "size", ("title", "target")),
+    "run_id": ("/api/v1/runs", "size", ("title", "target")),
+    "finding_id": ("/api/v1/findings", "size", ("title", "severity")),
+    "script_id": ("/api/v1/helix/scripts", "limit", ("name", "purpose")),
+}
 
 PROMPTS = (
     {
@@ -562,13 +579,13 @@ class MCPServer:
             limit = max(1, min(int(argument.get("limit") or 25), 100))
         except (TypeError, ValueError):
             limit = 25
-        field = {"mission_id": "missions", "run_id": "runs",
-                 "finding_id": "findings"}.get(name)
-        if field is None:
+        source = _COMPLETIONS.get(name)
+        if source is None:
             return {"values": [], "hasMore": False}
+        path, page_key, labels = source
         try:
-            payload = self.plane.request("GET", f"/api/v1/{field}",
-                                         query={"size": max(50, limit)})
+            payload = self.plane.request(
+                "GET", path, query={page_key: max(50, limit)})
         except Exception:  # noqa: BLE001 - completion is best effort
             return {"values": [], "hasMore": False}
         items = payload.get("items") if isinstance(payload, dict) else []
@@ -580,8 +597,8 @@ class MCPServer:
             ident = str(item.get("id") or "")
             if not ident:
                 continue
-            label = str(item.get("title") or item.get("target") or "")
-            if low and not (ident.lower().startswith(low) or low in label.lower()):
+            hay = " ".join(str(item.get(key) or "") for key in labels)
+            if low and not (ident.lower().startswith(low) or low in hay.lower()):
                 continue
             values.append(ident)
             if len(values) >= limit:

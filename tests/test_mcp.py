@@ -665,6 +665,28 @@ class MCPIntegrationTests(unittest.TestCase):
         bad = server.handle({"jsonrpc": "2.0", "id": 2, "method": "resources/read",
                              "params": {"uri": "netcast3r://nope/xyz"}})
         self.assertEqual(bad["error"]["code"], protocol.INVALID_PARAMS)
+
+        # Helix scripts are resources too, and completion offers their ids.
+        script = self.registry.call("helix_script_write", {
+            "name": "probe-one", "content": "print('x')\n"}, actor="test/1")[0]
+        listing = server.handle({
+            "jsonrpc": "2.0", "id": 3, "method": "resources/read",
+            "params": {"uri": "netcast3r://helix/scripts"}})
+        items = json.loads(listing["result"]["contents"][0]["text"])["items"]
+        self.assertIn(script["id"], [row["id"] for row in items])
+
+        one = server.handle({
+            "jsonrpc": "2.0", "id": 4, "method": "resources/read",
+            "params": {"uri": f"netcast3r://helix/scripts/{script['id']}"}})
+        self.assertIn("print", json.loads(one["result"]["contents"][0]["text"])["content"])
+
+        completion = server.handle({
+            "jsonrpc": "2.0", "id": 5, "method": "completion/complete",
+            "params": {"ref": {"type": "ref/resource",
+                               "uri": "netcast3r://helix/scripts/{script_id}"},
+                       "argument": {"name": "script_id", "value": "probe"}}})
+        self.assertIn(script["id"],
+                      completion["result"]["completion"]["values"])
         server.close()
 
     def test_resource_subscription_validates_and_tracks(self):
