@@ -67,3 +67,19 @@ class SecondBrainTests(unittest.TestCase):
         self.assertIn("second_brain", snapshot)
         self.assertIn("moe", snapshot)
         self.assertTrue(snapshot["moe"].get("available", True))
+
+    def test_mcp_heartbeats_are_per_process(self):
+        # Two MCP clients at once: each keeps its own heartbeat, and one
+        # exiting must not hide the other.
+        control.write_mcp_state(self.tmp, {
+            "schema": 1, "pid": 1, "client": {"name": "other"},
+            "last_call_at": "2026-01-01T00:00:00Z"})
+        control.write_mcp_state(self.tmp, {
+            "schema": 1, "pid": os.getpid(), "client": {"name": "me"},
+            "last_call_at": "2026-02-01T00:00:00Z"})
+        self.assertEqual(control.read_mcp_state(self.tmp)["client"]["name"], "me")
+
+        control.remove_mcp_state(self.tmp, pid=os.getpid())
+        state = control.read_mcp_state(self.tmp)
+        self.assertIsNotNone(state)
+        self.assertEqual(state["client"]["name"], "other")

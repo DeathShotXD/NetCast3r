@@ -4,9 +4,10 @@
   import { store } from '../state.svelte';
   import Buffering from '../ui/Buffering.svelte';
   import Icon from '../ui/Icon.svelte';
-  import type { ConnectInfo } from '../types';
+  import type { ConnectInfo, McpInfo } from '../types';
 
   let info = $state<ConnectInfo | null>(null);
+  let mcp = $state<McpInfo | null>(null);
   let loading = $state(true);
   let error = $state('');
   let toolQuery = $state('');
@@ -57,6 +58,11 @@
     error = '';
     try {
       info = await api.connect();
+      try {
+        mcp = await api.mcpInfo();
+      } catch {
+        mcp = null;
+      }
       try {
         auth = await api.authInfo();
         credUser = auth.username;
@@ -162,6 +168,61 @@
         <p class="obs-connect-value obs-connect-mono">{auth?.username ?? 'admin'}</p>
         <p class="obs-hist-kpi-note">{auth?.default ? 'default login - change it' : 'username + password'}</p>
       </div>
+    </section>
+
+    <section class="panel p-5" aria-label="live harness connection">
+      <div class="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <p class="eyebrow">live harness</p>
+          <h2 class="obs-connect-name">MCP client connection</h2>
+        </div>
+        <span class="chip" class:text-acid={mcp?.connected} class:text-violet={!mcp?.connected}>
+          <span class="h-2 w-2 rounded-full" class:bg-acid={mcp?.connected} class:bg-violet={!mcp?.connected}></span>
+          {mcp?.connected ? 'connected' : 'no client'}
+        </span>
+      </div>
+      {#if mcp?.server}
+        <div class="mt-3 grid grid-cols-2 gap-3 lg:grid-cols-4">
+          <div>
+            <p class="eyebrow">client</p>
+            <p class="obs-connect-mono text-sm text-bone">
+              {mcp.server.client?.name || 'unknown'}{mcp.server.client?.version ? ` ${mcp.server.client.version}` : ''}
+            </p>
+          </div>
+          <div>
+            <p class="eyebrow">policy</p>
+            <p class="obs-connect-mono text-sm text-bone">{mcp.server.policy ?? '-'}</p>
+          </div>
+          <div>
+            <p class="eyebrow">transport</p>
+            <p class="obs-connect-mono text-sm text-bone">
+              {mcp.server.transport ?? '-'} / {mcp.server.protocol_version ?? '-'}
+            </p>
+          </div>
+          <div>
+            <p class="eyebrow">calls</p>
+            <p class="obs-connect-mono text-sm text-bone">{mcp.server.calls ?? 0}</p>
+          </div>
+        </div>
+        {#if mcp.server.client_capabilities?.length}
+          <div class="mt-3 flex flex-wrap items-center gap-1.5">
+            <span class="eyebrow mr-1">advertised</span>
+            {#each mcp.server.client_capabilities as cap (cap)}
+              <span class="mono rounded-[2px] border border-indigo-deep px-2 py-0.5 text-[11px] text-bone-dust">{cap}</span>
+            {/each}
+          </div>
+        {/if}
+        <p class="obs-connect-notes mt-3">
+          A client that advertises <code>sampling</code> can run a completion on its own model;
+          one that advertises <code>roots</code> bounds the host read, write, and list tools to
+          the folders it hands over.
+        </p>
+      {:else}
+        <p class="obs-connect-notes mt-3">
+          No MCP client is connected. Register a config below and its name, policy, and
+          advertised capabilities appear here in real time.
+        </p>
+      {/if}
     </section>
 
     <section class="panel obs-access" aria-label="dashboard access">

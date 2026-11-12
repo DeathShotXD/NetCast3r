@@ -34,8 +34,17 @@ def control_plane_path(base: str | Path | None = None) -> Path:
     return base_dir(base) / CONTROL_PLANE_FILE
 
 
-def mcp_state_path(base: str | Path | None = None) -> Path:
-    return base_dir(base) / MCP_STATE_FILE
+def mcp_state_path(base: str | Path | None = None, pid: int | None = None) -> Path:
+    """The MCP heartbeat path.
+
+    Each MCP process gets its own file so a second client cannot overwrite - or
+    delete on exit - the record of the first. Without a pid this returns the
+    legacy single-file path.
+    """
+    root = base_dir(base)
+    if pid:
+        return root / f"mcp-{int(pid)}.json"
+    return root / MCP_STATE_FILE
 
 
 def _atomic_json(path: Path, payload: dict) -> None:
@@ -155,36 +164,51 @@ def release_base_lock(handle) -> None:
 
 
 def write_mcp_state(base: str | Path | None, payload: dict) -> Path:
-    path = mcp_state_path(base)
+    pid = int((payload or {}).get("pid") or 0)
+    path = mcp_state_path(base, pid)
     _atomic_json(path, payload)
     return path
 
 
 def remove_mcp_state(base: str | Path | None, pid: int | None = None) -> None:
-    """Remove the heartbeat only when it still belongs to this process."""
-    path = mcp_state_path(base)
+    """Drop this process's heartbeat, then prune any left by dead ones."""
+    target = mcp_state_path(base, pid) if pid else mcp_state_path(base)
     try:
-        data = json.loads(path.read_text("utf-8"))
-    except (OSError, ValueError):
-        return
-    if pid is not None and int(data.get("pid") or 0) not in (0, int(pid)):
-        return
-    try:
-        path.unlink()
+        target.unlink()
     except OSError:
         pass
+    for stale in base_dir(base).glob("mcp-*.json"):
+        try:
+            data = json.loads(stale.read_text("utf-8"))
+        except (OSError, ValueError):
+            continue
+        if isinstance(data, dict) and not pid_alive(data.get("pid")):
+            try:
+                stale.unlink()
+            except OSError:
+                pass
 
 
 def read_mcp_state(base: str | Path | None = None) -> dict | None:
-    path = mcp_state_path(base)
-    try:
-        data = json.loads(path.read_text("utf-8"))
-    except (OSError, ValueError):
-        return None
-    if not isinstance(data, dict):
-        return None
-    data["path"] = str(path)
-    return data
+    """The most recent live MCP heartbeat, across every process."""
+    root = base_dir(base)
+    best: dict | None = None
+    for path in list(root.glob("mcp-*.json")) + [root / MCP_STATE_FILE]:
+        try:
+            data = json.loads(path.read_text("utf-8"))
+        except (OSError, ValueError):
+            continue
+        if not isinstance(data, dict):
+            continue
+        if data.get("pid") and not pid_alive(data.get("pid")):
+            continue
+        data["path"] = str(path)
+        stamp = str(data.get("last_call_at") or data.get("started_at") or "")
+        best_stamp = str((best or {}).get("last_call_at")
+                         or (best or {}).get("started_at") or "")
+        if best is None or stamp > best_stamp:
+            best = data
+    return best
 
 
 def pid_alive(pid: int | None) -> bool:

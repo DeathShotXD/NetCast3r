@@ -931,6 +931,7 @@ export interface McpServerState {
   tools?: number;
   protocol_version?: string;
   client?: { name?: string; version?: string };
+  client_capabilities?: string[];
   initialized?: boolean;
   version?: string;
   base?: string;

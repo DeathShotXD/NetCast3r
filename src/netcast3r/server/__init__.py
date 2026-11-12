@@ -3448,7 +3448,8 @@ class Server:
                 "server": public or None,
                 "connected": bool(public and public.get("alive")),
                 "control_plane": plane,
-                "state_file": str(control.mcp_state_path(getattr(self, "base", None))),
+                "state_file": str((public or {}).get("path")
+                                  or control.mcp_state_path(getattr(self, "base", None))),
                 "tools": tools,
                 "registry_error": registry_error,
             })
