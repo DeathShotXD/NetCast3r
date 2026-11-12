@@ -4985,7 +4985,7 @@ def workspace_brief(ctx: ToolContext, args: dict) -> dict:
                 ctx, "GET", f"/api/v1/missions/{focus_id}/next-actions")
             open_hypotheses, hypothesis_error = _safe_call(
                 ctx, "GET", "/api/v1/hypotheses",
-                {"mission_id": focus_id, "status": "open", "limit": 10})
+                {"mission_id": focus_id, "status": "open", "limit": 200})
             notes, notes_error = _safe_call(
                 ctx, "GET", f"/api/v1/missions/{focus_id}/notes", {"limit": 3})
             activity, activity_error = _safe_call(
@@ -5000,10 +5000,23 @@ def workspace_brief(ctx: ToolContext, args: dict) -> dict:
                 latest_run = (_brief_run(run_payload) if run_payload is not None
                               else {"unavailable": run_error})
 
+    # A live run bound to this mission keeps it from being called stalled even
+    # when the stored last_run_id still points at an older, finished run.
+    run_live = bool(isinstance(latest_run, dict)
+                    and latest_run.get("status") in {"queued", "running"})
+    if not run_live and focus_id and isinstance(running_runs, dict):
+        for candidate in running_runs.get("items") or []:
+            options = (candidate.get("options")
+                       if isinstance(candidate.get("options"), dict) else {})
+            if str(options.get("mission_id") or "") == focus_id:
+                run_live = True
+                break
+
     hypotheses = []
+    entries = []
     dead_ends = []
     if isinstance(open_hypotheses, dict):
-        for item in (open_hypotheses.get("items") or [])[:10]:
+        for item in open_hypotheses.get("items") or []:
             entry = {
                 "id": item.get("id"),
                 "title": item.get("title"),
@@ -5013,16 +5026,20 @@ def workspace_brief(ctx: ToolContext, args: dict) -> dict:
                 "age_seconds": _age_seconds(item.get("created_at")),
                 "dead_end": _hypothesis_dead_end(item),
             }
-            hypotheses.append(entry)
+            entries.append(entry)
             if entry["dead_end"]:
                 dead_ends.append({
                     "hypothesis_id": entry["id"],
                     "title": entry["title"],
                     "reason": "the stored title or technique records a dead end",
                 })
-    actionable = [item for item in hypotheses if not item["dead_end"]]
+        # Counts cover every sampled lead; the item list stays a short page.
+        hypotheses = entries[:10]
+    actionable = [item for item in entries if not item["dead_end"]]
     hypothesis_total = (open_hypotheses.get("total")
                         if isinstance(open_hypotheses, dict) else None)
+    sample_complete = (hypothesis_total is None
+                       or len(entries) >= int(hypothesis_total))
 
     recent_notes = []
     if isinstance(notes, dict):
@@ -5061,8 +5078,6 @@ def workspace_brief(ctx: ToolContext, args: dict) -> dict:
             ],
         }
 
-    run_live = bool(isinstance(latest_run, dict)
-                    and latest_run.get("status") in {"queued", "running"})
     stamps = []
     if isinstance(latest_run, dict):
         stamps.append(latest_run.get("finished_at") or latest_run.get("started_at"))
@@ -5164,6 +5179,8 @@ def workspace_brief(ctx: ToolContext, args: dict) -> dict:
             "open_hypotheses": {
                 "items": hypotheses,
                 "total": hypothesis_total,
+                "sampled": len(entries),
+                "sample_complete": sample_complete,
                 "actionable": len(actionable),
                 "dead_ends": len(dead_ends),
                 "error": hypothesis_error,

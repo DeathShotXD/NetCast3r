@@ -200,6 +200,8 @@ The resume fields are deliberately literal:
 - `focus.latest_run.operator_directive` is the stored run goal verbatim, with a
   `truncated` flag. It is not parsed into policy and the brief never widens it.
 - `focus.open_hypotheses` splits open leads into `actionable` and `dead_ends`.
+  Counts cover up to 200 sampled leads while `items` stays a 10-row page;
+  `sampled` and `sample_complete` say whether the sample equals `total`.
   A dead end is a transparent text match on the stored title or technique
   (`dead-end`, `dead end`, `deadend`); the hypothesis is not changed, and it is
   repeated under `avoid` with the reason.

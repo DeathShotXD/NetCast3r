@@ -469,6 +469,23 @@ class MCPIntegrationTests(unittest.TestCase):
         self.assertIn("agent_notes_write", [item["tool"] for item in calls])
         self.assertIn("counts", payload["focus"]["coverage"])
 
+    def test_workspace_brief_counts_dead_ends_beyond_the_display_page(self):
+        mission = self.create_mission()
+        for index in range(12):
+            title = (f"DEAD-END: probe {index}" if index < 2
+                     else f"Live lead {index}")
+            self.call("hypothesis_create", mission_id=mission["id"], title=title)
+        payload, is_error = self.call("workspace_brief", mission_id=mission["id"])
+        self.assertFalse(is_error, payload)
+        opened = payload["focus"]["open_hypotheses"]
+        self.assertEqual(opened["total"], 12)
+        self.assertEqual(opened["sampled"], 12)
+        self.assertTrue(opened["sample_complete"])
+        self.assertEqual(opened["actionable"], 10)
+        self.assertEqual(opened["dead_ends"], 2)
+        self.assertEqual(len(opened["items"]), 10)
+        self.assertEqual(len(payload["avoid"]), 2)
+
     def test_workspace_brief_flags_a_stalled_active_mission(self):
         from netcast3r.mcp import tools as tools_module
 
