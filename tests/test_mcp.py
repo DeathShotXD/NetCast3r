@@ -13,6 +13,7 @@ from netcast3r.mcp.plane import EmbeddedPlane
 from netcast3r.mcp.server import MCPServer
 from netcast3r.mcp.tools import (
     DEFAULT_POLICY,
+    POLICIES,
     ToolContext,
     ToolRegistry,
     _HANDLERS,
@@ -121,6 +122,290 @@ class MCPIntegrationTests(unittest.TestCase):
         payload, is_error = self.call("status", surprise=True)
         self.assertTrue(is_error)
         self.assertEqual(payload["error"]["code"], "invalid_arguments")
+
+    # -- autonomy spine ----------------------------------------------------
+    def test_every_result_carries_provenance_and_audit_id(self):
+        payload, is_error = self.call("status")
+        self.assertFalse(is_error, payload)
+        meta = payload["meta"]
+        self.assertEqual(meta["tool"], "status")
+        self.assertEqual(meta["category"], "workspace")
+        self.assertEqual(meta["risk"], "low")
+        self.assertEqual(meta["policy"], "supervised")
+        self.assertEqual(meta["actor"], "test/1")
+        self.assertEqual(meta["status"], "ok")
+        self.assertGreaterEqual(meta["duration_ms"], 0)
+        audit = self.plane.request("GET", "/api/v1/tool-calls")["items"][0]
+        self.assertEqual(meta["audit_id"], audit["id"])
+        audit_link = next(link for link in meta["links"] if link["rel"] == "audit")
+        self.assertEqual(audit_link["uri"],
+                         f"netcast3r://tool-calls/{meta['audit_id']}")
+
+        # A failure carries the same provenance plus a retryable flag and hint.
+        payload, is_error = self.call("status", surprise=True)
+        self.assertTrue(is_error)
+        self.assertFalse(payload["error"]["retryable"])
+        self.assertIn("tool_describe", payload["error"]["hint"])
+        self.assertEqual(payload["meta"]["status"], "error")
+        self.assertEqual(payload["meta"]["tool"], "status")
+
+    def test_list_meta_describes_pagination(self):
+        self.create_mission()
+        self.create_mission(title="Second")
+        payload, is_error = self.call("missions_list", limit=1, page=1)
+        self.assertFalse(is_error, payload)
+        meta = payload["meta"]["pagination"]
+        self.assertEqual(meta["returned"], 1)
+        self.assertEqual(meta["total"], 2)
+        self.assertEqual(meta["page"], 1)
+        self.assertEqual(meta["page_size"], 1)
+        self.assertTrue(meta["has_more"])
+
+    def test_tool_search_ranks_exact_prefix_and_filters(self):
+        payload, is_error = self.call("tool_search", query="missions_list")
+        self.assertFalse(is_error, payload)
+        self.assertEqual(payload["items"][0]["name"], "missions_list")
+        self.assertIn("exact name", payload["items"][0]["why"])
+        self.assertEqual(payload["items"][0]["requires"], "none")
+
+        payload, _ = self.call("tool_search", query="mission", read_only=True, limit=100)
+        self.assertTrue(payload["items"])
+        self.assertTrue(all(item["read_only"] for item in payload["items"]))
+        self.assertTrue(any(item["name"] == "missions_list"
+                            for item in payload["items"]))
+
+        payload, _ = self.call("tool_search", category="missions", risk="high")
+        self.assertTrue(payload["items"])
+        self.assertTrue(all(item["category"] == "missions" for item in payload["items"]))
+        self.assertTrue(all(item["risk"] == "high" for item in payload["items"]))
+        self.assertIn("missions", payload["categories"])
+
+    def test_tool_describe_is_the_authoritative_contract(self):
+        payload, is_error = self.registry.call(
+            "tool_describe", {"name": "approval_request"}, actor="test/1")
+        self.assertFalse(is_error, payload)
+        self.assertEqual(payload["name"], "approval_request")
+        self.assertIn("action", payload["required_arguments"])
+        self.assertIn("arguments", payload["optional_arguments"])
+        self.assertTrue(payload["example_arguments"]["action"].startswith("<"))
+        self.assertIn(payload["policy"]["requires"], {"none", "approval"})
+        self.assertTrue(payload["resource_templates"])
+
+        payload, is_error = self.registry.call(
+            "tool_describe", {"name": "not_a_tool"}, actor="test/1")
+        self.assertTrue(is_error)
+        self.assertEqual(payload["error"]["code"], "not_found")
+        self.assertIn("tool_search", payload["error"]["hint"])
+
+    def test_tool_batch_stays_read_only_and_reuses_registry_gates(self):
+        mission = self.create_mission()
+        before = self.plane.request("GET", "/api/v1/tool-calls")["items"]
+        before_creates = [row for row in before if row["tool"] == "missions_create"]
+        payload, is_error = self.call("tool_batch", calls=[
+            {"tool": "status", "arguments": {}},
+            {"tool": "missions_list", "arguments": {}},
+            {"tool": "missions_create",
+             "arguments": {"title": "smuggled", "target": "example.com"}},
+            {"tool": "tool_batch", "arguments": {"calls": []}},
+            {"tool": "http_probe", "arguments": {"target": "example.com"}},
+        ])
+        self.assertFalse(is_error, payload)
+        summary = payload["summary"]
+        self.assertEqual(summary["requested"], 5)
+        self.assertEqual(summary["succeeded"], 2)
+        self.assertEqual(summary["failed"], 3)
+        results = {item["index"]: item for item in payload["results"]}
+        self.assertTrue(results[0]["ok"])
+        self.assertEqual(results[2]["error"]["code"], "policy_denied")
+        self.assertIn("state change", results[2]["error"]["detail"])
+        self.assertIn("nested", results[3]["error"]["message"])
+        self.assertEqual(results[4]["error"]["code"], "policy_denied")
+        self.assertIn("context mode", results[4]["error"]["message"])
+        # The mutation never reached the ledger or the database.
+        self.assertEqual(
+            self.plane.request("GET", "/api/v1/missions")["total"], 1)
+
+        # Context mode refuses open-world tools, but read_only mode allows a
+        # scoped probe through the same scope gate as a direct call.
+        payload, is_error = self.call(
+            "tool_batch", mode="read_only",
+            calls=[{"tool": "scope_check",
+                    "arguments": {"target": "example.com",
+                                  "mission_id": mission["id"]}}])
+        self.assertFalse(is_error, payload)
+        self.assertTrue(payload["results"][0]["result"]["in_scope"])
+
+        # Every sub-call left its own audit row, and the denied mutation left
+        # none beyond the mission this test legitimately created.
+        rows = self.plane.request("GET", "/api/v1/tool-calls")["items"]
+        tools = [row["tool"] for row in rows]
+        self.assertEqual(tools.count("status"), 1)
+        self.assertEqual(tools.count("missions_list"), 1)
+        after_creates = [row for row in rows if row["tool"] == "missions_create"]
+        self.assertEqual(len(after_creates), len(before_creates))
+
+    def test_tool_batch_rejects_oversized_and_empty_batches(self):
+        for arguments in ({"calls": []},
+                          {"calls": [{"tool": "status"}] * 13}):
+            payload, is_error = self.call("tool_batch", **arguments)
+            self.assertTrue(is_error)
+            self.assertEqual(payload["error"]["code"], "invalid_arguments")
+            self.assertFalse(payload["error"]["retryable"])
+
+    def test_workspace_brief_reports_live_and_unavailable_sections(self):
+        mission = self.create_mission()
+        run = self.call("mission_start_run", mission_id=mission["id"])[0]["run"]
+        self.wait_for_run(run["id"])
+        payload, is_error = self.call("workspace_brief", mission_id=mission["id"])
+        self.assertFalse(is_error, payload)
+        self.assertTrue(payload["ok"])
+        self.assertEqual(payload["policy"], "supervised")
+        self.assertEqual(payload["focus"]["mission"]["id"], mission["id"])
+        self.assertIn("summary", payload["workspace"])
+        self.assertIn("pending_approvals", payload)
+        self.assertIn("publish_gate", payload)
+        for item in payload["recommended_calls"]:
+            self.assertIn(item["tool"], _TOOL_MAP)
+            self.assertIn(item["requires"],
+                          {"none", "approval", "confirm", "operator_only",
+                           "policy_denied"})
+            self.assertIsInstance(item["arguments"], dict)
+
+    def test_run_watch_accumulates_until_terminal(self):
+        mission = self.create_mission()
+        run = self.call("mission_start_run", mission_id=mission["id"])[0]["run"]
+        payload, is_error = self.call(
+            "run_watch", run_id=run["id"], until="terminal", timeout=10)
+        self.assertFalse(is_error, payload)
+        self.assertEqual(payload["stop_reason"], "terminal")
+        self.assertTrue(payload["terminal"])
+        self.assertIn(payload["run_status"], {"done", "failed", "stopped"})
+        self.assertGreaterEqual(len(payload["events"]), 1)
+        self.assertGreater(payload["next_since"], 0)
+        self.assertEqual(payload["events"][-1]["seq"], payload["next_since"])
+
+        # Watching a finished run returns the tail immediately.
+        again, is_error = self.call("run_watch", run_id=run["id"], timeout=0)
+        self.assertFalse(is_error, again)
+        self.assertTrue(again["terminal"])
+        self.assertIn(again["stop_reason"], {"events", "terminal"})
+
+        # An unknown run surfaces the control plane's not_found, not a fake run.
+        missing, is_error = self.call("run_watch", run_id="run_missing", timeout=0)
+        self.assertTrue(is_error)
+        self.assertEqual(missing["error"]["code"], "not_found")
+
+    def test_tool_health_reports_catalog_and_runtime(self):
+        payload, is_error = self.call("tool_health")
+        self.assertFalse(is_error, payload)
+        self.assertEqual(payload["catalog"]["tools"], len(catalog()))
+        self.assertIn("workspace", payload["catalog"]["categories"])
+        self.assertIn(payload["policy"], POLICIES)
+        names = {check["name"] for check in payload["checks"]}
+        for expected in ("catalog", "policy", "runtime", "providers", "approvals"):
+            self.assertIn(expected, names)
+        self.assertEqual(payload["runtime"]["integrity"], "ok")
+
+    def test_tools_resource_and_approval_templates_resolve(self):
+        server = MCPServer(plane=self.plane, policy=DEFAULT_POLICY, base=self.tmp)
+        catalog_read = server.handle({
+            "jsonrpc": "2.0", "id": 1, "method": "resources/read",
+            "params": {"uri": "netcast3r://tools"}})
+        payload = json.loads(catalog_read["result"]["contents"][0]["text"])
+        self.assertEqual(payload["total"], len(catalog()))
+        self.assertEqual(sum(payload["categories"].values()), len(catalog()))
+        names = {item["name"] for item in payload["tools"]}
+        self.assertIn("tool_health", names)
+        self.assertTrue(any(item["requires"] == "approval"
+                            for item in payload["tools"]))
+
+        mission = self.create_mission()
+        approval = self.call("approval_request", mission_id=mission["id"],
+                             action="Delete a run", risk="high", tool="runs_delete",
+                             arguments={"run_id": "run_x"})[0]
+        got = server.handle({
+            "jsonrpc": "2.0", "id": 2, "method": "resources/read",
+            "params": {"uri": f"netcast3r://approvals/{approval['id']}"}})
+        self.assertEqual(json.loads(got["result"]["contents"][0]["text"])["id"],
+                         approval["id"])
+
+        completion = server.handle({
+            "jsonrpc": "2.0", "id": 3, "method": "completion/complete",
+            "params": {"ref": {"type": "ref/resource",
+                               "uri": "netcast3r://approvals/{approval_id}"},
+                       "argument": {"name": "approval_id", "value": "apr_"}}})
+        self.assertIn(approval["id"],
+                      completion["result"]["completion"]["values"])
+
+        # A tool call's meta.audit_id resolves to its own audit row.
+        called, _ = self.call("status")
+        audit_uri = f"netcast3r://tool-calls/{called['meta']['audit_id']}"
+        got = server.handle({"jsonrpc": "2.0", "id": 4, "method": "resources/read",
+                             "params": {"uri": audit_uri}})
+        row = json.loads(got["result"]["contents"][0]["text"])
+        self.assertEqual(row["id"], called["meta"]["audit_id"])
+        self.assertEqual(row["tool"], "status")
+        self.assertNotIn("token", json.dumps(row).lower())
+        server.close()
+
+    def test_tool_batch_isolates_an_unexpected_handler_crash(self):
+        from netcast3r.mcp import tools as tools_module
+
+        original = tools_module._HANDLERS["status"]
+
+        def boom(_ctx, _args):
+            raise RuntimeError("synthetic crash")
+
+        tools_module._HANDLERS["status"] = boom
+        try:
+            payload, is_error = self.call("tool_batch", calls=[
+                {"tool": "status", "arguments": {}},
+                {"tool": "missions_list", "arguments": {}}])
+        finally:
+            tools_module._HANDLERS["status"] = original
+        self.assertFalse(is_error, payload)
+        self.assertEqual(payload["summary"]["failed"], 1)
+        self.assertEqual(payload["summary"]["succeeded"], 1)
+        self.assertIn("synthetic crash", payload["results"][0]["error"]["message"])
+        self.assertIn("tool_health", payload["results"][0]["error"]["hint"])
+        crashes = [row for row in
+                   self.plane.request("GET", "/api/v1/tool-calls")["items"]
+                   if row["tool"] == "status"]
+        self.assertEqual(crashes[0]["status"], "error")
+        self.assertIn("RuntimeError", crashes[0]["error"])
+
+    def test_workspace_brief_tolerates_a_stale_focus_mission(self):
+        payload, is_error = self.call("workspace_brief", mission_id="msn_missing")
+        self.assertFalse(is_error, payload)
+        self.assertIsNone(payload["focus"]["mission"])
+        self.assertEqual(payload["focus"]["error"]["code"], "not_found")
+        self.assertIn("summary", payload["workspace"])
+
+    def test_progress_notifications_flow_from_tool_context(self):
+        server = MCPServer(plane=self.plane, policy=DEFAULT_POLICY, base=self.tmp)
+        events = []
+        server.set_notifier(events.append)
+        got = server.handle({
+            "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+            "params": {"name": "tool_batch", "arguments": {"calls": [
+                {"tool": "status", "arguments": {}},
+                {"tool": "missions_list", "arguments": {}}]},
+                "_meta": {"progressToken": "tok-1"}}})
+        self.assertFalse(got["result"]["isError"])
+        progress = [event for event in events
+                    if event["method"] == "notifications/progress"]
+        self.assertGreaterEqual(len(progress), 4)
+        self.assertTrue(all(event["params"]["progressToken"] == "tok-1"
+                            for event in progress))
+        values = [event["params"]["progress"] for event in progress]
+        totals = {event["params"]["total"] for event in progress}
+        self.assertEqual(totals, {100})
+        self.assertEqual(values[0], 0)
+        self.assertEqual(values[-1], 100)
+        self.assertEqual(values, sorted(values))
+        self.assertGreater(len(set(values)), 2)
+        self.assertIsNone(server.registry.ctx.progress)
+        server.close()
 
     # -- scope ------------------------------------------------------------
     def test_scope_check_and_scan_refuse_out_of_scope_targets(self):
@@ -668,7 +953,10 @@ class MCPIntegrationTests(unittest.TestCase):
 
         prompts = server.handle({"jsonrpc": "2.0", "id": 5,
                                  "method": "prompts/list"})["result"]
-        self.assertEqual(len(prompts["prompts"]), 5)
+        prompt_names = {item["name"] for item in prompts["prompts"]}
+        for expected in ("recon-mission", "write-report", "choose-next-action",
+                         "autonomy-brief", "watch-run", "recover-tool-call"):
+            self.assertIn(expected, prompt_names)
 
         prompt_args = {
             "recon-mission": {"mission_id": "msn_test"},
@@ -676,6 +964,9 @@ class MCPIntegrationTests(unittest.TestCase):
             "write-report": {"run_id": "run_test"},
             "review-approval": {"approval_id": "apr_test"},
             "choose-next-action": {"mission_id": "msn_test"},
+            "autonomy-brief": {"mission_id": "msn_test"},
+            "watch-run": {"run_id": "run_test"},
+            "recover-tool-call": {"tool": "scope_check"},
         }
         for index, name in enumerate(prompt_args, start=20):
             got = server.handle({"jsonrpc": "2.0", "id": index, "method": "prompts/get",

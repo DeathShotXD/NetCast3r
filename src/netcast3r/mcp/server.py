@@ -28,6 +28,7 @@ from .tools import (
     ToolError,
     ToolRegistry,
     catalog,
+    catalog_index,
     mcp_tools,
 )
 
@@ -67,6 +68,20 @@ disturbing the original.
 stores one, and helix_script_run executes it (high risk; sandboxed, bounded, recorded). \
 second_brain_status tells you whether a heavy harness is attached; any upgrade code is \
 quarantined for human review and never applied automatically.
+10. Start an autonomous turn with workspace_brief: it reports live runs, pending \
+approvals, findings that still need proof, and recommended_calls that name the step-up \
+each one needs. Never decide an approval for the operator; mark it human_decision.
+11. Do not guess a tool name or schema. tool_search ranks the catalog by intent and \
+tool_describe returns the authoritative contract. tool_batch runs up to 12 read-only \
+tools through the same policy, scope, rate-limit, and audit gates; it never nests and \
+never mutates.
+12. Every result carries a meta block: tool, risk, policy, actor, status, duration, \
+mission/run/approval ids, pagination, resource links, and audit_id. Every error carries \
+retryable and a hint. Read them instead of retrying blindly.
+13. Prefer run_watch over polling runs_events in a loop. until=terminal accumulates \
+events and returns when the run ends or the timeout fires; resume from next_since.
+14. tool_health is the preflight: it reports catalog counts, database integrity, provider \
+health, and pending approvals. A provider outage is degraded, never a fake model result.
 """
 
 RESOURCES = (
@@ -104,6 +119,11 @@ RESOURCES = (
      "application/json"),
     ("netcast3r://policy", "MCP policy",
      "The active policy and the full tool catalogue.", "application/json"),
+    ("netcast3r://tools", "Tool catalog",
+     "Every tool with its risk, category, read-only flag, required arguments, "
+     "and the step-up the active policy needs. Use tool_search for intent and "
+     "tool_describe for one full contract.",
+     "application/json"),
 )
 
 # Parameterised resources: a client can browse one entity at a time instead of
@@ -128,6 +148,15 @@ RESOURCE_TEMPLATES = (
      "mimeType": "application/json"},
     {"uriTemplate": "netcast3r://helix/scripts/{script_id}", "name": "Toolsmith script",
      "description": "One script Helix wrote for itself, with its source and last run.",
+     "mimeType": "application/json"},
+    {"uriTemplate": "netcast3r://approvals/{approval_id}", "name": "Approval",
+     "description": "One approval with its bound tool, argument digest, and decision.",
+     "mimeType": "application/json"},
+    {"uriTemplate": "netcast3r://submissions/{submission_id}", "name": "Submission",
+     "description": "One filed report with its finding, platform, and outcome.",
+     "mimeType": "application/json"},
+    {"uriTemplate": "netcast3r://tool-calls/{audit_id}", "name": "Tool call audit",
+     "description": "One audit row: tool, actor, arguments digest, result, and duration.",
      "mimeType": "application/json"},
 )
 
@@ -166,6 +195,12 @@ _TEMPLATE_RESOURCES = (
      lambda m: (f"/api/v1/findings/{m.group(1)}", {})),
     (re.compile(r"^netcast3r://helix/scripts/([^/]+)$"),
      lambda m: (f"/api/v1/helix/scripts/{m.group(1)}", {})),
+    (re.compile(r"^netcast3r://approvals/([^/]+)$"),
+     lambda m: (f"/api/v1/approvals/{m.group(1)}", {})),
+    (re.compile(r"^netcast3r://submissions/([^/]+)$"),
+     lambda m: (f"/api/v1/submissions/{m.group(1)}", {})),
+    (re.compile(r"^netcast3r://tool-calls/([^/]+)$"),
+     lambda m: (f"/api/v1/tool-calls/{m.group(1)}", {})),
 )
 
 # argument name -> (list path, page param, label fields) for completion/complete.
@@ -175,6 +210,9 @@ _COMPLETIONS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     "finding_id": ("/api/v1/findings", "size", ("title", "severity")),
     "script_id": ("/api/v1/helix/scripts", "limit", ("name", "purpose")),
     "session_id": ("/api/v1/brain/sessions", "limit", ("title", "agent")),
+    "approval_id": ("/api/v1/approvals", "size", ("action", "tool", "status")),
+    "submission_id": ("/api/v1/submissions", "size", ("title", "platform", "status")),
+    "audit_id": ("/api/v1/tool-calls", "size", ("tool", "status", "actor")),
 }
 
 PROMPTS = (
@@ -208,6 +246,25 @@ PROMPTS = (
         "title": "Choose the next action",
         "description": "Read a mission's ranked next actions and pick one with a falsifiable test.",
         "arguments": [{"name": "mission_id", "description": "Mission id", "required": True}],
+    },
+    {
+        "name": "autonomy-brief",
+        "title": "Brief an autonomous turn",
+        "description": "Open a turn with workspace_brief and choose only grounded calls.",
+        "arguments": [{"name": "mission_id", "description": "Optional focus mission",
+                       "required": False}],
+    },
+    {
+        "name": "watch-run",
+        "title": "Watch a run to completion",
+        "description": "Long-poll a run with run_watch until it ends or the timeout fires.",
+        "arguments": [{"name": "run_id", "description": "Run id", "required": True}],
+    },
+    {
+        "name": "recover-tool-call",
+        "title": "Recover a failed tool call",
+        "description": "Diagnose a tool error from its code and hint before retrying.",
+        "arguments": [{"name": "tool", "description": "Tool that failed", "required": True}],
     },
 )
 
@@ -359,15 +416,32 @@ class MCPServer:
             # A long tool can report progress if the client sent a token.
             meta = params.get("_meta") if isinstance(params.get("_meta"), dict) else {}
             token = meta.get("progressToken")
-            self._notify_progress(token, 0, 1, f"running {name}")
+            self._notify_progress(token, 0, 100, f"running {name}")
+            previous_progress = self.registry.ctx.progress
+            if token is not None:
+                # Tools report done/total for their own work. Map that into a
+                # monotonic 0-100 range on the caller's token so a 2-of-2
+                # sub-step never appears to run backwards before completion.
+                def bridge(done, total, message):
+                    size = total if isinstance(total, (int, float)) and total > 0 else 1
+                    fraction = max(0.0, min(1.0, float(done) / float(size)))
+                    self._notify_progress(
+                        token, max(1, min(99, int(round(fraction * 95)))),
+                        100, message)
+
+                self.registry.ctx.progress = bridge
             try:
-                payload, is_error = self.registry.call(name, arguments, self.actor)
-            except ToolError as exc:
-                if exc.code == "unknown_tool":
-                    raise RpcError(protocol.INVALID_PARAMS, exc.message)
-                payload, is_error = exc.payload(), True
+                try:
+                    payload, is_error = self.registry.call(
+                        name, arguments, self.actor)
+                except ToolError as exc:
+                    if exc.code == "unknown_tool":
+                        raise RpcError(protocol.INVALID_PARAMS, exc.message)
+                    payload, is_error = exc.payload(), True
+            finally:
+                self.registry.ctx.progress = previous_progress
             self._notify_progress(
-                token, 1, 1, f"{name} {'failed' if is_error else 'done'}")
+                token, 100, 100, f"{name} {'failed' if is_error else 'done'}")
             if is_error:
                 code = ""
                 if isinstance(payload, dict):
@@ -570,9 +644,29 @@ class MCPServer:
                     self._log("debug", "netcast3r.resources", {"uri": uri})
 
     # -- resources ---------------------------------------------------------
+    def _tool_catalog_resource(self) -> dict:
+        """The browsable catalog index, annotated with this policy's gates."""
+        items = catalog_index(self.policy)
+        categories: dict[str, int] = {}
+        requires: dict[str, int] = {}
+        for item in items:
+            categories[item["category"]] = categories.get(item["category"], 0) + 1
+            requires[item["requires"]] = requires.get(item["requires"], 0) + 1
+        return {
+            "policy": self.policy,
+            "total": len(items),
+            "categories": dict(sorted(categories.items())),
+            "requires": dict(sorted(requires.items())),
+            "tools": items,
+            "note": "Call tool_describe(name) for the full schema before using a "
+                    "tool you have not run in this session.",
+        }
+
     def _read_resource(self, uri: str) -> dict:
         if uri == "netcast3r://policy":
             return {"policy": self.policy, "tools": catalog(), "instructions": INSTRUCTIONS}
+        if uri == "netcast3r://tools":
+            return self._tool_catalog_resource()
         target = _STATIC_RESOURCES.get(uri)
         if target is None:
             for pattern, resolve in _TEMPLATE_RESOURCES:
@@ -677,6 +771,43 @@ class MCPServer:
                 "for what is claimed. Choose exactly one action, name the falsifiable test "
                 "that would confirm or kill it, and state the smallest read-only probe that "
                 "runs it. Do not step outside the mission scope."
+            )
+        elif name == "autonomy-brief":
+            focus = (f" Call workspace_brief with mission_id={mission_id}."
+                     if mission_id else " Call workspace_brief without a mission_id.")
+            text = (
+                "Open this turn with a read-only brief." + focus + " Read every section it "
+                "returns: workspace counters, active missions, live runs, pending approvals, "
+                "findings still needing proof, and the publish gate. Sections it marks "
+                "unavailable are unknown, not empty. From recommended_calls choose at most "
+                "three that are grounded in stored records, name the step-up each needs, and "
+                "stop before anything that mutates state. Approvals stay human_decision: "
+                "summarize them, never decide. Do not invent a finding, run, provider status, "
+                "or next action that the brief does not contain."
+            )
+        elif name == "watch-run":
+            if not run_id:
+                raise RpcError(protocol.INVALID_PARAMS, "run_id required")
+            text = (
+                f"Follow run {run_id} without polling in a tight loop. Call run_watch with "
+                "that run_id, until=terminal, and a timeout of at most 60 seconds. Read the "
+                "returned events, run_status, stop_reason, and next_since. If the run is "
+                "still live, call run_watch again from next_since instead of re-reading the "
+                "whole log. Report only events the store returned; do not paraphrase a "
+                "missing event into existence."
+            )
+        elif name == "recover-tool-call":
+            tool = str(arguments.get("tool") or "")
+            if not tool:
+                raise RpcError(protocol.INVALID_PARAMS, "tool required")
+            text = (
+                f"A call to {tool} failed. Call tool_describe for its exact schema and policy "
+                "gate, then read the failed result's error.code, error.retryable, and "
+                "error.hint. Follow the hint: fix the arguments for invalid_arguments, add a "
+                "mission_id or in-scope list for scope_denied, request a bound approval for "
+                "approval_required, or wait out rate_limited. Call tool_health if the code is "
+                "control_plane. Retry once with corrected arguments; if it fails the same way, "
+                "stop and report the error instead of guessing."
             )
         else:
             raise RpcError(protocol.INVALID_PARAMS, f"unknown prompt: {name}")

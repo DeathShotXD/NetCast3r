@@ -6,7 +6,7 @@ process that drives the same HTTP API the Svelte UI uses. A scan started by an
 agent appears in the dashboard. A human decision in the dashboard is visible to
 the agent. There is one database and one audit trail.
 
-Status: implemented and tested · 2026-10-29 · MCP protocol `2025-06-18`
+Status: implemented and tested · 2026-11-13 · MCP protocol `2025-06-18` · 288 tools
 
 ---
 
@@ -141,24 +141,111 @@ fails. The audit row keeps the approval id.
 
 ### Rate limits
 
-Per MCP process, sliding windows:
+Per MCP process, sliding windows. A bucket is chosen per tool: scans,
+probes, authenticated requests, inbox waits, mutations, and the default read
+bucket. Oracle and race helpers also draw from their own buckets.
 
 | Bucket | Limit |
 | --- | --- |
-| default reads | 180 / minute |
-| mutations | 40 / minute |
-| scans | 6 / hour |
-| probes | 60 / minute |
-| authenticated requests | 90 / minute |
-| inbox waits | 6 / minute |
+| default reads | 300 / minute |
+| mutations | 120 / minute |
+| scans | 30 / hour |
+| probes | 300 / minute |
+| authenticated requests | 600 / minute |
+| oracle requests | 1200 / minute |
+| race requests | 60 / minute |
+| inbox waits | 30 / minute |
 
-Denied calls are audited with status `denied`.
+A short wait (1.5 s or less) is slept instead of refused. Longer waits return
+`rate_limited` with `retryable: true`. Denied calls are audited with status
+`denied`.
 
 ---
 
-## 3. Tools
+## 3. The autonomy spine
 
-209 tools, grouped by job. Every tool publishes a JSON schema with
+Six read-only tools make the 288-tool surface navigable and safe to drive in a
+loop. They are ordinary tools: same schema validation, same policy, same audit.
+None of them can mutate state, decide an approval, or submit a report.
+
+| Tool | What it does |
+| --- | --- |
+| `tool_search` | Rank the catalog by intent, category, risk, or read-only mode. Exact name beats prefix beats substring beats title/description terms. Each row says `requires` under the active policy. |
+| `tool_describe` | The authoritative contract for one tool: full schema, required and optional arguments, placeholder example arguments, policy gate, resource templates, and related tools. |
+| `tool_batch` | Run up to 12 read-only tools in one call. Every sub-call passes the real registry gates: schema, policy, scope, rate limit, and its own audit row. Nested batches are refused. |
+| `workspace_brief` | One snapshot for a planner: counters, active missions, live runs, pending approvals, findings still needing proof, the publish gate, and ranked `recommended_calls` grounded in stored records. |
+| `run_watch` | Long-poll one run instead of hammering `runs_events`. `until=any` returns on the first new event; `until=terminal` accumulates events until the run leaves queued/running. Cap 60 s. |
+| `tool_health` | Preflight: catalog counts, policy step-up counts, database integrity, provider health, pending approvals, and per-check status. |
+
+`tool_batch` has two modes:
+
+- `context` (default) refuses `open_world` tools, so a batch cannot touch the
+  network.
+- `read_only` permits scoped live probes such as `http_probe`; each still passes
+  the normal scope gate.
+
+`workspace_brief` never fills a gap. A section the control plane cannot answer
+is returned as `unavailable` with the error that caused it. Pending approvals
+appear under `blocked` with `requires: human_decision`; the brief will not
+recommend deciding one. Recommendations are only produced for tool names that
+exist and arguments grounded in stored rows.
+
+### Every result is provenance-stamped
+
+The registry attaches a `meta` block to every success and every failure:
+
+```json
+{
+  "tool": "findings_list",
+  "category": "findings",
+  "risk": "low",
+  "read_only": true,
+  "policy": "supervised",
+  "actor": "operator:stdio",
+  "status": "ok",
+  "duration_ms": 12,
+  "mission_id": "msn_...",
+  "run_id": "",
+  "approval_id": "",
+  "pagination": {"returned": 2, "total": 14, "page": 1,
+                 "page_size": 2, "has_more": true},
+  "links": [{"rel": "mission", "uri": "netcast3r://missions/msn_..."}],
+  "audit_id": "tc_..."
+}
+```
+
+`audit_id` is the row id in the `tool_calls` ledger, injected after the audit
+write, so an agent can cite the evidence for its own call. `meta.links` then
+includes `{"rel": "audit", "uri": "netcast3r://tool-calls/<audit_id>"}`, which
+reads that exact row through the resource template.
+
+### Errors tell you how to recover
+
+Every `error` object carries `retryable` and a deterministic `hint`:
+
+```json
+{"error": {"code": "scope_denied",
+           "message": "target is outside the mission scope",
+           "retryable": false,
+           "hint": "Pass a mission_id or an explicit in-scope list. A mission cannot be widened with an extra scope argument."}}
+```
+
+`rate_limited`, `control_plane`, `conflict`, and the client timeout codes are
+`retryable: true`. Everything else is a contract or authorization problem;
+retrying the same arguments will fail the same way.
+
+### Progress
+
+When a client sends `_meta.progressToken` on `tools/call`, the server emits
+`notifications/progress` for the call start, for every `_progress` tick a long
+tool reports (for example each sub-call in `tool_batch`), and for completion.
+Tokens are bound per call and restored afterwards.
+
+---
+
+## 4. Tools
+
+288 tools, grouped by job. Every tool publishes a JSON schema with
 `additionalProperties: false`; unknown arguments are rejected rather than
 silently ignored.
 
@@ -167,6 +254,11 @@ silently ignored.
 | Tool | Risk | Purpose |
 | --- | --- | --- |
 | `status` | low | Version, policy, counters, active runs |
+| `tool_search` | low | Rank the catalog by intent, category, risk, or read-only |
+| `tool_describe` | low | Full schema, policy gate, and examples for one tool |
+| `tool_batch` | low | Up to 12 read-only tools through the real gates |
+| `workspace_brief` | low | Planner snapshot with grounded recommended calls |
+| `tool_health` | low | Catalog, runtime, database, and provider preflight |
 | `tool_calls_list` | low | Read the audit trail |
 | `self_audit` / `diagnostics` | low | Local posture and database integrity |
 | `codeaudit_scan` | low | Static audit of a source tree |
@@ -781,7 +873,7 @@ ceiling, never an estimate.
 
 ---
 
-## 4. Resources and prompts
+## 5. Resources and prompts
 
 Resources (read-only, JSON):
 
@@ -792,7 +884,23 @@ Resources (read-only, JSON):
 - `netcast3r://submissions`
 - `netcast3r://approvals`
 - `netcast3r://tool-calls`
+- `netcast3r://tools` (the catalog index annotated with the active policy)
 - `netcast3r://policy` (the active policy, catalogue, and operating rules)
+
+Parameterised templates resolve one entity at a time, so an agent reads one
+mission instead of filtering a 50-row list:
+
+- `netcast3r://missions/{mission_id}` and `/coverage`
+- `netcast3r://runs/{run_id}` and `/events`
+- `netcast3r://findings/{finding_id}` and `/artifacts`
+- `netcast3r://helix/scripts/{script_id}`
+- `netcast3r://approvals/{approval_id}`
+- `netcast3r://submissions/{submission_id}`
+- `netcast3r://tool-calls/{audit_id}`
+
+`completion/complete` autocompletes `mission_id`, `run_id`, `finding_id`,
+`script_id`, `session_id`, `approval_id`, `submission_id`, and `audit_id` from
+the live workspace.
 
 Prompts:
 
@@ -800,13 +908,17 @@ Prompts:
 - `triage-findings` — cross-check validations before changing status.
 - `write-report` — draft only from a real run; stop if nothing is verified.
 - `review-approval` — summarize a high-risk action for a human.
+- `choose-next-action` — one ranked action with a falsifiable test.
+- `autonomy-brief` — open a turn with `workspace_brief` and only grounded calls.
+- `watch-run` — follow a run with `run_watch` and resume from `next_since`.
+- `recover-tool-call` — read the error hint before retrying a failed tool.
 
 Prompts are instructions, not data. They tell the model which tools to call;
 they do not fabricate the result.
 
 ---
 
-## 5. Audit and visibility
+## 6. Audit and visibility
 
 Every tool call writes one row to `tool_calls`:
 
@@ -830,7 +942,7 @@ tool call. The UI can show whether an MCP client is alive without guessing.
 
 ---
 
-## 6. Security boundary
+## 7. Security boundary
 
 - The control plane refuses non-loopback `Host` headers and requires the
   session token minted by the UI. The state file is `0600`.
@@ -845,11 +957,11 @@ tool call. The UI can show whether an MCP client is alive without guessing.
 
 ---
 
-## 7. Tests
+## 8. Tests
 
 `tests/test_mcp.py` covers:
 
-- schema/catalogue consistency and 40 handlers;
+- schema/catalogue consistency for every registered tool and handler;
 - readonly denial and audit status;
 - scope refusal, exclusion rules, and mission run linking;
 - metadata-address probe refusal;
@@ -858,6 +970,16 @@ tool call. The UI can show whether an MCP client is alive without guessing.
 - single-use approvals, argument binding, and cross-mission refusal;
 - operator-only decisions in supervised mode;
 - full-policy confirmation;
+- provenance `meta` on success and failure, pagination, and `audit_id`;
+- `tool_search` ranking and filters, `tool_describe` contracts;
+- `tool_batch` read-only enforcement, nested/oversized refusal, and per-sub-call
+  audit rows;
+- `workspace_brief` live and unavailable sections, grounded recommendations;
+- `run_watch` terminal accumulation, cursor resumption, and unknown runs;
+- `tool_health` catalog/runtime/provider checks;
+- the `netcast3r://tools` resource, approval and submission templates, and
+  their completions;
+- progress notifications flowing from a tool through `tools/call`;
 - MCP initialize, tools, resources, prompts, notifications, and errors;
 - newline and `Content-Length` framing;
 - stdio round-trip and heartbeat cleanup;

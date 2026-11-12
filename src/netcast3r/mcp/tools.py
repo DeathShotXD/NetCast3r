@@ -25,6 +25,7 @@ import os
 import re
 import shutil
 import subprocess
+from collections import Counter
 from concurrent.futures import ThreadPoolExecutor
 import socket
 import ssl
@@ -74,18 +75,52 @@ IDENTITY_HOSTS = {
 }
 
 
+RETRYABLE_CODES = {"rate_limited", "control_plane", "client_timeout",
+                   "client_closed", "conflict"}
+
+ERROR_HINTS = {
+    "invalid_arguments": "Call tool_describe(name) for the exact schema; unknown "
+                         "fields are rejected instead of ignored.",
+    "unknown_tool": "Call tool_search(query) to find the right tool name.",
+    "not_found": "List the collection first; ids are never guessed.",
+    "scope_denied": "Pass a mission_id or an explicit in-scope list. A mission "
+                    "cannot be widened with an extra scope argument.",
+    "policy_denied": "Call tool_describe(name) and read its policy block; the "
+                     "current process policy does not allow this call.",
+    "approval_required": "Request a bound approval with approval_request, then "
+                         "wait for a human decision and retry the same arguments.",
+    "confirm_required": "The full policy needs confirm=true for this action.",
+    "rate_limited": "Wait for the sliding window to free. tool_batch counts every "
+                    "sub-call against the same buckets.",
+    "control_plane": "Call tool_health and check that the control plane is running.",
+    "conflict": "Re-read the entity; its state changed since it was loaded.",
+    "unsupported": "The connected MCP client did not advertise this capability.",
+    "no_client": "Connect a real MCP client transport to use a callback tool.",
+    "client_error": "The MCP client rejected the callback request.",
+    "client_timeout": "The MCP client did not answer in time; retry once it is idle.",
+    "client_closed": "The MCP client closed the stream.",
+}
+
+
 class ToolError(Exception):
-    def __init__(self, code: str, message: str, detail: str = ""):
+    def __init__(self, code: str, message: str, detail: str = "",
+                 retryable: bool | None = None, hint: str = ""):
         super().__init__(message)
         self.code = code
         self.message = message
         self.detail = detail
+        self.retryable = (code in RETRYABLE_CODES if retryable is None
+                          else bool(retryable))
+        self.hint = hint or ERROR_HINTS.get(code, "")
 
     def payload(self) -> dict:
-        body = {"error": {"code": self.code, "message": self.message}}
+        error = {"code": self.code, "message": self.message,
+                 "retryable": self.retryable}
         if self.detail:
-            body["error"]["detail"] = self.detail
-        return body
+            error["detail"] = self.detail
+        if self.hint:
+            error["hint"] = self.hint
+        return {"error": error}
 
 
 def _schema(properties: dict, required: list[str] | None = None) -> dict:
@@ -296,6 +331,12 @@ class ToolContext:
     # The client's roots, resolved once per session. [] means the client
     # declared none, so host tools are not bounded.
     roots_cache: list[str] | None = None
+    # The registry that owns this context. tool_batch uses it so every
+    # sub-call passes the same schema, policy, rate-limit, and audit gates.
+    registry: object | None = None
+    # Bound to the caller's progressToken for the current call. Long tools
+    # may call it with (done, total, message).
+    progress: object | None = None
 
 
 def _call(ctx: ToolContext, method: str, path: str, query: dict | None = None, body=None):
@@ -471,6 +512,197 @@ def _scan_options(raw: dict | None) -> dict:
 
 def _page(items_key: str = "items") -> dict:
     return {"type": "object", "properties": {}}
+
+
+def _utc_now() -> str:
+    return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+
+
+def _pagination(payload: dict) -> dict | None:
+    """Describe a paginated list without changing the handler's own shape."""
+    if not isinstance(payload, dict):
+        return None
+    items = payload.get("items")
+    total = payload.get("total")
+    if not isinstance(items, list) or isinstance(total, bool) or not isinstance(total, int):
+        return None
+    page = payload.get("page")
+    size = payload.get("size", payload.get("limit"))
+    if isinstance(page, bool) or not isinstance(page, int):
+        page = None
+    if isinstance(size, bool) or not isinstance(size, int):
+        size = None
+    meta = {"returned": len(items), "total": total}
+    if page is not None:
+        meta["page"] = page
+    if size is not None:
+        meta["page_size"] = size
+    if page is not None and size is not None:
+        meta["has_more"] = page * size < total
+    else:
+        meta["has_more"] = len(items) < total
+    cursor = payload.get("next_cursor")
+    if isinstance(cursor, str) and cursor:
+        meta["next_cursor"] = cursor
+    return meta
+
+
+_RESOURCE_LINKS = {
+    "mission_id": ("mission", "netcast3r://missions/{}"),
+    "run_id": ("run", "netcast3r://runs/{}"),
+    "finding_id": ("finding", "netcast3r://findings/{}"),
+    "script_id": ("toolsmith_script", "netcast3r://helix/scripts/{}"),
+    "approval_id": ("approval", "netcast3r://approvals/{}"),
+    "submission_id": ("submission", "netcast3r://submissions/{}"),
+    "audit_id": ("audit", "netcast3r://tool-calls/{}"),
+}
+
+
+def _resource_links(args: dict) -> list[dict]:
+    links = []
+    for key, (rel, template) in _RESOURCE_LINKS.items():
+        value = args.get(key)
+        if not isinstance(value, str) or not value:
+            continue
+        links.append({"rel": rel, "uri": template.format(value)})
+        if key == "run_id":
+            links.append({"rel": "run_events",
+                          "uri": f"netcast3r://runs/{value}/events"})
+        if key == "finding_id":
+            links.append({"rel": "finding_artifacts",
+                          "uri": f"netcast3r://findings/{value}/artifacts"})
+    return links
+
+
+def _tool_requires(tool: Tool, policy: str) -> str:
+    """What the active policy needs before this tool may run."""
+    risk = RISK_LEVELS.get(tool.risk, 99)
+    if policy == "readonly" and (
+            risk > RISK_LEVELS["medium"] or tool.destructive):
+        return "policy_denied"
+    if tool.operator_only and policy != "full":
+        return "operator_only"
+    if risk < RISK_LEVELS["high"]:
+        return "none"
+    if policy == "supervised":
+        return "approval"
+    if policy == "full":
+        return "confirm"
+    return "unknown"
+
+
+def _score_tool(tool: Tool, raw: str, terms: list[str]) -> tuple[int, str]:
+    """Deterministic ranking for tool_search: exact > prefix > substring > text."""
+    name = tool.name.lower()
+    title = tool.title.lower()
+    description = tool.description.lower()
+    category = tool.category.lower()
+    score = 0
+    why: list[str] = []
+    if raw:
+        if name == raw:
+            score += 1000
+            why.append("exact name")
+        elif name.startswith(raw):
+            score += 700
+            why.append("name prefix")
+        elif raw in name:
+            score += 500
+            why.append("name contains")
+    for term in terms:
+        if term == name:
+            score += 300
+        elif name.startswith(term):
+            score += 160
+            why.append(f"name:{term}")
+        elif term in name:
+            score += 110
+            why.append(f"name:{term}")
+        if term in title:
+            score += 50
+            why.append(f"title:{term}")
+        if term in category:
+            score += 35
+        if term in description:
+            score += 15
+    if terms and all(term in name for term in terms):
+        score += 200
+    elif terms and all(term in f"{name} {title}" for term in terms):
+        score += 80
+    if raw and len(raw) > 3 and raw in description:
+        score += 40
+    unique = list(dict.fromkeys(why))
+    return score, ", ".join(unique[:3]) or "catalog match"
+
+
+def _example_value(name: str, schema: dict):
+    """A clearly fake placeholder, never a real id from the workspace."""
+    enum = schema.get("enum")
+    if isinstance(enum, list) and enum:
+        return enum[0]
+    if "default" in schema:
+        return schema["default"]
+    kind = schema.get("type")
+    if kind == "integer":
+        return int(schema.get("minimum", 1))
+    if kind == "number":
+        return schema.get("minimum", 1)
+    if kind == "boolean":
+        return False
+    if kind == "array":
+        return []
+    if kind == "object":
+        return {}
+    return f"<{name}>"
+
+
+def _safe_call(ctx: ToolContext, method: str, path: str,
+               query: dict | None = None) -> tuple[dict | None, dict | None]:
+    """Read an optional section; a failure becomes data, never a crash."""
+    try:
+        return _call(ctx, method, path, query=query), None
+    except ToolError as exc:
+        return None, {"code": exc.code, "message": exc.message,
+                      "detail": exc.detail}
+
+
+def _progress(ctx: ToolContext, done: int, total: int, message: str) -> None:
+    callback = getattr(ctx, "progress", None)
+    if not callable(callback):
+        return
+    try:
+        callback(done, total, message)
+    except Exception:  # noqa: BLE001 - progress is advisory only
+        pass
+
+
+def _tool_meta(tool: Tool, ctx: ToolContext, args: dict, actor: str,
+               started: float, status: str, approval_id: str,
+               payload: dict) -> dict:
+    """Uniform provenance attached to every success and failure."""
+    meta = {
+        "tool": tool.name,
+        "category": tool.category,
+        "risk": tool.risk,
+        "read_only": tool.read_only,
+        "policy": ctx.policy,
+        "actor": actor,
+        "status": status,
+        "duration_ms": int((time.monotonic() - started) * 1000),
+        "mission_id": str(args.get("mission_id") or ctx.mission_id or ""),
+        "run_id": str(args.get("run_id") or ""),
+        "approval_id": approval_id,
+    }
+    pagination = _pagination(payload)
+    if pagination:
+        meta["pagination"] = pagination
+    links = _resource_links(args)
+    if links:
+        meta["links"] = links
+    existing = payload.get("meta")
+    merged = dict(existing) if isinstance(existing, dict) else {}
+    merged.update(meta)
+    return merged
 
 
 # -- handlers -------------------------------------------------------------
@@ -4433,6 +4665,505 @@ def tool_calls_list(ctx: ToolContext, args: dict) -> dict:
         "size": args.get("limit", 50), "page": args.get("page", 1)})
 
 
+def tool_search(ctx: ToolContext, args: dict) -> dict:
+    """Search the typed catalog by intent, category, risk, or read-only mode."""
+    raw = str(args.get("query") or "").strip().lower()
+    terms = [term for term in re.split(r"[^a-z0-9_.-]+", raw) if term]
+    category = str(args.get("category") or "").strip().lower()
+    risk = str(args.get("risk") or "").strip().lower()
+    read_only = args.get("read_only")
+    limit = int(args.get("limit") or 20)
+    page = int(args.get("page") or 1)
+    ranked = []
+    for tool in TOOLS:
+        if category and tool.category.lower() != category:
+            continue
+        if risk and tool.risk.lower() != risk:
+            continue
+        if read_only is not None and bool(tool.read_only) != bool(read_only):
+            continue
+        score, why = _score_tool(tool, raw, terms)
+        if raw and score <= 0:
+            continue
+        ranked.append((score, tool.category.lower(), tool.name, tool, why))
+    if raw:
+        ranked.sort(key=lambda row: (-row[0], row[2]))
+    else:
+        ranked.sort(key=lambda row: (row[1], row[2]))
+    total = len(ranked)
+    start = (page - 1) * limit
+    page_rows = ranked[start:start + limit]
+    items = []
+    for score, _category, _name, tool, why in page_rows:
+        description = tool.description
+        if len(description) > 240:
+            description = description[:237].rstrip() + "..."
+        items.append({
+            "name": tool.name,
+            "title": tool.title,
+            "description": description,
+            "category": tool.category,
+            "risk": tool.risk,
+            "read_only": tool.read_only,
+            "requires": _tool_requires(tool, ctx.policy),
+            "required_arguments": list(tool.input_schema.get("required") or []),
+            "why": why,
+            "score": score,
+        })
+    return {"items": items, "total": total, "page": page, "size": limit,
+            "query": raw, "categories": sorted({tool.category for tool in TOOLS})}
+
+
+def tool_describe(ctx: ToolContext, args: dict) -> dict:
+    """Return one tool's full schema, policy gate, examples, and neighbours."""
+    name = str(args.get("name") or "").strip()
+    tool = _TOOL_MAP.get(name)
+    if tool is None:
+        raise ToolError("not_found", f"unknown tool: {name}",
+                        hint="Call tool_search with the capability you need; "
+                             "tool names are exact and case-sensitive.")
+    properties = tool.input_schema.get("properties") or {}
+    required = list(tool.input_schema.get("required") or [])
+    optional = sorted(set(properties) - set(required))
+    example = {key: _example_value(key, properties.get(key) or {})
+               for key in required}
+    related = [item.name for item in TOOLS
+               if item.category == tool.category and item.name != tool.name][:8]
+    resource_templates = [template for key, (_rel, template) in
+                          _RESOURCE_LINKS.items() if key in properties]
+    risk = RISK_LEVELS.get(tool.risk, 99)
+    return {
+        "name": tool.name,
+        "title": tool.title,
+        "description": tool.description,
+        "category": tool.category,
+        "risk": tool.risk,
+        "read_only": tool.read_only,
+        "destructive": tool.destructive,
+        "open_world": tool.open_world,
+        "operator_only": tool.operator_only,
+        "input_schema": tool.input_schema,
+        "required_arguments": required,
+        "optional_arguments": optional,
+        "example_arguments": example,
+        "example_note": "Placeholders only; replace every angle-bracketed value "
+                        "with a real id or input before calling.",
+        "policy": {
+            "name": ctx.policy,
+            "requires": _tool_requires(tool, ctx.policy),
+            "high_risk": risk >= RISK_LEVELS["high"],
+            "autonomous_mission_can_authorize": bool(
+                risk >= RISK_LEVELS["high"] and not tool.operator_only
+                and not tool.destructive),
+        },
+        "resource_templates": resource_templates,
+        "related_tools": related,
+    }
+
+
+def _batch_error(name: str, code: str, message: str, detail: str = "",
+                 hint: str = "") -> dict:
+    error = ToolError(code, message, detail, hint=hint)
+    payload = error.payload()
+    payload.update({"ok": False, "tool": name,
+                    "status": "denied" if code in {
+                        "policy_denied", "scope_denied", "rate_limited"} else "error"})
+    return payload
+
+
+def tool_batch(ctx: ToolContext, args: dict) -> dict:
+    """Run bounded read-only tools in one call, through the real registry gates."""
+    calls = args.get("calls")
+    if not isinstance(calls, list) or not calls:
+        raise ToolError("invalid_arguments", "calls must be a non-empty array")
+    if len(calls) > 12:
+        raise ToolError("invalid_arguments", "tool_batch accepts at most 12 calls")
+    mode = str(args.get("mode") or "context")
+    stop_on_error = bool(args.get("stop_on_error"))
+    registry = getattr(ctx, "registry", None)
+    if registry is None:
+        raise ToolError("control_plane",
+                        "tool_batch needs an attached tool registry")
+    results = []
+    succeeded = 0
+    failed = 0
+    stopped_early = False
+    for index, call in enumerate(calls):
+        if not isinstance(call, dict):
+            payload = _batch_error("", "invalid_arguments",
+                                   "each batch item must be an object")
+            results.append({"index": index, "tool": "", "ok": False,
+                            "error": payload["error"], "status": "error"})
+            failed += 1
+            _progress(ctx, index + 1, len(calls), "item failed: not an object")
+            if stop_on_error:
+                stopped_early = index + 1 < len(calls)
+                break
+            continue
+        name = str(call.get("tool") or "").strip()
+        call_args = call.get("arguments") or {}
+        started = time.monotonic()
+        if not isinstance(call_args, dict):
+            payload = _batch_error(name, "invalid_arguments",
+                                   "arguments must be an object")
+        elif not name:
+            payload = _batch_error(name, "invalid_arguments", "tool name required")
+        elif name == "tool_batch":
+            payload = _batch_error(
+                name, "invalid_arguments", "nested tool_batch calls are not allowed")
+        elif name not in _TOOL_MAP:
+            payload = _batch_error(name, "unknown_tool", f"unknown tool: {name}")
+        else:
+            subtool = _TOOL_MAP[name]
+            if not subtool.read_only:
+                payload = _batch_error(
+                    name, "policy_denied",
+                    "tool_batch only runs read-only tools",
+                    "use the tool directly so its state change is explicit")
+            elif mode == "context" and subtool.open_world:
+                payload = _batch_error(
+                    name, "policy_denied",
+                    "context mode excludes open-world tools",
+                    "use mode=read_only when every call is an authorized live probe")
+            else:
+                try:
+                    payload, is_error = registry.call(
+                        name, call_args, actor=ctx.actor)
+                except Exception as exc:  # noqa: BLE001 - one bad item must not
+                    # abort the batch; the registry already audited the escape.
+                    is_error = True
+                    payload = _batch_error(
+                        name, "error", f"{type(exc).__name__}: {exc}"[:300],
+                        hint="Call tool_health, then retry this tool on its own.")
+                if is_error:
+                    payload = payload if isinstance(payload, dict) else {
+                        "ok": False, "tool": name,
+                        "error": {"code": "error", "message": str(payload)}}
+                else:
+                    payload = payload if isinstance(payload, dict) else {
+                        "ok": True, "tool": name, "result": payload}
+        is_error = not bool(payload.get("ok", False))
+        entry = {
+            "index": index,
+            "tool": name,
+            "ok": not is_error,
+            "duration_ms": int((time.monotonic() - started) * 1000),
+        }
+        if is_error:
+            entry["error"] = payload.get("error") or {
+                "code": "error", "message": "batch item failed"}
+            entry["status"] = payload.get("status", "error")
+            failed += 1
+        else:
+            entry["result"] = payload
+            succeeded += 1
+        results.append(entry)
+        _progress(ctx, index + 1, len(calls),
+                  f"{name or 'item'} {'failed' if is_error else 'done'}")
+        if is_error and stop_on_error:
+            stopped_early = index + 1 < len(calls)
+            break
+    return {
+        "ok": True,
+        "mode": mode,
+        "results": results,
+        "summary": {
+            "requested": len(calls),
+            "executed": len(results),
+            "succeeded": succeeded,
+            "failed": failed,
+            "stopped_early": stopped_early,
+        },
+        "note": "Each sub-call passed the same schema, policy, scope, rate-limit, "
+                "and audit gates. Context mode never touches the network.",
+    }
+
+
+def _brief_section(data: dict | None, error: dict | None) -> dict:
+    if error is not None:
+        return {"unavailable": error}
+    return data or {}
+
+
+def workspace_brief(ctx: ToolContext, args: dict) -> dict:
+    """One read-only snapshot for an autonomous planner: what is live, blocked,
+    and testable next, with recommendations grounded in stored records."""
+    limit = int(args.get("limit") or 5)
+    summary = _call(ctx, "GET", "/api/v1/summary")
+    meta = _call(ctx, "GET", "/api/v1/meta")
+    active_missions, active_error = _safe_call(
+        ctx, "GET", "/api/v1/missions", {"status": "active", "size": limit})
+    running_runs, running_error = _safe_call(
+        ctx, "GET", "/api/v1/runs", {"status": "running", "size": limit})
+    pending, pending_error = _safe_call(
+        ctx, "GET", "/api/v1/approvals", {"status": "pending", "size": limit})
+    needs_proof, proof_error = _safe_call(
+        ctx, "GET", "/api/v1/findings", {"status": "new", "size": limit})
+    critical, critical_error = _safe_call(
+        ctx, "GET", "/api/v1/portfolio/critical", {"goal": limit})
+
+    focus_id = str(args.get("mission_id") or "")
+    if not focus_id and isinstance(active_missions, dict):
+        active_items = active_missions.get("items") or []
+        if len(active_items) == 1:
+            focus_id = str(active_items[0].get("id") or "")
+    focus = None
+    ranked = None
+    focus_error = None
+    ranked_error = None
+    if focus_id:
+        # A stale focus id must not blank the whole brief; it becomes a
+        # reported section error so the planner can still see the workspace.
+        focus, focus_error = _safe_call(
+            ctx, "GET", f"/api/v1/missions/{focus_id}")
+        if focus is not None:
+            ranked, ranked_error = _safe_call(
+                ctx, "GET", f"/api/v1/missions/{focus_id}/next-actions")
+
+    recommended = []
+    seen = set()
+
+    def recommend(name: str, arguments: dict, why: str) -> None:
+        tool = _TOOL_MAP.get(name)
+        if tool is None:
+            return
+        key = json.dumps([name, arguments], sort_keys=True, default=str)
+        if key in seen:
+            return
+        seen.add(key)
+        recommended.append({
+            "tool": name,
+            "arguments": arguments,
+            "why": why,
+            "category": tool.category,
+            "risk": tool.risk,
+            "requires": _tool_requires(tool, ctx.policy),
+            "read_only": tool.read_only,
+        })
+
+    if isinstance(running_runs, dict):
+        for run in (running_runs.get("items") or [])[:2]:
+            recommend("run_watch", {"run_id": str(run.get("id") or ""),
+                                    "since": 0, "timeout": 15, "until": "any"},
+                      "a run is live; wait for the next event instead of polling")
+    if isinstance(ranked, dict):
+        for action in (ranked.get("actions") or [])[:3]:
+            name = str(action.get("tool") or "")
+            call_args = action.get("args") if isinstance(action.get("args"), dict) else {}
+            recommend(name, dict(call_args),
+                      str(action.get("why") or "server-ranked next action"))
+    if isinstance(critical, dict):
+        for item in (critical.get("items") or [])[:2]:
+            finding_id = str(item.get("finding_id") or "")
+            if finding_id and item.get("ready"):
+                recommend("findings_get", {"finding_id": finding_id},
+                          "a publish-ready finding still needs an evidence read")
+    if not focus_id and isinstance(active_missions, dict) and \
+            len(active_missions.get("items") or []) > 1:
+        recommend("prime_portfolio", {},
+                  "several missions are active; rank the portfolio before choosing")
+
+    blocked = []
+    if isinstance(pending, dict):
+        for approval in (pending.get("items") or [])[:limit]:
+            payload = approval.get("payload") if isinstance(
+                approval.get("payload"), dict) else {}
+            blocked.append({
+                "approval_id": approval.get("id"),
+                "mission_id": approval.get("mission_id"),
+                "action": approval.get("action"),
+                "tool": payload.get("tool"),
+                "requested_by": approval.get("requested_by"),
+                "requires": "human_decision",
+                "note": "Never decide an approval for the operator from an agent turn.",
+            })
+
+    return {
+        "ok": True,
+        "as_of": _utc_now(),
+        "policy": ctx.policy,
+        "plane": ctx.plane.kind,
+        "workspace": {"api": meta, "summary": summary},
+        "focus": {"mission": focus, "ranked_actions": ranked,
+                  "error": focus_error or ranked_error},
+        "active_missions": _brief_section(active_missions, active_error),
+        "running_runs": _brief_section(running_runs, running_error),
+        "pending_approvals": _brief_section(pending, pending_error),
+        "findings_needing_proof": _brief_section(needs_proof, proof_error),
+        "publish_gate": _brief_section(critical, critical_error),
+        "blocked": blocked,
+        "recommended_calls": recommended[:6],
+        "note": "Every field is read from stored records. A missing section is "
+                "reported as unavailable, never filled in.",
+    }
+
+
+def run_watch(ctx: ToolContext, args: dict) -> dict:
+    """Wait for new run events, or for the run to reach a terminal state.
+
+    ``until="any"`` returns as soon as something happened (new events or the
+    run ending). ``until="terminal"`` keeps accumulating events and only
+    returns when the run leaves queued/running, the event cap is hit, or the
+    timeout expires.
+    """
+    run_id = str(args["run_id"])
+    since = int(args.get("since") or 0)
+    timeout = float(args.get("timeout") if args.get("timeout") is not None else 15)
+    timeout = max(0.0, min(timeout, 60.0))
+    limit = int(args.get("limit") or 100)
+    until = str(args.get("until") or "any")
+    until = "terminal" if until == "terminal" else "any"
+    types = {str(item) for item in (args.get("types") or []) if str(item)}
+    started = time.monotonic()
+    last = since
+    items: list[dict] = []
+    run: dict = {}
+    stop_reason = "timeout"
+    while True:
+        run = _call(ctx, "GET", f"/api/v1/runs/{run_id}")
+        status = str(run.get("status") or "")
+        events = _call(ctx, "GET", f"/api/v1/runs/{run_id}/events",
+                       {"since": last})
+        full = False
+        for event in events.get("items") or []:
+            seq = int(event.get("seq") or event.get("id") or 0)
+            if seq <= last:
+                continue
+            event_type = str(event.get("type") or "")
+            if types and event_type not in types:
+                last = seq
+                continue
+            if len(items) >= limit:
+                full = True
+                break
+            items.append(event)
+            last = seq
+        terminal = status not in {"queued", "running"}
+        if until == "terminal":
+            # Accumulate until the run actually ends; intermediate events are
+            # returned together, not one call at a time.
+            if terminal:
+                stop_reason = "terminal"
+                break
+            if full:
+                stop_reason = "limit"
+                break
+        elif items or terminal:
+            stop_reason = "terminal" if not items else "events"
+            break
+        elapsed = time.monotonic() - started
+        if elapsed >= timeout:
+            stop_reason = "timeout"
+            break
+        _progress(ctx, min(9, int(elapsed)), 10, f"watching {run_id}")
+        time.sleep(min(0.75, max(0.05, timeout - elapsed)))
+    terminal = str(run.get("status") or "") not in {"queued", "running"}
+    return {
+        "ok": True,
+        "run_id": run_id,
+        "run": run,
+        "run_status": str(run.get("status") or ""),
+        "terminal": terminal,
+        "events": items,
+        "next_since": last,
+        "has_more": len(items) >= limit,
+        "stop_reason": stop_reason,
+        "waited_seconds": round(time.monotonic() - started, 2),
+        "as_of": _utc_now(),
+        "note": ("Run reached a terminal state." if terminal
+                 else "Run is still live; resume from next_since."),
+    }
+
+
+def tool_health(ctx: ToolContext, args: dict) -> dict:
+    """Can this server act right now? Catalog, runtime, providers, and policy."""
+    diagnostics, diagnostics_error = _safe_call(ctx, "GET", "/api/v1/diagnostics")
+    providers, providers_error = _safe_call(ctx, "GET", "/api/v1/providers/health")
+    summary, summary_error = _safe_call(ctx, "GET", "/api/v1/summary")
+    categories = Counter(tool.category for tool in TOOLS)
+    risks = Counter(tool.risk for tool in TOOLS)
+    requires = Counter(_tool_requires(tool, ctx.policy) for tool in TOOLS)
+    checks = [{
+        "name": "catalog",
+        "status": "ok",
+        "detail": f"{len(TOOLS)} tools in {len(categories)} categories",
+    }, {
+        "name": "policy",
+        "status": "ok",
+        "detail": f"{ctx.policy}; {requires.get('none', 0)} tools need no step-up",
+    }]
+    runtime_ok = False
+    if diagnostics is None:
+        checks.append({"name": "runtime", "status": "unavailable",
+                       "detail": diagnostics_error})
+    else:
+        runtime_ok = bool(diagnostics.get("ok"))
+        checks.append({
+            "name": "runtime",
+            "status": "ok" if runtime_ok else "degraded",
+            "detail": f"database {diagnostics.get('integrity', 'unknown')}, "
+                      f"{diagnostics.get('routes', 0)} routes",
+        })
+        checks.append({
+            "name": "database",
+            "status": "ok" if diagnostics.get("integrity") == "ok" else "degraded",
+            "detail": str((diagnostics.get("database") or {}).get("mode", "")),
+        })
+    provider_items = (providers or {}).get("items") or []
+    enabled = [item for item in provider_items if item.get("enabled")]
+    healthy = [item for item in enabled if item.get("healthy")]
+    if providers is None:
+        checks.append({"name": "providers", "status": "unavailable",
+                       "detail": providers_error})
+    elif healthy:
+        checks.append({"name": "providers", "status": "ok",
+                       "detail": f"{len(healthy)} of {len(enabled)} enabled "
+                                 f"providers report healthy"})
+    else:
+        checks.append({
+            "name": "providers",
+            "status": "degraded",
+            "detail": "no enabled provider reports healthy; deterministic tools "
+                      "still work and a model-backed loop will say it is offline",
+        })
+    pending = 0
+    if isinstance(summary, dict):
+        pending = int(summary.get("pending_approvals") or 0)
+        checks.append({
+            "name": "approvals",
+            "status": "ok",
+            "detail": f"{pending} pending; decisions stay human-only",
+        })
+    else:
+        checks.append({"name": "approvals", "status": "unavailable",
+                       "detail": summary_error})
+    status = "ok" if runtime_ok else "degraded"
+    return {
+        "ok": runtime_ok,
+        "status": status,
+        "as_of": _utc_now(),
+        "policy": ctx.policy,
+        "plane": ctx.plane.kind,
+        "catalog": {
+            "tools": len(TOOLS),
+            "categories": dict(sorted(categories.items())),
+            "risks": dict(sorted(risks.items())),
+            "requires": dict(sorted(requires.items())),
+        },
+        "runtime": diagnostics if diagnostics is not None else {
+            "unavailable": diagnostics_error},
+        "providers": {
+            "total": len(provider_items),
+            "enabled": len(enabled),
+            "healthy": len(healthy),
+            "unavailable": providers_error,
+        },
+        "workspace": summary if summary is not None else {
+            "unavailable": summary_error},
+        "checks": checks,
+    }
+
+
 # -- registry -------------------------------------------------------------
 
 _HANDLERS = {name[5:]: value for name, value in globals().items() if name.startswith("tool_")}
@@ -4718,6 +5449,12 @@ _HANDLERS.update({
     "browser_eval": browser_eval,
     "browser_close": browser_close,
     "tool_calls_list": tool_calls_list,
+    "tool_search": tool_search,
+    "tool_describe": tool_describe,
+    "tool_batch": tool_batch,
+    "workspace_brief": workspace_brief,
+    "run_watch": run_watch,
+    "tool_health": tool_health,
     "status": tool_status,
 })
 
@@ -4727,6 +5464,71 @@ TOOLS: tuple[Tool, ...] = (
          "Show the control-plane version, aggregate counters, active runs, and the "
          "policy this MCP server is enforcing.", "low", "workspace",
          _schema({}), "status", read_only=True),
+    Tool("tool_search", "Search the tool catalog",
+         "Rank the typed catalog by intent, category, risk, or read-only mode. Use "
+         "this before guessing a tool name. Each entry says what step-up the active "
+         "policy needs, and tool_describe returns the exact schema.",
+         "low", "workspace",
+         _schema({"query": _string("capability, intent, or exact tool name"),
+                  "category": _string("filter by category, e.g. findings or web"),
+                  "risk": _string("filter by risk tier", enum=[
+                      "low", "medium", "high"]),
+                  "read_only": _boolean("only non-mutating tools"),
+                  "limit": _integer("page size", 1, 100, 20),
+                  "page": _integer("page number", 1)}),
+         "tool_search", read_only=True),
+    Tool("tool_describe", "Describe one tool",
+         "Return one tool's full JSON schema, required and optional arguments, "
+         "policy gate, placeholder example arguments, related tools, and matching "
+         "resource templates. This is the authoritative call contract.",
+         "low", "workspace",
+         _schema({"name": _string("exact tool name")}, ["name"]),
+         "tool_describe", read_only=True),
+    Tool("tool_batch", "Run read-only tools in one call",
+         "Execute up to 12 read-only tools through the real registry: the same "
+         "schema validation, policy, scope, rate limits, and audit rows apply to "
+         "every sub-call. Context mode (default) refuses open-world tools; "
+         "read_only mode permits scoped live probes such as http_probe. It never "
+         "runs a state-changing tool and never nests another batch.",
+         "low", "workspace",
+         _schema({"calls": _array("bounded read-only calls",
+                                  _object("one call: {tool, arguments}")),
+                  "mode": _string("context (no network) or read_only (scoped probes)",
+                                  enum=["context", "read_only"]),
+                  "stop_on_error": _boolean("stop after the first failed sub-call",
+                                            False)},
+                 ["calls"]),
+         "tool_batch", read_only=True),
+    Tool("workspace_brief", "Brief an autonomous planner",
+         "One read-only snapshot: workspace counters, active missions, live runs, "
+         "pending approvals, findings still needing proof, the publish gate, and "
+         "ranked next actions for the focus mission. recommended_calls are grounded "
+         "in stored records and name the step-up each call needs. It never decides "
+         "an approval, starts a run, or invents a missing section.",
+         "low", "workspace",
+         _schema({"mission_id": _string("focus mission (optional)"),
+                  "limit": _integer("rows per section", 1, 20, 5)}),
+         "workspace_brief", read_only=True),
+    Tool("run_watch", "Wait for run events",
+         "Long-poll one run for new persisted events, or wait until it reaches a "
+         "terminal state. Returns the events, next_since cursor, run status, and "
+         "stop reason. Use it instead of repeated runs_events calls in an autonomy "
+         "loop; the cap is 60 seconds.",
+         "low", "runs",
+         _schema({"run_id": _string("run id"),
+                  "since": _integer("last seen sequence", 0),
+                  "timeout": _integer("seconds to wait", 0, 60, 15),
+                  "limit": _integer("event cap", 1, 500, 100),
+                  "types": _array("only these event types"),
+                  "until": _string("events or terminal state",
+                                   enum=["any", "terminal"])},
+                 ["run_id"]),
+         "run_watch", read_only=True),
+    Tool("tool_health", "Check whether the server can act",
+         "Summarize the live catalog, policy step-up counts, database integrity, "
+         "provider health, pending approvals, and per-check status. A provider "
+         "outage is reported as degraded, never as a successful model call.",
+         "low", "workspace", _schema({}), "tool_health", read_only=True),
     Tool("missions_list", "List missions",
          "List missions with run, finding, and pending-approval counts. Filter by status.",
          "low", "missions",
@@ -7408,11 +8210,40 @@ def mcp_tools() -> list[dict]:
     } for tool in TOOLS]
 
 
+def catalog_index(policy: str) -> list[dict]:
+    """A compact catalog annotated with each tool's step-up under one policy.
+
+    The index is for browsing; ``tool_describe`` returns the authoritative
+    contract for a single tool.
+    """
+    items = []
+    for tool in TOOLS:
+        description = tool.description
+        if len(description) > 200:
+            cut = description[:200].rsplit(" ", 1)[0].rstrip(",.;:")
+            description = cut + "..."
+        items.append({
+            "name": tool.name,
+            "title": tool.title,
+            "category": tool.category,
+            "risk": tool.risk,
+            "read_only": tool.read_only,
+            "destructive": tool.destructive,
+            "open_world": tool.open_world,
+            "operator_only": tool.operator_only,
+            "requires": _tool_requires(tool, policy),
+            "required_arguments": list(tool.input_schema.get("required") or []),
+            "summary": description,
+        })
+    return items
+
+
 class ToolRegistry:
     def __init__(self, ctx: ToolContext):
         if ctx.policy not in POLICIES:
             raise ValueError(f"unknown MCP policy: {ctx.policy}")
         ctx.tool_count = len(TOOLS)
+        ctx.registry = self
         self.ctx = ctx
 
     def _policy_check(self, tool: Tool, args: dict) -> str:
@@ -7536,6 +8367,8 @@ class ToolRegistry:
             payload = result if isinstance(result, dict) else {"result": result}
             payload.setdefault("ok", True)
             payload.setdefault("tool", tool.name)
+            payload["meta"] = _tool_meta(
+                tool, self.ctx, args, actor, started, "ok", approval_id, payload)
             return payload, False
         except ToolError as exc:
             status = {
@@ -7547,7 +8380,13 @@ class ToolRegistry:
             }.get(exc.code, "error")
             payload = exc.payload()
             payload.update({"ok": False, "tool": tool.name, "status": status})
+            payload["meta"] = _tool_meta(
+                tool, self.ctx, args, actor, started, status, approval_id, payload)
             return payload, True
+        except Exception as exc:  # noqa: BLE001 - audit the escape, then re-raise
+            status = "error"
+            failure = f"{type(exc).__name__}: {exc}"[:500]
+            raise
         finally:
             self.ctx.authorized = previous_authorized
             duration = int((time.monotonic() - started) * 1000)
@@ -7557,7 +8396,7 @@ class ToolRegistry:
             try:
                 from ..autopilot import prepare_tool_call_audit
 
-                self.ctx.plane.request("POST", "/api/v1/tool-calls", body={
+                audit_row = self.ctx.plane.request("POST", "/api/v1/tool-calls", body={
                     "tool": tool.name,
                     "risk": tool.risk,
                     "status": status,
@@ -7568,8 +8407,23 @@ class ToolRegistry:
                     "args": audit_args(tool.name, args),
                     "result": prepare_tool_call_audit(tool.name, status, result_value),
                     "error": "" if status == "ok" else str(
-                        result_value.get("error", {}).get("message", "")),
+                        (result_value.get("error") or {}).get("message", "")
+                        or locals().get("failure", "")),
                     "duration_ms": duration,
                 })
+                if isinstance(audit_row, dict) and audit_row.get("id"):
+                    meta = result_value.get("meta")
+                    if isinstance(meta, dict):
+                        meta["audit_id"] = audit_row["id"]
+                        links = meta.get("links")
+                        if not isinstance(links, list):
+                            links = []
+                        if not any(isinstance(link, dict) and link.get("rel") == "audit"
+                                   for link in links):
+                            links.append({
+                                "rel": "audit",
+                                "uri": f"netcast3r://tool-calls/{audit_row['id']}",
+                            })
+                            meta["links"] = links
             except Exception:  # noqa: BLE001 - audit failure must not hide the result
                 pass
