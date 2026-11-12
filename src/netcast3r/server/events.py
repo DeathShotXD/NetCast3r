@@ -56,6 +56,16 @@ class EventBus:
         self._lock = threading.Lock()
         self._seq = 0
 
+    def seed_seq(self, value: int) -> None:
+        """Continue the sequence from a prior process's high-water mark.
+
+        The sequence is written to the events table and used as the SSE id, so
+        a restart that reset it to zero would make new events sort before old
+        ones for a resumed run and break reconnect paging.
+        """
+        with self._lock:
+            self._seq = max(self._seq, int(value or 0))
+
     def publish(self, event: Event) -> Event:
         with self._lock:
             self._seq += 1

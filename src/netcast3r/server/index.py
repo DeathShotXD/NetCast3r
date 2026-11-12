@@ -994,6 +994,15 @@ class Index:
         return events
 
     # -- durable run checkpoints ------------------------------------------
+    def max_event_seq(self) -> int:
+        """The highest event sequence written, so a restart can continue it."""
+        with self._lock:
+            row = self.conn.execute("SELECT MAX(seq) AS seq FROM events").fetchone()
+        try:
+            return int(row["seq"] or 0) if row else 0
+        except (TypeError, ValueError):
+            return 0
+
     def set_run_checkpoint(self, run_id: str, state: dict) -> None:
         """Persist a swarm's planner state so a restart resumes the same run."""
         with self._lock:

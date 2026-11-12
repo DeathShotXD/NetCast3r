@@ -4362,6 +4362,12 @@ def build_server(results_dir: str | Path = "results", base: Path | None = None,
         config = SimpleNamespace(results_dir=str(results_dir))
     index = Index(base / "netcast3r.db")
     bus = EventBus()
+    try:
+        # Continue the event sequence across restarts. Without this, a resumed
+        # run's new events sort before its old ones and reconnect paging stalls.
+        bus.seed_seq(index.max_event_seq())
+    except Exception:  # noqa: BLE001 - a bad read must not block boot
+        pass
     keys = KeyStore(base)
     runner_module.set_dashboard_bridge(DashboardBridge(index, keys))
     jobs = JobManager(index, bus, runner or run_scan, workers=workers)

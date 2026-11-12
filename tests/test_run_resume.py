@@ -15,6 +15,7 @@ from pathlib import Path
 os.environ.setdefault("NETCAST3R_NO_KEYRING", "1")
 
 from netcast3r.server import build_server
+from netcast3r.server.events import Event, EventBus
 from netcast3r.swarm import Swarm
 
 
@@ -178,6 +179,17 @@ class RunResumeTests(unittest.TestCase):
         self.assertEqual(result["resumed"], [endless["id"]])
         self.assertIn(bounded["id"], result["skipped"])
         self.assertEqual(self.server.orphaned_runs, [])
+
+    def test_event_sequence_continues_across_a_restart(self):
+        run = self._run(self._mission()["id"], endless=True)
+        self.server.index.add_event(run["id"], {
+            "type": "log", "seq": 4200, "payload": {}})
+        self.assertEqual(self.server.index.max_event_seq(), 4200)
+        bus = EventBus()
+        bus.seed_seq(self.server.index.max_event_seq())
+        event = bus.publish(Event(type="log", payload={}))
+        # New events sort after the old ones, so a resumed run stays ordered.
+        self.assertEqual(event.seq, 4201)
 
     def _post(self, path):
         headers = {"host": "127.0.0.1:7857",
