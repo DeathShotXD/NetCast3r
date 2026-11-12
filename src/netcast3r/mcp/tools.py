@@ -18,6 +18,7 @@ the control plane has no data, the tool says so.
 from __future__ import annotations
 
 import base64
+import calendar
 import hashlib
 import hmac
 import json
@@ -516,6 +517,59 @@ def _page(items_key: str = "items") -> dict:
 
 def _utc_now() -> str:
     return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+
+
+def _epoch(stamp) -> float | None:
+    """Parse a stored UTC timestamp into epoch seconds, or None."""
+    text = str(stamp or "").strip()
+    if not text:
+        return None
+    for fmt in ("%Y-%m-%dT%H:%M:%SZ", "%Y-%m-%dT%H:%M:%S.%fZ"):
+        try:
+            return float(calendar.timegm(time.strptime(text, fmt)))
+        except ValueError:
+            continue
+    return None
+
+
+def _age_seconds(stamp) -> int | None:
+    epoch = _epoch(stamp)
+    return None if epoch is None else max(0, int(time.time() - epoch))
+
+
+def _brief_run(run: dict) -> dict:
+    """Summarize the stored run and keep the operator's goal verbatim."""
+    options = run.get("options") if isinstance(run.get("options"), dict) else {}
+    goal = str(options.get("goal") or "").strip()
+    directive = goal[:1200]
+    return {
+        "id": run.get("id"),
+        "status": run.get("status"),
+        "mode": options.get("mode"),
+        "created_at": run.get("created_at"),
+        "started_at": run.get("started_at"),
+        "finished_at": run.get("finished_at"),
+        "finding_count": run.get("finding_count"),
+        "error": run.get("error"),
+        "endless": options.get("endless"),
+        "max_steps": options.get("max_steps"),
+        "age_seconds": _age_seconds(
+            run.get("finished_at") or run.get("started_at") or run.get("created_at")),
+        "operator_directive": directive,
+        "operator_directive_truncated": len(goal) > len(directive),
+        "note": "operator_directive is the stored run goal verbatim. Read it before "
+                "probing; it is not a parsed policy and the brief does not widen it.",
+    }
+
+
+def _hypothesis_dead_end(item: dict) -> bool:
+    """A stored title or technique that already records a dead end.
+
+    This is a transparent text check, not a judgement about validity: the
+    hypothesis stays in the ledger and the brief still shows it.
+    """
+    text = f"{item.get('title') or ''} {item.get('technique') or ''}".lower()
+    return "dead-end" in text or "dead end" in text or "deadend" in text
 
 
 def _pagination(payload: dict) -> dict | None:
@@ -4886,8 +4940,8 @@ def _brief_section(data: dict | None, error: dict | None) -> dict:
 
 
 def workspace_brief(ctx: ToolContext, args: dict) -> dict:
-    """One read-only snapshot for an autonomous planner: what is live, blocked,
-    and testable next, with recommendations grounded in stored records."""
+    """One read-only snapshot for an autonomous planner: what is live, what is
+    blocked, what was already tried, and what is testable next."""
     limit = int(args.get("limit") or 5)
     summary = _call(ctx, "GET", "/api/v1/summary")
     meta = _call(ctx, "GET", "/api/v1/meta")
@@ -4907,10 +4961,20 @@ def workspace_brief(ctx: ToolContext, args: dict) -> dict:
         active_items = active_missions.get("items") or []
         if len(active_items) == 1:
             focus_id = str(active_items[0].get("id") or "")
+
     focus = None
     ranked = None
+    latest_run = None
+    open_hypotheses = None
+    notes = None
+    activity = None
+    coverage = None
     focus_error = None
     ranked_error = None
+    hypothesis_error = None
+    notes_error = None
+    activity_error = None
+    coverage_error = None
     if focus_id:
         # A stale focus id must not blank the whole brief; it becomes a
         # reported section error so the planner can still see the workspace.
@@ -4919,6 +4983,100 @@ def workspace_brief(ctx: ToolContext, args: dict) -> dict:
         if focus is not None:
             ranked, ranked_error = _safe_call(
                 ctx, "GET", f"/api/v1/missions/{focus_id}/next-actions")
+            open_hypotheses, hypothesis_error = _safe_call(
+                ctx, "GET", "/api/v1/hypotheses",
+                {"mission_id": focus_id, "status": "open", "limit": 10})
+            notes, notes_error = _safe_call(
+                ctx, "GET", f"/api/v1/missions/{focus_id}/notes", {"limit": 3})
+            activity, activity_error = _safe_call(
+                ctx, "GET", "/api/v1/tool-calls",
+                {"mission_id": focus_id, "size": 6})
+            coverage, coverage_error = _safe_call(
+                ctx, "GET", f"/api/v1/missions/{focus_id}/coverage")
+            last_run_id = str(focus.get("last_run_id") or "")
+            if last_run_id:
+                run_payload, run_error = _safe_call(
+                    ctx, "GET", f"/api/v1/runs/{last_run_id}")
+                latest_run = (_brief_run(run_payload) if run_payload is not None
+                              else {"unavailable": run_error})
+
+    hypotheses = []
+    dead_ends = []
+    if isinstance(open_hypotheses, dict):
+        for item in (open_hypotheses.get("items") or [])[:10]:
+            entry = {
+                "id": item.get("id"),
+                "title": item.get("title"),
+                "technique": item.get("technique"),
+                "status": item.get("status"),
+                "created_at": item.get("created_at"),
+                "age_seconds": _age_seconds(item.get("created_at")),
+                "dead_end": _hypothesis_dead_end(item),
+            }
+            hypotheses.append(entry)
+            if entry["dead_end"]:
+                dead_ends.append({
+                    "hypothesis_id": entry["id"],
+                    "title": entry["title"],
+                    "reason": "the stored title or technique records a dead end",
+                })
+    actionable = [item for item in hypotheses if not item["dead_end"]]
+    hypothesis_total = (open_hypotheses.get("total")
+                        if isinstance(open_hypotheses, dict) else None)
+
+    recent_notes = []
+    if isinstance(notes, dict):
+        for note in (notes.get("items") or [])[:3]:
+            recent_notes.append({
+                "id": note.get("id"),
+                "kind": note.get("kind"),
+                "title": note.get("title"),
+                "run_id": note.get("run_id"),
+                "created_at": note.get("created_at"),
+                "age_seconds": _age_seconds(note.get("created_at")),
+            })
+
+    recent_calls = []
+    if isinstance(activity, dict):
+        for call in (activity.get("items") or [])[:6]:
+            recent_calls.append({
+                "tool": call.get("tool"),
+                "status": call.get("status"),
+                "error": str(call.get("error") or "")[:200],
+                "created_at": call.get("created_at"),
+                "age_seconds": _age_seconds(call.get("created_at")),
+            })
+
+    coverage_summary = None
+    if isinstance(coverage, dict):
+        coverage_summary = {
+            "total": coverage.get("total"),
+            "percent": coverage.get("percent"),
+            "open": coverage.get("open"),
+            "counts": coverage.get("counts"),
+            "next": [
+                {"id": item.get("id"), "title": item.get("title"),
+                 "severity": item.get("severity"), "status": item.get("status")}
+                for item in (coverage.get("next") or [])[:5]
+            ],
+        }
+
+    run_live = bool(isinstance(latest_run, dict)
+                    and latest_run.get("status") in {"queued", "running"})
+    stamps = []
+    if isinstance(latest_run, dict):
+        stamps.append(latest_run.get("finished_at") or latest_run.get("started_at"))
+    if isinstance(notes, dict):
+        stamps.extend(note.get("created_at") for note in notes.get("items") or [])
+    if isinstance(activity, dict):
+        stamps.extend(call.get("created_at") for call in activity.get("items") or [])
+    ages = [age for age in (_age_seconds(stamp) for stamp in stamps)
+            if age is not None]
+    idle_seconds = min(ages) if ages else None
+    stalled_after = 900
+    stalled = bool(focus and focus.get("status") == "active" and not run_live
+                   and idle_seconds is not None
+                   and idle_seconds >= stalled_after)
 
     recommended = []
     seen = set()
@@ -4941,15 +5099,22 @@ def workspace_brief(ctx: ToolContext, args: dict) -> dict:
             "read_only": tool.read_only,
         })
 
+    dead_ids = {item["hypothesis_id"] for item in dead_ends}
     if isinstance(running_runs, dict):
         for run in (running_runs.get("items") or [])[:2]:
             recommend("run_watch", {"run_id": str(run.get("id") or ""),
                                     "since": 0, "timeout": 15, "until": "any"},
                       "a run is live; wait for the next event instead of polling")
+    if actionable:
+        recommend("hypothesis_evidence", {"hypothesis_id": actionable[0]["id"]},
+                  "read what this open hypothesis already proved before re-testing it")
     if isinstance(ranked, dict):
-        for action in (ranked.get("actions") or [])[:3]:
+        for action in (ranked.get("actions") or [])[:4]:
             name = str(action.get("tool") or "")
             call_args = action.get("args") if isinstance(action.get("args"), dict) else {}
+            if name.startswith("hypothesis_") and \
+                    str(call_args.get("hypothesis_id") or "") in dead_ids:
+                continue
             recommend(name, dict(call_args),
                       str(action.get("why") or "server-ranked next action"))
     if isinstance(critical, dict):
@@ -4977,6 +5142,14 @@ def workspace_brief(ctx: ToolContext, args: dict) -> dict:
                 "requires": "human_decision",
                 "note": "Never decide an approval for the operator from an agent turn.",
             })
+    if stalled:
+        blocked.append({
+            "kind": "stalled_mission",
+            "mission_id": focus_id,
+            "requires": "human_decision",
+            "note": "No run is live and no recorded activity is recent. Resume "
+                    "deliberately instead of assuming the mission is still working.",
+        })
 
     return {
         "ok": True,
@@ -4984,17 +5157,37 @@ def workspace_brief(ctx: ToolContext, args: dict) -> dict:
         "policy": ctx.policy,
         "plane": ctx.plane.kind,
         "workspace": {"api": meta, "summary": summary},
-        "focus": {"mission": focus, "ranked_actions": ranked,
-                  "error": focus_error or ranked_error},
+        "focus": {
+            "mission": focus,
+            "ranked_actions": ranked,
+            "latest_run": latest_run,
+            "open_hypotheses": {
+                "items": hypotheses,
+                "total": hypothesis_total,
+                "actionable": len(actionable),
+                "dead_ends": len(dead_ends),
+                "error": hypothesis_error,
+            },
+            "recent_notes": {"items": recent_notes, "error": notes_error},
+            "recent_tool_calls": {"items": recent_calls, "error": activity_error},
+            "coverage": (coverage_summary if coverage_summary is not None
+                         else {"unavailable": coverage_error}),
+            "stalled": stalled,
+            "idle_seconds": idle_seconds,
+            "stalled_after_seconds": stalled_after,
+            "error": focus_error or ranked_error,
+        },
         "active_missions": _brief_section(active_missions, active_error),
         "running_runs": _brief_section(running_runs, running_error),
         "pending_approvals": _brief_section(pending, pending_error),
         "findings_needing_proof": _brief_section(needs_proof, proof_error),
         "publish_gate": _brief_section(critical, critical_error),
         "blocked": blocked,
+        "avoid": dead_ends,
         "recommended_calls": recommended[:6],
         "note": "Every field is read from stored records. A missing section is "
-                "reported as unavailable, never filled in.",
+                "reported as unavailable, never filled in. avoid lists hypotheses "
+                "whose own stored text records a dead end; it never changes them.",
     }
 
 
@@ -5654,7 +5847,7 @@ TOOLS: tuple[Tool, ...] = (
          "to include the current ranking.",
          "low", "director",
          _schema({"portfolio": _boolean("include the Prime ranking", False)}),
-         "director_status"),
+         "director_status", read_only=True),
     Tool("director_control", "Control the autonomous director",
          "Engage, disengage, pause, resume, tune, tick, advise, or kill the "
          "director. Engage lets it schedule eligible missions; disengage stops "
@@ -5679,7 +5872,7 @@ TOOLS: tuple[Tool, ...] = (
          "which mission and mode it started, and how each run finished, including "
          "the no-progress and park decisions. This is the record, not a summary.",
          "low", "director",
-         _schema({"limit": _integer("entries", 1, 2000, 100)}), "director_log"),
+         _schema({"limit": _integer("entries", 1, 2000, 100)}), "director_log", read_only=True),
     Tool("graph_build", "Build the mission evidence graph",
          "Derive the attack-surface graph for one mission from stored, real "
          "evidence: the target and its scope, discovered endpoints, open "
@@ -5696,7 +5889,7 @@ TOOLS: tuple[Tool, ...] = (
          "credential, hypothesis, finding) and edges carry their evidence.",
          "low", "graph",
          _schema({"mission_id": _string("mission id")}, ["mission_id"]),
-         "mission_graph"),
+         "mission_graph", read_only=True),
     Tool("threat_map_get", "Read the scored mission threat map",
          "Return the evidence-backed threat map for one mission: scored hosts, "
          "endpoints, auth surfaces, open leads, findings, edges, and candidate "
@@ -5712,7 +5905,7 @@ TOOLS: tuple[Tool, ...] = (
          "refuted, blocked, inconclusive).",
          "low", "graph",
          _schema({"mission_id": _string("mission id")}, ["mission_id"]),
-         "paths_list"),
+         "paths_list", read_only=True),
     Tool("path_verify", "Verify an attack path step by step",
          "Run a candidate path's steps in order through the same scoped, "
          "risk-gated tools every other caller uses, and record what each "
@@ -5762,7 +5955,7 @@ TOOLS: tuple[Tool, ...] = (
                   "scope": _string("global or a mission id"),
                   "kind": _string("entry kind"),
                   "limit": _integer("max entries", 1, 1000, 100)}, []),
-         "kb_search"),
+         "kb_search", read_only=True),
     Tool("kb_write", "Write to the shared knowledge base",
          "Record one durable fact the mesh should not have to rediscover: a "
          "technology, an endpoint shape, a technique outcome, a dead end, or a "
@@ -5785,10 +5978,10 @@ TOOLS: tuple[Tool, ...] = (
          "inherit the same exploit knowledge instantly.",
          "low", "learning",
          _schema({"mission_id": _string("mission id"),
-                  "limit": _integer("entries", 1, 80, 24)}), "kb_digest"),
+                  "limit": _integer("entries", 1, 80, 24)}), "kb_digest", read_only=True),
     Tool("kb_stats", "Knowledge base totals",
          "Entry counts by kind and scope.", "low", "learning",
-         _schema({}), "kb_stats"),
+         _schema({}), "kb_stats", read_only=True),
     Tool("kb_corpus", "List critical web technique catalogue",
          "The curated critical/high web vulnerability and exploit patterns "
          "shared with every agent and the brain (SQLi, SSRF, ATO, OAuth, RCE, "
@@ -5886,7 +6079,7 @@ TOOLS: tuple[Tool, ...] = (
          "run next. Computed from stored evidence only.",
          "low", "campaign",
          _schema({"mission_id": _string("mission id")}, ["mission_id"]),
-         "campaign_status"),
+         "campaign_status", read_only=True),
     Tool("direction_add", "Queue an operator direction for a mission",
          "Inject a queued instruction into a mission. The director and the "
          "brains pick it up as a priority objective. Mention a specific lead "
@@ -5903,7 +6096,7 @@ TOOLS: tuple[Tool, ...] = (
                   "status": {"type": "string",
                              "enum": ["queued", "consumed", "done"]},
                   "limit": _integer("entries", 1, 500, 50)},
-                 ["mission_id"]), "directions_list"),
+                 ["mission_id"]), "directions_list", read_only=True),
     Tool("exploit_catalog", "Read the exploit module catalog",
          "The typed exploit module tree: web, API, auth, server, cloud, and "
          "identity classes. Each module names the technology it targets, its "
@@ -5913,7 +6106,7 @@ TOOLS: tuple[Tool, ...] = (
          "low", "exploit",
          _schema({"q": _string("optional free-text filter"),
                   "limit": _integer("modules", 1, 200, 50)}, []),
-         "exploit_catalog"),
+         "exploit_catalog", read_only=True),
     Tool("exploit_search", "Rank exploit modules for a signal",
          "Rank the catalog against a technology, a signal, or a category. Use it "
          "to pick the right test for the surface you actually observed, rather "
@@ -5921,7 +6114,7 @@ TOOLS: tuple[Tool, ...] = (
          "low", "exploit",
          _schema({"q": _string("query, e.g. idor jwt ssrf"),
                   "limit": _integer("modules", 1, 200, 20)}, ["q"]),
-         "exploit_search"),
+         "exploit_search", read_only=True),
     Tool("exploit_plan", "Plan exploit modules for a mission",
          "Match the catalog to a mission's observed technology and leads, then "
          "(build=true) turn the ready modules into falsifiable hypotheses the "
@@ -5935,7 +6128,7 @@ TOOLS: tuple[Tool, ...] = (
     Tool("chain_templates", "List exploit-chain templates",
          "Read the built-in chain templates: git-to-source-audit, "
          "token-to-auth-profile, jwt-forge-to-auth-profile, sqli-union-to-data.",
-         "low", "exploit", _schema({}, []), "chain_templates"),
+         "low", "exploit", _schema({}, []), "chain_templates", read_only=True),
     Tool("chain_execute", "Run a typed exploit chain",
          "Execute ordered steps: extract, auth_profile, http, tool, script, "
          "assert, pivot, exploit_run. Scope, risk, and approval gates apply to "
@@ -5970,7 +6163,7 @@ TOOLS: tuple[Tool, ...] = (
                   "status": {"type": "string",
                              "enum": ["candidate", "promoted", "dismissed"]},
                   "limit": _integer("entries", 1, 1000, 100)},
-                 ["mission_id"]), "candidates_list"),
+                 ["mission_id"]), "candidates_list", read_only=True),
     Tool("candidate_promote", "Promote a candidate to a finding",
          "Turn a staged candidate into a finding only when a replayable PoC "
          "exists (recorded request steps). Pass force=true with notes to "
@@ -6002,7 +6195,7 @@ TOOLS: tuple[Tool, ...] = (
          "The tiered, scope-checked catalog of external offensive tools (recon, "
          "web, AD) with each tool's category, risk, stage, and whether its binary "
          "is installed. An external tool is a source of leads, not findings.",
-         "low", "integrations", _schema({}), "toolbox_catalog"),
+         "low", "integrations", _schema({}), "toolbox_catalog", read_only=True),
     Tool("toolbox_run", "Run an external tool against a mission",
          "Run one allowlisted external tool after checking the target against "
          "the mission scope. Arguments are built only from an allowlisted flag "
@@ -6020,7 +6213,7 @@ TOOLS: tuple[Tool, ...] = (
     Tool("toolbox_processes", "List running and recent external tools",
          "Show the external tools the broker has started, with pid, status, and "
          "age, so a long run can be watched or stopped.",
-         "low", "integrations", _schema({}), "toolbox_processes"),
+         "low", "integrations", _schema({}), "toolbox_processes", read_only=True),
     Tool("toolbox_kill", "Stop a running external tool",
          "Terminate the process group of a tool the broker started.",
          "medium", "integrations",
@@ -6092,7 +6285,7 @@ TOOLS: tuple[Tool, ...] = (
          "Show the host name, kernel, user, and which offensive and general "
          "tools are installed (nmap, ffuf, nuclei, sqlmap, metasploit, docker, "
          "git, ...), so the brain can plan against what the box actually has.",
-         "low", "host", _schema({}), "host_capabilities"),
+         "low", "host", _schema({}), "host_capabilities", read_only=True),
     Tool("host_shell", "Run a command on the host",
          "Run one shell command on the operator's own machine and return its "
          "bounded stdout, stderr, and exit code. This is a real host shell: it is "
@@ -6113,7 +6306,7 @@ TOOLS: tuple[Tool, ...] = (
          "medium", "host",
          _schema({"path": _string("file path"),
                   "sensitive": _boolean("allow NetCast3r's own secret store", False)},
-                 ["path"]), "host_read"),
+                 ["path"]), "host_read", read_only=True),
     Tool("host_write", "Write a file on the host",
          "Create or overwrite a file, or append to it. Missing parent "
          "directories are created. High risk and gated like the shell.",
@@ -6127,22 +6320,22 @@ TOOLS: tuple[Tool, ...] = (
          "List one directory with each entry's kind, size, and mtime.",
          "low", "host",
          _schema({"path": _string("directory, defaults to the workspace"),
-                  "limit": _integer("entries", 1, 5000, 500)}, []), "host_list"),
+                  "limit": _integer("entries", 1, 5000, 500)}, []), "host_list", read_only=True),
     Tool("host_find", "Find files on the host",
          "Find files under a root by glob pattern.",
          "low", "host",
          _schema({"root": _string("root directory"),
                   "pattern": _string("glob, e.g. **/*.sql"),
-                  "limit": _integer("matches", 1, 5000, 500)}, []), "host_find"),
+                  "limit": _integer("matches", 1, 5000, 500)}, []), "host_find", read_only=True),
     Tool("host_stat", "Stat a path on the host",
          "Show whether a path exists, its kind, size, mode, and mtime.",
          "low", "host",
-         _schema({"path": _string("path")}, ["path"]), "host_stat"),
+         _schema({"path": _string("path")}, ["path"]), "host_stat", read_only=True),
     Tool("host_processes", "List host processes",
          "List running processes, optionally filtered by a name substring.",
          "low", "host",
          _schema({"q": _string("substring filter"),
-                  "limit": _integer("rows", 1, 2000, 200)}, []), "host_processes"),
+                  "limit": _integer("rows", 1, 2000, 200)}, []), "host_processes", read_only=True),
     Tool("host_kill", "Signal a host process",
          "Send TERM, KILL, or INT to a process by pid.",
          "medium", "host",
@@ -6156,7 +6349,7 @@ TOOLS: tuple[Tool, ...] = (
          "knowledge, open leads, candidates, the host, and the MCP connections.",
          "low", "brain",
          _schema({"mission_id": _string("optional focus mission")}, []),
-         "brain_context"),
+         "brain_context", read_only=True),
     Tool("brain_chat", "Talk to the main brain",
          "Ask the main brain a question or give it guidance. It answers from a "
          "live snapshot of the whole control plane and can steer the hunt: queue "
@@ -6248,7 +6441,7 @@ TOOLS: tuple[Tool, ...] = (
          "low", "brain",
          _schema({"limit": _integer("turns", 1, 1000, 60),
                   "mission_id": _string("optional focus mission")}, []),
-         "brain_journal"),
+         "brain_journal", read_only=True),
     Tool("brain_loop", "Read or steer the main brain's autonomy loop",
          "The never-ending cognition loop that runs beside the director: it "
          "observes the whole plane on a cadence and decides the next move. "
@@ -6265,13 +6458,13 @@ TOOLS: tuple[Tool, ...] = (
          "the API Top 10 2023, the LLM Top 10 2025, the 2025 research classes, "
          "cloud, mobile, and supply chain, with the modules, tools, evidence, "
          "and expected impact for each.",
-         "low", "coverage", _schema({}), "checklist_catalog"),
+         "low", "coverage", _schema({}), "checklist_catalog", read_only=True),
     Tool("coverage_get", "Read a mission's coverage",
          "Per-mission checklist state: counts by status, per-category progress, "
          "the percentage closed, and the next highest-impact items to test.",
          "low", "coverage",
          _schema({"mission_id": _string("mission id")}, ["mission_id"]),
-         "coverage_get"),
+         "coverage_get", read_only=True),
     Tool("coverage_mark", "Close or move a checklist item",
          "Record the state of one checklist item against the evidence you have. "
          "Statuses: untested, in_progress, covered, vulnerable, blocked. A "
@@ -6301,13 +6494,13 @@ TOOLS: tuple[Tool, ...] = (
          "The self-model's capability scores next to the outcome ledger: what the "
          "harness has actually landed and what keeps failing. Derived from stored "
          "evidence only.",
-         "low", "learning", _schema({}), "evolve_status"),
+         "low", "learning", _schema({}), "evolve_status", read_only=True),
     Tool("evolve_ledger", "Read the technique outcome ledger",
          "Per technique and module: supported, refuted, inconclusive, staged "
          "candidates, exploit runs, verified runs, dead ends, and a win rate.",
          "low", "learning",
          _schema({"limit": _integer("records", 1, 2000, 500)}, []),
-         "evolve_ledger"),
+         "evolve_ledger", read_only=True),
     Tool("evolve_scan", "Propose improvements from outcomes",
          "Turn capability gaps and repeatedly-failed techniques into "
          "deduplicated, human-gated upgrade proposals. It proposes; it never "
@@ -6322,7 +6515,7 @@ TOOLS: tuple[Tool, ...] = (
          "low", "post-exploitation",
          _schema({"mission_id": _string("mission id"),
                   "limit": _integer("objectives", 1, 40, 10)},
-                 ["mission_id"]), "postex_plan"),
+                 ["mission_id"]), "postex_plan", read_only=True),
     Tool("mission_hunt", "Start a standalone hunt",
          "Run a deterministic read-only hunt for a mission: scope, fingerprint, "
          "safe surface paths, technique and chain ranking, and explicit "
@@ -6689,7 +6882,7 @@ TOOLS: tuple[Tool, ...] = (
          "taxii.url (and token or user/password) in ~/.netcast3r/integrations.json.",
          "medium", "threat-intel",
          _schema({"api_root": _string("optional TAXII API root URL")}),
-         "taxii_collections", open_world=True),
+         "taxii_collections", open_world=True, read_only=True),
     Tool("taxii_poll", "Poll a TAXII collection",
          "Read objects from one TAXII 2.1 collection, optionally after a timestamp. "
          "Read-only; pushing to a remote server is a separate approved action.",
@@ -6698,7 +6891,7 @@ TOOLS: tuple[Tool, ...] = (
                   "collection_id": _string("collection id"),
                   "added_after": _string("ISO timestamp cursor"),
                   "limit": _integer("object cap", 1, 1000, 100)},
-                 ["api_root", "collection_id"]), "taxii_poll", open_world=True),
+                 ["api_root", "collection_id"]), "taxii_poll", open_world=True, read_only=True),
     Tool("recon_passive", "Passive recon tool",
          "Run an allowlisted passive tool (subfinder, httpx, katana, whatweb, gau, "
          "waybackurls) against one in-scope target. The command is fixed and run "

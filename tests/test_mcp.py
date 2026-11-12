@@ -380,6 +380,118 @@ class MCPIntegrationTests(unittest.TestCase):
         self.assertIsNone(payload["focus"]["mission"])
         self.assertEqual(payload["focus"]["error"]["code"], "not_found")
         self.assertIn("summary", payload["workspace"])
+        self.assertIsNone(payload["focus"]["latest_run"])
+        self.assertEqual(payload["focus"]["open_hypotheses"]["items"], [])
+
+    def test_pure_read_handlers_are_read_only_and_batchable(self):
+        pure_reads = {
+            "brain_context", "brain_journal", "campaign_status", "candidates_list",
+            "checklist_catalog", "coverage_get", "directions_list", "director_log",
+            "director_status", "chain_templates", "exploit_catalog", "exploit_search",
+            "mission_graph", "paths_list", "host_capabilities", "host_find",
+            "host_list", "host_processes", "host_stat", "host_read",
+            "toolbox_catalog", "toolbox_processes", "evolve_ledger", "evolve_status",
+            "kb_digest", "kb_search", "kb_stats", "postex_plan",
+            "taxii_collections", "taxii_poll",
+        }
+        self.assertEqual(
+            sorted(name for name in pure_reads if name not in _TOOL_MAP), [])
+        self.assertEqual(
+            sorted(name for name in pure_reads if not _TOOL_MAP[name].read_only), [])
+        # Open-world reads stay out of context-mode batches by design; pure
+        # local reads do not.
+        self.assertTrue(_TOOL_MAP["taxii_poll"].open_world)
+        self.assertFalse(_TOOL_MAP["coverage_get"].open_world)
+
+        mission = self.create_mission()
+        payload, is_error = self.call("tool_batch", calls=[
+            {"tool": "coverage_get", "arguments": {"mission_id": mission["id"]}},
+            {"tool": "director_status", "arguments": {}},
+            {"tool": "kb_stats", "arguments": {}},
+        ])
+        self.assertFalse(is_error, payload)
+        self.assertEqual(payload["summary"]["succeeded"], 3)
+        self.assertTrue(all(item["ok"] for item in payload["results"]))
+        self.assertIn("counts", payload["results"][0]["result"])
+
+    def test_workspace_brief_surfaces_directive_dead_ends_and_activity(self):
+        mission = self.create_mission(status="active")
+        self.call("hypothesis_create", mission_id=mission["id"],
+                  title="DEAD-END: .git HEAD metadata", technique="GET /.git/HEAD")
+        self.call("hypothesis_create", mission_id=mission["id"],
+                  title="Dashboard redirect can be bypassed",
+                  technique="GET /index.php/Dashboard")
+        hypotheses = self.call(
+            "hypothesis_list", mission_id=mission["id"])[0]["items"]
+        dead = next(item for item in hypotheses
+                    if item["title"].startswith("DEAD-END"))
+        live = next(item for item in hypotheses if item["id"] != dead["id"])
+        self.call("agent_notes_write", mission_id=mission["id"],
+                  kind="observation", title="Two endpoints allowed",
+                  body="Stay inside the operator directive.")
+
+        goal = ("FORBIDDEN: /dashboard. ALLOWED: /api/profile and "
+                "/index.php/Dashboard only.")
+        created = self.plane.request(
+            "POST", f"/api/v1/missions/{mission['id']}/runs",
+            body={"target": mission["target"],
+                  "options": {"goal": goal, "mode": "swarm", "endless": True}})
+        run_id = created["run"]["id"]
+        self.wait_for_run(run_id)
+
+        payload, is_error = self.call("workspace_brief", mission_id=mission["id"])
+        self.assertFalse(is_error, payload)
+        latest = payload["focus"]["latest_run"]
+        self.assertEqual(latest["id"], run_id)
+        self.assertEqual(latest["operator_directive"], goal)
+        self.assertFalse(latest["operator_directive_truncated"])
+        self.assertEqual(latest["mode"], "swarm")
+
+        opened = payload["focus"]["open_hypotheses"]
+        self.assertEqual(opened["total"], 2)
+        self.assertEqual(opened["actionable"], 1)
+        self.assertEqual(opened["dead_ends"], 1)
+        self.assertEqual(payload["avoid"][0]["hypothesis_id"], dead["id"])
+        self.assertIn("dead end", payload["avoid"][0]["reason"])
+        for item in payload["recommended_calls"]:
+            if item["tool"].startswith("hypothesis_"):
+                self.assertNotEqual(item["arguments"].get("hypothesis_id"),
+                                    dead["id"])
+        self.assertIn(live["id"],
+                      [item["arguments"].get("hypothesis_id")
+                       for item in payload["recommended_calls"]
+                       if item["tool"] == "hypothesis_evidence"])
+
+        notes = payload["focus"]["recent_notes"]["items"]
+        self.assertEqual(notes[0]["title"], "Two endpoints allowed")
+        self.assertEqual(notes[0]["kind"], "observation")
+        calls = payload["focus"]["recent_tool_calls"]["items"]
+        self.assertIn("agent_notes_write", [item["tool"] for item in calls])
+        self.assertIn("counts", payload["focus"]["coverage"])
+
+    def test_workspace_brief_flags_a_stalled_active_mission(self):
+        from netcast3r.mcp import tools as tools_module
+
+        mission = self.create_mission(status="active")
+        created = self.plane.request(
+            "POST", f"/api/v1/missions/{mission['id']}/runs",
+            body={"target": mission["target"], "options": {"mode": "swarm"}})
+        self.wait_for_run(created["run"]["id"])
+
+        original = tools_module._age_seconds
+        tools_module._age_seconds = lambda _stamp: 1000
+        try:
+            payload, is_error = self.call("workspace_brief",
+                                          mission_id=mission["id"])
+        finally:
+            tools_module._age_seconds = original
+        self.assertFalse(is_error, payload)
+        self.assertTrue(payload["focus"]["stalled"])
+        self.assertGreaterEqual(payload["focus"]["idle_seconds"], 900)
+        stalled = [item for item in payload["blocked"]
+                   if item.get("kind") == "stalled_mission"]
+        self.assertEqual(len(stalled), 1)
+        self.assertEqual(stalled[0]["requires"], "human_decision")
 
     def test_progress_notifications_flow_from_tool_context(self):
         server = MCPServer(plane=self.plane, policy=DEFAULT_POLICY, base=self.tmp)

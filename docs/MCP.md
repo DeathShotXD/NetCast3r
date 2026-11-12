@@ -173,9 +173,14 @@ None of them can mutate state, decide an approval, or submit a report.
 | `tool_search` | Rank the catalog by intent, category, risk, or read-only mode. Exact name beats prefix beats substring beats title/description terms. Each row says `requires` under the active policy. |
 | `tool_describe` | The authoritative contract for one tool: full schema, required and optional arguments, placeholder example arguments, policy gate, resource templates, and related tools. |
 | `tool_batch` | Run up to 12 read-only tools in one call. Every sub-call passes the real registry gates: schema, policy, scope, rate limit, and its own audit row. Nested batches are refused. |
-| `workspace_brief` | One snapshot for a planner: counters, active missions, live runs, pending approvals, findings still needing proof, the publish gate, and ranked `recommended_calls` grounded in stored records. |
+| `workspace_brief` | The resume brain: workspace counters, active missions, live runs, the focused mission's latest run and stored operator directive, open hypotheses split into actionable and dead ends, recent notes and tool calls, coverage, stall detection, pending approvals, the publish gate, and ranked `recommended_calls` grounded in stored records. |
 | `run_watch` | Long-poll one run instead of hammering `runs_events`. `until=any` returns on the first new event; `until=terminal` accumulates events until the run leaves queued/running. Cap 60 s. |
 | `tool_health` | Preflight: catalog counts, policy step-up counts, database integrity, provider health, pending approvals, and per-check status. |
+
+134 of the 288 tools are labelled `read_only`, and 130 of those are eligible for
+context-mode batches. A tool only carries the label when its handler is a pure
+read; the two open-world TAXII reads stay `read_only` but are excluded from
+`context` batches so a batch cannot touch the network.
 
 `tool_batch` has two modes:
 
@@ -189,6 +194,23 @@ is returned as `unavailable` with the error that caused it. Pending approvals
 appear under `blocked` with `requires: human_decision`; the brief will not
 recommend deciding one. Recommendations are only produced for tool names that
 exist and arguments grounded in stored rows.
+
+The resume fields are deliberately literal:
+
+- `focus.latest_run.operator_directive` is the stored run goal verbatim, with a
+  `truncated` flag. It is not parsed into policy and the brief never widens it.
+- `focus.open_hypotheses` splits open leads into `actionable` and `dead_ends`.
+  A dead end is a transparent text match on the stored title or technique
+  (`dead-end`, `dead end`, `deadend`); the hypothesis is not changed, and it is
+  repeated under `avoid` with the reason.
+- Recommendations never target a dead-end hypothesis, even when the server's
+  ranked actions still propose it.
+- `focus.recent_notes` and `focus.recent_tool_calls` show the last three notes
+  and six audited calls with ages, so a resumed turn can see what was already
+  tried.
+- `focus.stalled` is true only for an active mission with no live run and no
+  recorded activity for 900 s. It adds a `stalled_mission` item to `blocked`
+  with `requires: human_decision`; it does not change the mission.
 
 ### Every result is provenance-stamped
 
@@ -974,7 +996,11 @@ tool call. The UI can show whether an MCP client is alive without guessing.
 - `tool_search` ranking and filters, `tool_describe` contracts;
 - `tool_batch` read-only enforcement, nested/oversized refusal, and per-sub-call
   audit rows;
-- `workspace_brief` live and unavailable sections, grounded recommendations;
+- pure-read handlers staying `read_only` and context-batchable, including
+  `coverage_get` and `director_status`;
+- `workspace_brief` live and unavailable sections, grounded recommendations,
+  the stored operator directive, dead-end `avoid` filtering, recent notes and
+  tool calls, and the stalled-mission flag;
 - `run_watch` terminal accumulation, cursor resumption, and unknown runs;
 - `tool_health` catalog/runtime/provider checks;
 - the `netcast3r://tools` resource, approval and submission templates, and
