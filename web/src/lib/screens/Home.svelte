@@ -1054,11 +1054,11 @@
       <div class="obs-director-head">
         <div class="obs-director-title">
           <p class="eyebrow">risk posture</p>
-          <p class="obs-director-sub">Findings per day over the last 14 days, across every mission. Bars are red where a critical landed, orange for high.</p>
+          <p class="obs-director-sub">Findings per day over the last 14 days, across every mission. Each bar takes the day's strongest severity.</p>
         </div>
         <div class="obs-director-chips">
-          <span class="obs-director-chip" style="color:var(--obs-red)">critical {trendTotals.critical}</span>
-          <span class="obs-director-chip" style="color:var(--obs-orange)">high {trendTotals.high}</span>
+          <span class="obs-director-chip" style="color:var(--obs-acid)">critical {trendTotals.critical}</span>
+          <span class="obs-director-chip" style="color:var(--obs-acid-2)">high {trendTotals.high}</span>
           <span class="obs-director-chip">medium {trendTotals.medium}</span>
           <span class="obs-director-chip">low {trendTotals.low}</span>
         </div>
@@ -1067,7 +1067,7 @@
         {#each trend as point (point.date)}
           <span
             class="obs-risk-bar"
-            style="height:{Math.max(4, Math.round((point.total / trendMax) * 46))}px;background:{point.critical ? 'var(--obs-red)' : point.high ? 'var(--obs-orange)' : 'var(--obs-violet)'}"
+            style="height:{Math.max(4, Math.round((point.total / trendMax) * 46))}px;background:{point.critical ? 'var(--obs-acid)' : point.high ? 'var(--obs-acid-2)' : point.medium ? 'var(--obs-gold)' : 'var(--obs-violet)'}"
             title="{point.date}: {point.total} finding(s)"
           ></span>
         {/each}

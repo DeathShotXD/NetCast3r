@@ -409,29 +409,31 @@
   });
 </script>
 
-<div class="stagger mx-auto flex max-w-[1180px] flex-col gap-5">
-  <section>
-    <p class="eyebrow">providers and keys</p>
-    <h1 class="mt-1 text-xl text-bone">Bring your own model</h1>
-    <p class="mt-2 max-w-[70ch] text-sm leading-relaxed text-bone-dust">
-      A model is optional. Without one NetCast3r still maps the surface, reasons over JavaScript, matches 310
-      patterns, and validates 135 credential types against read-only provider endpoints - it just
-      ranks candidates deterministically instead of asking a model. Pick a provider below, paste a
-      key, and the connect step saves it, probes the endpoint, and hands you the model list. Every
-      enabled provider stays in one pool: the run tries them in priority order and rotates on rate
-      limits, so an NVIDIA key and an OpenRouter key work side by side.
-    </p>
-  </section>
+<div class="obs-page obs-page-narrow flex flex-col gap-5">
+  <header class="obs-page-head">
+    <div>
+      <div class="obs-eyebrow"><span class="tick"></span> Providers and keys</div>
+      <h1>Bring your own model</h1>
+      <p class="obs-page-sub">
+        A model is optional. Without one NetCast3r still maps the surface, reasons over JavaScript,
+        matches 310 patterns, and validates 135 credential types against read-only provider
+        endpoints - it just ranks candidates deterministically instead of asking a model. Pick a
+        provider below, paste a key, and the connect step saves it, probes the endpoint, and hands
+        you the model list. Every enabled provider stays in one pool: the run tries them in priority
+        order and rotates on rate limits, so an NVIDIA key and an OpenRouter key work side by side.
+      </p>
+    </div>
+  </header>
 
   {#if error && providers.length === 0}
-    <section class="panel px-5 py-4 text-sm" role="alert" style="color:var(--obs-red)">
+    <section class="obs-card px-5 py-4 text-sm" role="alert" style="color:var(--obs-red)">
       Could not read the provider pool: {error}
       <button class="obs-btn obs-btn-sm" type="button" style="margin-left:10px" onclick={() => void load()}>
         Try again
       </button>
     </section>
   {:else if loading && providers.length === 0 && keys.length === 0}
-    <section class="panel p-5">
+    <section class="obs-card p-5">
       <Buffering
         variant="block"
         tone="quiet"
@@ -442,29 +444,33 @@
   {/if}
 
   {#if providers.length > 0}
-    <section class="grid grid-cols-2 gap-3 sm:grid-cols-4" aria-label="pool summary">
-      <div class="panel kpi px-4 py-3">
-        <p class="eyebrow">providers on duty</p>
-        <p class="num mt-1 text-xl text-bone">{enabledCount}<span class="text-sm text-slate">/{providers.length}</span></p>
-      </div>
-      <div class="panel kpi px-4 py-3">
-        <p class="eyebrow">models ready</p>
-        <p class="num mt-1 text-xl text-bone">{modelTotal}</p>
-      </div>
-      <div class="panel kpi px-4 py-3">
-        <p class="eyebrow">reach now</p>
-        <p class="num mt-1 text-xl" class:text-acid={liveCount > 0}>{liveCount}</p>
-      </div>
-      <div class="panel kpi px-4 py-3">
-        <p class="eyebrow">keys stored</p>
-        <p class="num mt-1 text-xl text-bone">{keys.length}</p>
-      </div>
+    <section class="obs-kpis cols-4" aria-label="pool summary">
+      <article class="obs-card obs-kpi">
+        <p class="obs-kpi-label">providers on duty</p>
+        <p class="obs-kpi-value">{enabledCount}<small>/{providers.length}</small></p>
+        <p class="obs-kpi-foot">enabled in the pool</p>
+      </article>
+      <article class="obs-card obs-kpi">
+        <p class="obs-kpi-label">models ready</p>
+        <p class="obs-kpi-value">{modelTotal}</p>
+        <p class="obs-kpi-foot">routed in priority order</p>
+      </article>
+      <article class="obs-card obs-kpi {liveCount > 0 ? 'acid' : ''}">
+        <p class="obs-kpi-label">reach now</p>
+        <p class="obs-kpi-value">{liveCount}</p>
+        <p class="obs-kpi-foot">{liveCount > 0 ? 'answering health probes' : 'waiting for a probe'}</p>
+      </article>
+      <article class="obs-card obs-kpi">
+        <p class="obs-kpi-label">keys stored</p>
+        <p class="obs-kpi-value">{keys.length}</p>
+        <p class="obs-kpi-foot">in the local keyring</p>
+      </article>
     </section>
   {/if}
 
-  <section class="panel panel-hud p-5">
-    <p class="eyebrow">connect a provider</p>
-    <h2 class="mt-1 text-lg text-bone">Pick one, paste a key, we probe it</h2>
+  <section class="obs-card p-5">
+    <div class="obs-card-title">Connect a provider</div>
+    <div class="obs-card-sub">pick one, paste a key, we probe it</div>
     <p class="mt-2 max-w-[70ch] text-xs leading-relaxed text-bone-dust">
       The connect step saves the key into your OS keyring (or a 0600 file under
       <span class="mono text-acid-dim">~/.netcast3r</span>), creates the provider, calls its
@@ -581,11 +587,11 @@
     {/if}
   </section>
 
-  <section class="panel p-5">
+  <section class="obs-card p-5">
     <div class="flex flex-wrap items-center justify-between gap-3">
       <div>
-        <p class="eyebrow">model pool</p>
-        <h2 class="mt-1 text-lg text-bone">Tried in order, rotated under rate limits</h2>
+        <div class="obs-card-title">Model pool</div>
+        <div class="obs-card-sub">tried in order, rotated under rate limits</div>
       </div>
       <span class="mono text-xs text-ash">{enabledCount} on / {modelTotal} models</span>
     </div>
@@ -687,9 +693,9 @@
   </section>
 
   <section class="grid gap-5">
-    <div class="panel p-5">
-      <p class="eyebrow">stored keys</p>
-      <h2 class="mt-1 text-lg text-bone">One machine, one keyring</h2>
+    <div class="obs-card p-5">
+      <div class="obs-card-title">Stored keys</div>
+      <div class="obs-card-sub">one machine, one keyring</div>
       <p class="mt-2 text-xs leading-relaxed text-bone-dust">
         Keys go into your operating system keyring when one is available, otherwise a 0600 file
         under <span class="mono text-acid-dim">~/.netcast3r</span>. Every screen shows a masked
@@ -752,9 +758,9 @@
       </div>
     </div>
 
-    <div class="panel p-5">
-      <p class="eyebrow">custom endpoint</p>
-      <h2 class="mt-1 text-lg text-bone">Anything OpenAI-compatible</h2>
+    <div class="obs-card p-5">
+      <div class="obs-card-title">Custom endpoint</div>
+      <div class="obs-card-sub">anything OpenAI-compatible</div>
       <p class="mt-2 text-xs leading-relaxed text-bone-dust">
         Gateways, proxies, and self-hosted runtimes work too. The endpoint must speak the
         <span class="mono">/chat/completions</span> and <span class="mono">/models</span> dialect.

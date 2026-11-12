@@ -122,18 +122,20 @@
   onMount(load);
 </script>
 
-<div class="stagger mx-auto flex max-w-[1180px] flex-col gap-5">
-  <section class="flex flex-wrap items-end gap-3">
-    <div class="mr-auto">
-      <p class="eyebrow">integrations</p>
-      <h1 class="mt-1 text-xl text-bone">Connect a harness</h1>
-      <p class="mt-1 text-sm text-ash">One control plane. Every tool. Shared audit, in real time.</p>
+<div class="obs-page obs-page-narrow flex flex-col gap-5">
+  <header class="obs-page-head">
+    <div>
+      <div class="obs-eyebrow"><span class="tick"></span> Integrations</div>
+      <h1>Connect a harness</h1>
+      <p class="obs-page-sub">One control plane. Every tool. Shared audit, in real time.</p>
     </div>
-    <button class="btn btn-quiet" type="button" onclick={() => void load()}>refresh</button>
-  </section>
+    <div class="obs-page-actions">
+      <button class="obs-btn obs-btn-sm" type="button" onclick={() => void load()}>refresh</button>
+    </div>
+  </header>
 
   {#if error}
-    <section class="panel px-5 py-4 text-sm" style="color:var(--obs-red)" role="alert">
+    <section class="obs-card px-5 py-4 text-sm" style="color:var(--obs-red)" role="alert">
       Could not read connection info: {error}
       <button class="obs-btn obs-btn-sm" type="button" style="margin-left:10px" onclick={() => void load()}>Try again</button>
     </section>
@@ -147,30 +149,30 @@
       />
     </section>
   {:else}
-    <section class="grid grid-cols-2 gap-3 lg:grid-cols-4" aria-label="connection summary">
-      <div class="obs-hist-kpi">
-        <p class="eyebrow">endpoint</p>
+    <section class="obs-kpis cols-4" aria-label="connection summary">
+      <article class="obs-card obs-kpi">
+        <p class="obs-kpi-label">endpoint</p>
         <p class="obs-connect-value obs-connect-mono">{info.workspace.url}</p>
-        <p class="obs-hist-kpi-note">loopback</p>
-      </div>
-      <div class="obs-hist-kpi">
-        <p class="eyebrow">policy</p>
+        <p class="obs-kpi-foot">loopback</p>
+      </article>
+      <article class="obs-card obs-kpi">
+        <p class="obs-kpi-label">policy</p>
         <p class="obs-connect-value">{info.workspace.policy}</p>
-        <p class="obs-hist-kpi-note">risk gates apply</p>
-      </div>
-      <div class="obs-hist-kpi">
-        <p class="eyebrow">tools</p>
-        <p class="obs-connect-value" style="color:var(--obs-acid)">{info.workspace.tools}</p>
-        <p class="obs-hist-kpi-note">{categories.length} categories</p>
-      </div>
-      <div class="obs-hist-kpi">
-        <p class="eyebrow">auth</p>
+        <p class="obs-kpi-foot">risk gates apply</p>
+      </article>
+      <article class="obs-card obs-kpi acid">
+        <p class="obs-kpi-label">tools</p>
+        <p class="obs-kpi-value">{info.workspace.tools}</p>
+        <p class="obs-kpi-foot">{categories.length} categories</p>
+      </article>
+      <article class="obs-card obs-kpi">
+        <p class="obs-kpi-label">auth</p>
         <p class="obs-connect-value obs-connect-mono">{auth?.username ?? 'admin'}</p>
-        <p class="obs-hist-kpi-note">{auth?.default ? 'default login - change it' : 'username + password'}</p>
-      </div>
+        <p class="obs-kpi-foot">{auth?.default ? 'default login - change it' : 'username + password'}</p>
+      </article>
     </section>
 
-    <section class="panel p-5" aria-label="live harness connection">
+    <section class="obs-card p-5" aria-label="live harness connection">
       <div class="flex flex-wrap items-center justify-between gap-3">
         <div>
           <p class="eyebrow">live harness</p>
@@ -225,7 +227,7 @@
       {/if}
     </section>
 
-    <section class="panel obs-access" aria-label="dashboard access">
+    <section class="obs-card obs-access" aria-label="dashboard access">
       <header class="obs-access-head">
         <div>
           <p class="eyebrow">dashboard access</p>
@@ -295,7 +297,7 @@
 
     <section class="grid gap-3 lg:grid-cols-2">
       {#each info.harnesses as harness (harness.id)}
-        <article class="panel obs-connect-card">
+        <article class="obs-card obs-connect-card">
           <header class="obs-connect-head">
             <div>
               <p class="eyebrow">{harness.transport}</p>
@@ -317,7 +319,7 @@
       {/each}
     </section>
 
-    <section class="panel obs-connect-tools">
+    <section class="obs-card obs-connect-tools">
       <header class="obs-connect-tools-head">
         <div class="mr-auto">
           <p class="eyebrow">tool surface</p>
@@ -349,7 +351,7 @@
       </div>
     </section>
 
-    <section class="panel obs-connect-auth">
+    <section class="obs-card obs-connect-auth">
       <p class="eyebrow">auth</p>
       <p class="obs-connect-notes">{info.workspace.auth_note}</p>
       <dl class="obs-connect-dl">

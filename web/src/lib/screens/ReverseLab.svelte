@@ -139,7 +139,7 @@
       {#if kinds}
         <div class="flex flex-wrap items-center gap-2 text-[11px] text-ash">
           {#each Object.entries(kinds.decompilers) as [name, ready]}
-            <span class="chip" style="color:{ready ? 'var(--ok)' : 'var(--ash)'}">
+            <span class="chip" style="color:{ready ? 'var(--obs-violet-3)' : 'var(--obs-faint)'}">
               {name} {ready ? 'ready' : 'missing'}
             </span>
           {/each}
@@ -188,7 +188,7 @@
       </div>
 
       {#if error}
-        <p class="mt-3 text-[12px] text-danger">{error}</p>
+        <p class="obs-alert mt-3" role="alert">{error}</p>
       {/if}
     </div>
   </section>
@@ -264,8 +264,8 @@
 
     <div class="flex flex-wrap gap-2">
       {#each metaChips as chip}
-        <span class="chip" style="color:var(--ash)">
-          <span class="text-ash/70">{chip.label}</span>
+        <span class="obs-chip">
+          <span class="text-ash">{chip.label}</span>
           <span class="mono text-bone">{chip.value}</span>
         </span>
       {/each}
@@ -286,7 +286,7 @@
             body="The analyzers did not find a lead in this artifact. Try a different kind or a wider path."
           />
         {:else}
-          <div class="flex flex-col divide-y divide-line/60">
+          <div class="flex flex-col obs-divide">
             {#each observations as item}
               <div class="py-2">
                 <div
@@ -319,7 +319,7 @@
                   </button>
                 </div>
                 {#if expanded === item.id}
-                  <div class="mt-2 rounded-[6px] border border-line/60 bg-ink/40 p-3">
+                  <div class="obs-inset mt-2">
                     <p class="mono break-words text-[11px] text-bone">{item.evidence}</p>
                     <p class="mt-2 text-[11px] text-ash">{item.recommendation}</p>
                   </div>

@@ -162,7 +162,7 @@
     display: inline-block;
     width: 1.5px;
     height: 0.85em;
-    border-radius: 1px;
+    border-radius: 2px;
     background: currentColor;
     opacity: 0.55;
     animation: obs-buffer-caret 1s steps(1) infinite;
@@ -182,7 +182,7 @@
     overflow: hidden;
     width: 100%;
     height: 2px;
-    border-radius: 99px;
+    border-radius: 2px;
     background: rgba(245, 233, 220, 0.06);
   }
 
@@ -258,7 +258,7 @@
 
   .obs-buffer-skel{display:flex;flex-direction:column;gap:8px;width:100%;padding:4px 0}
   .obs-buffer-skel-label{font-family:var(--mono);font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--obs-acid)}
-  .obs-buffer-skel i{display:block;height:9px;border-radius:99px;background:linear-gradient(100deg,rgba(245,233,220,.06) 40%,rgba(245,233,220,.13) 50%,rgba(245,233,220,.06) 60%);background-size:220% 100%;animation:obs-buffer-shimmer 1.6s ease infinite}
+  .obs-buffer-skel i{display:block;height:9px;border-radius:2px;background:linear-gradient(100deg,rgba(245,233,220,.06) 40%,rgba(245,233,220,.13) 50%,rgba(245,233,220,.06) 60%);background-size:220% 100%;animation:obs-buffer-shimmer 1.6s ease infinite}
   @media (prefers-reduced-motion: reduce) { .obs-buffer-skel i{animation:none} }
   @media (prefers-reduced-motion: reduce) {
     .obs-buffer-dots i,

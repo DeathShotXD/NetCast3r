@@ -224,7 +224,7 @@
   </nav>
 
   <div class="obs-sidebar-foot">
-    <button class="obs-btn obs-btn-primary" type="button" onclick={() => go('new')} style="width:100%">
+    <button class="obs-btn obs-rail-cta" type="button" onclick={() => go('new')} style="width:100%">
       <Icon name="crosshair" size={13} />
       Engage target
     </button>

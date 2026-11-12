@@ -678,6 +678,7 @@ body {
 
 .obs-crumbs {
   display: flex;
+  flex: 0 1 auto;
   min-width: 0;
   align-items: center;
   gap: 8px;
@@ -687,6 +688,10 @@ body {
 
 .obs-crumbs .slash {
   opacity: 0.55;
+}
+
+.obs-crumbs .obs-chip {
+  flex: 0 0 auto;
 }
 
 .obs-crumbs strong {
@@ -699,9 +704,11 @@ body {
 
 .obs-search {
   display: flex;
-  width: min(330px, 30vw);
+  width: auto;
   height: 34px;
-  flex: 0 0 auto;
+  /* The search yields width before a live indicator or breadcrumb is clipped. */
+  flex: 0 10 330px;
+  min-width: 120px;
   align-items: center;
   gap: 8px;
   margin-left: auto;
@@ -792,7 +799,7 @@ body {
   color: var(--obs-acid);
   box-shadow:
     inset 0 0 0 1px rgba(200, 248, 26, 0.06),
-    0 8px 22px -16px rgba(200, 248, 26, 0.8);
+    0 0 16px rgba(200, 248, 26, 0.2);
 }
 
 .obs-status.acid::after {
@@ -1517,9 +1524,13 @@ html.nc-native .nc-tag {
    breadcrumb and Engage off the edge. */
 @media (max-width: 1360px) {
   .obs-search {
-    width: auto;
-    flex: 0 1 240px;
-    min-width: 120px;
+    flex: 0 10 240px;
+  }
+
+  /* The rail already carries the wordmark here, so spend the topbar width
+     on the screen name instead of repeating the product name. */
+  .obs-crumbs > span:not(.obs-chip) {
+    display: none;
   }
 }
 
@@ -1537,7 +1548,7 @@ html.nc-native .nc-tag {
 
 @media (max-width: 1100px) {
   .obs-search {
-    flex: 0 1 168px;
+    flex: 0 10 168px;
   }
 
   .obs-status.acid .obs-status-target {
@@ -6694,7 +6705,7 @@ html.nc-native .nc-tag {
   padding: 12px 14px;
   border: 1px solid var(--obs-line);
   border-radius: var(--obs-radius-sm);
-  background: linear-gradient(180deg, var(--obs-panel-2), var(--obs-panel));
+  background: var(--obs-panel);
 }
 
 .obs-hist-kpi.is-live {
@@ -6779,7 +6790,7 @@ html.nc-native .nc-tag {
   min-height: 2px;
   overflow: hidden;
   border-radius: 2px 2px 2px 2px;
-  background: linear-gradient(180deg, rgba(109, 28, 184, 0.5), rgba(109, 28, 184, 0.16));
+  background: rgba(109, 28, 184, 0.3);
   opacity: 0.6;
   transform-origin: bottom;
   transition:
@@ -6790,33 +6801,28 @@ html.nc-native .nc-tag {
 }
 
 .obs-hist-bar-fill i {
-  position: absolute;
-  inset: 0 0 auto 0;
-  height: 38%;
-  border-radius: 2px 2px 0 0;
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.16), transparent);
-  opacity: 0;
-  transition: opacity 180ms var(--ease);
+  display: none;
 }
 
 .obs-hist-bar.has-runs .obs-hist-bar-fill {
   opacity: 1;
-  background: linear-gradient(180deg, var(--obs-acid) 0%, var(--obs-acid) 52%, rgba(159, 35, 221, 0.6) 100%);
-  box-shadow: 0 0 18px -9px rgba(200, 248, 26, 0.7);
-}
-
-.obs-hist-bar.has-runs .obs-hist-bar-fill i {
-  opacity: 1;
+  background: var(--obs-violet-2);
+  box-shadow: none;
 }
 
 .obs-hist-bar.is-today .obs-hist-bar-fill {
-  background: linear-gradient(180deg, var(--obs-acid-2) 0%, var(--obs-acid) 60%, var(--obs-violet-2) 100%);
-  box-shadow: 0 0 24px -6px rgba(200, 248, 26, 0.85);
+  background: var(--obs-acid);
+  box-shadow: 0 0 16px rgba(200, 248, 26, 0.35);
 }
 
 .obs-hist-bar:hover .obs-hist-bar-fill {
   transform: scaleY(1.04);
-  box-shadow: 0 0 26px -8px rgba(200, 248, 26, 0.95);
+  opacity: 1;
+}
+
+.obs-hist-bar:not(.is-today):hover .obs-hist-bar-fill {
+  background: var(--obs-violet-3);
+  box-shadow: none;
 }
 
 .obs-hist-bar-day {
@@ -8349,7 +8355,7 @@ html.nc-native .nc-tag {
 
 .obs-lead-verdict[data-verdict="redirect-only"],
 .obs-lead-verdict[data-verdict="callback-seen"] {
-  border-left-color: #19d3da;
+  border-left-color: var(--obs-violet-3);
 }
 
 .obs-lead-verdict-head {
@@ -10097,7 +10103,7 @@ html { scroll-behavior:smooth; }
 .mc-task-top { display:flex; align-items:center; gap:6px; flex-wrap:wrap; }
 .mc-owner { font-family:var(--mono); font-size:10.5px; letter-spacing:.03em; }
 .mc-tag { border:1px solid currentColor; border-radius:2px; padding:0 4px; font-family:var(--mono); font-size:7.5px; letter-spacing:.12em; text-transform:uppercase; color:var(--obs-faint); }
-.mc-tag.operator { color:var(--nc-cyan,#19d3da); }
+.mc-tag.operator { color:var(--obs-acid); }
 .mc-tag.critical { color:var(--nc-violet); }
 .mc-tool { border-radius:2px; padding:1px 5px; background:rgba(245,233,220,.07); font-family:var(--mono); font-size:9px; color:var(--obs-faint); }
 .mc-status { margin-left:auto; border-radius:2px; padding:1px 6px; background:rgba(245,233,220,.06); font-family:var(--mono); font-size:8px; letter-spacing:.12em; text-transform:uppercase; color:var(--obs-faint); }
@@ -10109,7 +10115,7 @@ html { scroll-behavior:smooth; }
 .mc-goal { margin-top:3px; font-size:11.5px; line-height:1.45; color:var(--obs-text); overflow-wrap:anywhere; }
 .mc-task[data-status='done'] .mc-goal { color:var(--obs-text-2); }
 .mc-task[data-status='skipped'] .mc-goal { color:var(--obs-faint); text-decoration:line-through; text-decoration-color:rgba(159,35,221,.5); }
-.mc-task[data-source='operator'] { background:rgba(25,211,218,.025); }
+.mc-task[data-source='operator'] { background:rgba(200,248,26,.025); }
 .mc-verdict { display:inline-block; margin-top:3px; font-family:var(--mono); font-size:9px; letter-spacing:.1em; text-transform:uppercase; color:var(--obs-acid); }
 .mc-reason { display:inline-block; margin-top:3px; margin-left:8px; font-family:var(--mono); font-size:9px; color:var(--obs-faint); }
 .mc-channel { min-width:0; padding-bottom:6px; }
@@ -10133,10 +10139,10 @@ html { scroll-behavior:smooth; }
 .mc-directive-top { display:flex; align-items:center; gap:6px; }
 .mc-directive-kind { border:1px solid currentColor; border-radius:2px; padding:0 4px; font-family:var(--mono); font-size:7.5px; letter-spacing:.13em; text-transform:uppercase; color:var(--obs-faint); }
 .mc-directive-kind[data-kind='skip'] { color:var(--nc-violet); }
-.mc-directive-kind[data-kind='focus'] { color:var(--nc-cyan,#19d3da); }
+.mc-directive-kind[data-kind='focus'] { color:var(--obs-acid); }
 .mc-directive-status { font-family:var(--mono); font-size:8px; letter-spacing:.1em; text-transform:uppercase; color:var(--obs-faint); }
-.mc-directive[data-status='queued'] .mc-directive-status { color:var(--nc-gold,#efe4b1); }
-.mc-directive[data-status='accepted'] .mc-directive-status { color:var(--nc-cyan,#19d3da); }
+.mc-directive[data-status='queued'] .mc-directive-status { color:var(--obs-gold); }
+.mc-directive[data-status='accepted'] .mc-directive-status { color:var(--obs-violet-3); }
 .mc-directive[data-status='applied'] .mc-directive-status { color:var(--obs-acid); }
 .mc-directive-time { margin-left:auto; font-family:var(--mono); font-size:9px; color:var(--obs-faint); }
 .mc-directive-text { margin-top:2px; font-size:11px; line-height:1.45; color:var(--obs-text); overflow-wrap:anywhere; }
@@ -10153,8 +10159,8 @@ html { scroll-behavior:smooth; }
 .obs-radial-halo { position:absolute; left:0; top:0; width:300px; height:300px; margin:-150px 0 0 -150px; border-radius:50%; background:radial-gradient(closest-side, rgba(159,35,221,.16), rgba(159,35,221,.04) 62%, transparent 72%); border:1px solid rgba(200,248,26,.12); box-shadow:0 0 60px rgba(159,35,221,.18); pointer-events:none; }
 .obs-radial-core { position:absolute; left:0; top:0; width:10px; height:10px; margin:-5px 0 0 -5px; border-radius:50%; background:var(--obs-acid); box-shadow:0 0 12px var(--obs-acid); pointer-events:none; }
 .obs-radial-item { position:absolute; left:0; top:0; width:96px; height:76px; margin:-38px 0 0 -48px; display:flex; flex-direction:column; align-items:center; gap:5px; padding:0; border:0; background:transparent; color:var(--obs-text-2); cursor:pointer; transform:rotate(var(--a)) translate(var(--r)) rotate(calc(-1 * var(--a))); animation:obs-radial-item .16s var(--ease-out) backwards; }
-.obs-radial-disc { display:grid; place-items:center; width:44px; height:44px; border-radius:50%; background:linear-gradient(180deg, var(--obs-panel-3), var(--obs-panel-2)); border:1px solid var(--obs-line-strong); color:var(--obs-acid); box-shadow:var(--obs-elev-2); transition:transform .12s var(--ease-out), border-color .12s var(--ease-out), color .12s var(--ease-out), box-shadow .12s var(--ease-out); }
-.obs-radial-item:hover .obs-radial-disc, .obs-radial-item:focus-visible .obs-radial-disc { transform:translateY(-1px) scale(1.08); border-color:var(--obs-line-acid); color:var(--obs-acid); box-shadow:0 8px 22px rgba(200,248,26,.16), var(--obs-elev-2); }
+.obs-radial-disc { display:grid; place-items:center; width:44px; height:44px; border-radius:50%; background:var(--obs-panel-3); border:1px solid var(--obs-line-strong); color:var(--obs-acid); box-shadow:var(--obs-elev-2); transition:transform .12s var(--ease-out), border-color .12s var(--ease-out), color .12s var(--ease-out), box-shadow .12s var(--ease-out); }
+.obs-radial-item:hover .obs-radial-disc, .obs-radial-item:focus-visible .obs-radial-disc { transform:translateY(-1px) scale(1.08); border-color:var(--obs-line-acid); color:var(--obs-acid); box-shadow:0 0 16px rgba(200,248,26,.35), var(--obs-elev-2); }
 .obs-radial-item:focus-visible { outline:none; }
 .obs-radial-label { max-width:94px; font-family:var(--mono); font-size:9px; letter-spacing:.06em; text-transform:uppercase; color:var(--obs-muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; transition:color .12s var(--ease-out); }
 .obs-radial-item:hover .obs-radial-label, .obs-radial-item:focus-visible .obs-radial-label { color:var(--obs-text); }
@@ -10249,3 +10255,312 @@ html { scroll-behavior:smooth; }
 .obs-reveng-note { font-size:12px; color:var(--obs-muted); line-height:1.45; }
 .obs-reveng-card code { max-width:100%; margin-top:2px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-family:var(--mono); font-size:10.5px; color:var(--obs-faint); }
 .obs-reveng-foot { margin-top:12px; font-size:11.5px; color:var(--obs-faint); }
+
+/* ============================================================
+   PRIMITIVE BRIDGE
+   A few screens still carried the pre-shell primitives that live
+   in styles.css @layer base (.panel, .btn, .chip, .field,
+   .eyebrow, .kpi). Unlayered rules win, so this block folds those
+   primitives into the Obsidian vocabulary: one geometry, one type
+   scale, one palette. Screens can then be migrated screen by
+   screen without ever showing two products side by side.
+   ============================================================ */
+
+.panel,
+.panel-raised {
+  border: 1px solid var(--obs-line);
+  border-radius: 6px;
+  background: var(--obs-panel);
+  box-shadow: none;
+}
+
+.panel:hover,
+.panel-hover:hover {
+  border-color: var(--obs-line-strong);
+  background: var(--obs-panel);
+  box-shadow: none;
+  transform: none;
+}
+
+.panel-hud::before,
+.panel-hud::after {
+  content: none;
+  display: none;
+}
+
+.kpi::before {
+  content: none;
+  display: none;
+}
+
+.kpi:hover {
+  border-color: var(--obs-line-strong);
+  transform: none;
+}
+
+.btn {
+  display: inline-flex;
+  height: 30px;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 0 11px;
+  border: 1px solid var(--obs-line-strong);
+  border-radius: 6px;
+  background: var(--obs-panel-2);
+  color: var(--obs-text-2);
+  font-family: var(--sans);
+  font-size: 10.5px;
+  font-weight: 550;
+  letter-spacing: 0.005em;
+  line-height: 1;
+  white-space: nowrap;
+  box-shadow: none;
+  transform: none;
+  transition:
+    background 130ms var(--ease),
+    border-color 130ms var(--ease),
+    color 130ms var(--ease);
+}
+
+.btn:hover:not(:disabled) {
+  border-color: rgba(245, 233, 220, 0.22);
+  background: var(--obs-panel-3);
+  color: var(--obs-text);
+  box-shadow: none;
+  transform: none;
+}
+
+.btn:active:not(:disabled) {
+  transform: none;
+}
+
+.btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.btn-acid {
+  border-color: var(--obs-acid);
+  background: var(--obs-acid);
+  color: #05070a;
+  font-weight: 620;
+  box-shadow: none;
+}
+
+.btn-acid:hover:not(:disabled) {
+  border-color: var(--obs-acid-2);
+  background: var(--obs-acid-2);
+  color: #05070a;
+  box-shadow: 0 0 16px rgba(200, 248, 26, 0.35);
+}
+
+.btn-acid::after {
+  content: none;
+  display: none;
+}
+
+.btn-quiet {
+  border-color: var(--obs-line);
+  background: transparent;
+  color: var(--obs-muted);
+}
+
+.btn-quiet:hover:not(:disabled) {
+  border-color: var(--obs-line-strong);
+  background: var(--obs-panel-2);
+  color: var(--obs-text-2);
+}
+
+.btn-danger:hover:not(:disabled) {
+  border-color: rgba(217, 112, 168, 0.42);
+  background: var(--obs-red-soft);
+  color: var(--obs-red);
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 6px;
+  border: 1px solid currentColor;
+  border-radius: 2px;
+  font-family: var(--mono);
+  font-size: 8.5px;
+  letter-spacing: 0.08em;
+  line-height: 1.5;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.eyebrow {
+  font-family: var(--mono);
+  font-size: 8px;
+  letter-spacing: 0.18em;
+  line-height: 1.4;
+  text-transform: uppercase;
+  color: var(--obs-muted);
+}
+
+.field,
+input.obs-field,
+textarea.obs-field,
+select.obs-field {
+  width: 100%;
+  border: 1px solid var(--obs-line);
+  border-radius: 6px;
+  background: var(--obs-bg-2);
+  color: var(--obs-text);
+  font-family: var(--sans);
+  font-size: 11px;
+  line-height: 1.5;
+  padding: 8px 10px;
+  outline: none;
+  transition: border-color 130ms var(--ease), background 130ms var(--ease);
+}
+
+.field::placeholder,
+input.obs-field::placeholder,
+textarea.obs-field::placeholder {
+  color: var(--obs-faint);
+}
+
+.field:focus,
+input.obs-field:focus,
+textarea.obs-field:focus,
+select.obs-field:focus {
+  border-color: var(--obs-line-acid);
+  background: var(--obs-panel-2);
+  box-shadow: none;
+  outline: none;
+}
+
+.num {
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Centered page measures used by the converted screens. */
+.obs-page-narrow {
+  width: 100%;
+  max-width: 1180px;
+  margin: 0 auto;
+}
+
+.obs-page-narrow.is-reading {
+  max-width: 980px;
+}
+
+/* Four-up KPI strip built from the shared KPI card. */
+.obs-kpis.cols-4 {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+@media (max-width: 1180px) {
+  .obs-kpis.cols-4 {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .obs-kpis.cols-4 .obs-kpi:nth-child(5):last-child {
+    grid-column: auto;
+  }
+}
+
+@media (max-width: 560px) {
+  .obs-kpis.cols-4 {
+    grid-template-columns: 1fr;
+  }
+
+  .obs-kpis.cols-4 .obs-kpi:last-child {
+    grid-column: auto;
+  }
+}
+
+/* The KPI card is a solid surface; the gradient wash belonged to the
+   old theme and broke the "black is the substrate" rule. */
+.obs-kpi {
+  background: var(--obs-panel);
+}
+
+.obs-kpi:hover {
+  background: var(--obs-panel-2);
+}
+
+/* Legacy section spacing used by a few panels. */
+.obs-card > .panel + .panel,
+.obs-card + .obs-card {
+  margin-top: 0;
+}
+
+/* Legacy theme token utilities. A handful of screens still spell colour
+   with the old Tailwind names; point them at the shell tokens so a stray
+   class can never reintroduce a second palette. */
+.text-bone { color: var(--obs-text); }
+.text-bone-dust { color: var(--obs-muted); }
+.text-ash { color: var(--obs-faint); }
+.text-slate { color: var(--obs-faint); }
+.text-acid { color: var(--obs-acid); }
+.text-acid-dim { color: var(--obs-acid); }
+.text-violet { color: var(--obs-violet-3); }
+.border-indigo { border-color: var(--obs-line-strong); }
+.border-indigo-deep { border-color: var(--obs-line); }
+.border-acid { border-color: var(--obs-line-acid); }
+.border-acid-deep { border-color: rgba(200, 248, 26, 0.45); }
+.bg-void { background: var(--obs-bg); }
+.bg-acid { background: var(--obs-acid); }
+.bg-violet { background: var(--obs-violet); }
+.bg-slate { background: var(--obs-faint); }
+.bg-acid-abyss { background: var(--obs-acid-soft); }
+.bg-violet-abyss { background: var(--obs-violet-soft); }
+
+/* Small structural helpers shared by detail views. */
+.obs-divide > * + * {
+  border-top: 1px solid var(--obs-line);
+}
+
+.obs-inset {
+  border: 1px solid var(--obs-line);
+  border-radius: 6px;
+  background: var(--obs-bg-2);
+  padding: 12px;
+}
+
+/* Opacity-modifier legacy utilities need an exact attribute match. */
+[class~="border-indigo-deep/60"] { border-color: var(--obs-line); }
+[class~="bg-indigo/60"] { background: var(--obs-violet-soft); }
+
+/* The rail repeats the topbar's engage action, so it reads as structure
+   (violet), not as a second acid primary on every screen. */
+.obs-rail-cta {
+  border-color: rgba(159, 35, 221, 0.42);
+  background: var(--obs-violet-soft);
+  color: #e6c2f8;
+}
+
+.obs-rail-cta:hover:not(:disabled) {
+  border-color: rgba(159, 35, 221, 0.72);
+  background: rgba(159, 35, 221, 0.2);
+  color: #f2dcfb;
+}
+
+.obs-rail-cta .obs-icon {
+  color: var(--obs-violet-3);
+}
+
+/* Dense KPI strip used by the live run: card geometry, instrument density. */
+.obs-kpi.is-dense {
+  min-height: 0;
+  padding: 10px 12px;
+}
+
+.obs-kpi.is-dense .obs-kpi-value {
+  margin-top: 2px;
+  font-size: 21px;
+  line-height: 1.15;
+}
+
+.obs-kpi.is-dense:hover {
+  transform: none;
+  box-shadow: var(--obs-elev-1);
+}

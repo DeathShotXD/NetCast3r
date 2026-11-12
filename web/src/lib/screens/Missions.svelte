@@ -611,7 +611,7 @@
   function verdictColor(verdict: string): string {
     if (verdict === 'supported' || verdict === 'proven') return 'var(--obs-acid)';
     if (verdict === 'edge-blocked' || verdict === 'blocked') return 'var(--obs-orange)';
-    if (verdict === 'redirect-only' || verdict === 'callback-seen') return 'var(--obs-cyan, #19d3da)';
+    if (verdict === 'redirect-only' || verdict === 'callback-seen') return 'var(--obs-violet-3)';
     if (verdict === 'untested') return 'var(--obs-faint)';
     if (verdict === 'unavailable') return 'var(--obs-red)';
     return 'var(--obs-violet-3)';

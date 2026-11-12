@@ -239,11 +239,11 @@
     think: { label: 'reason', color: 'var(--nc-bone-dust)', icon: '*' },
     act: { label: 'call', color: 'var(--nc-acid)', icon: '>' },
     tool: { label: 'result', color: 'var(--nc-acid)', icon: '<' },
-    http: { label: 'http', color: 'var(--nc-cyan, #19d3da)', icon: '~' },
+    http: { label: 'http', color: 'var(--obs-violet-3)', icon: '~' },
     model: { label: 'model', color: 'var(--nc-gold, #efe4b1)', icon: '@' },
     note: { label: 'decide', color: 'var(--nc-slate-3, #8b8fa3)', icon: '#' },
-    plan: { label: 'plan', color: 'var(--nc-cyan, #19d3da)', icon: '#' },
-    directive: { label: 'operator', color: 'var(--nc-cyan, #19d3da)', icon: '>' },
+    plan: { label: 'plan', color: 'var(--obs-text-2)', icon: '#' },
+    directive: { label: 'operator', color: 'var(--obs-acid)', icon: '>' },
     log: { label: 'log', color: 'var(--nc-ash)', icon: '-' },
     err: { label: 'error', color: 'var(--nc-violet)', icon: '!' },
     found: { label: 'proof', color: 'var(--nc-gold, #efe4b1)', icon: '$' }
@@ -477,7 +477,7 @@
     const code = Number(status);
     if (!Number.isFinite(code) || code === 0) return 'var(--nc-ash)';
     if (code >= 200 && code < 300) return 'var(--nc-acid)';
-    if (code >= 300 && code < 400) return 'var(--nc-cyan, #19d3da)';
+    if (code >= 300 && code < 400) return 'var(--obs-violet-3)';
     if (code >= 400 && code < 500) return 'var(--nc-gold, #efe4b1)';
     return 'var(--nc-violet)';
   }
@@ -1239,46 +1239,46 @@
     <section class="grid grid-cols-2 gap-3 sm:grid-cols-4" aria-label="counters">
       {#if isSolve}
         {#each [['steps', 'steps'], ['actions', 'actions'], ['model calls', 'model_calls'], ['findings', 'findings']] as [label, key] (key)}
-          <div class="panel kpi px-4 py-3">
-            <p class="eyebrow">{label}</p>
-            <p class="num mt-1 text-xl text-bone" use:countup={counts[key] ?? 0}>0</p>
+          <div class="obs-card obs-kpi is-dense">
+            <p class="obs-kpi-label">{label}</p>
+            <p class="obs-kpi-value" use:countup={counts[key] ?? 0}>0</p>
           </div>
         {/each}
       {:else if isMesh}
         {#each [['moves', 'actions'], ['model calls', 'model_calls'], ['agents', 'agents'], ['findings', 'findings']] as [label, key] (key)}
-          <div class="panel kpi px-4 py-3">
-            <p class="eyebrow">{label}</p>
-            <p class="num mt-1 text-xl text-bone" use:countup={metric(key)}>0</p>
+          <div class="obs-card obs-kpi is-dense">
+            <p class="obs-kpi-label">{label}</p>
+            <p class="obs-kpi-value" use:countup={metric(key)}>0</p>
           </div>
         {/each}
       {:else if isOperator}
         {#each [['moves', 'actions'], ['model calls', 'model_calls'], ['hypotheses', 'hypotheses'], ['findings', 'findings']] as [label, key] (key)}
-          <div class="panel kpi px-4 py-3">
-            <p class="eyebrow">{label}</p>
-            <p class="num mt-1 text-xl text-bone" use:countup={counts[key] ?? 0}>0</p>
+          <div class="obs-card obs-kpi is-dense">
+            <p class="obs-kpi-label">{label}</p>
+            <p class="obs-kpi-value" use:countup={counts[key] ?? 0}>0</p>
           </div>
         {/each}
       {:else if isHunt}
         {#each [['pages', 'pages'], ['endpoints', 'endpoints'], ['techniques', 'techniques'], ['hypotheses', 'leads']] as [label, key] (key)}
-          <div class="panel kpi px-4 py-3">
-            <p class="eyebrow">{label}</p>
-            <p class="num mt-1 text-xl text-bone" use:countup={counts[key] ?? 0}>0</p>
+          <div class="obs-card obs-kpi is-dense">
+            <p class="obs-kpi-label">{label}</p>
+            <p class="obs-kpi-value" use:countup={counts[key] ?? 0}>0</p>
           </div>
         {/each}
       {:else if isLab}
         {#each [['steps', 'steps'], ['http calls', 'http_calls'], ['solved', 'solved'], ['lesson', 'lesson_id']] as [label, key] (key)}
-          <div class="panel kpi px-4 py-3">
-            <p class="eyebrow">{label}</p>
-            <p class="num mt-1 text-xl text-bone">
+          <div class="obs-card obs-kpi is-dense">
+            <p class="obs-kpi-label">{label}</p>
+            <p class="obs-kpi-value">
               {key === 'solved' ? (counts.solved ? 'yes' : 'no') : key === 'lesson_id' ? (counts.lesson_id ? 'yes' : 'no') : (counts[key] ?? 0)}
             </p>
           </div>
         {/each}
       {:else}
         {#each [['pages', 'pages'], ['js files', 'js_files'], ['endpoints', 'endpoints'], ['candidates', 'candidates'], ['verified', 'verified'], ['findings', 'findings'], ['not confirmed', 'unverified'], ['weak points', 'review_loopholes']] as [label, key] (key)}
-          <div class="panel kpi px-4 py-3">
-            <p class="eyebrow">{label}</p>
-            <p class="num mt-1 text-xl text-bone" use:countup={counts[key] ?? 0}>0</p>
+          <div class="obs-card obs-kpi is-dense">
+            <p class="obs-kpi-label">{label}</p>
+            <p class="obs-kpi-value" use:countup={counts[key] ?? 0}>0</p>
           </div>
         {/each}
       {/if}

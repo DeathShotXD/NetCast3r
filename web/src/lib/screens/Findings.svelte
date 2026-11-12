@@ -470,7 +470,7 @@
           <p class="obs-eyebrow">evidence</p>
           <pre
             class="obs-mono"
-            style="margin-top:8px;max-height:220px;overflow:auto;white-space:pre-wrap;word-break:break-word;border:1px solid var(--obs-line);border-radius:9px;background:var(--obs-bg-2);padding:12px;font-size:11px;line-height:1.5;color:var(--obs-muted)">{selected.evidence}</pre>
+            style="margin-top:8px;max-height:220px;overflow:auto;white-space:pre-wrap;word-break:break-word;border:1px solid var(--obs-line);border-radius:6px;background:var(--obs-bg-2);padding:12px;font-size:11px;line-height:1.5;color:var(--obs-muted)">{selected.evidence}</pre>
         </div>
       {/if}
 

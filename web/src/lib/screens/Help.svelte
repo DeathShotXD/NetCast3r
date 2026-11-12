@@ -28,27 +28,29 @@
   ];
 </script>
 
-<div class="stagger mx-auto flex max-w-[980px] flex-col gap-6">
-  <section>
-    <p class="eyebrow">help</p>
-    <h1 class="mt-1 text-xl text-bone">What every word on screen means</h1>
-    <p class="mt-2 max-w-[70ch] text-sm leading-relaxed text-bone-dust">
-      NetCast3r is an authorized-testing tool. It maps a target you are allowed to test, reasons over
-      the JavaScript it loads, matches credentials against 310 patterns, and validates what it
-      catches against 135 read-only provider checks. It does not scan the internet at large, does
-      not store your keys anywhere but your machine, and does not upload results.
-    </p>
-  </section>
+<div class="obs-page obs-page-narrow is-reading flex flex-col gap-5">
+  <header class="obs-page-head">
+    <div>
+      <div class="obs-eyebrow"><span class="tick"></span> Field guide</div>
+      <h1>What every word on screen means</h1>
+      <p class="obs-page-sub">
+        NetCast3r is an authorized-testing tool. It maps a target you are allowed to test, reasons
+        over the JavaScript it loads, matches credentials against 310 patterns, and validates what
+        it catches against 135 read-only provider checks. It does not scan the internet at large,
+        does not store your keys anywhere but your machine, and does not upload results.
+      </p>
+    </div>
+  </header>
 
-  <section class="panel p-5">
-    <p class="eyebrow">the pipeline</p>
-    <h2 class="mt-1 text-lg text-bone">Six stages, in order</h2>
+  <section class="obs-card p-5">
+    <div class="obs-card-title">Six stages, in order</div>
+    <div class="obs-card-sub">the pipeline</div>
     <div class="mt-5"><PipelineLadder showAgent /></div>
   </section>
 
-  <section class="panel p-5">
-    <p class="eyebrow">validation ladder</p>
-    <h2 class="mt-1 text-lg text-bone">How sure are we?</h2>
+  <section class="obs-card p-5">
+    <div class="obs-card-title">How sure are we?</div>
+    <div class="obs-card-sub">validation ladder</div>
     <ul class="mt-4 flex flex-col gap-3">
       {#each ladder as rung (rung.key)}
         <li class="flex gap-4 border-b border-indigo-deep/60 pb-3 last:border-0 last:pb-0">
@@ -64,9 +66,9 @@
   </section>
 
   <section class="grid gap-5 lg:grid-cols-2">
-    <div class="panel p-5">
-      <p class="eyebrow">severity</p>
-      <h2 class="mt-1 text-lg text-bone">Colour, shape, and text</h2>
+    <div class="obs-card p-5">
+      <div class="obs-card-title">Colour, shape, and text</div>
+      <div class="obs-card-sub">severity</div>
       <ul class="mt-4 flex flex-col gap-3">
         {#each Object.keys(SEVERITIES).filter((key) => key !== 'none') as key (key)}
           <li class="flex items-start gap-3">
@@ -77,9 +79,9 @@
       </ul>
     </div>
 
-    <div class="panel p-5">
-      <p class="eyebrow">triage states</p>
-      <h2 class="mt-1 text-lg text-bone">Your decision, carried forward</h2>
+    <div class="obs-card p-5">
+      <div class="obs-card-title">Your decision, carried forward</div>
+      <div class="obs-card-sub">triage states</div>
       <ul class="mt-4 flex flex-col gap-3">
         {#each triage as row (row.key)}
           <li class="flex items-start gap-3">
@@ -95,8 +97,9 @@
     </div>
   </section>
 
-  <section class="panel p-5">
-    <p class="eyebrow">state colours</p>
+  <section class="obs-card p-5">
+    <div class="obs-card-title">State colours</div>
+    <div class="obs-card-sub">one word, one colour, one shape</div>
     <div class="mt-3 flex flex-wrap gap-2">
       {#each Object.keys(STATES) as key (key)}
         <Chip label={key} color={stateColor(key)} shape="dot" />
@@ -104,9 +107,9 @@
     </div>
   </section>
 
-  <section class="panel p-5">
-    <p class="eyebrow">shell behaviour</p>
-    <h2 class="mt-1 text-lg text-bone">The net cursor</h2>
+  <section class="obs-card p-5">
+    <div class="obs-card-title">The net cursor</div>
+    <div class="obs-card-sub">shell behaviour</div>
     <p class="mt-3 max-w-[70ch] text-sm leading-relaxed text-bone-dust">
       A light reticle follows the pointer on a short elastic leash. As it comes near a control it
       spins a web out to that control's edges, tightens, leans in, and knots itself on. Press
@@ -118,8 +121,9 @@
     </p>
   </section>
 
-  <section class="panel p-5">
-    <p class="eyebrow">from the terminal</p>
+  <section class="obs-card p-5">
+    <div class="obs-card-title">From the terminal</div>
+    <div class="obs-card-sub">the same engine without the dashboard</div>
     <pre
       class="mono mt-3 overflow-x-auto rounded-[6px] border border-indigo-deep bg-void px-4 py-3 text-xs leading-relaxed text-bone-dust">netcast3r ui                 # this dashboard, then open the printed link
 netcast3r run TARGET         # the same pipeline, straight to the console

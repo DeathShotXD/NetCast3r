@@ -232,99 +232,107 @@
   onMount(load);
 </script>
 
-<div class="stagger mx-auto flex max-w-[1180px] flex-col gap-5">
-  <section class="flex flex-wrap items-end gap-3">
-    <div class="mr-auto">
-      <p class="eyebrow">history</p>
-      <h1 class="mt-1 text-xl text-bone">Cast history</h1>
-      <p class="mt-1 text-sm text-ash">
-        {total} casts recorded{liveCount ? ` / ${liveCount} live now` : ''}
+<div class="obs-page obs-page-narrow">
+  <header class="obs-page-head">
+    <div>
+      <div class="obs-eyebrow"><span class="tick"></span> Operations / Cast history</div>
+      <h1>Cast history</h1>
+      <p class="obs-page-sub">
+        Every operation the plane has run, grouped by day. {total} casts recorded{liveCount
+          ? ` / ${liveCount} live now`
+          : ''}.
       </p>
     </div>
-    <button class="btn btn-quiet" type="button" onclick={() => void load()}>refresh</button>
-    <button class="btn btn-acid" type="button" onclick={() => store.go('new')}>new scan</button>
+    <div class="obs-page-actions">
+      <button class="obs-btn obs-btn-sm" type="button" onclick={() => void load()}>refresh</button>
+      <button class="obs-btn obs-btn-sm obs-btn-primary" type="button" onclick={() => store.go('new')}>
+        new scan
+      </button>
+    </div>
+  </header>
+
+  <section class="obs-kpis cols-4" aria-label="cast summary">
+    <article class="obs-card obs-kpi">
+      <p class="obs-kpi-label">casts</p>
+      <p class="obs-kpi-value">{total}</p>
+      <div class="obs-kpi-foot">
+        <span>last 14 days</span>
+        <Sparkline values={activityValues} width={52} height={17} />
+      </div>
+    </article>
+    <article class="obs-card obs-kpi {liveCount > 0 ? 'acid' : ''}">
+      <p class="obs-kpi-label">live now</p>
+      <p class="obs-kpi-value">{liveCount}</p>
+      <p class="obs-kpi-foot">{liveCount > 0 ? 'casting in the background' : 'idle'}</p>
+    </article>
+    <article class="obs-card obs-kpi {findingTotal > 0 ? 'acid' : ''}">
+      <p class="obs-kpi-label">findings</p>
+      <p class="obs-kpi-value">{findingTotal}</p>
+      <p class="obs-kpi-foot">across all casts</p>
+    </article>
+    <article class="obs-card obs-kpi">
+      <p class="obs-kpi-label">endpoints</p>
+      <p class="obs-kpi-value">{endpointTotal}</p>
+      <p class="obs-kpi-foot">{runs.length} casts scanned</p>
+    </article>
   </section>
 
-  <section class="grid grid-cols-2 gap-3 lg:grid-cols-4" aria-label="cast summary">
-    <div class="obs-hist-kpi">
-      <p class="eyebrow">casts</p>
-      <p class="num mt-1 text-xl text-bone">{total}</p>
-      <Sparkline values={activityValues} width={150} height={26} class="mt-2 w-full" />
-    </div>
-    <div class="obs-hist-kpi" class:is-live={liveCount > 0}>
-      <p class="eyebrow">live now</p>
-      <p class="num mt-1 text-xl" style="color:{liveCount > 0 ? 'var(--obs-acid)' : 'var(--obs-text)'}">
-        {liveCount}
-      </p>
-      <p class="obs-hist-kpi-note">{liveCount > 0 ? 'casting in the background' : 'idle'}</p>
-    </div>
-    <div class="obs-hist-kpi">
-      <p class="eyebrow">findings</p>
-      <p class="num mt-1 text-xl" style="color:{findingTotal > 0 ? 'var(--obs-acid)' : 'var(--obs-text)'}">
-        {findingTotal}
-      </p>
-      <p class="obs-hist-kpi-note">across all casts</p>
-    </div>
-    <div class="obs-hist-kpi">
-      <p class="eyebrow">endpoints</p>
-      <p class="num mt-1 text-xl text-bone">{endpointTotal}</p>
-      <p class="obs-hist-kpi-note">{runs.length} casts scanned</p>
-    </div>
-  </section>
-
-  <section class="panel obs-hist-band">
-    <div class="obs-hist-band-head">
-      <p class="eyebrow">activity &middot; last 14 days</p>
+  <section class="obs-card">
+    <div class="obs-card-head">
+      <div>
+        <div class="obs-card-title">Activity</div>
+        <div class="obs-card-sub">casts per day - last 14 days</div>
+      </div>
       <span class="obs-hist-band-total">
         {activity.reduce((n, day) => n + day.count, 0)} casts &middot; peak {activityMax}/day
       </span>
     </div>
-    <div class="obs-hist-chart">
-      <div class="obs-hist-grid" aria-hidden="true">
-        <span></span><span></span><span></span><span></span>
+    <div class="obs-hist-band">
+      <div class="obs-hist-chart">
+        <div class="obs-hist-grid" aria-hidden="true">
+          <span></span><span></span><span></span><span></span>
+        </div>
+        <div class="obs-hist-bars" role="img" aria-label="casts per day over the last 14 days">
+          {#each activity as day, i (day.label)}
+            <div
+              class="obs-hist-bar"
+              class:has-runs={day.count > 0}
+              class:is-today={i === activity.length - 1}
+              title="{day.label}: {day.count} casts, {day.findings} findings"
+            >
+              <span class="obs-hist-bar-fill" style="height:{day.count ? Math.max(10, (day.count / activityMax) * 100) : 4}%"></span>
+              <span class="obs-hist-bar-day">{day.short}</span>
+            </div>
+          {/each}
+        </div>
       </div>
-      <div class="obs-hist-bars" role="img" aria-label="casts per day over the last 14 days">
-        {#each activity as day, i (day.label)}
-          <div
-            class="obs-hist-bar"
-            class:has-runs={day.count > 0}
-            class:is-today={i === activity.length - 1}
-            title="{day.label}: {day.count} casts, {day.findings} findings"
-          >
-            <span class="obs-hist-bar-fill" style="height:{day.count ? Math.max(10, (day.count / activityMax) * 100) : 4}%">
-              <i aria-hidden="true"></i>
-            </span>
-            <span class="obs-hist-bar-day">{day.short}</span>
-          </div>
-        {/each}
+      <div class="obs-hist-mix">
+        {#if mix.length}
+          {#each mix as item (item.key)}
+            <span
+              class="obs-hist-mix-seg"
+              style="flex:{item.count};background:{item.color}"
+              title="{item.label}: {item.count}"
+            ></span>
+          {/each}
+        {:else}
+          <span class="obs-hist-mix-seg" style="flex:1;background:var(--obs-panel-4)"></span>
+        {/if}
       </div>
-    </div>
-    <div class="obs-hist-mix">
-      {#if mix.length}
+      <div class="obs-hist-legend">
         {#each mix as item (item.key)}
-          <span
-            class="obs-hist-mix-seg"
-            style="flex:{item.count};background:{item.color}"
-            title="{item.label}: {item.count}"
-          ></span>
+          <span class="obs-hist-legend-item">
+            <i style="background:{item.color}"></i>{item.label}
+            <b>{item.count}</b>
+          </span>
         {/each}
-      {:else}
-        <span class="obs-hist-mix-seg" style="flex:1;background:var(--obs-panel-4)"></span>
-      {/if}
-    </div>
-    <div class="obs-hist-legend">
-      {#each mix as item (item.key)}
-        <span class="obs-hist-legend-item">
-          <i style="background:{item.color}"></i>{item.label}
-          <b>{item.count}</b>
-        </span>
-      {/each}
-      {#if !mix.length}
-        <span class="obs-hist-legend-item muted">no casts in the loaded set</span>
-      {/if}
-      {#if mixTotal}
-        <span class="obs-hist-legend-item muted">{Math.round(((counts.done ?? 0) / mixTotal) * 100)}% complete</span>
-      {/if}
+        {#if !mix.length}
+          <span class="obs-hist-legend-item muted">no casts in the loaded set</span>
+        {/if}
+        {#if mixTotal}
+          <span class="obs-hist-legend-item muted">{Math.round(((counts.done ?? 0) / mixTotal) * 100)}% complete</span>
+        {/if}
+      </div>
     </div>
   </section>
 
@@ -378,7 +386,7 @@
       />
     </section>
   {:else if error && runs.length === 0}
-    <section class="panel">
+    <section class="obs-card">
       <EmptyState
         eyebrow="control plane"
         tone="error"
@@ -391,7 +399,7 @@
       />
     </section>
   {:else if runs.length === 0}
-    <section class="panel">
+    <section class="obs-card">
       <EmptyState
         eyebrow="empty"
         title="No operations yet"
@@ -402,7 +410,7 @@
       />
     </section>
   {:else if filtered.length === 0}
-    <section class="panel px-5 py-8 text-sm text-ash">No cast matches this filter.</section>
+    <section class="obs-card px-5 py-8 text-sm text-ash">No cast matches this filter.</section>
   {:else}
     {#each grouped as group (group.label)}
       <section class="obs-hist-group">
@@ -462,7 +470,7 @@
       <div class="obs-hist-more">
         <span>{visible.length} of {filtered.length} casts</span>
         {#if hidden > 0}
-          <button class="btn btn-quiet" type="button" onclick={() => (visibleCount += PAGE_SIZE)}>
+          <button class="obs-btn obs-btn-sm" type="button" onclick={() => (visibleCount += PAGE_SIZE)}>
             load {Math.min(PAGE_SIZE, hidden)} more
           </button>
         {/if}

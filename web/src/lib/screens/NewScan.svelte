@@ -341,8 +341,8 @@
     padding: 11px 12px;
     overflow: hidden;
     border: 1px solid var(--obs-line);
-    border-radius: 10px;
-    background: linear-gradient(180deg, var(--obs-panel-2), rgba(10, 9, 18, 0.5));
+    border-radius: 6px;
+    background: var(--obs-panel-2);
     animation: fade-rise 460ms var(--ease) both;
     animation-delay: calc(var(--i) * 55ms);
     transition:
@@ -356,14 +356,14 @@
     position: absolute;
     inset: 0 auto 0 0;
     width: 2px;
-    background: linear-gradient(180deg, var(--obs-acid), transparent);
+    background: var(--obs-acid);
     opacity: 0.45;
   }
 
   .obs-mesh-item:hover {
     border-color: var(--obs-line-acid);
     transform: translateY(-1px);
-    box-shadow: 0 14px 28px -24px rgba(200, 248, 26, 0.7);
+    box-shadow: 0 0 16px rgba(200, 248, 26, 0.14);
   }
 
   .obs-mesh-ico {
@@ -372,10 +372,8 @@
     height: 30px;
     place-items: center;
     border: 1px solid var(--obs-line);
-    border-radius: 8px;
-    background:
-      radial-gradient(circle at 35% 25%, rgba(200, 248, 26, 0.12), transparent 70%),
-      var(--obs-panel);
+    border-radius: 6px;
+    background: var(--obs-panel);
     color: var(--obs-acid);
   }
 
@@ -406,7 +404,7 @@
     align-self: start;
     padding: 2px 7px;
     border: 1px solid var(--obs-line);
-    border-radius: 99px;
+    border-radius: 2px;
     font-family: var(--mono);
     font-size: 7.5px;
     letter-spacing: 0.12em;

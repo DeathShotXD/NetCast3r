@@ -1254,14 +1254,12 @@
     min-width: 380px;
     min-height: 320px;
     overflow: hidden;
-    border: 1px solid rgba(245, 233, 220, 0.1);
-    border-radius: 18px;
-    background:
-      linear-gradient(180deg, rgba(20, 17, 31, 0.97), rgba(6, 5, 10, 0.98));
+    border: 1px solid var(--obs-line-strong);
+    border-radius: 12px;
+    background: var(--obs-panel);
     box-shadow:
-      0 0 0 1px rgba(159, 35, 221, 0.12),
-      0 28px 80px rgba(0, 0, 0, 0.55),
-      0 1px 0 rgba(245, 233, 220, 0.04) inset;
+      0 0 0 1px rgba(159, 35, 221, 0.24),
+      inset 0 1px 0 rgba(0, 0, 0, 0.55);
     color: var(--obs-text);
     touch-action: none;
   }
@@ -1269,17 +1267,17 @@
   .nc-brain-panel.live {
     border-color: rgba(200, 248, 26, 0.18);
     box-shadow:
-      0 0 0 1px rgba(200, 248, 26, 0.08),
-      0 28px 80px rgba(0, 0, 0, 0.55),
-      0 0 40px -18px rgba(200, 248, 26, 0.28);
+      0 0 0 1px rgba(200, 248, 26, 0.16),
+      0 0 16px rgba(200, 248, 26, 0.12),
+      inset 0 1px 0 rgba(0, 0, 0, 0.55);
   }
 
   .nc-brain-panel.awaiting {
     border-color: rgba(200, 248, 26, 0.28);
     box-shadow:
-      0 0 0 1px rgba(200, 248, 26, 0.1),
-      0 28px 80px rgba(0, 0, 0, 0.55),
-      0 0 48px -16px rgba(200, 248, 26, 0.32);
+      0 0 0 1px rgba(200, 248, 26, 0.24),
+      0 0 16px rgba(200, 248, 26, 0.14),
+      inset 0 1px 0 rgba(0, 0, 0, 0.55);
     animation: nc-brain-await-glow 2.4s var(--ease, ease) infinite;
   }
 
@@ -1295,21 +1293,21 @@
     0%,
     100% {
       box-shadow:
-        0 0 0 1px rgba(200, 248, 26, 0.08),
-        0 28px 80px rgba(0, 0, 0, 0.55),
-        0 0 36px -18px rgba(200, 248, 26, 0.22);
+        0 0 0 1px rgba(200, 248, 26, 0.16),
+        0 0 16px rgba(200, 248, 26, 0.1),
+        inset 0 1px 0 rgba(0, 0, 0, 0.55);
     }
     50% {
       box-shadow:
-        0 0 0 1px rgba(200, 248, 26, 0.16),
-        0 28px 80px rgba(0, 0, 0, 0.55),
-        0 0 56px -14px rgba(200, 248, 26, 0.4);
+        0 0 0 1px rgba(200, 248, 26, 0.26),
+        0 0 16px rgba(200, 248, 26, 0.18),
+        inset 0 1px 0 rgba(0, 0, 0, 0.55);
     }
   }
 
   .nc-brain-panel.fullscreen {
     z-index: 1140;
-    border-radius: 14px;
+    border-radius: 12px;
   }
 
   .nc-brain-panel.fullscreen .nc-brain-grip {
@@ -1327,11 +1325,7 @@
   }
 
   .nc-brain-sheen {
-    pointer-events: none;
-    position: absolute;
-    inset: 0 0 auto;
-    height: 88px;
-    background: radial-gradient(120% 100% at 12% 0%, rgba(159, 35, 221, 0.14), transparent 58%);
+    display: none;
   }
 
   .nc-brain-head {
@@ -1362,7 +1356,7 @@
     align-self: center;
     width: 8px;
     height: 22px;
-    border-radius: 99px;
+    border-radius: 2px;
     background:
       linear-gradient(180deg, transparent 0 2px, rgba(245, 233, 220, 0.22) 2px 3px, transparent 3px 6px)
         0 0 / 100% 6px repeat-y;
@@ -1377,16 +1371,16 @@
   }
 
   .nc-brain-wordmark {
-    font-size: 13px;
-    font-weight: 560;
-    letter-spacing: 0.01em;
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: -0.01em;
     color: var(--obs-text);
   }
 
   .nc-brain-role-tag {
     font-family: var(--mono);
-    font-size: 9px;
-    letter-spacing: 0.1em;
+    font-size: 8px;
+    letter-spacing: 0.14em;
     text-transform: uppercase;
     color: var(--obs-violet-3);
   }
@@ -1395,7 +1389,7 @@
     display: inline-flex;
     align-items: center;
     gap: 5px;
-    border-radius: 999px;
+    border-radius: 2px;
     padding: 2px 8px 2px 6px;
     background: rgba(245, 233, 220, 0.04);
     border: 1px solid rgba(245, 233, 220, 0.08);
@@ -1449,7 +1443,7 @@
     max-width: 150px;
     padding: 4px 6px;
     border: 1px solid rgba(245, 233, 220, 0.12);
-    border-radius: 7px;
+    border-radius: 6px;
     background: rgba(0, 0, 0, 0.35);
     color: var(--obs-text-2);
     font: inherit;
@@ -1476,16 +1470,16 @@
     flex-direction: column;
     min-width: 156px;
     padding: 4px;
-    border: 1px solid rgba(245, 233, 220, 0.12);
-    border-radius: 10px;
-    background: rgba(11, 9, 18, 0.98);
-    box-shadow: 0 18px 44px rgba(0, 0, 0, 0.55);
+    border: 1px solid var(--obs-line-strong);
+    border-radius: 12px;
+    background: var(--obs-panel-2);
+    box-shadow: 0 0 0 1px rgba(159, 35, 221, 0.24);
   }
 
   .nc-brain-menu button {
     padding: 7px 10px;
     border: 0;
-    border-radius: 7px;
+    border-radius: 6px;
     background: transparent;
     color: var(--obs-text-2);
     font: inherit;
@@ -1533,7 +1527,7 @@
     min-width: 0;
     padding: 6px 9px;
     border: 1px solid rgba(245, 233, 220, 0.12);
-    border-radius: 8px;
+    border-radius: 6px;
     background: rgba(0, 0, 0, 0.4);
     color: var(--obs-text);
     font: inherit;
@@ -1549,7 +1543,7 @@
   .nc-brain-rename button {
     padding: 6px 10px;
     border: 1px solid rgba(245, 233, 220, 0.1);
-    border-radius: 8px;
+    border-radius: 6px;
     background: rgba(245, 233, 220, 0.03);
     color: var(--obs-text-2);
     font: inherit;
@@ -1585,7 +1579,7 @@
   .nc-brain-action,
   .nc-brain-send {
     border: 1px solid rgba(245, 233, 220, 0.1);
-    border-radius: 8px;
+    border-radius: 6px;
     padding: 6px 10px;
     background: rgba(245, 233, 220, 0.03);
     font-size: 11px;
@@ -1619,7 +1613,7 @@
     width: 28px;
     height: 28px;
     border: 1px solid transparent;
-    border-radius: 8px;
+    border-radius: 6px;
     background: transparent;
     color: var(--obs-faint);
     cursor: pointer;
@@ -1637,7 +1631,7 @@
     flex: none;
     border-radius: 50%;
     background: var(--obs-acid);
-    box-shadow: 0 0 8px 1px rgba(200, 248, 26, 0.55);
+    box-shadow: 0 0 16px rgba(200, 248, 26, 0.35);
     animation: nc-brain-breathe 2.4s ease-in-out infinite;
   }
 
@@ -1659,7 +1653,7 @@
   }
 
   .nc-brain-lane {
-    border-radius: 999px;
+    border-radius: 2px;
     padding: 4px 9px;
     background: rgba(245, 233, 220, 0.025);
     font-family: var(--mono);
@@ -1689,7 +1683,7 @@
     flex: none;
     max-height: 118px;
     border-bottom: 1px solid rgba(245, 233, 220, 0.06);
-    background: linear-gradient(180deg, rgba(200, 248, 26, 0.03), transparent);
+    background: transparent;
   }
 
   .nc-brain-cognition {
@@ -1747,7 +1741,7 @@
     bottom: 72px;
     z-index: 3;
     border: 1px solid rgba(200, 248, 26, 0.35);
-    border-radius: 999px;
+    border-radius: 2px;
     padding: 6px 12px;
     background: rgba(12, 14, 12, 0.92);
     color: var(--obs-acid);
@@ -1790,16 +1784,12 @@
 
   .nc-brain-feed li.auto {
     border-color: rgba(159, 35, 221, 0.2);
-    background:
-      linear-gradient(135deg, rgba(159, 35, 221, 0.1), transparent 55%),
-      rgba(0, 0, 0, 0.2);
+    background: rgba(159, 35, 221, 0.045);
   }
 
   .nc-brain-feed li.helix {
     border-color: rgba(200, 248, 26, 0.28);
-    background:
-      linear-gradient(135deg, rgba(200, 248, 26, 0.1), transparent 60%),
-      rgba(0, 0, 0, 0.24);
+    background: rgba(200, 248, 26, 0.045);
   }
 
   .nc-brain-feed li.helix .nc-brain-role {
@@ -1827,7 +1817,7 @@
     gap: 5px;
     height: 22px;
     border: 1px solid rgba(245, 233, 220, 0.1);
-    border-radius: 999px;
+    border-radius: 2px;
     padding: 0 8px;
     background: rgba(0, 0, 0, 0.22);
     color: var(--obs-faint);
@@ -1867,9 +1857,7 @@
 
   .nc-brain-feed li.mesh {
     border-color: rgba(159, 35, 221, 0.22);
-    background:
-      linear-gradient(135deg, rgba(159, 35, 221, 0.1), transparent 55%),
-      rgba(0, 0, 0, 0.2);
+    background: rgba(159, 35, 221, 0.045);
   }
 
   .nc-brain-feed li.run {
@@ -1940,7 +1928,7 @@
   }
 
   .nc-brain-actions span {
-    border-radius: 999px;
+    border-radius: 2px;
     padding: 2px 7px;
     background: rgba(200, 248, 26, 0.08);
     font-family: var(--mono);
@@ -1957,7 +1945,7 @@
   .nc-brain-action-card {
     max-width: 100%;
     border: 1px solid rgba(245, 233, 220, 0.09);
-    border-radius: 8px;
+    border-radius: 6px;
     padding: 4px 8px;
     background: rgba(0, 0, 0, 0.24);
   }
@@ -2000,7 +1988,7 @@
     flex: none;
     border-top: 1px solid rgba(245, 233, 220, 0.07);
     padding: 12px 14px 16px;
-    background: linear-gradient(180deg, transparent, rgba(0, 0, 0, 0.28));
+    background: transparent;
     transition: opacity 160ms ease;
   }
 
@@ -2014,10 +2002,10 @@
     flex-direction: column;
     gap: 2px;
     padding: 5px;
-    border: 1px solid rgba(245, 233, 220, 0.12);
-    border-radius: 11px;
-    background: rgba(11, 9, 18, 0.98);
-    box-shadow: 0 18px 44px rgba(0, 0, 0, 0.55);
+    border: 1px solid var(--obs-line-strong);
+    border-radius: 12px;
+    background: var(--obs-panel-2);
+    box-shadow: 0 0 0 1px rgba(159, 35, 221, 0.24);
   }
 
   .nc-brain-slash-item {
@@ -2026,7 +2014,7 @@
     gap: 9px;
     padding: 7px 9px;
     border: 0;
-    border-radius: 7px;
+    border-radius: 6px;
     background: transparent;
     color: var(--obs-text-2);
     font: inherit;
@@ -2069,7 +2057,7 @@
     max-height: 132px;
     padding: 9px 12px;
     border: 1px solid rgba(245, 233, 220, 0.1);
-    border-radius: 10px;
+    border-radius: 6px;
     background: rgba(0, 0, 0, 0.35);
     color: var(--obs-text);
     outline: none;
@@ -2135,11 +2123,11 @@
     gap: 9px;
     max-width: min(520px, calc(100vw - 28px));
     transform: translateX(-50%);
-    border: 1px solid rgba(245, 233, 220, 0.12);
-    border-radius: 999px;
+    border: 1px solid var(--obs-line-strong);
+    border-radius: 12px;
     padding: 8px 14px;
     background: rgba(10, 9, 18, 0.92);
-    box-shadow: 0 14px 40px rgba(0, 0, 0, 0.45);
+    box-shadow: 0 0 0 1px rgba(159, 35, 221, 0.22);
     backdrop-filter: blur(16px);
     cursor: pointer;
     transition: border-color 150ms ease, transform 150ms ease;
@@ -2153,8 +2141,8 @@
   .nc-brain-pill.awaiting {
     border-color: rgba(200, 248, 26, 0.34);
     box-shadow:
-      0 14px 40px rgba(0, 0, 0, 0.45),
-      0 0 24px -10px rgba(200, 248, 26, 0.35);
+      0 0 0 1px rgba(200, 248, 26, 0.18),
+      0 0 16px rgba(200, 248, 26, 0.18);
   }
 
   .nc-brain-dot.busy {
@@ -2188,7 +2176,7 @@
 
   .nc-brain-kbd {
     border: 1px solid rgba(245, 233, 220, 0.12);
-    border-radius: 5px;
+    border-radius: 2px;
     padding: 1px 5px;
     font-family: var(--mono);
     font-size: 9px;
