@@ -293,6 +293,9 @@ class ToolContext:
     # client-side completion (sampling) or the client's filesystem roots. None
     # for an embedded or test registry.
     client: object | None = None
+    # The client's roots, resolved once per session. [] means the client
+    # declared none, so host tools are not bounded.
+    roots_cache: list[str] | None = None
 
 
 def _call(ctx: ToolContext, method: str, path: str, query: dict | None = None, body=None):
@@ -881,18 +884,68 @@ def host_shell(ctx: ToolContext, args: dict) -> dict:
     return _call(ctx, "POST", "/api/v1/host/shell", body=body)
 
 
+def _client_roots(ctx: ToolContext) -> list[str]:
+    """The client's declared filesystem roots, resolved once per session.
+
+    An empty list means the client declared none, so host tools stay unbound.
+    A client that does not advertise roots is treated the same way.
+    """
+    if ctx.roots_cache is not None:
+        return ctx.roots_cache
+    roots: list[str] = []
+    client = getattr(ctx, "client", None)
+    if client is not None:
+        try:
+            result = client.client_roots(timeout=10)
+            for entry in (result.get("roots") or []):
+                uri = str((entry or {}).get("uri") or "")
+                if uri.startswith("file://"):
+                    roots.append(uri[len("file://"):])
+        except Exception:  # noqa: BLE001 - declaring no roots is a valid answer
+            roots = []
+    ctx.roots_cache = roots
+    return roots
+
+
+def _require_within_roots(ctx: ToolContext, path) -> None:
+    """Refuse a host path outside the client's declared roots.
+
+    Only active when the client advertised roots and returned at least one, so
+    a client that exposes nothing keeps the existing behaviour.
+    """
+    roots = _client_roots(ctx)
+    if not roots or not path:
+        return
+    try:
+        target = Path(str(path)).expanduser().resolve()
+    except OSError:
+        target = Path(str(path)).expanduser()
+    for root in roots:
+        try:
+            target.relative_to(Path(root).expanduser().resolve())
+            return
+        except (ValueError, OSError):
+            continue
+    raise ToolError("outside_roots",
+                    "path is outside the client's declared roots",
+                    ", ".join(roots))
+
+
 def host_read(ctx: ToolContext, args: dict) -> dict:
+    _require_within_roots(ctx, args.get("path"))
     query = {key: args[key] for key in ("path", "sensitive") if key in args}
     return _call(ctx, "GET", "/api/v1/host/read", query=query)
 
 
 def host_write(ctx: ToolContext, args: dict) -> dict:
+    _require_within_roots(ctx, args.get("path"))
     body = {key: args[key] for key in ("path", "content", "append", "sensitive")
             if key in args}
     return _call(ctx, "POST", "/api/v1/host/write", body=body)
 
 
 def host_list(ctx: ToolContext, args: dict) -> dict:
+    _require_within_roots(ctx, args.get("path"))
     query = {key: args[key] for key in ("path", "limit") if key in args}
     return _call(ctx, "GET", "/api/v1/host/list", query=query or {"path": "."})
 

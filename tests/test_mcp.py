@@ -735,6 +735,23 @@ class MCPIntegrationTests(unittest.TestCase):
             got["result"]["structuredContent"]["error"]["code"], "unsupported")
         server.close()
 
+    def test_host_paths_are_bounded_by_client_roots(self):
+        from netcast3r.mcp.tools import ToolContext, ToolError, _require_within_roots
+
+        class _FakeClient:
+            def client_roots(self, timeout=20):
+                return {"roots": [{"uri": "file:///work"}]}
+
+        ctx = ToolContext(plane=None, client=_FakeClient())
+        _require_within_roots(ctx, "/work/report.md")   # inside: allowed
+        with self.assertRaises(ToolError) as caught:
+            _require_within_roots(ctx, "/etc/passwd")    # outside: refused
+        self.assertEqual(caught.exception.code, "outside_roots")
+
+        # A context with no client keeps the unbounded behaviour.
+        plain = ToolContext(plane=None)
+        _require_within_roots(plain, "/etc/passwd")
+
     def test_stdio_newline_and_content_length_framing(self):
         newline = io.BytesIO(b'{"jsonrpc":"2.0","id":1,"method":"ping"}\n')
         self.assertEqual(protocol.read_message(newline)["method"], "ping")
