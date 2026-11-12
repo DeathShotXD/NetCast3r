@@ -39,6 +39,25 @@
     return false;
   }
 
+  /**
+   * How well an item matches the query. Lower is better, -1 means no match.
+   *
+   * A fuzzy subsequence is deliberately the weakest signal: without this,
+   * typing "core" ranked "Refresh the control plane" above the Core screen
+   * (c-o-r-e is a subsequence of "control plane"), so Enter ran the wrong
+   * command. Exact and prefix label hits must always win.
+   */
+  function matchRank(needle: string, item: Item): number {
+    const label = item.label.toLowerCase();
+    if (label === needle) return 0;
+    if (label.startsWith(needle)) return 1;
+    if (label.includes(needle)) return 2;
+    if (fuzzy(needle, label)) return 3;
+    if (item.hint.toLowerCase().includes(needle)) return 4;
+    if (item.group.toLowerCase().includes(needle)) return 5;
+    return -1;
+  }
+
   const navItems = $derived<Item[]>(
     NAV.map((s) => ({
       label: s.label,
@@ -217,12 +236,11 @@
     ];
     const needle = q.trim().toLowerCase();
     if (!needle) return all;
-    const matches = all.filter(
-      (item) =>
-        fuzzy(needle, item.label.toLowerCase()) ||
-        item.hint.toLowerCase().includes(needle) ||
-        item.group.toLowerCase().includes(needle)
-    );
+    const ranked = all
+      .map((item, index) => ({ item, index, rank: matchRank(needle, item) }))
+      .filter((entry) => entry.rank >= 0)
+      .sort((a, b) => a.rank - b.rank || a.index - b.index)
+      .map((entry) => entry.item);
     const extra: Item[] = [];
     if (needle.length >= 2) {
       extra.push({
@@ -248,7 +266,7 @@
         store.brainDock = true;
       }
     });
-    return [...matches, ...extra];
+    return [...ranked, ...extra];
   });
 
   const sections = $derived.by(() => {
