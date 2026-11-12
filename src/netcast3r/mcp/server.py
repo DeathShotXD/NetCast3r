@@ -11,6 +11,7 @@ from __future__ import annotations
 import atexit
 import json
 import os
+import re
 import signal
 import sys
 import time
@@ -46,6 +47,9 @@ argument hash and can be spent once.
 triage with evidence. The database, not the chat, is the record.
 5. Secret values are masked at the index boundary. Do not try to reconstruct or guess \
 them.
+6. Browse with resources instead of guessing ids: read netcast3r://missions, then a \
+template like netcast3r://missions/{mission_id}, netcast3r://runs/{run_id}/events, or \
+netcast3r://findings/{finding_id}. Use completion/complete to autocomplete those ids.
 """
 
 RESOURCES = (
@@ -60,8 +64,74 @@ RESOURCES = (
     ("netcast3r://approvals", "Approvals", "Pending and decided approval requests.",
      "application/json"),
     ("netcast3r://tool-calls", "Tool calls", "The MCP audit trail.", "application/json"),
+    ("netcast3r://providers", "Providers",
+     "Configured model providers, masked keys, and health.", "application/json"),
+    ("netcast3r://director", "Director",
+     "The autonomous director: engagement, in-flight runs, eligibility.",
+     "application/json"),
+    ("netcast3r://brain", "Brain loop",
+     "The steward loop: running state, model, turns, last focus.", "application/json"),
+    ("netcast3r://checklists", "Checklists",
+     "The coverage catalog every mission is measured against.", "application/json"),
+    ("netcast3r://agents", "Agent roster",
+     "Pipeline agents, mesh roles, the steward, and the lane/model each uses.",
+     "application/json"),
     ("netcast3r://policy", "MCP policy",
      "The active policy and the full tool catalogue.", "application/json"),
+)
+
+# Parameterised resources: a client can browse one entity at a time instead of
+# pulling a 50-row list and filtering it in the model.
+RESOURCE_TEMPLATES = (
+    {"uriTemplate": "netcast3r://missions/{mission_id}", "name": "Mission",
+     "description": "One mission with its counts and metadata.",
+     "mimeType": "application/json"},
+    {"uriTemplate": "netcast3r://missions/{mission_id}/coverage", "name": "Mission coverage",
+     "description": "The coverage ledger and next checks for one mission.",
+     "mimeType": "application/json"},
+    {"uriTemplate": "netcast3r://runs/{run_id}", "name": "Run",
+     "description": "One run with its options and counters.",
+     "mimeType": "application/json"},
+    {"uriTemplate": "netcast3r://runs/{run_id}/events", "name": "Run events",
+     "description": "The event log for one run.", "mimeType": "application/json"},
+    {"uriTemplate": "netcast3r://findings/{finding_id}", "name": "Finding",
+     "description": "One finding with its evidence and publish gate.",
+     "mimeType": "application/json"},
+    {"uriTemplate": "netcast3r://findings/{finding_id}/artifacts", "name": "Finding artifacts",
+     "description": "The evidence artifacts attached to one finding.",
+     "mimeType": "application/json"},
+)
+
+# uri -> (control-plane path, query) for the fixed resources.
+_STATIC_RESOURCES: dict[str, tuple[str, dict]] = {
+    "netcast3r://status": ("/api/v1/meta", {}),
+    "netcast3r://missions": ("/api/v1/missions", {"size": 50}),
+    "netcast3r://runs": ("/api/v1/runs", {"size": 50}),
+    "netcast3r://findings": ("/api/v1/findings", {"size": 50}),
+    "netcast3r://submissions": ("/api/v1/submissions", {"size": 50}),
+    "netcast3r://approvals": ("/api/v1/approvals", {"size": 50}),
+    "netcast3r://tool-calls": ("/api/v1/tool-calls", {"size": 50}),
+    "netcast3r://providers": ("/api/v1/providers", {}),
+    "netcast3r://director": ("/api/v1/director", {}),
+    "netcast3r://brain": ("/api/v1/brain/loop", {}),
+    "netcast3r://checklists": ("/api/v1/checklists", {}),
+    "netcast3r://agents": ("/api/v1/agents", {}),
+}
+
+# uriTemplate -> regex + resolver for the parameterised resources.
+_TEMPLATE_RESOURCES = (
+    (re.compile(r"^netcast3r://missions/([^/]+)/coverage$"),
+     lambda m: (f"/api/v1/missions/{m.group(1)}/coverage", {})),
+    (re.compile(r"^netcast3r://missions/([^/]+)$"),
+     lambda m: (f"/api/v1/missions/{m.group(1)}", {})),
+    (re.compile(r"^netcast3r://runs/([^/]+)/events$"),
+     lambda m: (f"/api/v1/runs/{m.group(1)}/events", {})),
+    (re.compile(r"^netcast3r://runs/([^/]+)$"),
+     lambda m: (f"/api/v1/runs/{m.group(1)}", {})),
+    (re.compile(r"^netcast3r://findings/([^/]+)/artifacts$"),
+     lambda m: (f"/api/v1/findings/{m.group(1)}/artifacts", {})),
+    (re.compile(r"^netcast3r://findings/([^/]+)$"),
+     lambda m: (f"/api/v1/findings/{m.group(1)}", {})),
 )
 
 PROMPTS = (
@@ -113,6 +183,7 @@ class MCPServer:
         self.initialized = False
         self.protocol_version = protocol.LATEST_PROTOCOL
         self.client_info: dict = {}
+        self._notifier = None  # set by run(), so a call can emit progress
         self.registry = ToolRegistry(ToolContext(
             plane=plane, policy=policy, base=base, actor=actor))
         self.state_path = control.mcp_state_path(base)
@@ -176,6 +247,7 @@ class MCPServer:
                     "tools": {"listChanged": False},
                     "resources": {"subscribe": False, "listChanged": False},
                     "prompts": {"listChanged": False},
+                    "completions": {},
                 },
                 "serverInfo": {"name": SERVER_NAME, "title": SERVER_TITLE,
                                "version": __version__},
@@ -208,12 +280,18 @@ class MCPServer:
             arguments = params.get("arguments") or {}
             if not isinstance(arguments, dict):
                 raise RpcError(protocol.INVALID_PARAMS, "arguments must be an object")
+            # A long tool can report progress if the client sent a token.
+            meta = params.get("_meta") if isinstance(params.get("_meta"), dict) else {}
+            token = meta.get("progressToken")
+            self._notify_progress(token, 0, 1, f"running {name}")
             try:
                 payload, is_error = self.registry.call(name, arguments, self.actor)
             except ToolError as exc:
                 if exc.code == "unknown_tool":
                     raise RpcError(protocol.INVALID_PARAMS, exc.message)
                 payload, is_error = exc.payload(), True
+            self._notify_progress(
+                token, 1, 1, f"{name} {'failed' if is_error else 'done'}")
             self.calls += 1
             self.last_call_at = _now()
             self._write_state()
@@ -233,7 +311,16 @@ class MCPServer:
 
         @dispatcher.method("resources/templates/list")
         def resource_templates(params):
-            return {"resourceTemplates": []}
+            return {"resourceTemplates": [dict(item) for item in RESOURCE_TEMPLATES]}
+
+        @dispatcher.method("completion/complete")
+        def completion_complete(params):
+            ref = params.get("ref")
+            argument = params.get("argument")
+            if not isinstance(ref, dict) or not isinstance(argument, dict):
+                raise RpcError(protocol.INVALID_PARAMS,
+                               "ref and argument are required")
+            return {"completion": self._complete(argument)}
 
         @dispatcher.method("resources/read")
         def resources_read(params):
@@ -266,26 +353,77 @@ class MCPServer:
 
         return dispatcher
 
+    # -- notifications -----------------------------------------------------
+    def set_notifier(self, notifier) -> None:
+        """Install the transport's notification writer (stdout for stdio)."""
+        self._notifier = notifier
+
+    def _notify_progress(self, token, progress: int, total: int, message: str) -> None:
+        if token is None or self._notifier is None:
+            return
+        try:
+            self._notifier({
+                "jsonrpc": "2.0",
+                "method": "notifications/progress",
+                "params": {"progressToken": token, "progress": progress,
+                           "total": total, "message": message},
+            })
+        except Exception:  # noqa: BLE001 - a progress ping must never break a call
+            pass
+
     # -- resources ---------------------------------------------------------
     def _read_resource(self, uri: str) -> dict:
         if uri == "netcast3r://policy":
             return {"policy": self.policy, "tools": catalog(), "instructions": INSTRUCTIONS}
-        queries = {
-            "netcast3r://status": ("/api/v1/meta", {}),
-            "netcast3r://missions": ("/api/v1/missions", {"size": 50}),
-            "netcast3r://runs": ("/api/v1/runs", {"size": 50}),
-            "netcast3r://findings": ("/api/v1/findings", {"size": 50}),
-            "netcast3r://submissions": ("/api/v1/submissions", {"size": 50}),
-            "netcast3r://approvals": ("/api/v1/approvals", {"size": 50}),
-            "netcast3r://tool-calls": ("/api/v1/tool-calls", {"size": 50}),
-        }
-        if uri not in queries:
+        target = _STATIC_RESOURCES.get(uri)
+        if target is None:
+            for pattern, resolve in _TEMPLATE_RESOURCES:
+                match = pattern.match(uri)
+                if match:
+                    target = resolve(match)
+                    break
+        if target is None:
             raise RpcError(protocol.INVALID_PARAMS, f"unknown resource: {uri}")
-        path, query = queries[uri]
+        path, query = target
         try:
             return self.plane.request("GET", path, query=query)
         except Exception as exc:  # noqa: BLE001 - resource read boundary
             raise RpcError(protocol.INTERNAL_ERROR, f"resource read failed: {exc}")
+
+    # -- completions -------------------------------------------------------
+    def _complete(self, argument: dict) -> dict:
+        """Autocomplete a prompt/template id argument from the live workspace."""
+        name = str(argument.get("name") or "")
+        prefix = str(argument.get("value") or "")
+        try:
+            limit = max(1, min(int(argument.get("limit") or 25), 100))
+        except (TypeError, ValueError):
+            limit = 25
+        field = {"mission_id": "missions", "run_id": "runs",
+                 "finding_id": "findings"}.get(name)
+        if field is None:
+            return {"values": [], "hasMore": False}
+        try:
+            payload = self.plane.request("GET", f"/api/v1/{field}",
+                                         query={"size": max(50, limit)})
+        except Exception:  # noqa: BLE001 - completion is best effort
+            return {"values": [], "hasMore": False}
+        items = payload.get("items") if isinstance(payload, dict) else []
+        values: list[str] = []
+        low = prefix.lower()
+        for item in items or []:
+            if not isinstance(item, dict):
+                continue
+            ident = str(item.get("id") or "")
+            if not ident:
+                continue
+            label = str(item.get("title") or item.get("target") or "")
+            if low and not (ident.lower().startswith(low) or low in label.lower()):
+                continue
+            values.append(ident)
+            if len(values) >= limit:
+                break
+        return {"values": values, "hasMore": False}
 
     # -- prompts -----------------------------------------------------------
     def _prompt(self, name: str, arguments: dict) -> dict:
@@ -346,6 +484,7 @@ class MCPServer:
     def run(self, stdin=None, stdout=None) -> None:
         stdin = stdin or sys.stdin.buffer
         stdout = stdout or sys.stdout.buffer
+        self.set_notifier(lambda message: write_message(stdout, message))
         self._write_state()
         try:
             while True:

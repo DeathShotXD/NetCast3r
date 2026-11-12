@@ -484,11 +484,62 @@ class Server:
                           "auth_required": self.auth_required,
                           "capabilities": ["runs", "findings", "events", "providers", "keys",
                                            "settings", "triage", "missions", "approvals",
-                                           "tool_calls", "mcp", "agent"]})
+                                           "tool_calls", "mcp", "agent", "agents"]})
 
         @add("GET", r"/api/v1/healthz")
         def healthz(ctx):
             return _json({"status": "ok"})
+
+        @add("GET", r"/api/v1/agents")
+        def agents_catalog(ctx):
+            """The agent roster: pipeline agents, mesh roles, and the steward.
+
+            Each entry reports the lane it runs on and the provider/model its
+            route resolves to, so an operator or an external harness can see
+            who does what without reading the source.
+            """
+            from .. import swarm as swarm_module
+            from ..config import AGENTS, load_config
+            from ..providers import ProviderBus
+
+            config = load_config()
+            try:
+                from .runner import DashboardBridge
+                DashboardBridge(self.index, self.keys).apply(config)
+            except Exception:  # noqa: BLE001 - a broken provider row is not fatal
+                pass
+
+            def describe(agent: str) -> dict:
+                route = config.route_for(agent)
+                return {"agent": agent,
+                        "lane": ProviderBus._lane_for_agent(agent),
+                        "provider": route.provider, "model": route.model,
+                        "routed": bool(route.provider or route.model),
+                        "temperature": route.temperature,
+                        "max_tokens": route.max_tokens,
+                        "reasoning": bool(route.reasoning)}
+
+            mesh = []
+            for role in swarm_module.ROLE_ORDER:
+                info = describe(role)
+                info["title"] = swarm_module.ROLE_TITLES.get(role, role)
+                info["menu_size"] = len(swarm_module.ROLE_ACTIONS.get(role, ()))
+                mesh.append(info)
+            pipeline = [describe(name) for name in AGENTS]
+            return _json({
+                "pipeline": pipeline,
+                "mesh": mesh,
+                "steward": describe("prime"),
+                "counts": {"pipeline": len(AGENTS),
+                           "mesh": len(swarm_module.ROLE_ORDER),
+                           "routed": sum(1 for row in pipeline + mesh
+                                         if row["routed"])},
+                "note": ("'lane' is the fallback order when a route does not pin "
+                         "a provider: 'brain' leads with the primary catalogue, "
+                         "'hunt'/'learn' lead with the free MoE lanes. An explicit "
+                         "[[routes]] entry overrides the lane. An agent with "
+                         "routed=false runs on its lane's order."),
+            })
 
         @add("GET", r"/api/v1/readyz")
         def readyz(ctx):

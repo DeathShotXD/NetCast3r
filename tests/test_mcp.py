@@ -556,7 +556,28 @@ class MCPIntegrationTests(unittest.TestCase):
 
         resources = server.handle({"jsonrpc": "2.0", "id": 3,
                                    "method": "resources/list"})["result"]
-        self.assertEqual(len(resources["resources"]), 8)
+        uris = {item["uri"] for item in resources["resources"]}
+        self.assertGreaterEqual(len(uris), 8)
+        for expected in ("netcast3r://status", "netcast3r://providers",
+                         "netcast3r://director", "netcast3r://brain",
+                         "netcast3r://checklists"):
+            self.assertIn(expected, uris)
+
+        templates = server.handle({"jsonrpc": "2.0", "id": 13,
+                                   "method": "resources/templates/list"})["result"]
+        template_uris = {item["uriTemplate"] for item in templates["resourceTemplates"]}
+        self.assertIn("netcast3r://missions/{mission_id}", template_uris)
+        self.assertIn("netcast3r://runs/{run_id}/events", template_uris)
+        self.assertIn("netcast3r://findings/{finding_id}", template_uris)
+
+        completion = server.handle({
+            "jsonrpc": "2.0", "id": 14, "method": "completion/complete",
+            "params": {"ref": {"type": "ref/prompt", "name": "recon-mission"},
+                       "argument": {"name": "mission_id", "value": ""}},
+        })["result"]
+        self.assertIn("completion", completion)
+        self.assertIsInstance(completion["completion"]["values"], list)
+
         read = server.handle({"jsonrpc": "2.0", "id": 4, "method": "resources/read",
                               "params": {"uri": "netcast3r://policy"}})["result"]
         policy = json.loads(read["contents"][0]["text"])
@@ -593,6 +614,20 @@ class MCPIntegrationTests(unittest.TestCase):
 
         unknown = server.handle({"jsonrpc": "2.0", "id": 6, "method": "nope"})
         self.assertEqual(unknown["error"]["code"], protocol.METHOD_NOT_FOUND)
+        server.close()
+
+    def test_resource_templates_read_live_entities(self):
+        mission = self.create_mission()
+        server = MCPServer(plane=self.plane, policy=DEFAULT_POLICY, base=self.tmp)
+        got = server.handle({"jsonrpc": "2.0", "id": 1, "method": "resources/read",
+                             "params": {"uri": f"netcast3r://missions/{mission['id']}"}})
+        self.assertIn("result", got, got)
+        payload = json.loads(got["result"]["contents"][0]["text"])
+        self.assertTrue(payload)
+
+        bad = server.handle({"jsonrpc": "2.0", "id": 2, "method": "resources/read",
+                             "params": {"uri": "netcast3r://nope/xyz"}})
+        self.assertEqual(bad["error"]["code"], protocol.INVALID_PARAMS)
         server.close()
 
     def test_stdio_newline_and_content_length_framing(self):

@@ -2463,6 +2463,11 @@ def approvals_list(ctx: ToolContext, args: dict) -> dict:
         "size": args.get("limit", 50), "page": args.get("page", 1)})
 
 
+def agents_catalog(ctx: ToolContext, args: dict) -> dict:
+    """The agent roster: who exists, what lane they run, which model serves them."""
+    return _call(ctx, "GET", "/api/v1/agents", {})
+
+
 def approval_request(ctx: ToolContext, args: dict) -> dict:
     mission_id = args["mission_id"]
     _mission(ctx, mission_id)
@@ -4431,6 +4436,7 @@ _HANDLERS.update({
     "submissions_update": submissions_update,
     "submissions_delete": submissions_delete,
     "approvals_list": approvals_list,
+    "agents_catalog": agents_catalog,
     "approval_request": approval_request,
     "approval_decide": approval_decide,
     "providers_list": providers_list,
@@ -6324,6 +6330,10 @@ TOOLS: tuple[Tool, ...] = (
                   "mission_id": _string("mission id"),
                   "limit": _integer("page size", 1, 200, 50),
                   "page": _integer("page number", 1)}), "approvals_list", read_only=True),
+    Tool("agents_catalog", "Agent roster",
+         "List the agents: the pipeline roles, the mesh roles, and the steward, "
+         "with the lane and provider/model each resolves to.",
+         "low", "governance", _schema({}), "agents_catalog", read_only=True),
     Tool("approval_request", "Request approval",
          "Ask a human to approve a high-risk action. Pass the exact tool name and "
          "arguments you will use; the approval is bound to their hash and can be spent once.",
