@@ -50,7 +50,9 @@
     scope: 'Scope',
     identity: 'Identity',
     callbacks: 'Callbacks',
-    web: 'Authenticated web'
+    web: 'Authenticated web',
+    brain: 'Helix brain',
+    helix: 'Toolsmith'
   };
 
   let info = $state<McpInfo | null>(null);

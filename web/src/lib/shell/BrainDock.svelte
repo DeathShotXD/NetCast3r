@@ -96,6 +96,7 @@
   ] as const;
   const SLASH_COMMANDS = [
     { cmd: '/new', hint: 'start a fresh chat session', arg: false },
+    { cmd: '/fork', hint: 'branch this chat, keeping its history', arg: false },
     { cmd: '/brain', hint: 'ask Helix only, no hunt action', arg: true },
     { cmd: '/queue', hint: 'queue a director instruction', arg: true },
     { cmd: '/stop', hint: 'stop the active cast', arg: false },
@@ -400,6 +401,30 @@
     await load();
   }
 
+  /** Branch the current chat, keeping its history, so the operator can try a
+   *  different direction without disturbing the original thread. */
+  async function forkChat() {
+    if (!sessionId) {
+      store.toast('warn', 'start a chat first');
+      return;
+    }
+    if (sessionBusy) return;
+    sessionBusy = 'fork';
+    try {
+      const forked = await api.brainSessionFork(sessionId, '');
+      sessions = [forked, ...sessions.filter((item) => item.id !== forked.id)];
+      sessionsAt = Date.now();
+      sessionId = forked.id;
+      session = forked;
+      await load();
+      store.toast('ok', 'branched into a new chat');
+    } catch (exc) {
+      store.toast('error', exc instanceof Error ? exc.message : 'could not branch the chat');
+    } finally {
+      sessionBusy = '';
+    }
+  }
+
   /** Coalesce SSE bursts into one refresh; eight events in a second used to
    *  mean eight brain reads. */
   function scheduleLoad() {
@@ -584,11 +609,15 @@
       const argument = rest.join(' ').trim();
       const name = command.toLowerCase();
       if (name === '/help') {
-        store.toast('ok', 'commands: /new  /brain <text>  /queue <text>  /stop  /help');
+        store.toast('ok', 'commands: /new  /fork  /brain <text>  /queue <text>  /stop  /help');
         return;
       }
       if (name === '/new') {
         await newChat();
+        return;
+      }
+      if (name === '/fork') {
+        await forkChat();
         return;
       }
       if (name === '/stop') {
