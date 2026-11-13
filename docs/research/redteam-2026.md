@@ -41,7 +41,7 @@ risk profile of the tool.
 | ETag / XS-Leak side channels | medium (top-10 #6) | none | length oracle in `oracle_extract` |
 | Request smuggling / desync | high | race primitives only | next |
 | SSRF redirect loops | medium (top-10 #3) | SSRF classify | next |
-| WebSocket / CSWSH | medium | none | next |
+| WebSocket / CSWSH | medium | none | integrated `wsprobe.py` + `ws_audit` |
 | SAML injection | medium | none | next |
 | Reverse-proxy misconfiguration | medium | none | next |
 
@@ -105,6 +105,13 @@ ingestion, and secret hunting.
   threshold (optionally below it), which covers the hex-prefix ETag-length
   leak as a server-side extraction primitive.
 
+### WebSocket / CSWSH (`src/netcast3r/wsprobe.py`)
+
+- Completes an RFC 6455 upgrade from the same origin, then from a hostile origin
+  and no origin, and reports what the server accepted. A cross-origin upgrade on
+  a cookie-authenticated socket is CSWSH. The handshake is the whole test; no
+  frame is sent after the upgrade.
+
 Each module is dependency-free, transport-injectable, and tested offline.
 
 ## 4. What remains, in order
@@ -114,8 +121,7 @@ Each module is dependency-free, transport-injectable, and tested offline.
 2. Desync probes (CL.TE, TE.CL, CL.0, H2.CL, H2.TE) built on the existing race
    transport, with a confirmation repeat before a hit counts.
 3. SSRF redirect-loop detection layered onto the SSRF verdicts.
-4. WebSocket handshake, origin, and CSWSH audit.
-5. SAML assertion analysis and reverse-proxy misconfiguration probes.
+4. SAML assertion analysis and reverse-proxy misconfiguration probes.
 
 Every one should arrive the same way this pass did: a deterministic module, an
 injectable transport, a scope-gated read-only tool, a checklist link, and

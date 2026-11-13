@@ -2335,6 +2335,8 @@ _ROUTE_RULES = (
     (r"client-side path traversal|\bcsp\b|\bcst\b|postmessage|location\.hash",
      "csp_scan",
      "scan the JavaScript for a source that reaches a request sink"),
+    (r"websocket|\bcswsh\b|\bwss\b|\bws\b|origin check", "ws_audit",
+     "complete a WebSocket upgrade from same and hostile origins"),
     (r"redirect|status code|response body|endpoint|route|dashboard",
      "http_request",
      "capture the exact status, headers, and body for the named endpoint",
@@ -4534,6 +4536,26 @@ def csp_scan(ctx: ToolContext, args: dict) -> dict:
     return _csp.scan(resolved)
 
 
+def ws_audit(ctx: ToolContext, args: dict) -> dict:
+    """Complete a WebSocket upgrade from same and hostile origins."""
+    from netcast3r import wsprobe as _ws
+    target = str(args.get("target") or "").strip()
+    if not target:
+        raise ToolError("invalid_arguments", "target is required")
+    url = target if "://" in target else f"wss://{target}"
+    parts = urlsplit(url)
+    if parts.scheme not in ("ws", "wss", "http", "https"):
+        raise ToolError("invalid_arguments", "target must be a ws, wss, http, or https URL")
+    if not parts.hostname:
+        raise ToolError("invalid_arguments", "target must contain a host")
+    _require_scope(ctx, parts.hostname, str(args.get("mission_id") or ""),
+                   args.get("scope"), probe=True)
+    timeout = max(2.0, min(float(args.get("timeout", 8)), 30.0))
+    ctx.limiter.check("probe")
+    return _ws.probe(url, origins=args.get("origins") or None,
+                     cookie=str(args.get("cookie") or ""), timeout=timeout)
+
+
 def _race_request(ctx: ToolContext, args: dict, methods: set[str],
                   schemes: tuple[str, ...]) -> tuple[str, str, dict, bytes | None]:
     """Build one scoped request shape shared by the race primitives."""
@@ -6071,6 +6093,7 @@ _HANDLERS.update({
     "graphql_probe": graphql_probe,
     "orm_leak_probe": orm_leak_probe,
     "csp_scan": csp_scan,
+    "ws_audit": ws_audit,
     "http_path_diff": http_path_diff,
     "reveng_analyze": reveng_analyze,
     "rea_analyze": rea_analyze,
@@ -8637,6 +8660,20 @@ TOOLS: tuple[Tool, ...] = (
                   "filename": _string("name to report with the source"),
                   "path": _string("local JavaScript file to analyze")},
                  []), "csp_scan", read_only=True),
+    Tool("ws_audit", "Test WebSocket origin enforcement",
+         "Complete a WebSocket upgrade from the same origin, then from a "
+         "hostile origin and no origin, and report what the server accepted. A "
+         "cross-origin upgrade on a cookie-authenticated socket is CSWSH. "
+         "Read-only: it never sends a frame after the handshake.",
+         "medium", "web",
+         _schema({"target": _string("in-scope ws, wss, http, or https URL"),
+                  "origins": _array("extra Origin values to try",
+                                    {"type": "string"}),
+                  "cookie": _string("session cookie to attach (optional)"),
+                  "mission_id": _string("mission whose scope authorizes the probes"),
+                  "scope": _array("explicit scope entries when no mission is used"),
+                  "timeout": _integer("timeout in seconds", 2, 30, 8)},
+                 ["target"]), "ws_audit", read_only=True, open_world=True),
     Tool("single_packet_race", "HTTP/2 single-packet race",
          "Open one TLS/HTTP/2 connection, send every request's headers and all "
          "but the final body byte, then write every final DATA frame in one "

@@ -57,8 +57,9 @@ paths. `orm_leak_probe` sends Django, Beego, Prisma, and OData filter
 expressions and reads the error or length differential; `oracle_extract` now
 extracts through a response-length oracle as well as body, status, and time.
 `csp_scan` statically finds JavaScript lines where a user-controlled source
-reaches a request sink. All of these are read-only and scope-gated, and none
-issues a mutation.
+reaches a request sink. `ws_audit` completes a WebSocket upgrade from the same
+origin and from a hostile origin, so a missing Origin check (CSWSH) is named.
+All of these are read-only and scope-gated, and none issues a mutation.
 
 ## API-spec ingestion
 

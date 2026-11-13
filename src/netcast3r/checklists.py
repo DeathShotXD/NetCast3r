@@ -467,6 +467,7 @@ ITEMS = (
           "Handlers validate origin and schema; a hostile page cannot send or "
           "receive privileged messages.",
           modules=("web-websocket-cswsh",), severity="high",
+          tools=("ws_audit",),
           evidence="a privileged message accepted from a hostile origin",
           source="WSTG v4.2 4.11"),
     _item("wstg-cli-04", "WSTG", "client-side",
