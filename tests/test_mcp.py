@@ -86,6 +86,18 @@ class MCPIntegrationTests(unittest.TestCase):
             self.assertEqual(tool.input_schema["type"], "object")
             self.assertIn(tool.risk, {"low", "medium", "high"})
 
+    def test_vhost_scan_denies_when_no_candidate_is_in_scope(self):
+        mission = self.create_mission()
+        payload, is_error = self.call(
+            "vhost_scan", mission_id=mission["id"],
+            target="https://example.com", hosts=["evil.test"], prefixes=[])
+        self.assertTrue(is_error)
+        self.assertEqual(payload["error"]["code"], "scope_denied")
+        audit = self.plane.request("GET", "/api/v1/tool-calls")
+        row = next(item for item in audit["items"]
+                   if item["tool"] == "vhost_scan")
+        self.assertEqual(row["status"], "denied")
+
     def test_status_reports_real_plane_and_audits(self):
         payload, is_error = self.call("status")
         self.assertFalse(is_error, payload)

@@ -82,7 +82,7 @@ pivot gaps honestly. The recon-side gaps that were actionable this pass:
 | Subdomain takeover | checklist item with no engine | integrated `takeover.py` + `takeover_scan` |
 | DNS/email posture (SPF, DMARC, DKIM, CAA, AXFR) | absent | integrated `dnsposture.py` + `dns_posture` |
 | Native DNS record layer | socket A-only | integrated `dnsq.py` (A, AAAA, CNAME, NS, MX, TXT, SOA, SRV, DS, CAA, AXFR) |
-| Virtual host fuzzing | absent | planned |
+| Virtual host fuzzing | absent | integrated `vhost.py` + `vhost_scan` |
 | Favicon tech recon | absent | planned |
 | GraphQL fuzzing | introspection probe only | planned |
 | WebSocket auditing | absent | planned |
@@ -101,20 +101,24 @@ pivot gaps honestly. The recon-side gaps that were actionable this pass:
   against the pinned corpus, NXDOMAIN verdicts, provider body fingerprints,
   claimed detection, and a bounded `scan`. A match is a lead; claiming a name
   is always a human action.
+- `src/netcast3r/vhost.py`: virtual-host discovery by Host-header comparison
+  against the baseline and a random unclaimed name, so a catch-all server is
+  named rather than counted as a discovery.
 - `src/netcast3r/dnsposture.py`: NS, MX, SOA, CAA, SPF, DMARC, DKIM, MTA-STS,
   BIMI reads and an opt-in AXFR. Findings are misconfigurations, not exploits.
-- MCP: `takeover_scan` and `dns_posture` (read-only, open-world, scope-gated,
-  audited). `hypothesis_route` now routes takeover and mail leads to them.
-- Checklist: `wstg-info-06` (DNS/email posture) added; `cloud-05` now names the
-  native takeover engine. Coverage count 103 -> 104.
+- MCP: `takeover_scan`, `dns_posture`, and `vhost_scan` (read-only, open-world,
+  scope-gated, audited). `hypothesis_route` now routes takeover, mail, and
+  vhost leads to them.
+- Checklist: `wstg-info-06` (DNS/email posture) and `wstg-info-07` (virtual
+  hosts) added; `cloud-05` now names the native takeover engine. Coverage count
+  104 -> 105.
 - Durability: `store.py` moves to WAL with `synchronous=NORMAL` and a 5 s busy
   timeout; `server/index.py` adds the same timeout; read-only `surface.py`
   connections take the timeout so a diff never fails on a transient lock.
 
 ## 6. Next candidates, ranked
 
-1. Virtual-host fuzzing and favicon-hash tech recon (native, cheap, high yield
-   on shared hosting).
+1. Favicon-hash tech recon (native, cheap, high yield on shared hosting).
 2. NOERROR and permutation subdomain discovery feeding `takeover_scan`.
 3. GraphQL request/field fuzzing beyond introspection.
 4. WebSocket handshake and origin audit.

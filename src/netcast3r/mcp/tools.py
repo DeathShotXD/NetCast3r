@@ -2323,6 +2323,8 @@ _ROUTE_RULES = (
     (r"\bspf\b|dmarc|dkim|\bcaa\b|zone transfer|\baxfr\b|mail posture",
      "dns_posture",
      "read NS, MX, and the SPF/DMARC/DKIM TXT records"),
+    (r"\bvhost\b|virtual host|host header|shared hosting", "vhost_scan",
+     "compare candidate Host values against the baseline response"),
     (r"redirect|status code|response body|endpoint|route|dashboard",
      "http_request",
      "capture the exact status, headers, and body for the named endpoint",
@@ -4378,6 +4380,42 @@ def dns_posture(ctx: ToolContext, args: dict) -> dict:
         dkim_selectors=args.get("dkim_selectors") or None)
 
 
+def vhost_scan(ctx: ToolContext, args: dict) -> dict:
+    """Compare candidate Host values on one in-scope address."""
+    from netcast3r import vhost as _vhost
+    target = str(args.get("target") or "").strip()
+    if not target:
+        raise ToolError("invalid_arguments", "target is required")
+    base = target if "://" in target else f"https://{target}"
+    if not urlsplit(base).hostname:
+        raise ToolError("invalid_arguments", "target must be a host or URL")
+    mission_id = str(args.get("mission_id") or "")
+    scope = args.get("scope")
+    _require_scope(ctx, base, mission_id, scope, probe=True)
+    limit = max(1, min(int(args.get("limit", 64)), 200))
+    names = _vhost.candidates(base, args.get("hosts") or [],
+                              args.get("prefixes"), limit)
+    # Every candidate Host value is checked before it is sent, so vhost probing
+    # cannot reach a name outside the mission scope. A derived name that is out
+    # of scope is skipped rather than aborting the whole scan.
+    allowed: list[str] = []
+    denied: ToolError | None = None
+    for name in names:
+        try:
+            _require_scope(ctx, name, mission_id, scope, probe=True)
+            allowed.append(name)
+        except ToolError as exc:
+            if exc.code != "scope_denied":
+                raise
+            denied = exc
+    if not allowed:
+        raise denied or ToolError("scope_denied", "no candidate host is in scope")
+    timeout = max(2.0, min(float(args.get("timeout", 8)), 30.0))
+    ctx.limiter.check("probe")
+    return _vhost.discover(base, hosts=allowed, prefixes=(), limit=limit,
+                           timeout=timeout)
+
+
 def _race_request(ctx: ToolContext, args: dict, methods: set[str],
                   schemes: tuple[str, ...]) -> tuple[str, str, dict, bytes | None]:
     """Build one scoped request shape shared by the race primitives."""
@@ -5909,6 +5947,7 @@ _HANDLERS.update({
     "host_probe": host_probe,
     "takeover_scan": takeover_scan,
     "dns_posture": dns_posture,
+    "vhost_scan": vhost_scan,
     "http_path_diff": http_path_diff,
     "reveng_analyze": reveng_analyze,
     "rea_analyze": rea_analyze,
@@ -8397,6 +8436,21 @@ TOOLS: tuple[Tool, ...] = (
                                            {"type": "string"}),
                   "timeout": _integer("per-query timeout in seconds", 2, 30, 5)},
                  []), "dns_posture", read_only=True, open_world=True),
+    Tool("vhost_scan", "Discover virtual hosts on one address",
+         "Send candidate Host values to one in-scope address and label the "
+         "names that answer with a page different from the baseline and from a "
+         "random unclaimed name. Read-only; every candidate Host is scope-"
+         "checked before it is sent.",
+         "medium", "recon",
+         _schema({"target": _string("in-scope base URL or host"),
+                  "hosts": _array("explicit candidate Host values",
+                                  {"type": "string"}),
+                  "prefixes": _array("name prefixes to try", {"type": "string"}),
+                  "mission_id": _string("mission whose scope authorizes the probes"),
+                  "scope": _array("explicit scope entries when no mission is used"),
+                  "limit": _integer("candidate cap", 1, 200, 64),
+                  "timeout": _integer("timeout in seconds", 2, 30, 8)},
+                 ["target"]), "vhost_scan", read_only=True, open_world=True),
     Tool("single_packet_race", "HTTP/2 single-packet race",
          "Open one TLS/HTTP/2 connection, send every request's headers and all "
          "but the final body byte, then write every final DATA frame in one "

@@ -7,7 +7,7 @@ mission.
 
 ## What is in the catalog
 
-104 falsifiable items, grounded in current public guidance:
+105 falsifiable items, grounded in current public guidance:
 
 | Framework | Source | Items |
 | --- | --- | --- |

@@ -59,6 +59,7 @@ ACTIONS = {
     "host_probe": "resolve a host and inspect its TLS and HTTP surface",
     "takeover_scan": "check scoped names for a dangling-CNAME takeover",
     "dns_posture": "read DNS and email posture for a scoped domain",
+    "vhost_scan": "compare candidate Host values on one scoped address",
     "technique_search": "search the research library by keyword",
     "technique_plan": "rank techniques for a target and its signals",
     "chain_search": "search the exploit-chain library",
@@ -116,7 +117,7 @@ DEFAULT_TARGET_ACTIONS = {
     "session_cookie_audit", "security_headers_audit", "cors_policy_audit",
     "access_control_compare", "idor_sequence_probe", "input_reflection_probe",
     "injection_differential_probe", "upload_policy_probe", "retest_request",
-    "takeover_scan", "dns_posture",
+    "takeover_scan", "dns_posture", "vhost_scan",
 }
 TARGET_ALIASES = ("url", "uri", "host", "hostname", "target_url", "endpoint",
                   "base_url", "address")

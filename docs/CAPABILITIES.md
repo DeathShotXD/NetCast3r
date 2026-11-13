@@ -42,6 +42,11 @@ SPF, DMARC, DKIM, CAA, MX, NS, and SOA and can attempt an AXFR on request. Both
 are read-only, scope-gated, and audited; a match is a lead, and claiming a name
 stays a human action.
 
+`vhost_scan` sends candidate Host values to one in-scope address and labels the
+names that answer with a page different from the baseline and from a random
+unclaimed name, so a catch-all server does not invent virtual hosts. Every
+candidate Host is scope-checked before it is sent.
+
 ## API-spec ingestion
 
 `api_spec_ingest` reads an OpenAPI/Swagger or Postman contract and records every

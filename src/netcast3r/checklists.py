@@ -84,6 +84,14 @@ ITEMS = (
           tools=("dns_posture", "dig"), severity="low",
           evidence="the record set and the exact policy that is weak",
           source="WSTG v4.2 4.2 / M3AAWG sender best practice"),
+    _item("wstg-info-07", "WSTG", "information-gathering",
+          "Discover virtual hosts on one address",
+          "Candidate Host values are compared against the baseline and against "
+          "a random unclaimed name; a differing page is a vhost to scope and "
+          "probe separately.",
+          tools=("vhost_scan", "ffuf"), severity="low",
+          evidence="the Host value and the differing status, length, and title",
+          source="WSTG v4.2 4.1"),
     # -- WSTG 4.2 configuration and deployment --------------------------
     _item("wstg-conf-01", "WSTG", "configuration",
           "Test transport security and HSTS",

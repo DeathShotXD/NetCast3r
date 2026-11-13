@@ -61,7 +61,7 @@ ROLE_TITLES = {
 # registry still applies scope, risk, rate, and audit on every call.
 ROLE_ACTIONS = {
     "scout": ("scope_check", "http_probe", "http_path_diff", "host_probe",
-              "takeover_scan", "dns_posture",
+              "takeover_scan", "dns_posture", "vhost_scan",
               "web_surface_inventory", "auth_flow_inventory",
               "reset_flow_inventory", "session_cookie_audit",
               "security_headers_audit", "cors_policy_audit",
@@ -101,7 +101,7 @@ EVIDENCE_ACTIONS = {
     "http_probe", "http_request", "http_path_diff", "http_upload",
     "oracle_extract", "race_run", "single_packet_race", "last_byte_race",
     "host_probe", "web_surface_inventory", "auth_flow_inventory",
-    "takeover_scan", "dns_posture",
+    "takeover_scan", "dns_posture", "vhost_scan",
     "reset_flow_inventory", "session_cookie_audit", "security_headers_audit",
     "exploit_run",
     "cors_policy_audit", "access_control_compare", "idor_sequence_probe",
