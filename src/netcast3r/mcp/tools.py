@@ -5587,17 +5587,22 @@ def workspace_brief(ctx: ToolContext, args: dict) -> dict:
     hypotheses = []
     entries = []
     dead_ends = []
+    from netcast3r import leads as _leads
     if isinstance(open_hypotheses, dict):
         for item in open_hypotheses.get("items") or []:
             entry = {
                 "id": item.get("id"),
                 "title": item.get("title"),
+                "target": item.get("target"),
                 "technique": item.get("technique"),
                 "status": item.get("status"),
                 "created_at": item.get("created_at"),
                 "age_seconds": _age_seconds(item.get("created_at")),
                 "dead_end": _hypothesis_dead_end(item),
             }
+            entry["signature"] = _leads.signature(
+                str(entry["title"] or ""), str(entry["target"] or ""),
+                str(entry["technique"] or ""))
             entries.append(entry)
             if entry["dead_end"]:
                 dead_ends.append({
@@ -5607,7 +5612,29 @@ def workspace_brief(ctx: ToolContext, args: dict) -> dict:
                 })
         # Counts cover every sampled lead; the item list stays a short page.
         hypotheses = entries[:10]
-    actionable = [item for item in entries if not item["dead_end"]]
+    # Leads whose signature matches an earlier one test the same host, path,
+    # parameter, and class. Unclassified or host-less leads are never folded.
+    by_id = {entry["id"]: entry for entry in entries}
+    duplicate_ids: list = []
+    duplicate_groups = 0
+    if entries:
+        grouped = _leads.dedupe(entries)
+        for group in grouped["groups"]:
+            host = group["signature"].partition("|")[0]
+            klass = group["signature"].rsplit("|", 1)[-1]
+            if not host or klass in ("unknown", ""):
+                continue
+            duplicate_groups += 1
+            for hyp_id in group["ids"][1:]:
+                if hyp_id not in duplicate_ids:
+                    duplicate_ids.append(hyp_id)
+    duplicates = [{
+        "hypothesis_id": hyp_id,
+        "title": by_id[hyp_id]["title"],
+        "reason": "duplicate of an earlier lead (same host, path, parameter, class)",
+    } for hyp_id in duplicate_ids if hyp_id in by_id]
+    actionable = [item for item in entries
+                  if not item["dead_end"] and item["id"] not in set(duplicate_ids)]
     hypothesis_total = (open_hypotheses.get("total")
                         if isinstance(open_hypotheses, dict) else None)
     sample_complete = (hypothesis_total is None
@@ -5687,6 +5714,7 @@ def workspace_brief(ctx: ToolContext, args: dict) -> dict:
         })
 
     dead_ids = {item["hypothesis_id"] for item in dead_ends}
+    dead_ids.update(duplicate_ids)
     if isinstance(running_runs, dict):
         for run in (running_runs.get("items") or [])[:2]:
             recommend("run_watch", {"run_id": str(run.get("id") or ""),
@@ -5755,6 +5783,8 @@ def workspace_brief(ctx: ToolContext, args: dict) -> dict:
                 "sample_complete": sample_complete,
                 "actionable": len(actionable),
                 "dead_ends": len(dead_ends),
+                "duplicate_leads": len(duplicates),
+                "duplicate_groups": duplicate_groups,
                 "error": hypothesis_error,
             },
             "recent_notes": {"items": recent_notes, "error": notes_error},
@@ -5772,11 +5802,13 @@ def workspace_brief(ctx: ToolContext, args: dict) -> dict:
         "findings_needing_proof": _brief_section(needs_proof, proof_error),
         "publish_gate": _brief_section(critical, critical_error),
         "blocked": blocked,
-        "avoid": dead_ends,
+        "avoid": dead_ends + duplicates,
         "recommended_calls": recommended[:6],
         "note": "Every field is read from stored records. A missing section is "
                 "reported as unavailable, never filled in. avoid lists hypotheses "
-                "whose own stored text records a dead end; it never changes them.",
+                "whose own stored text records a dead end, and leads that "
+                "duplicate an earlier host, path, parameter, and class; it never "
+                "changes them.",
     }
 
 

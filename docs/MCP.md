@@ -213,6 +213,10 @@ The resume fields are deliberately literal:
   repeated under `avoid` with the reason.
 - Recommendations never target a dead-end hypothesis, even when the server's
   ranked actions still propose it.
+- `focus.open_hypotheses` also folds duplicate leads: two leads that share a
+  host, normalized path, parameter, and class are grouped (`duplicate_groups`,
+  `duplicate_leads`), and all but the first are repeated under `avoid`. A lead
+  whose class is unknown or whose target is empty is never folded.
 - `focus.recent_notes` and `focus.recent_tool_calls` show the last three notes
   and six audited calls with ages, so a resumed turn can see what was already
   tried.

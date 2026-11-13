@@ -481,6 +481,28 @@ class MCPIntegrationTests(unittest.TestCase):
         self.assertIn("agent_notes_write", [item["tool"] for item in calls])
         self.assertIn("counts", payload["focus"]["coverage"])
 
+    def test_workspace_brief_folds_duplicate_leads(self):
+        mission = self.create_mission(status="active")
+        self.call("hypothesis_create", mission_id=mission["id"],
+                  title="IDOR on order one", technique="idor",
+                  target="https://example.com/orders/1")
+        self.call("hypothesis_create", mission_id=mission["id"],
+                  title="IDOR on order two", technique="idor",
+                  target="https://example.com/orders/2")
+        self.call("hypothesis_create", mission_id=mission["id"],
+                  title="Reflected XSS in the search box", technique="xss",
+                  target="https://example.com/search?q=1")
+        payload, is_error = self.call("workspace_brief", mission_id=mission["id"])
+        self.assertFalse(is_error, payload)
+        block = payload["focus"]["open_hypotheses"]
+        self.assertGreaterEqual(block["duplicate_groups"], 1)
+        self.assertGreaterEqual(block["duplicate_leads"], 1)
+        self.assertTrue(any(str(item.get("reason", "")).startswith("duplicate")
+                            for item in payload["avoid"]))
+        # the XSS lead has a different class and must stay actionable
+        self.assertIn("Reflected XSS in the search box",
+                      [item["title"] for item in block["items"]])
+
     def test_workspace_brief_counts_dead_ends_beyond_the_display_page(self):
         mission = self.create_mission()
         for index in range(12):
