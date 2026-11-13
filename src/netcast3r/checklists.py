@@ -199,6 +199,7 @@ ITEMS = (
           "Signature position, audience, recipient, and replay are tested with a "
           "modified assertion.",
           modules=("auth-saml-xsw",), severity="critical",
+          tools=("saml_audit",),
           evidence="an altered assertion accepted after the signature check",
           source="WSTG v4.2 4.4"),
     _item("wstg-auth-07", "WSTG", "authentication",
@@ -748,6 +749,7 @@ ITEMS = (
           "A redirect loop makes a blind SSRF observable through timing and "
           "connection behaviour.",
           modules=("server-ssrf-redirect-loop",), severity="critical",
+          tools=("redirect_chain", "oast_create"),
           evidence="a timing or connection signal tied to the redirect chain",
           source="PortSwigger Top 10 2025 #3"),
     _item("mod-04", "2025 Research", "modern",

@@ -6,7 +6,7 @@ process that drives the same HTTP API the Svelte UI uses. A scan started by an
 agent appears in the dashboard. A human decision in the dashboard is visible to
 the agent. There is one database and one audit trail.
 
-Status: implemented and tested · 2026-11-13 · MCP protocol `2025-06-18` · 305 tools
+Status: implemented and tested · 2026-11-13 · MCP protocol `2025-06-18` · 307 tools
 
 ---
 
@@ -164,7 +164,7 @@ A short wait (1.5 s or less) is slept instead of refused. Longer waits return
 
 ## 3. The autonomy spine
 
-Seven read-only tools make the 305-tool surface navigable and safe to drive in
+Seven read-only tools make the 307-tool surface navigable and safe to drive in
 a loop. They are ordinary tools: same schema validation, same policy, same
 audit. None of them can mutate state, decide an approval, or submit a report.
 
@@ -178,15 +178,16 @@ audit. None of them can mutate state, decide an approval, or submit a report.
 | `run_watch` | Long-poll one run instead of hammering `runs_events`. `until=any` returns on the first new event; `until=terminal` accumulates events until the run leaves queued/running. Cap 60 s. |
 | `tool_health` | Preflight: catalog counts, policy step-up counts, database integrity, provider health, pending approvals, and per-check status. |
 
-150 of the 305 tools are labelled `read_only`, and 136 of those are eligible for
+152 of the 307 tools are labelled `read_only`, and 137 of those are eligible for
 context-mode batches. A tool only carries the label when its handler is a pure
-read; the fourteen open-world tools (`taxii_collections`, `taxii_poll`,
+read; the fifteen open-world tools (`taxii_collections`, `taxii_poll`,
 `sampling_complete`, `http_probe`, `takeover_scan`, `dns_posture`,
 `vhost_scan`, `cache_audit`, `oauth_audit`, `graphql_probe`, `orm_leak_probe`,
-`ws_audit`, `desync_probe`, `plan_run`) stay `read_only` but are excluded from
-`context` batches so a batch cannot touch the network or the client. `csp_scan`,
-`plan_compile`, `plan_library`, `plan_step_verify`, and `lead_dedupe` read local
-state only, so they stay context-batchable.
+`ws_audit`, `desync_probe`, `redirect_chain`, `plan_run`) stay `read_only` but
+are excluded from `context` batches so a batch cannot touch the network or the
+client. `csp_scan`, `plan_compile`, `plan_library`, `plan_step_verify`,
+`lead_dedupe`, and `saml_audit` read local state only, so they stay
+context-batchable.
 
 `tool_batch` has two modes:
 
@@ -279,7 +280,7 @@ Tokens are bound per call and restored afterwards.
 
 ## 4. Tools
 
-305 tools, grouped by job. Every tool publishes a JSON schema with
+307 tools, grouped by job. Every tool publishes a JSON schema with
 `additionalProperties: false`; unknown arguments are rejected rather than
 silently ignored.
 
@@ -708,6 +709,8 @@ stored, so experience cannot be invented:
 | `lead_dedupe` | low | Collapse duplicate leads by host, path, parameter, and class |
 | `cascade_record` | medium | Record plan follow-ups as hypotheses, deduped |
 | `desync_probe` | medium | Hidden-header and TE differential for a parser discrepancy |
+| `redirect_chain` | medium | Follow and classify a redirect chain (open redirect, loop, external) |
+| `saml_audit` | low | SAML response trust-shape analysis, entities reported not expanded |
 | `single_packet_race` | medium | HTTP/2 last-byte-aligned burst for check-then-act bugs |
 | `last_byte_race` | medium | HTTP/1.1 burst that releases every request's final byte together |
 | `research_sources` | low | Coverage of the technique library by class and rarity |
@@ -1058,6 +1061,9 @@ tool call. The UI can show whether an MCP client is alive without guessing.
   NFKC variants, with dedupe and the variant cap intact;
 - `desync_probe` hidden-header differential, TE-obfuscation signal, and the
   no-signal control;
+- `redirect_chain` open-redirect, loop, and external classification, plus the
+  hop-by-hop follow;
+- `saml_audit` unsigned, wrapped, comment-injection, and entity findings;
 - `cascade_record` dedupe by title and signature, and the second-call skip;
 - `ws_audit` upgrade parsing, same-origin baseline, and hostile-origin CSWSH verdict;
 - `plan_compile` plan ranking, argument fill and missing reporting, catalog

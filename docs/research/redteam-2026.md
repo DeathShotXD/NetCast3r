@@ -40,9 +40,9 @@ risk profile of the tool.
 | Unicode normalization / parser differential | high (top-10 #4, #10) | path variants only | next |
 | ETag / XS-Leak side channels | medium (top-10 #6) | none | length oracle in `oracle_extract` |
 | Request smuggling / desync | high | race primitives only | parser-discrepancy detection in `desync.py` + `desync_probe` |
-| SSRF redirect loops | medium (top-10 #3) | SSRF classify | next |
+| SSRF redirect loops | medium (top-10 #3) | SSRF classify | redirect-chain analysis in `redirect.py` + `redirect_chain` |
 | WebSocket / CSWSH | medium | none | integrated `wsprobe.py` + `ws_audit` |
-| SAML injection | medium | none | next |
+| SAML injection | medium | none | integrated `saml.py` + `saml_audit` |
 | Reverse-proxy misconfiguration | medium | none | next |
 
 Already covered and left alone: JWT, SSRF, open redirect, IDOR, authz
@@ -120,13 +120,23 @@ ingestion, and secret hunting.
   that the baseline, omitted, and masked requests do not produce is a parser
   discrepancy. Detection only: no smuggled request is ever sent.
 
+### Redirect chains and SAML (`src/netcast3r/redirect.py`, `src/netcast3r/saml.py`)
+
+- `redirect_chain` follows a bounded Location chain by hand and classifies it as
+  an open redirect to a canary, a redirect loop, an external hop, or same
+  origin. It never chases an out-of-scope hop, so the tool does not become the
+  SSRF it is analysing.
+- `saml_audit` reads a SAML response for an unsigned response, multiple
+  assertions, a signature that does not cover the assertion, a comment inside a
+  NameID, a missing audience or expiry, and an XML entity. Entities are
+  reported, never expanded.
+
 Each module is dependency-free, transport-injectable, and tested offline.
 
 ## 4. What remains, in order
 
-1. SSRF redirect-loop detection layered onto the SSRF verdicts.
-2. SAML assertion analysis and reverse-proxy misconfiguration probes.
-3. Confirm a detected parser discrepancy in a lab desync farm.
+1. Confirm a detected parser discrepancy in a lab desync farm.
+2. Reverse-proxy misconfiguration probes and request-queue poisoning.
 
 Every one should arrive the same way this pass did: a deterministic module, an
 injectable transport, a scope-gated read-only tool, a checklist link, and

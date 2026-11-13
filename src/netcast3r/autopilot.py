@@ -73,6 +73,8 @@ ACTIONS = {
     "lead_dedupe": "collapse duplicate leads by signature",
     "cascade_record": "record follow-up leads as hypotheses, deduped",
     "desync_probe": "detect a parser discrepancy with hidden-header probes",
+    "redirect_chain": "follow and classify a redirect chain",
+    "saml_audit": "analyze a SAML response for a wrapped assertion",
     "technique_search": "search the research library by keyword",
     "technique_plan": "rank techniques for a target and its signals",
     "chain_search": "search the exploit-chain library",
@@ -133,6 +135,7 @@ DEFAULT_TARGET_ACTIONS = {
     "takeover_scan", "dns_posture", "vhost_scan",
     "cache_audit", "oauth_audit", "graphql_probe",
     "orm_leak_probe", "ws_audit", "plan_compile", "plan_run", "desync_probe",
+    "redirect_chain",
 }
 TARGET_ALIASES = ("url", "uri", "host", "hostname", "target_url", "endpoint",
                   "base_url", "address")

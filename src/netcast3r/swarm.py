@@ -64,6 +64,7 @@ ROLE_ACTIONS = {
               "takeover_scan", "dns_posture", "vhost_scan",
               "cache_audit", "oauth_audit", "graphql_probe",
               "orm_leak_probe", "csp_scan", "ws_audit", "desync_probe",
+              "redirect_chain", "saml_audit",
               "plan_compile", "plan_library", "lead_dedupe",
               "web_surface_inventory", "auth_flow_inventory",
               "reset_flow_inventory", "session_cookie_audit",

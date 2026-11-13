@@ -2351,6 +2351,10 @@ _ROUTE_RULES = (
     (r"desync|request smuggling|parser discrepanc|cl\.te|te\.cl|cl\.0|"
      r"transfer-encoding", "desync_probe",
      "hide a header and compare the response to baseline, omitted, and masked"),
+    (r"redirect chain|open redirect|location header", "redirect_chain",
+     "follow the Location chain and classify where it ends"),
+    (r"\bsaml\b|samlresponse|assertion|identity provider", "saml_audit",
+     "read the SAML response for an unsigned or wrapped assertion"),
     (r"redirect|status code|response body|endpoint|route|dashboard",
      "http_request",
      "capture the exact status, headers, and body for the named endpoint",
@@ -4758,6 +4762,34 @@ def desync_probe(ctx: ToolContext, args: dict) -> dict:
         include_transfer_encoding=bool(args.get("include_transfer_encoding", True)))
 
 
+def redirect_chain(ctx: ToolContext, args: dict) -> dict:
+    """Follow a bounded redirect chain and classify it."""
+    from netcast3r import redirect as _redirect
+    target = str(args.get("target") or "").strip()
+    if not target:
+        raise ToolError("invalid_arguments", "target is required")
+    base = target if "://" in target else f"https://{target}"
+    host = urlsplit(base).hostname
+    if not host:
+        raise ToolError("invalid_arguments", "target must be a host or URL")
+    _require_scope(ctx, host, str(args.get("mission_id") or ""),
+                   args.get("scope"), probe=True)
+    timeout = max(2.0, min(float(args.get("timeout", 8)), 30.0))
+    ctx.limiter.check("probe")
+    return _redirect.chain(base, timeout=timeout,
+                           max_hops=int(args.get("max_hops", 10)),
+                           canary=str(args.get("canary") or ""))
+
+
+def saml_audit(ctx: ToolContext, args: dict) -> dict:
+    """Analyze a SAML response or assertion for trust-shape weaknesses."""
+    from netcast3r import saml as _saml
+    value = str(args.get("value") or args.get("saml") or "")
+    if not value.strip():
+        raise ToolError("invalid_arguments", "value is required (SAML XML or base64)")
+    return _saml.analyze(value)
+
+
 def _race_request(ctx: ToolContext, args: dict, methods: set[str],
                   schemes: tuple[str, ...]) -> tuple[str, str, dict, bytes | None]:
     """Build one scoped request shape shared by the race primitives."""
@@ -6335,6 +6367,8 @@ _HANDLERS.update({
     "lead_dedupe": lead_dedupe,
     "cascade_record": cascade_record,
     "desync_probe": desync_probe,
+    "redirect_chain": redirect_chain,
+    "saml_audit": saml_audit,
     "http_path_diff": http_path_diff,
     "reveng_analyze": reveng_analyze,
     "rea_analyze": rea_analyze,
@@ -8995,6 +9029,26 @@ TOOLS: tuple[Tool, ...] = (
                   "scope": _array("explicit scope entries when no mission is used"),
                   "timeout": _integer("timeout in seconds", 2, 30, 8)},
                  ["target"]), "desync_probe", read_only=True, open_world=True),
+    Tool("redirect_chain", "Follow and classify a redirect chain",
+         "Follow a bounded Location chain by hand and classify it: an open "
+         "redirect to a canary, a redirect loop, an external hop, or same "
+         "origin. Location-only; it does not chase out-of-scope hops. Read-only.",
+         "medium", "web",
+         _schema({"target": _string("in-scope URL"),
+                  "canary": _string("host that marks a successful open redirect"),
+                  "max_hops": _integer("maximum hops", 1, 30, 10),
+                  "mission_id": _string("mission whose scope authorizes the reads"),
+                  "scope": _array("explicit scope entries when no mission is used"),
+                  "timeout": _integer("timeout in seconds", 2, 30, 8)},
+                 ["target"]), "redirect_chain", read_only=True, open_world=True),
+    Tool("saml_audit", "Analyze a SAML response",
+         "Read a SAML response or assertion (raw XML or base64) for an unsigned "
+         "response, multiple assertions, a signature that does not cover the "
+         "assertion, a comment inside a NameID, a missing audience or expiry, and "
+         "an XML entity. Entities are reported, never expanded. Read-only.",
+         "low", "identity",
+         _schema({"value": _string("SAML XML or base64 SAMLResponse")},
+                 ["value"]), "saml_audit", read_only=True),
     Tool("single_packet_race", "HTTP/2 single-packet race",
          "Open one TLS/HTTP/2 connection, send every request's headers and all "
          "but the final body byte, then write every final DATA frame in one "
