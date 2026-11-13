@@ -40,8 +40,9 @@ refusal or a missing field is `repeat`, never a pass). A model may reorder
 candidate plans but can never invent a step or relax a gate. The step executor
 checks a step's assertion before any model, and a `plan_compile` call returns a
 deterministic effort estimate. `plan_run` compiles a plan, runs its gated steps
-through the real registry, and returns the follow-up hypotheses as data. See
-`docs/PLANNER.md`.
+through the real registry, and returns the follow-up hypotheses as data.
+`lead_dedupe` gives every lead a stable signature so the loop stops re-testing
+the same parameter. See `docs/PLANNER.md`.
 
 ## Native DNS and takeover checks
 

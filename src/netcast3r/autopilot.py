@@ -70,6 +70,7 @@ ACTIONS = {
     "plan_library": "browse the plan library",
     "plan_step_verify": "judge one observation against an assertion",
     "plan_run": "compile, run, and gate a plan end to end",
+    "lead_dedupe": "collapse duplicate leads by signature",
     "technique_search": "search the research library by keyword",
     "technique_plan": "rank techniques for a target and its signals",
     "chain_search": "search the exploit-chain library",

@@ -80,3 +80,16 @@ Those are two different claims:
 - SSRF: the server fetches the URL and returns internal data.
 
 Do not merge them. Each needs its own proof and its own report.
+
+## Dedupe by signature
+
+Two leads that name the same host, path, parameter, and class test the same
+thing. `lead_dedupe` gives each lead a signature of
+``host | normalized path | parameter | class``, collapses object ids to `{id}`
+so `/orders/1` and `/orders/2` group, and reports the groups with duplicate
+counts. It reads an explicit item list or a mission's open hypotheses.
+
+A signature is a triage aid, not a merge. Two IDOR leads on the same object
+template are one class but different objects; keep the earliest and fold the
+rest as evidence. Do not collapse across classes: an open redirect and an SSRF
+on the same parameter stay separate.

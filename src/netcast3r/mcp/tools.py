@@ -2344,6 +2344,8 @@ _ROUTE_RULES = (
      "judge the recorded observation against the assertion"),
     (r"run the plan|execute the plan|work the plan", "plan_run",
      "compile, run, and gate the plan, then record follow-up leads"),
+    (r"dedupe|duplicate lead|same bug|consolidate leads", "lead_dedupe",
+     "group leads that share a host, path, parameter, and class"),
     (r"redirect|status code|response body|endpoint|route|dashboard",
      "http_request",
      "capture the exact status, headers, and body for the named endpoint",
@@ -4647,6 +4649,30 @@ def plan_run(ctx: ToolContext, args: dict) -> dict:
     }
 
 
+def lead_dedupe(ctx: ToolContext, args: dict) -> dict:
+    """Collapse duplicate leads by host, path, parameter, and class."""
+    from netcast3r import leads as _leads
+    items = args.get("items")
+    if items is None:
+        mission_id = str(args.get("mission_id") or "")
+        if not mission_id:
+            raise ToolError("invalid_arguments", "items or mission_id is required")
+        payload = _call(ctx, "GET", "/api/v1/hypotheses",
+                        {"mission_id": mission_id, "limit": 200})
+        items = payload.get("items") if isinstance(payload, dict) else []
+    if not isinstance(items, list):
+        raise ToolError("invalid_arguments", "items must be a list")
+    result = _leads.dedupe(items)
+    classes: dict = {}
+    for item in items:
+        klass = _leads.classify(f"{item.get('title', '')} "
+                                f"{item.get('technique', '')}")
+        classes[klass] = classes.get(klass, 0) + 1
+    result["class_counts"] = dict(sorted(classes.items(),
+                                         key=lambda pair: pair[1], reverse=True))
+    return result
+
+
 def _race_request(ctx: ToolContext, args: dict, methods: set[str],
                   schemes: tuple[str, ...]) -> tuple[str, str, dict, bytes | None]:
     """Build one scoped request shape shared by the race primitives."""
@@ -6189,6 +6215,7 @@ _HANDLERS.update({
     "plan_library": plan_library,
     "plan_step_verify": plan_step_verify,
     "plan_run": plan_run,
+    "lead_dedupe": lead_dedupe,
     "http_path_diff": http_path_diff,
     "reveng_analyze": reveng_analyze,
     "rea_analyze": rea_analyze,
@@ -8814,6 +8841,15 @@ TOOLS: tuple[Tool, ...] = (
                   "extra": _object("extra placeholder values, e.g. parameter"),
                   "max_steps": _integer("steps to run", 1, 12, 4)},
                  ["target"]), "plan_run", read_only=True, open_world=True),
+    Tool("lead_dedupe", "Collapse duplicate leads",
+         "Give every lead a signature of host, normalized path, parameter, and "
+         "class, then group the ones that test the same thing. Accepts an "
+         "explicit item list or reads a mission's hypotheses. Read-only.",
+         "low", "findings",
+         _schema({"items": _array("lead objects with title, target, technique",
+                                  {"type": "object"}),
+                  "mission_id": _string("mission whose hypotheses to dedupe")},
+                 []), "lead_dedupe", read_only=True),
     Tool("single_packet_race", "HTTP/2 single-packet race",
          "Open one TLS/HTTP/2 connection, send every request's headers and all "
          "but the final body byte, then write every final DATA frame in one "
