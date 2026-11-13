@@ -2305,9 +2305,8 @@ _ROUTE_RULES = (
      "build the exact token from a key recovered from source or an artifact"),
     (r"encoding|normalization|case-variant|slash|path diff", "http_path_diff",
      "send literal, encoded, and case-varied paths, then compare divergence"),
-    (r"graphql|introspection", "http_request",
-     "ask for __typename first, then test field-level authorization",
-     {"method": "POST", "json": {"query": "{__typename}"}}),
+    (r"graphql|introspection", "graphql_probe",
+     "read introspection, then error-based field suggestions and batching"),
     (r"\bssrf\b|server-side request|callback|out-of-band|\boob\b|"
      r"169\.254\.169\.254", "oast_create",
      "create a controlled callback, then aim the server-side fetch at it"),
@@ -2325,6 +2324,11 @@ _ROUTE_RULES = (
      "read NS, MX, and the SPF/DMARC/DKIM TXT records"),
     (r"\bvhost\b|virtual host|host header|shared hosting", "vhost_scan",
      "compare candidate Host values against the baseline response"),
+    (r"cache poison|cache deception|web cache|x-cache|cacheable", "cache_audit",
+     "plant an inert canary and read the cache state on a second request"),
+    (r"oauth|openid|\boidc\b|redirect_uri|implicit flow|authorization code",
+     "oauth_audit",
+     "analyze the authorize and callback URLs, then test redirect_uri handling"),
     (r"redirect|status code|response body|endpoint|route|dashboard",
      "http_request",
      "capture the exact status, headers, and body for the named endpoint",
@@ -2369,6 +2373,9 @@ def _hypothesis_routes(hypothesis: dict, target: str, mission_id: str,
             if host:
                 arguments.pop("target", None)
                 arguments["domain"] = host
+        if tool_name == "oauth_audit" and target:
+            arguments.pop("target", None)
+            arguments["url"] = target
         required = tool.input_schema.get("required") or []
         missing = [name for name in required
                    if name not in arguments
@@ -4416,6 +4423,58 @@ def vhost_scan(ctx: ToolContext, args: dict) -> dict:
                            timeout=timeout)
 
 
+def cache_audit(ctx: ToolContext, args: dict) -> dict:
+    """Check one scoped URL for cache deception and poisoning."""
+    from netcast3r import cache as _cache
+    target = str(args.get("target") or "").strip()
+    if not target:
+        raise ToolError("invalid_arguments", "target is required")
+    base = target if "://" in target else f"https://{target}"
+    if not urlsplit(base).hostname:
+        raise ToolError("invalid_arguments", "target must be a host or URL")
+    mission_id = str(args.get("mission_id") or "")
+    _require_scope(ctx, base, mission_id, args.get("scope"), probe=True)
+    mode = str(args.get("mode") or "both").strip().lower()
+    if mode not in ("both", "deception", "poisoning"):
+        mode = "both"
+    timeout = max(2.0, min(float(args.get("timeout", 8)), 30.0))
+    ctx.limiter.check("probe")
+    return _cache.audit(base, mode=mode, timeout=timeout)
+
+
+def oauth_audit(ctx: ToolContext, args: dict) -> dict:
+    """Analyze an OAuth authorize or callback URL; redirect probing is opt-in."""
+    from netcast3r import oauth as _oauth
+    url = str(args.get("url") or args.get("target") or "").strip()
+    if not url:
+        raise ToolError("invalid_arguments", "url is required")
+    if "://" not in url:
+        url = "https://" + url
+    _require_scope(ctx, url, str(args.get("mission_id") or ""),
+                   args.get("scope"), probe=True)
+    timeout = max(2.0, min(float(args.get("timeout", 8)), 30.0))
+    probe = bool(args.get("probe"))
+    if probe:
+        ctx.limiter.check("probe")
+    return _oauth.audit(url, probe=probe, timeout=timeout)
+
+
+def graphql_probe(ctx: ToolContext, args: dict) -> dict:
+    """Read one scoped GraphQL endpoint for schema, suggestion, and batching leaks."""
+    from netcast3r import graphql as _graphql
+    endpoint = str(args.get("target") or args.get("endpoint") or "").strip()
+    if not endpoint:
+        raise ToolError("invalid_arguments", "target is required")
+    if "://" not in endpoint:
+        endpoint = "https://" + endpoint
+    _require_scope(ctx, endpoint, str(args.get("mission_id") or ""),
+                   args.get("scope"), probe=True)
+    timeout = max(2.0, min(float(args.get("timeout", 8)), 30.0))
+    ctx.limiter.check("probe")
+    return _graphql.probe(endpoint, timeout=timeout,
+                          test_console=bool(args.get("test_console", True)))
+
+
 def _race_request(ctx: ToolContext, args: dict, methods: set[str],
                   schemes: tuple[str, ...]) -> tuple[str, str, dict, bytes | None]:
     """Build one scoped request shape shared by the race primitives."""
@@ -5948,6 +6007,9 @@ _HANDLERS.update({
     "takeover_scan": takeover_scan,
     "dns_posture": dns_posture,
     "vhost_scan": vhost_scan,
+    "cache_audit": cache_audit,
+    "oauth_audit": oauth_audit,
+    "graphql_probe": graphql_probe,
     "http_path_diff": http_path_diff,
     "reveng_analyze": reveng_analyze,
     "rea_analyze": rea_analyze,
@@ -8451,6 +8513,44 @@ TOOLS: tuple[Tool, ...] = (
                   "limit": _integer("candidate cap", 1, 200, 64),
                   "timeout": _integer("timeout in seconds", 2, 30, 8)},
                  ["target"]), "vhost_scan", read_only=True, open_world=True),
+    Tool("cache_audit", "Check web cache deception and poisoning",
+         "Append static-looking path suffixes to one in-scope URL and read the "
+         "cache state across two requests, or plant an inert canary in unkeyed "
+         "headers and replay to see whether a poisoned copy persists. "
+         "Read-only; no payload beyond the canary.",
+         "medium", "web",
+         _schema({"target": _string("in-scope URL"),
+                  "mode": _string("deception, poisoning, or both",
+                                  enum=["both", "deception", "poisoning"]),
+                  "mission_id": _string("mission whose scope authorizes the probes"),
+                  "scope": _array("explicit scope entries when no mission is used"),
+                  "timeout": _integer("timeout in seconds", 2, 30, 8)},
+                 ["target"]), "cache_audit", read_only=True, open_world=True),
+    Tool("oauth_audit", "Analyze OAuth and OIDC misconfiguration",
+         "Read an authorize or callback URL for implicit flow, missing state, "
+         "missing PKCE, and redirect_uri validation weaknesses. Optionally send "
+         "mutated redirect_uri values and read where the server redirects. "
+         "Static by default.",
+         "medium", "identity",
+         _schema({"url": _string("authorize or callback URL"),
+                  "target": _string("alias for url"),
+                  "probe": _boolean("send mutated redirect_uri values", False),
+                  "mission_id": _string("mission whose scope authorizes the reads"),
+                  "scope": _array("explicit scope entries when no mission is used"),
+                  "timeout": _integer("timeout in seconds", 2, 30, 8)},
+                 []), "oauth_audit", read_only=True, open_world=True),
+    Tool("graphql_probe", "Read a GraphQL endpoint's surface",
+         "Check introspection, harvest field names from validation errors, test "
+         "batched queries, test GET execution, and look for an exposed console. "
+         "Read-only queries only; never issues a mutation.",
+         "medium", "web",
+         _schema({"target": _string("in-scope GraphQL endpoint"),
+                  "endpoint": _string("alias for target"),
+                  "test_console": _boolean("probe common console paths", True),
+                  "mission_id": _string("mission whose scope authorizes the reads"),
+                  "scope": _array("explicit scope entries when no mission is used"),
+                  "timeout": _integer("timeout in seconds", 2, 30, 8)},
+                 ["target"]), "graphql_probe", read_only=True, open_world=True),
     Tool("single_packet_race", "HTTP/2 single-packet race",
          "Open one TLS/HTTP/2 connection, send every request's headers and all "
          "but the final body byte, then write every final DATA frame in one "

@@ -120,11 +120,12 @@ pivot gaps honestly. The recon-side gaps that were actionable this pass:
 
 1. Favicon-hash tech recon (native, cheap, high yield on shared hosting).
 2. NOERROR and permutation subdomain discovery feeding `takeover_scan`.
-3. GraphQL request/field fuzzing beyond introspection.
-4. WebSocket handshake and origin audit.
-5. Cloud bucket enumeration from the fingerprint and naming data already on
+3. Client-side path traversal (CSPT2CSRF) analysis over JavaScript bundles.
+4. ORM leak probes (Django, Prisma, OData) and parser differentials.
+5. WebSocket handshake and origin audit.
+6. Cloud bucket enumeration from the fingerprint and naming data already on
    hand.
-6. Bind screenshots to findings; add notification sinks (Telegram, Discord,
+7. Bind screenshots to findings; add notification sinks (Telegram, Discord,
    Slack) behind a mission opt-in.
 
 Each candidate should arrive as a deterministic module with an injectable

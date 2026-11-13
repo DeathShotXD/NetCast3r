@@ -47,6 +47,14 @@ names that answer with a page different from the baseline and from a random
 unclaimed name, so a catch-all server does not invent virtual hosts. Every
 candidate Host is scope-checked before it is sent.
 
+`cache_audit` probes static-looking suffixes for a cached private page (cache
+deception) and plants inert canaries in unkeyed headers, then replays to see
+whether a poisoned copy persists. `oauth_audit` reads an authorize or callback
+URL for implicit flow, missing state, missing PKCE, and redirect_uri weaknesses;
+redirect probing is opt-in. `graphql_probe` reads introspection, harvests field
+names from validation errors, and tests batching, GET execution, and console
+paths. All three are read-only and scope-gated, and none issues a mutation.
+
 ## API-spec ingestion
 
 `api_spec_ingest` reads an OpenAPI/Swagger or Postman contract and records every

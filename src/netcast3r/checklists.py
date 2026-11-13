@@ -191,6 +191,7 @@ ITEMS = (
           "redirect_uri matching, state, PKCE, and code binding are tested from "
           "an attacker-controlled client.",
           modules=("auth-oauth-redirect",), severity="critical",
+          tools=("oauth_audit",),
           evidence="a code or token delivered to a host the client did not register",
           source="WSTG v4.2 4.4"),
     _item("wstg-auth-06", "WSTG", "authentication",
@@ -355,7 +356,8 @@ ITEMS = (
           "Unkeyed headers and path tricks are tested against a cacheable page; "
           "confirm with a second identity.",
           modules=("server-cache-poison", "server-cache-deception"),
-          severity="high", evidence="a poisoned or deceived response served to a second user",
+          severity="high", tools=("cache_audit",),
+          evidence="a poisoned or deceived response served to a second user",
           source="WSTG v4.2 4.7 / PortSwigger Top 10 2025 #7"),
     _item("wstg-inpv-13", "WSTG", "input-validation",
           "Test client-side path traversal and DOM sinks",
@@ -548,7 +550,8 @@ ITEMS = (
           "Introspection, node() lookups, mutation authz, and batched queries are "
           "tested across two identities.",
           modules=("api-graphql-introspection", "api-graphql-idor"),
-          severity="critical", evidence="another identity's object or a privileged mutation",
+          severity="critical", tools=("graphql_probe",),
+          evidence="another identity's object or a privileged mutation",
           source="OWASP API5:2023 / GraphQL"),
     _item("api-12", "API Top 10", "api",
           "SOAP and WSDL client abuse",

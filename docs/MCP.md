@@ -6,7 +6,7 @@ process that drives the same HTTP API the Svelte UI uses. A scan started by an
 agent appears in the dashboard. A human decision in the dashboard is visible to
 the agent. There is one database and one audit trail.
 
-Status: implemented and tested · 2026-11-13 · MCP protocol `2025-06-18` · 292 tools
+Status: implemented and tested · 2026-11-13 · MCP protocol `2025-06-18` · 295 tools
 
 ---
 
@@ -164,7 +164,7 @@ A short wait (1.5 s or less) is slept instead of refused. Longer waits return
 
 ## 3. The autonomy spine
 
-Seven read-only tools make the 292-tool surface navigable and safe to drive in
+Seven read-only tools make the 295-tool surface navigable and safe to drive in
 a loop. They are ordinary tools: same schema validation, same policy, same
 audit. None of them can mutate state, decide an approval, or submit a report.
 
@@ -178,12 +178,13 @@ audit. None of them can mutate state, decide an approval, or submit a report.
 | `run_watch` | Long-poll one run instead of hammering `runs_events`. `until=any` returns on the first new event; `until=terminal` accumulates events until the run leaves queued/running. Cap 60 s. |
 | `tool_health` | Preflight: catalog counts, policy step-up counts, database integrity, provider health, pending approvals, and per-check status. |
 
-138 of the 292 tools are labelled `read_only`, and 131 of those are eligible for
+141 of the 295 tools are labelled `read_only`, and 131 of those are eligible for
 context-mode batches. A tool only carries the label when its handler is a pure
-read; the seven open-world tools (`taxii_collections`, `taxii_poll`,
+read; the ten open-world tools (`taxii_collections`, `taxii_poll`,
 `sampling_complete`, `http_probe`, `takeover_scan`, `dns_posture`,
-`vhost_scan`) stay `read_only` but are excluded from `context` batches so a
-batch cannot touch the network or the client.
+`vhost_scan`, `cache_audit`, `oauth_audit`, `graphql_probe`) stay `read_only`
+but are excluded from `context` batches so a batch cannot touch the network or
+the client.
 
 `tool_batch` has two modes:
 
@@ -272,7 +273,7 @@ Tokens are bound per call and restored afterwards.
 
 ## 4. Tools
 
-292 tools, grouped by job. Every tool publishes a JSON schema with
+295 tools, grouped by job. Every tool publishes a JSON schema with
 `additionalProperties: false`; unknown arguments are rejected rather than
 silently ignored.
 
@@ -685,6 +686,9 @@ stored, so experience cannot be invented:
 | `takeover_scan` | medium | Dangling-CNAME subdomain takeover check against a pinned fingerprint table |
 | `dns_posture` | low | NS, MX, SOA, CAA, SPF, DMARC, and DKIM posture, with opt-in AXFR |
 | `vhost_scan` | medium | Compare candidate Host values on one address against a wildcard baseline |
+| `cache_audit` | medium | Cache deception suffixes and unkeyed-header poisoning canaries |
+| `oauth_audit` | medium | OAuth/OIDC authorize and callback analysis, opt-in redirect probing |
+| `graphql_probe` | medium | Introspection, error suggestions, batching, GET, console paths |
 | `single_packet_race` | medium | HTTP/2 last-byte-aligned burst for check-then-act bugs |
 | `last_byte_race` | medium | HTTP/1.1 burst that releases every request's final byte together |
 | `research_sources` | low | Coverage of the technique library by class and rarity |
@@ -1022,6 +1026,12 @@ tool call. The UI can show whether an MCP client is alive without guessing.
   discovery, and the opt-in AXFR verdict;
 - `vhost_scan` baseline and wildcard detection, per-Host labelling, and the
   candidate generator;
+- `cache_audit` cache-state parsing, deception suffix verdicts, and
+  reflect-then-replay poisoning;
+- `oauth_audit` implicit-flow, state, PKCE, redirect_uri, and callback analysis
+  plus the mutation generator;
+- `graphql_probe` introspection, error-suggestion parsing, batching, GET, and
+  console-path findings;
 - the `netcast3r://tools` resource, approval and submission templates, and
   their completions;
 - progress notifications flowing from a tool through `tools/call`;
