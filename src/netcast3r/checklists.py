@@ -364,6 +364,7 @@ ITEMS = (
           "URL parameters consumed as paths, postMessage handlers, and innerHTML "
           "sinks are traced to a security-relevant effect.",
           modules=("client-cspt",), severity="high",
+          tools=("csp_scan",),
           evidence="attacker-controlled content or request in the victim's context",
           source="WSTG v4.2 4.7 / PortSwigger Top 10 2025 #8"),
     _item("wstg-inpv-14", "WSTG", "input-validation",
@@ -737,6 +738,7 @@ ITEMS = (
           "Search, filter, and ordering parameters are tested for field access and "
           "row leakage beyond the model.",
           modules=("server-orm-leak",), severity="high",
+          tools=("orm_leak_probe", "oracle_extract"),
           evidence="a field or row the response should not include",
           source="PortSwigger Top 10 2025 #2"),
     _item("mod-03", "2025 Research", "modern",

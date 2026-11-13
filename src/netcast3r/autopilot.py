@@ -63,6 +63,8 @@ ACTIONS = {
     "cache_audit": "check a scoped URL for cache deception and poisoning",
     "oauth_audit": "analyze an OAuth authorize or callback URL",
     "graphql_probe": "read a GraphQL endpoint's schema and batching surface",
+    "orm_leak_probe": "probe one filter field for an ORM leak",
+    "csp_scan": "scan JavaScript for client-side path traversal sinks",
     "technique_search": "search the research library by keyword",
     "technique_plan": "rank techniques for a target and its signals",
     "chain_search": "search the exploit-chain library",
@@ -122,6 +124,7 @@ DEFAULT_TARGET_ACTIONS = {
     "injection_differential_probe", "upload_policy_probe", "retest_request",
     "takeover_scan", "dns_posture", "vhost_scan",
     "cache_audit", "oauth_audit", "graphql_probe",
+    "orm_leak_probe",
 }
 TARGET_ALIASES = ("url", "uri", "host", "hostname", "target_url", "endpoint",
                   "base_url", "address")

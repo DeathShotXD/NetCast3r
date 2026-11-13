@@ -53,7 +53,12 @@ whether a poisoned copy persists. `oauth_audit` reads an authorize or callback
 URL for implicit flow, missing state, missing PKCE, and redirect_uri weaknesses;
 redirect probing is opt-in. `graphql_probe` reads introspection, harvests field
 names from validation errors, and tests batching, GET execution, and console
-paths. All three are read-only and scope-gated, and none issues a mutation.
+paths. `orm_leak_probe` sends Django, Beego, Prisma, and OData filter
+expressions and reads the error or length differential; `oracle_extract` now
+extracts through a response-length oracle as well as body, status, and time.
+`csp_scan` statically finds JavaScript lines where a user-controlled source
+reaches a request sink. All of these are read-only and scope-gated, and none
+issues a mutation.
 
 ## API-spec ingestion
 

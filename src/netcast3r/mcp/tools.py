@@ -2329,6 +2329,12 @@ _ROUTE_RULES = (
     (r"oauth|openid|\boidc\b|redirect_uri|implicit flow|authorization code",
      "oauth_audit",
      "analyze the authorize and callback URLs, then test redirect_uri handling"),
+    (r"orm leak|filter injection|django orm|prisma|\bodata\b|__contains|"
+     r"mass assignment|filter expression", "orm_leak_probe",
+     "send filter-expression probes and read the error or length differential"),
+    (r"client-side path traversal|\bcsp\b|\bcst\b|postmessage|location\.hash",
+     "csp_scan",
+     "scan the JavaScript for a source that reaches a request sink"),
     (r"redirect|status code|response body|endpoint|route|dashboard",
      "http_request",
      "capture the exact status, headers, and body for the named endpoint",
@@ -4167,14 +4173,22 @@ def oracle_extract(ctx: ToolContext, args: dict) -> dict:
         raise ToolError("invalid_arguments",
                         "put {{expr}} in the target, a header, or the body")
     true_when = str(args.get("true_when") or "contains").lower()
-    if true_when not in {"contains", "not_contains", "status", "time"}:
+    if true_when not in {"contains", "not_contains", "status", "time", "length"}:
         raise ToolError("invalid_arguments",
-                        "true_when must be contains, not_contains, status, or time")
+                        "true_when must be contains, not_contains, status, time, or length")
     match = str(args.get("match") or "")
     if true_when in {"contains", "not_contains"} and not match:
         raise ToolError("invalid_arguments", "match is required for a body oracle")
     expected_status = int(args.get("expected_status") or 200)
     threshold_ms = int(args.get("threshold_ms") or 3000)
+    length_field = str(args.get("length_field") or "body").lower()
+    if length_field not in {"body", "etag"}:
+        length_field = "body"
+    length_threshold = int(args.get("length_threshold") or 0)
+    length_below = bool(args.get("length_below"))
+    if true_when == "length" and not args.get("length_threshold"):
+        raise ToolError("invalid_arguments",
+                        "length_threshold is required for a length oracle")
     query = str(args.get("query") or "")
     expr_template = str(args.get("expr_template")
                         or "ASCII(SUBSTRING(({query}),{pos},1))={char}")
@@ -4245,6 +4259,14 @@ def oracle_extract(ctx: ToolContext, args: dict) -> dict:
                 hit = match.lower() not in text.lower()
             elif true_when == "status":
                 hit = status == expected_status
+            elif true_when == "length":
+                if length_field == "etag":
+                    header = {str(key).lower(): str(value) for key, value
+                              in (response.get("headers") or {}).items()}
+                    measured = len(header.get("etag", ""))
+                else:
+                    measured = len(text)
+                hit = measured <= length_threshold if length_below else measured >= length_threshold
             else:
                 hit = elapsed >= threshold_ms
             if hit:
@@ -4260,6 +4282,8 @@ def oracle_extract(ctx: ToolContext, args: dict) -> dict:
         "target": target, "method": method, "true_when": true_when,
         "value": value, "length": len(value), "requests": requests,
         "errors": errors, "max_requests": max_requests, "truncated": truncated,
+        "length_field": length_field if true_when == "length" else "",
+        "length_threshold": length_threshold if true_when == "length" else None,
         "positions": position_start + len(value) - 1 if value else position_start,
         "evidence": (f"extracted {len(value)} character(s) through a "
                      f"{true_when} oracle in {requests} probe(s)"),
@@ -4473,6 +4497,41 @@ def graphql_probe(ctx: ToolContext, args: dict) -> dict:
     ctx.limiter.check("probe")
     return _graphql.probe(endpoint, timeout=timeout,
                           test_console=bool(args.get("test_console", True)))
+
+
+def orm_leak_probe(ctx: ToolContext, args: dict) -> dict:
+    """Send ORM filter-expression probes and classify the differential."""
+    from netcast3r import ormleak as _ormleak
+    target = str(args.get("target") or "").strip()
+    if not target:
+        raise ToolError("invalid_arguments", "target is required")
+    base = target if "://" in target else f"https://{target}"
+    if not urlsplit(base).hostname:
+        raise ToolError("invalid_arguments", "target must be a host or URL")
+    field = str(args.get("field") or "").strip()
+    if not field:
+        raise ToolError("invalid_arguments", "field is required")
+    _require_scope(ctx, base, str(args.get("mission_id") or ""),
+                   args.get("scope"), probe=True)
+    timeout = max(2.0, min(float(args.get("timeout", 8)), 30.0))
+    delta = max(1, min(int(args.get("length_delta", 8)), 100000))
+    ctx.limiter.check("probe")
+    result = _ormleak.probe(base, field, timeout=timeout, length_delta=delta)
+    result["findings"] = _ormleak.findings(result)
+    return result
+
+
+def csp_scan(ctx: ToolContext, args: dict) -> dict:
+    """Statically scan JavaScript text or a local file for CSPT sinks."""
+    from netcast3r import csp as _csp
+    source = args.get("source")
+    if isinstance(source, str) and source.strip():
+        return _csp.analyze(source, str(args.get("filename") or "inline.js"))
+    path = str(args.get("path") or "").strip()
+    if not path:
+        raise ToolError("invalid_arguments", "source or path is required")
+    resolved = _guard_local_path(ctx, path, allow_base=True)
+    return _csp.scan(resolved)
 
 
 def _race_request(ctx: ToolContext, args: dict, methods: set[str],
@@ -6010,6 +6069,8 @@ _HANDLERS.update({
     "cache_audit": cache_audit,
     "oauth_audit": oauth_audit,
     "graphql_probe": graphql_probe,
+    "orm_leak_probe": orm_leak_probe,
+    "csp_scan": csp_scan,
     "http_path_diff": http_path_diff,
     "reveng_analyze": reveng_analyze,
     "rea_analyze": rea_analyze,
@@ -8432,10 +8493,13 @@ TOOLS: tuple[Tool, ...] = (
                   "position_start": _integer("first character position", 1, 4096, 1),
                   "max_requests": _integer("hard probe cap", 1, 2000, 600),
                   "true_when": _string("oracle type", enum=[
-                      "contains", "not_contains", "status", "time"]),
+                      "contains", "not_contains", "status", "time", "length"]),
                   "match": _string("body text that indicates a true condition"),
                   "expected_status": _integer("status that indicates true", 100, 599, 200),
-                  "threshold_ms": _integer("time threshold in milliseconds", 1, 60000, 3000)},
+                  "threshold_ms": _integer("time threshold in milliseconds", 1, 60000, 3000),
+                  "length_field": _string("length oracle measure", enum=["body", "etag"]),
+                  "length_threshold": _integer("length that indicates true", 0, 1000000, 0),
+                  "length_below": _boolean("hit when the length is at or below the threshold", False)},
                  ["target"]), "oracle_extract", open_world=True),
     Tool("race_run", "Bounded concurrent burst",
          "Send the same scoped request N times concurrently and return every "
@@ -8551,6 +8615,28 @@ TOOLS: tuple[Tool, ...] = (
                   "scope": _array("explicit scope entries when no mission is used"),
                   "timeout": _integer("timeout in seconds", 2, 30, 8)},
                  ["target"]), "graphql_probe", read_only=True, open_world=True),
+    Tool("orm_leak_probe", "Probe for ORM filter leaks",
+         "Send Django, Beego, Prisma, and OData filter-expression probes for one "
+         "user-controlled field name and classify the response by error text or "
+         "length. Detection only; extraction reuses oracle_extract. Read-only.",
+         "medium", "web",
+         _schema({"target": _string("in-scope endpoint URL"),
+                  "field": _string("user-controlled filter field name"),
+                  "mission_id": _string("mission whose scope authorizes the probes"),
+                  "scope": _array("explicit scope entries when no mission is used"),
+                  "length_delta": _integer("body-length delta that counts as a signal",
+                                           1, 100000, 8),
+                  "timeout": _integer("timeout in seconds", 2, 30, 8)},
+                 ["target", "field"]), "orm_leak_probe", read_only=True, open_world=True),
+    Tool("csp_scan", "Find client-side path traversal sinks",
+         "Statically scan JavaScript text or a local file for lines that mix a "
+         "user-controlled source (location.hash, postMessage data) with a "
+         "request sink, and flag the ones that build a path. Never executes.",
+         "low", "web",
+         _schema({"source": _string("JavaScript text to analyze"),
+                  "filename": _string("name to report with the source"),
+                  "path": _string("local JavaScript file to analyze")},
+                 []), "csp_scan", read_only=True),
     Tool("single_packet_race", "HTTP/2 single-packet race",
          "Open one TLS/HTTP/2 connection, send every request's headers and all "
          "but the final body byte, then write every final DATA frame in one "

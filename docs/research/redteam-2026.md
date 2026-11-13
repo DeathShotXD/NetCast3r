@@ -35,10 +35,10 @@ risk profile of the tool.
 | Web Cache Poisoning | high | none | integrated `cache.py` + `cache_audit` |
 | OAuth / OIDC misconfiguration | high | flow inventory only | integrated `oauth.py` + `oauth_audit` |
 | GraphQL (introspection, suggestions, batching) | high | introspection probe | integrated `graphql.py` + `graphql_probe` |
-| Client-Side Path Traversal | high (top-10) | none | next |
-| ORM leaks (Django, Prisma, OData) | high (top-10 #2) | none | next |
+| Client-Side Path Traversal | high (top-10) | none | integrated `csp.py` + `csp_scan` |
+| ORM leaks (Django, Prisma, OData) | high (top-10 #2) | none | integrated `ormleak.py` + `orm_leak_probe` |
 | Unicode normalization / parser differential | high (top-10 #4, #10) | path variants only | next |
-| ETag / XS-Leak side channels | medium (top-10 #6) | none | next |
+| ETag / XS-Leak side channels | medium (top-10 #6) | none | length oracle in `oracle_extract` |
 | Request smuggling / desync | high | race primitives only | next |
 | SSRF redirect loops | medium (top-10 #3) | SSRF classify | next |
 | WebSocket / CSWSH | medium | none | next |
@@ -82,20 +82,40 @@ ingestion, and secret hunting.
   errors, batching enabled, GET execution, and exposed console paths. All
   read-only queries; no mutation is ever issued.
 
+### ORM leaks (`src/netcast3r/ormleak.py`)
+
+- Builds Django/Beego operator names (`field__contains`, `field__gt`, ...),
+  relational chains (`field__user__username__contains`), Prisma bracket
+  operators (`field[contains]`), and OData `$filter`/`$orderby`/`$select` for a
+  user-controlled field. Classifies each response as an error leak (a
+  framework error naming the field) or a length signal. Detection only;
+  `oracle_extract` pulls the value out.
+
+### Client-side path traversal (`src/netcast3r/csp.py`)
+
+- Static scan of JavaScript for a same-line mix of a user-controlled source
+  (`location.hash`, `postMessage` data, `URLSearchParams`) and a request sink
+  (`fetch`, `axios`, `xhr.open`, `$.ajax`, `new URL`, router navigation), with
+  path-building lines ranked high. Reports the line, both halves, and a
+  traversal payload.
+
+### Length side channel (`oracle_extract`)
+
+- A new `length` oracle mode measures the response body or the ETag against a
+  threshold (optionally below it), which covers the hex-prefix ETag-length
+  leak as a server-side extraction primitive.
+
 Each module is dependency-free, transport-injectable, and tested offline.
 
 ## 4. What remains, in order
 
-1. Client-side path traversal: find user input reaching a URL path in a JS
-   bundle (extends `reveng.py`) and pair it with a cross-site fetch.
-2. ORM leak probes and parser differentials: operator injection against
-   Django/Prisma/OData-style filters, with a differential oracle.
-3. Unicode normalization and encoding-transformation variants folded into
+1. Unicode normalization and encoding-transformation variants folded into
    `pathdiff.py`.
-4. ETag/length side-channel oracle added to `oracle_extract`.
-5. Desync probes (CL.TE, TE.CL, CL.0, H2.CL, H2.TE) built on the existing race
+2. Desync probes (CL.TE, TE.CL, CL.0, H2.CL, H2.TE) built on the existing race
    transport, with a confirmation repeat before a hit counts.
-6. WebSocket handshake, origin, and CSWSH audit.
+3. SSRF redirect-loop detection layered onto the SSRF verdicts.
+4. WebSocket handshake, origin, and CSWSH audit.
+5. SAML assertion analysis and reverse-proxy misconfiguration probes.
 
 Every one should arrive the same way this pass did: a deterministic module, an
 injectable transport, a scope-gated read-only tool, a checklist link, and

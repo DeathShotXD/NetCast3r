@@ -6,7 +6,7 @@ process that drives the same HTTP API the Svelte UI uses. A scan started by an
 agent appears in the dashboard. A human decision in the dashboard is visible to
 the agent. There is one database and one audit trail.
 
-Status: implemented and tested · 2026-11-13 · MCP protocol `2025-06-18` · 295 tools
+Status: implemented and tested · 2026-11-13 · MCP protocol `2025-06-18` · 297 tools
 
 ---
 
@@ -164,7 +164,7 @@ A short wait (1.5 s or less) is slept instead of refused. Longer waits return
 
 ## 3. The autonomy spine
 
-Seven read-only tools make the 295-tool surface navigable and safe to drive in
+Seven read-only tools make the 297-tool surface navigable and safe to drive in
 a loop. They are ordinary tools: same schema validation, same policy, same
 audit. None of them can mutate state, decide an approval, or submit a report.
 
@@ -178,13 +178,14 @@ audit. None of them can mutate state, decide an approval, or submit a report.
 | `run_watch` | Long-poll one run instead of hammering `runs_events`. `until=any` returns on the first new event; `until=terminal` accumulates events until the run leaves queued/running. Cap 60 s. |
 | `tool_health` | Preflight: catalog counts, policy step-up counts, database integrity, provider health, pending approvals, and per-check status. |
 
-141 of the 295 tools are labelled `read_only`, and 131 of those are eligible for
+143 of the 297 tools are labelled `read_only`, and 132 of those are eligible for
 context-mode batches. A tool only carries the label when its handler is a pure
-read; the ten open-world tools (`taxii_collections`, `taxii_poll`,
+read; the eleven open-world tools (`taxii_collections`, `taxii_poll`,
 `sampling_complete`, `http_probe`, `takeover_scan`, `dns_posture`,
-`vhost_scan`, `cache_audit`, `oauth_audit`, `graphql_probe`) stay `read_only`
-but are excluded from `context` batches so a batch cannot touch the network or
-the client.
+`vhost_scan`, `cache_audit`, `oauth_audit`, `graphql_probe`, `orm_leak_probe`)
+stay `read_only` but are excluded from `context` batches so a batch cannot
+touch the network or the client. `csp_scan` reads local JavaScript only, so it
+stays context-batchable.
 
 `tool_batch` has two modes:
 
@@ -273,7 +274,7 @@ Tokens are bound per call and restored afterwards.
 
 ## 4. Tools
 
-295 tools, grouped by job. Every tool publishes a JSON schema with
+297 tools, grouped by job. Every tool publishes a JSON schema with
 `additionalProperties: false`; unknown arguments are rejected rather than
 silently ignored.
 
@@ -486,7 +487,9 @@ magic-byte, and storage handling without a shell or a temporary file.
 `oracle_extract` is the blind-extraction primitive. The caller puts `{{expr}}`
 in the URL, a header, or the body, then supplies `expr_template` with
 `{query}`, `{pos}`, and `{char}`. The tool tries each character at each
-position and stops on a body marker, a status, or a time threshold. It is
+position and stops on a body marker, a status, a time threshold, or a response
+length. The length mode measures the body or the ETag against `length_threshold`
+(optionally below it), which covers the hex-prefix ETag-length oracle. It is
 capped at 2000 probes, rate-limited separately from normal requests, and every
 probe goes through the same scope check. It does not decide that a bug exists;
 the extracted value still has to be used to prove impact.
@@ -689,6 +692,8 @@ stored, so experience cannot be invented:
 | `cache_audit` | medium | Cache deception suffixes and unkeyed-header poisoning canaries |
 | `oauth_audit` | medium | OAuth/OIDC authorize and callback analysis, opt-in redirect probing |
 | `graphql_probe` | medium | Introspection, error suggestions, batching, GET, console paths |
+| `orm_leak_probe` | medium | Filter-expression probes for Django, Beego, Prisma, and OData leaks |
+| `csp_scan` | low | Client-side path traversal sources and sinks in JavaScript |
 | `single_packet_race` | medium | HTTP/2 last-byte-aligned burst for check-then-act bugs |
 | `last_byte_race` | medium | HTTP/1.1 burst that releases every request's final byte together |
 | `research_sources` | low | Coverage of the technique library by class and rarity |
@@ -1032,6 +1037,10 @@ tool call. The UI can show whether an MCP client is alive without guessing.
   plus the mutation generator;
 - `graphql_probe` introspection, error-suggestion parsing, batching, GET, and
   console-path findings;
+- `orm_leak_probe` payload generation, error and length classification, and
+  finding rank;
+- `csp_scan` source-to-sink detection, path-building severity, and file scan;
+- the `oracle_extract` length mode over body or ETag length;
 - the `netcast3r://tools` resource, approval and submission templates, and
   their completions;
 - progress notifications flowing from a tool through `tools/call`;
