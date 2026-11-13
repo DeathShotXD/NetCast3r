@@ -25,6 +25,26 @@ class VariantTests(unittest.TestCase):
         for item in variants:
             self.assertTrue(item["path"].endswith("?x=1"))
 
+    def test_unicode_and_encoding_variants(self):
+        variants = pathdiff.build_variants("/api/services/domains")
+        labels = [item["label"] for item in variants]
+        paths = [item["path"] for item in variants]
+        self.assertEqual(paths[0], "/api/services/domains")
+        self.assertIn("fullwidth_last", labels)
+        self.assertIn("unicode_slash", labels)
+        self.assertIn("double_encode_slash", labels)
+        self.assertIn("unicode_dot_segment", labels)
+        self.assertIn("/api/services/domains".replace("/", "%252f"), paths)
+        fullwidth = next(item for item in variants if item["label"] == "fullwidth_last")
+        for char in fullwidth["path"].rsplit("/", 1)[-1]:
+            self.assertGreater(ord(char), 0xFF00)
+
+    def test_nfkc_folds_fullwidth_back(self):
+        variants = pathdiff.build_variants("/api/\uff41dmin")
+        nfkc = next((item for item in variants if item["label"] == "nfkc"), None)
+        self.assertIsNotNone(nfkc)
+        self.assertEqual(nfkc["path"], "/api/admin")
+
     def test_target_for_keeps_scheme_host_and_query(self):
         url = pathdiff.target_for("https://snapdeploy.dev/api/services/domains?x=1",
                                   "/api/services/%64omains?x=1")

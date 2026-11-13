@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import hashlib
 import re
+import unicodedata
 from urllib.parse import quote, urlsplit, urlunsplit
 
 MAX_VARIANTS = 24
@@ -96,8 +97,26 @@ def build_variants(path: str, limit: int = MAX_VARIANTS) -> list[dict]:
         add(f"encode_segment_{index}", "/".join(encoded))
 
     add("dot_segment", clean.rstrip("/") + "/." if last else clean)
+
+    # Unicode normalization and encoding transforms. Each layer of a stack
+    # (client, CDN, proxy, framework) may normalize differently, so a path that
+    # is blocked raw can pass once it is fullwidth, NFKC-folded, or
+    # double-encoded.
+    if last:
+        add("fullwidth_last", "/".join(parts[:last_index] + [_fullwidth(last)]))
+        add("unicode_dot_segment", clean.rstrip("/") + "/\u3002")
+    add("unicode_slash", clean.replace("/", "\uff0f"))
+    add("double_encode_slash", clean.replace("/", "%252f"))
+    add("nfkc", unicodedata.normalize("NFKC", clean))
+
     add("head_uppercase", "/" + clean.lstrip("/").capitalize())
     return variants[:limit]
+
+
+def _fullwidth(text: str) -> str:
+    """Map ASCII to its fullwidth form, the classic normalization bypass."""
+    return "".join(chr(ord(char) + 0xFEE0) if "!" <= char <= "~" else char
+                   for char in text)
 
 
 def _digest(text: str) -> str:

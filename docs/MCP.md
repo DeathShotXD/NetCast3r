@@ -511,8 +511,9 @@ the evidence.
 ### Path differentials
 
 `http_path_diff` sends the same request to a bounded set of path variants —
-literal, percent-encoded, mixed-case, doubled-slash, trailing-slash, and
-semicolon forms — and labels where the response diverges from the baseline.
+literal, percent-encoded, mixed-case, doubled-slash, trailing-slash, semicolon,
+fullwidth, unicode-slash, double-encoded-slash, and NFKC-normalized forms — and
+labels where the response diverges from the baseline.
 A `403` that becomes `400` is labelled `check_skipped`: the authorization gate
 did not match the encoded route and the handler did. A `403`/`401` that
 becomes `2xx` is labelled `auth_bypass`. This turns a manual finding class into
@@ -1035,8 +1036,7 @@ tool call. The UI can show whether an MCP client is alive without guessing.
 - `run_watch` terminal accumulation, cursor resumption, and unknown runs;
 - `tool_health` catalog/runtime/provider checks;
 - the native DNS client's name encoding, record decoding, compression-pointer
-  handling, rcode reporting, and CNAME-chain resolution;
-- `takeover_scan` service matching, NXDOMAIN verdicts, body fingerprints,
+  handling, rcode reporting, and CNAME-chain resolution;- `takeover_scan` service matching, NXDOMAIN verdicts, body fingerprints,
   claimed detection, and scan ranking;
 - `dns_posture` SPF/DMARC parsing, permissive-policy findings, DKIM selector
   discovery, and the opt-in AXFR verdict;
@@ -1052,6 +1052,8 @@ tool call. The UI can show whether an MCP client is alive without guessing.
   finding rank;
 - `csp_scan` source-to-sink detection, path-building severity, and file scan;
 - the `oracle_extract` length mode over body or ETag length;
+- `pathdiff.build_variants` fullwidth, unicode-slash, double-encoded-slash, and
+  NFKC variants, with dedupe and the variant cap intact;
 - `ws_audit` upgrade parsing, same-origin baseline, and hostile-origin CSWSH verdict;
 - `plan_compile` plan ranking, argument fill and missing reporting, catalog
   validation, and verification assertions attached to every step;
