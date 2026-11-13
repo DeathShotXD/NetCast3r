@@ -90,7 +90,7 @@ ROLE_ACTIONS = {
                  "reveng_analyze", "postex_plan", "token_pivot",
                  "exploit_catalog", "exploit_search", "exploit_plan",
                  "exploit_run", "candidates_list", "chain_templates",
-                 "chain_execute"),
+                 "chain_execute", "plan_run"),
     "validator": ("hypothesis_list", "http_probe", "retest_request",
                   "access_control_compare", "lessons_list", "agent_notes_list",
                   "auth_profile_list", "browser_snapshot", "plan_step_verify"),

@@ -2342,6 +2342,8 @@ _ROUTE_RULES = (
      "compile a gated plan, then run and verify each step"),
     (r"verify the step|assertion|observation match", "plan_step_verify",
      "judge the recorded observation against the assertion"),
+    (r"run the plan|execute the plan|work the plan", "plan_run",
+     "compile, run, and gate the plan, then record follow-up leads"),
     (r"redirect|status code|response body|endpoint|route|dashboard",
      "http_request",
      "capture the exact status, headers, and body for the named endpoint",
@@ -4595,6 +4597,56 @@ def plan_step_verify(ctx: ToolContext, args: dict) -> dict:
     return result
 
 
+def plan_run(ctx: ToolContext, args: dict) -> dict:
+    """Compile a plan, run its gated steps, and propose follow-ups."""
+    from netcast3r import planner as _planner
+    from netcast3r import steps as _steps
+    target = str(args.get("target") or "").strip()
+    if not target:
+        raise ToolError("invalid_arguments", "target is required")
+    base = target if "://" in target else f"https://{target}"
+    mission_id = str(args.get("mission_id") or "")
+    compiled = _planner.compile_plan(
+        goal=str(args.get("goal") or ""), target=base,
+        signals=args.get("signals") or [], mission_id=mission_id,
+        profile=str(args.get("profile") or ""), extra=args.get("extra") or {},
+        candidates=False)
+    if not compiled.get("ready"):
+        return {"executed": False, "plan": compiled.get("chosen", ""),
+                "missing_arguments": compiled.get("missing_arguments", []),
+                "steps": compiled.get("steps", []),
+                "note": "supply the missing arguments to run this plan"}
+    _require_scope(ctx, base, mission_id, args.get("scope"))
+    ctx.limiter.check("probe")
+    host = urlsplit(base).hostname or base
+    registry = ctx.registry
+    if registry is None:
+        raise ToolError("no_registry", "plan_run needs the tool registry")
+    max_steps = max(1, min(int(args.get("max_steps") or 4), 12))
+    outcome = _steps.execute_steps(compiled["steps"][:max_steps], host, mission_id,
+                                   registry, complete=None)
+    cascade = []
+    for row in outcome["steps"]:
+        if row.get("verdict") != "supports":
+            continue
+        for follow in compiled.get("followups", []):
+            cascade.append({"from_step": row.get("step"),
+                            "tool": row.get("tool"), "hypothesis": follow})
+    state = _steps.state_of(outcome.get("supports", 0), outcome.get("refutes", 0),
+                            outcome.get("blocked", 0), outcome.get("ran", 0),
+                            outcome.get("cancelled", False))
+    return {
+        "executed": True, "plan": compiled.get("chosen", ""),
+        "target": base, "state": state, "results": outcome["steps"],
+        "supports": outcome.get("supports", 0), "refutes": outcome.get("refutes", 0),
+        "blocked": outcome.get("blocked", 0), "ran": outcome.get("ran", 0),
+        "cascade": cascade, "estimate": compiled.get("estimate", {}),
+        "note": ("Every step was gated by its assertion before any model. A "
+                 "supported step is a lead; cascade entries are follow-up "
+                 "hypotheses to record, not findings."),
+    }
+
+
 def _race_request(ctx: ToolContext, args: dict, methods: set[str],
                   schemes: tuple[str, ...]) -> tuple[str, str, dict, bytes | None]:
     """Build one scoped request shape shared by the race primitives."""
@@ -6136,6 +6188,7 @@ _HANDLERS.update({
     "plan_compile": plan_compile,
     "plan_library": plan_library,
     "plan_step_verify": plan_step_verify,
+    "plan_run": plan_run,
     "http_path_diff": http_path_diff,
     "reveng_analyze": reveng_analyze,
     "rea_analyze": rea_analyze,
@@ -8746,6 +8799,21 @@ TOOLS: tuple[Tool, ...] = (
                   "observation": _object("the recorded tool payload"),
                   "baseline": _object("optional baseline for changed checks")},
                  ["assertion", "observation"]), "plan_step_verify", read_only=True),
+    Tool("plan_run", "Compile and run a gated plan",
+         "Compile the best plan for a goal and signals, then run each step "
+         "through the real registry. Every step is judged by its verification "
+         "assertion before any model; supported steps produce follow-up "
+         "hypotheses as data. Read-only: it stages no finding.",
+         "medium", "workspace",
+         _schema({"goal": _string("what the plan should achieve"),
+                  "target": _string("the in-scope target"),
+                  "signals": _array("observed signals", {"type": "string"}),
+                  "mission_id": _string("mission whose scope authorizes the steps"),
+                  "scope": _array("explicit scope entries when no mission is used"),
+                  "profile": _string("stored auth profile for identity steps"),
+                  "extra": _object("extra placeholder values, e.g. parameter"),
+                  "max_steps": _integer("steps to run", 1, 12, 4)},
+                 ["target"]), "plan_run", read_only=True, open_world=True),
     Tool("single_packet_race", "HTTP/2 single-packet race",
          "Open one TLS/HTTP/2 connection, send every request's headers and all "
          "but the final body byte, then write every final DATA frame in one "

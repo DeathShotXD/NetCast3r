@@ -101,3 +101,11 @@ top risk, computed from a deterministic per-tool table. A step that carries a
 verification assertion needs no model call, so a fully gated plan reports zero
 model calls. The autonomy loop can use this to prefer a cheap plan before a loud
 one.
+
+## Running a plan
+
+`plan_run` compiles the best plan for a goal and its signals, refuses to run
+when arguments are missing, then executes each step through the real registry.
+Every step is gated by its assertion before any model, and each supported step
+contributes its plan's `followups` to a `cascade` list. The cascade is returned
+as data: it names the next hypotheses to record, and stages no finding.
