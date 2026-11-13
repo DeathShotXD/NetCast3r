@@ -84,3 +84,20 @@ Each plan also carries `followups` (anomaly cascade) and, where useful, a
   what to stage, and promotion still needs a replayable PoC.
 - No plan relaxation under model pressure. A failing gate is a signal to deepen,
   not to lower the bar.
+
+## Gates run before the model
+
+`steps.execute_steps` checks a step's `verify` assertion first. A `pass` becomes
+`supports` and a `fail` becomes `refutes` with no model call; only a `repeat`
+(transport refusal or missing field) falls back to the model judge. A model can
+therefore never override a deterministic gate. `VERIFY_ACTIONS` is the allowlist
+of read/probe tools a gated step may run, and it now covers the precise probe
+tools the plan library uses.
+
+## Effort estimate
+
+`plan_compile` returns an `estimate`: requests, model calls, seconds, and the
+top risk, computed from a deterministic per-tool table. A step that carries a
+verification assertion needs no model call, so a fully gated plan reports zero
+model calls. The autonomy loop can use this to prefer a cheap plan before a loud
+one.

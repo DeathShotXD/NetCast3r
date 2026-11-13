@@ -363,6 +363,7 @@ def compile_plan(goal: str = "", target: str = "", signals=None,
         "why": best["why"], "steps": best["steps"],
         "followups": best["followups"], "fallback": best["fallback"],
         "ready": best["ready"],
+        "estimate": estimate(best["steps"]),
         "missing_arguments": sorted({name for step in best["steps"]
                                      for name in step.get("missing_arguments", [])}),
         "note": ("A step counts only when the verifier passes its assertion. "
@@ -381,6 +382,46 @@ def _catalog():
         return TOOLS
     except Exception:  # noqa: BLE001
         return []
+
+
+# Rough, deterministic request counts per tool so the autonomy loop can prefer
+# a cheap plan before a loud one. A step that carries a verification assertion
+# needs no model call, which is the whole point of the gate.
+REQUEST_COST = {
+    "http_request": 1, "http_probe": 1, "host_probe": 4, "dns_posture": 20,
+    "takeover_scan": 2, "ws_audit": 4, "graphql_probe": 6, "oauth_audit": 1,
+    "cache_audit": 30, "source_disclosure_scan": 20, "injection_differential_probe": 12,
+    "input_reflection_probe": 12, "idor_sequence_probe": 12, "upload_policy_probe": 8,
+    "access_control_compare": 4, "path_traversal_probe": 10, "orm_leak_probe": 25,
+    "vhost_scan": 70, "http_path_diff": 8, "race_run": 50, "single_packet_race": 20,
+    "last_byte_race": 20, "oracle_extract": 600, "jwt_forge": 0, "oast_create": 1,
+}
+DEFAULT_REQUEST_COST = 3
+
+
+def estimate(steps) -> dict:
+    """Estimate requests, model calls, seconds, and risk for a step list."""
+    requests = 0
+    model_calls = 0
+    deterministic = 0
+    risk = "low"
+    for step in steps or []:
+        tool = str(step.get("tool") or "")
+        requests += int(REQUEST_COST.get(tool, DEFAULT_REQUEST_COST))
+        if step.get("verify"):
+            deterministic += 1
+        else:
+            model_calls += 1
+        step_risk = str(step.get("risk") or "").lower()
+        if _IMPACT.get(step_risk, 0) > _IMPACT.get(risk, 0):
+            risk = step_risk
+    seconds = round(requests * 0.5 + len(list(steps or [])) * 2.0, 1)
+    return {
+        "requests": requests, "model_calls": model_calls,
+        "deterministic_steps": deterministic, "seconds": seconds, "risk": risk,
+        "note": ("An estimate, not a promise. A step with a verification "
+                 "assertion needs no model call."),
+    }
 
 
 def summary() -> dict:

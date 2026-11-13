@@ -1051,6 +1051,8 @@ tool call. The UI can show whether an MCP client is alive without guessing.
   validation, and verification assertions attached to every step;
 - `plan_step_verify` and `verifier.verify_plan` op coverage, missing-field and
   transport `repeat` handling, and baseline `changed` checks;
+- `steps.execute_steps` sending a gated step to the deterministic verifier
+  before any model, and blocking non probe steps;
 - the `netcast3r://tools` resource, approval and submission templates, and
   their completions;
 - progress notifications flowing from a tool through `tools/call`;

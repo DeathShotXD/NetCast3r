@@ -68,6 +68,24 @@ class CompileTests(unittest.TestCase):
         self.assertTrue(result["candidates"])
         self.assertEqual(result["candidates"][0]["id"], result["chosen"])
 
+    def test_estimate_counts_no_model_when_gated(self):
+        result = planner.compile_plan(goal="websocket cswsh",
+                                      target="wss://app.example.com/chat",
+                                      signals=["websocket"], mission_id="msn_x")
+        estimate = result["estimate"]
+        self.assertEqual(estimate["model_calls"], 0)
+        self.assertEqual(estimate["deterministic_steps"], 1)
+        self.assertGreaterEqual(estimate["requests"], 1)
+
+    def test_estimate_direct(self):
+        estimate = planner.estimate([
+            {"tool": "http_request", "verify": [{"path": "status", "eq": 200}]},
+            {"tool": "oracle_extract", "verify": []},
+        ])
+        self.assertEqual(estimate["deterministic_steps"], 1)
+        self.assertEqual(estimate["model_calls"], 1)
+        self.assertGreater(estimate["requests"], 1)
+
     def test_unknown_tool_is_flagged(self):
         # A plan whose tool is not in the catalog must not pretend to be ready.
         original = planner.PLANS

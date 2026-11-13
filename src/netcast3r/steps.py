@@ -20,6 +20,13 @@ VERIFY_ACTIONS = {
     "oracle_extract", "race_run", "single_packet_race", "last_byte_race",
     "host_probe", "reveng_analyze", "access_control_compare", "git_dump",
     "jwt_forge",
+    # Precise read/probe tools the plan library and chains rely on.
+    "idor_sequence_probe", "injection_differential_probe",
+    "input_reflection_probe", "upload_policy_probe", "security_headers_audit",
+    "cors_policy_audit", "session_cookie_audit", "auth_cookie_probe",
+    "path_traversal_probe", "source_disclosure_scan", "takeover_scan",
+    "dns_posture", "vhost_scan", "cache_audit", "oauth_audit", "graphql_probe",
+    "orm_leak_probe", "ws_audit", "oast_create", "oast_poll", "oast_list",
 }
 
 VERIFIER_SYSTEM = """You are the verifier in NetCast3r.
@@ -153,10 +160,34 @@ def execute_steps(steps: list[dict], host: str, mission_id: str, registry,
         else:
             expected = str(step.get("expected") or step.get("evidence")
                            or step.get("goal") or "")
-            verdict = judge(complete, expected, {
-                "step": {key: step.get(key) for key in
-                         ("note", "goal", "technique", "expected", "name")},
-                "observation": observation})
+            gate = None
+            assertion = step.get("verify")
+            if assertion:
+                # A step that carries an assertion is judged deterministically
+                # first. Only a "repeat" (transport refusal or missing field)
+                # falls back to the model; a model can never override a pass or
+                # a fail. This is what keeps exploitation precise.
+                from . import verifier as verifier_module
+                gate = verifier_module.verify(assertion, observation,
+                                              step.get("baseline"))
+                if gate["verdict"] == "pass":
+                    verdict = {"verdict": "supports", "provider": "deterministic",
+                               "reason": gate.get("reason", "")}
+                elif gate["verdict"] == "fail":
+                    verdict = {"verdict": "refutes", "provider": "deterministic",
+                               "reason": gate.get("reason", "")}
+                else:
+                    verdict = judge(complete, expected, {
+                        "step": {key: step.get(key) for key in
+                                 ("note", "goal", "technique", "expected", "name")},
+                        "gate": gate,
+                        "observation": observation})
+                verdict["gate"] = gate
+            else:
+                verdict = judge(complete, expected, {
+                    "step": {key: step.get(key) for key in
+                             ("note", "goal", "technique", "expected", "name")},
+                    "observation": observation})
             if verdict["verdict"] == "supports":
                 supports += 1
             elif verdict["verdict"] == "refutes":
@@ -164,6 +195,8 @@ def execute_steps(steps: list[dict], host: str, mission_id: str, registry,
         results.append({"step": number, "tool": tool, "ok": not is_error,
                         "target": args.get("target", ""),
                         "observation": observation,
+                        "gate": (verdict.get("gate") if isinstance(verdict, dict)
+                                 else None),
                         "verdict": verdict.get("verdict", "inconclusive"),
                         "reason": verdict.get("reason", "")})
         if on_step:
