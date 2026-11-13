@@ -201,6 +201,18 @@ class DirectorTests(unittest.TestCase):
                     if "Deepen continuous hunt" in str(d.get("body") or ""))
         self.assertIn("raw request", body.lower())
 
+    def test_deepen_appends_a_gated_plan(self):
+        mission = self.mission("deepen-plan")
+        self.server.index.create_hypothesis(
+            title="Blind SQL injection in id", target=mission["target"],
+            mission_id=mission["id"], technique="sqli")
+        self.director._queue_deepen(mission["id"], {"no_progress": 3})
+        queued = self.server.index.list_directions(mission["id"], status="queued")
+        body = next(str(d.get("body") or "") for d in queued
+                    if "Deepen continuous hunt" in str(d.get("body") or ""))
+        self.assertIn("Gated plan", body)
+        self.assertIn("injection_differential_probe", body)
+
     def test_spa_shell_signal_steers_deepen_to_the_js_bundle(self):
         mission = self.mission("deepen-spa")
         self.server.index.add_agent_note(

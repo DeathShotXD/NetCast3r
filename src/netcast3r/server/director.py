@@ -925,6 +925,14 @@ class Director:
         if skipped:
             body += (" Do not retry an angle already edge-blocked or refused: "
                      + "; ".join(skipped[:5]) + ".")
+        # A gated plan turns the deepen hint into typed steps with prerequisites
+        # and gates, so the next run does not simply replay paths.
+        try:
+            plan_line, plan_id = self._plan_hint(mission_id)
+            if plan_line:
+                body += " " + plan_line
+        except Exception:  # noqa: BLE001 - a planner miss must not stop a stall
+            plan_id = ""
         try:
             existing = self.server.index.list_directions(
                 mission_id, status="queued", limit=20)
@@ -937,9 +945,40 @@ class Director:
                 "deepen", "queued deepen direction after stall",
                 mission_id=mission_id,
                 data={"no_progress": mstate.get("no_progress"),
-                      "hints": hints[:5], "skipped_blocked": skipped[:5]})
+                      "hints": hints[:5], "skipped_blocked": skipped[:5],
+                      "plan": plan_id})
         except Exception:  # noqa: BLE001
             pass
+
+    def _plan_hint(self, mission_id: str) -> tuple[str, str]:
+        """Compile a gated plan from the mission's signals for the deepen body."""
+        from .. import planner
+        mission = self.server.index.get_mission(mission_id) or {}
+        signals: list[str] = []
+        try:
+            hypotheses, _ = self.server.index.list_hypotheses(
+                mission_id=mission_id, limit=40)
+            for item in hypotheses:
+                for value in (item.get("technique"), item.get("title")):
+                    if value:
+                        signals.append(str(value))
+        except Exception:  # noqa: BLE001
+            pass
+        compiled = planner.compile_plan(
+            goal=str(mission.get("objective") or ""),
+            target=str(mission.get("target") or ""),
+            signals=signals[:12], mission_id=mission_id, candidates=False)
+        chosen = str(compiled.get("chosen") or "")
+        steps = compiled.get("steps") or []
+        if not chosen or not steps:
+            return "", ""
+        tools = " -> ".join(str(step.get("tool") or "") for step in steps)
+        gates = sum(1 for step in steps if step.get("verify"))
+        missing = compiled.get("missing_arguments") or []
+        line = (f"Gated plan {chosen}: {tools} ({gates} deterministic gate(s)).")
+        if missing:
+            line += f" Supply: {', '.join(missing[:4])}."
+        return line, chosen
 
     def _blocked_angles(self, mission_id: str) -> list[str]:
         """Return path fragments whose recorded probes were refused.

@@ -109,3 +109,12 @@ when arguments are missing, then executes each step through the real registry.
 Every step is gated by its assertion before any model, and each supported step
 contributes its plan's `followups` to a `cascade` list. The cascade is returned
 as data: it names the next hypotheses to record, and stages no finding.
+
+## The director uses plans
+
+When a mission stalls, the director asks the planner for a gated plan from the
+mission's own signals and appends it to the deepen direction ("Gated plan
+`sqli-differential`: `injection_differential_probe` -> `oracle_extract` (2
+deterministic gate(s))"). The next run therefore starts from typed steps with
+prerequisites and gates instead of a bare path replay. A planner miss is
+swallowed, so a stall can never fail because the planner failed.

@@ -44,7 +44,8 @@ through the real registry, and returns the follow-up hypotheses as data.
 `lead_dedupe` gives every lead a stable signature so the loop stops re-testing
 the same parameter. `desync_probe` sends hidden-header and Transfer-Encoding
 differentials to surface a parser discrepancy without smuggling. `redirect_chain`
-classifies a Location chain, and `saml_audit` reads a SAML response. See
+classifies a Location chain, and `saml_audit` reads a SAML response. When a
+mission stalls, the director appends a gated plan to the deepen direction. See
 `docs/PLANNER.md`.
 
 ## Native DNS and takeover checks
