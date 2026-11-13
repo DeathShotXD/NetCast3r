@@ -1,10 +1,9 @@
 <script lang="ts">
-  // The NetCast3r monogram: the dashboard plate with the N cut clean through
-  // it, so the letter is an opening and the acid light comes from inside the
-  // cut. The cut has an inner wall: a dark bevel on the lower edge, a lit rim
-  // on the upper edge, and a soft spill onto the surrounding surface. The plate
-  // stays square to the rail; the N is rotated seven degrees clockwise so the
-  // opening feels struck rather than placed.
+  // The NetCast3r monogram: no plate, no tile. The N is the cut itself, filled
+  // with acid light, with the depth of the cut shadowed along its inner edges
+  // and the light leaving it as smoke. The mark sits directly on the rail.
+  // The letter is rotated seven degrees clockwise so it feels struck into the
+  // surface rather than placed on it.
   let {
     size = 28,
     glow = true,
@@ -21,7 +20,7 @@
   class="nc-brandmark {klass}"
   width={size}
   height={size}
-  viewBox="-70 170 940 940"
+  viewBox="-30 230 820 820"
   fill="none"
   role="img"
   aria-label="NetCast3r"
@@ -33,132 +32,87 @@
       <path d="M720 6691 c-5 -11 -10 -82 -10 -160 0 -157 -6 -183 -50 -206 -42 -22 -40 -63 7 -139 36 -59 36 -59 26 -335 -12 -334 -19 -361 -98 -401 -68 -34 -87 -109 -78 -305 3 -77 0 -176 -7 -245 -7 -63 -14 -163 -16 -223 -2 -59 -8 -176 -15 -260 -7 -83 -13 -204 -14 -268 -1 -103 -3 -119 -23 -144 -39 -49 -22 -101 24 -75 30 17 35 25 55 90 11 34 20 46 36 48 42 6 47 -27 34 -224 -11 -167 -13 -181 -45 -253 -29 -65 -35 -91 -41 -186 -7 -116 -44 -317 -70 -378 -11 -27 -15 -71 -14 -164 0 -71 -5 -144 -11 -163 -6 -19 -15 -101 -20 -181 -4 -80 -13 -163 -18 -185 -34 -135 -19 -303 23 -250 8 11 15 29 15 40 0 12 11 42 25 68 25 48 45 167 45 276 0 30 11 86 24 125 13 40 30 109 37 155 14 93 27 119 53 109 14 -6 17 -15 12 -45 -3 -20 -11 -129 -16 -242 -6 -113 -15 -223 -21 -245 -13 -47 -25 -168 -39 -405 -11 -178 -22 -279 -39 -360 -6 -25 -10 -81 -10 -125 -1 -44 -6 -114 -13 -156 -11 -76 -11 -78 17 -124 33 -57 37 -222 10 -415 -16 -114 -37 -395 -39 -528 -1 -77 1 -85 23 -103 40 -32 65 -7 72 73 3 35 8 68 11 74 9 13 55 246 63 314 17 149 38 223 73 262 45 49 67 50 79 0 10 -44 36 -50 41 -9 2 18 -11 56 -37 107 -47 91 -50 118 -18 156 33 38 53 27 61 -35 12 -88 22 -98 69 -61 39 31 79 177 123 455 9 55 24 132 34 170 10 39 21 90 25 115 4 25 15 77 24 115 24 91 41 223 41 311 0 67 2 72 54 152 54 83 54 83 61 194 7 106 9 112 40 146 51 56 75 6 41 -85 -11 -29 -16 -112 -19 -343 -5 -300 -5 -307 -30 -370 -71 -178 -75 -390 -7 -390 51 0 79 79 110 320 14 107 34 164 65 184 36 24 49 55 50 116 0 55 0 55 34 56 24 0 40 8 55 26 11 14 41 32 65 39 63 19 67 10 74 -186 7 -171 15 -205 46 -205 46 0 56 32 61 209 6 170 11 192 53 238 17 20 21 43 28 180 5 88 16 185 25 218 12 44 16 90 13 170 -8 258 0 285 62 215 39 -45 39 -45 59 -22 21 25 23 42 39 247 16 201 15 231 -11 265 -34 46 -25 348 13 448 6 15 17 114 24 220 15 215 24 246 73 240 22 -2 33 -15 59 -63 29 -55 109 -135 135 -135 6 0 54 -37 107 -83 53 -46 116 -95 141 -109 197 -114 357 -303 188 -223 -76 36 -139 73 -163 95 -27 25 -38 25 -30 1 3 -11 1 -22 -5 -26 -5 -3 -10 -1 -10 5 0 6 -4 9 -9 6 -5 -4 -11 -1 -13 6 -2 6 -10 8 -17 4 -9 -6 -6 -12 11 -24 19 -14 81 -66 207 -176 66 -59 147 -146 176 -191 28 -45 122 -135 139 -135 4 0 20 9 35 21 34 25 70 11 172 -69 34 -26 71 -54 84 -62 13 -9 32 -25 42 -36 10 -12 50 -48 88 -81 39 -33 114 -98 168 -145 54 -47 136 -110 183 -139 145 -90 169 -132 111 -196 -34 -36 -34 -36 -82 -24 -56 14 -62 10 -46 -26 16 -36 79 -130 91 -138 20 -13 31 -85 21 -140 -7 -39 -7 -89 1 -166 8 -83 8 -130 0 -187 -8 -55 -9 -97 -1 -147 5 -38 12 -191 14 -340 5 -377 12 -460 40 -515 12 -25 26 -60 30 -77 6 -29 25 -47 25 -25 0 4 7 62 17 127 11 84 17 201 18 390 1 259 2 271 23 305 27 43 28 70 2 120 -25 49 -25 58 0 154 23 85 20 126 -12 190 -50 98 -27 225 29 168 10 -10 36 -31 58 -47 52 -39 215 -187 285 -260 141 -147 290 -285 308 -285 42 0 -43 163 -119 230 -105 93 -110 99 -107 122 5 36 30 32 75 -11 23 -21 85 -73 137 -115 155 -125 223 -198 418 -454 18 -23 53 -54 77 -68 45 -25 63 -25 43 -1 -16 19 -32 101 -22 111 16 16 152 -111 178 -165 16 -35 28 -49 43 -49 43 0 89 -40 314 -265 55 -56 125 -119 155 -142 78 -58 131 -120 260 -302 30 -42 70 -67 93 -58 23 9 21 37 -7 105 -60 145 -71 190 -53 228 21 42 22 84 3 109 -14 20 -15 20 -72 0 -57 -19 -57 -19 -89 18 -28 32 -33 47 -37 104 -4 63 -6 67 -50 107 -74 67 -119 96 -149 96 -37 0 -42 10 -45 103 -2 79 -2 79 41 75 29 -4 57 -16 85 -39 23 -19 70 -57 103 -84 34 -28 73 -58 87 -67 14 -8 59 -45 100 -82 41 -36 93 -74 115 -85 22 -10 86 -54 143 -97 56 -44 135 -102 175 -131 40 -28 116 -90 170 -136 53 -46 121 -97 150 -112 28 -16 102 -71 162 -123 61 -52 133 -110 160 -128 28 -19 84 -61 125 -94 41 -33 104 -81 140 -107 36 -25 90 -68 120 -93 73 -63 89 -70 152 -70 56 0 78 12 78 41 0 22 -113 125 -202 184 -37 25 -113 90 -170 145 -57 55 -131 116 -165 136 -34 20 -98 74 -142 120 -92 95 -275 255 -376 329 -50 36 -75 63 -92 96 -13 27 -56 78 -101 120 -106 101 -131 136 -145 207 -12 57 -18 66 -92 140 -112 110 -124 135 -102 205 21 67 13 94 -43 144 -22 20 -40 42 -40 50 0 19 55 16 71 -4 8 -9 37 -33 66 -54 28 -21 82 -66 120 -100 126 -113 183 -137 183 -77 0 28 -21 54 -167 204 -93 94 -189 196 -215 226 -30 35 -68 66 -105 84 -31 16 -79 52 -106 79 -27 28 -79 81 -115 118 -37 38 -79 75 -94 83 -16 8 -28 19 -28 24 0 5 -15 17 -32 26 -18 9 -94 77 -169 150 -75 72 -150 140 -165 150 -75 48 -194 147 -335 279 -103 96 -152 136 -180 147 -9 4 -45 28 -79 55 -74 57 -126 96 -160 120 -14 10 -51 38 -83 63 -33 25 -69 51 -80 59 -22 15 -153 127 -172 146 -5 6 -30 27 -55 47 -25 19 -74 63 -110 97 -36 34 -81 71 -100 81 -19 10 -57 37 -85 59 -27 22 -81 59 -120 82 -65 40 -216 162 -223 180 -2 5 -20 18 -40 31 -54 32 -211 151 -252 189 -41 39 -69 61 -163 125 -61 42 -71 45 -93 35 -23 -10 -25 -15 -19 -50 20 -119 -123 35 -155 167 -6 24 -27 60 -47 83 -36 40 -36 40 -93 33 -80 -9 -133 23 -280 174 -97 99 -321 303 -363 331 -16 10 -52 43 -81 74 -36 38 -76 66 -127 91 -47 22 -98 58 -139 96 -100 95 -109 99 -131 71 -15 -18 -19 -40 -19 -98 0 -61 -5 -87 -30 -143 -16 -38 -30 -71 -30 -75 0 -4 -9 -19 -20 -35 -11 -15 -27 -61 -35 -101 -8 -41 -29 -104 -45 -140 -30 -66 -75 -276 -99 -463 -23 -171 -68 -203 -105 -73 -10 32 -24 61 -33 64 -22 9 -60 -37 -73 -90 -6 -23 -20 -64 -31 -92 -12 -27 -29 -78 -39 -112 -9 -35 -22 -68 -28 -75 -5 -7 -17 -36 -25 -64 -8 -28 -24 -68 -35 -90 -10 -21 -25 -64 -32 -94 -13 -61 -68 -190 -81 -190 -30 0 -35 167 -9 296 12 55 30 151 41 214 11 63 27 137 34 164 8 27 15 72 15 99 0 38 7 61 29 96 34 52 46 101 56 216 25 305 57 562 76 605 41 89 50 127 60 235 5 61 19 148 30 194 32 127 13 201 -50 201 -40 0 -100 36 -166 100 -54 52 -197 140 -229 140 -25 0 -87 78 -111 139 -37 95 -71 125 -95 82z" />
     </g>
 
-    <!-- The light inside the opening is broad and even: the whole N is the
-         source, not a hotspot in the middle of it. -->
-    <radialGradient id="{uid}-burst" gradientUnits="userSpaceOnUse"
-                    cx="400" cy="640" r="720">
-      <stop offset="0" stop-color="#F8FFD6" />
-      <stop offset="0.45" stop-color="#D8FC5C" />
-      <stop offset="0.75" stop-color="#B4EE1E" />
-      <stop offset="1" stop-color="#86C110" />
-    </radialGradient>
-
-    <linearGradient id="{uid}-plate" x1="0" y1="0" x2="0.7" y2="1">
-      <stop offset="0" stop-color="#0C0816" />
-      <stop offset="0.52" stop-color="#050309" />
-      <stop offset="1" stop-color="#000000" />
+    <!-- The light inside the letter: bright and even across the whole N. -->
+    <linearGradient id="{uid}-light" gradientUnits="userSpaceOnUse"
+                    x1="150" y1="250" x2="720" y2="1000">
+      <stop offset="0" stop-color="#F4FFC4" />
+      <stop offset="0.3" stop-color="#DDFE6A" />
+      <stop offset="0.66" stop-color="#C8F81A" />
+      <stop offset="1" stop-color="#9BE010" />
     </linearGradient>
 
-    <linearGradient id="{uid}-rim" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#D08BF5" stop-opacity="0.55" />
-      <stop offset="0.46" stop-color="#4C2377" stop-opacity="0.26" />
-      <stop offset="1" stop-color="#9F23DD" stop-opacity="0.45" />
-    </linearGradient>
-
-    <linearGradient id="{uid}-sheen" x1="0" y1="0" x2="0.55" y2="1">
-      <stop offset="0" stop-color="#FFFFFF" stop-opacity="0.10" />
-      <stop offset="0.42" stop-color="#FFFFFF" stop-opacity="0.02" />
-      <stop offset="1" stop-color="#FFFFFF" stop-opacity="0" />
-    </linearGradient>
-
-    <!-- A clipPath whose child is a use of a group clips everything away in
-         Chromium, so the aperture uses a mask: black plate, white letter. -->
-    <mask id="{uid}-aperture" maskUnits="userSpaceOnUse"
-          x="-40" y="200" width="880" height="880">
-      <rect x="-40" y="200" width="880" height="880" fill="black" />
+    <!-- Masks, not clipPaths: a clipPath whose child is a use of a group
+         clips everything away in Chromium. -->
+    <mask id="{uid}-letter" maskUnits="userSpaceOnUse"
+          x="-30" y="230" width="820" height="820">
       <use href="#{uid}-n" fill="white" transform={cut} />
-    </mask>
-
-    <mask id="{uid}-cut" maskUnits="userSpaceOnUse"
-          x="-40" y="200" width="880" height="880">
-      <rect x="-40" y="200" width="880" height="880" rx="180" fill="white" />
-      <use href="#{uid}-n" fill="black" transform={cut} />
     </mask>
 
     <filter id="{uid}-innerblur" x="-30%" y="-30%" width="160%" height="160%">
       <feGaussianBlur stdDeviation="9" />
     </filter>
 
-    <filter id="{uid}-fog" x="-50%" y="-50%" width="200%" height="200%">
-      <feGaussianBlur stdDeviation="14" />
-    </filter>
-
     {#if glow}
-      <filter id="{uid}-bloom" x="-80%" y="-80%" width="260%" height="260%">
-        <feGaussianBlur stdDeviation="58" />
+      <filter id="{uid}-haze" x="-140%" y="-140%" width="380%" height="380%">
+        <feGaussianBlur stdDeviation="90" />
       </filter>
-      <filter id="{uid}-soft" x="-40%" y="-40%" width="180%" height="180%">
-        <feGaussianBlur stdDeviation="16" />
+      <filter id="{uid}-bloom" x="-90%" y="-90%" width="280%" height="280%">
+        <feGaussianBlur stdDeviation="52" />
+      </filter>
+      <filter id="{uid}-soft" x="-60%" y="-60%" width="220%" height="220%">
+        <feGaussianBlur stdDeviation="18" />
       </filter>
     {/if}
   </defs>
 
   {#if shadow}
-    <!-- The boot lockup sits above the surface: a soft violet underplate. -->
-    <rect x="-18" y="226" width="880" height="880" rx="180"
-          fill="#4C2377" opacity="0.38" filter="url(#{uid}-innerblur)" />
+    <!-- The boot lockup lifts the letter off the surface with a cast shadow. -->
+    <g transform={cut}>
+      <use href="#{uid}-n" fill="#000000" opacity="0.55"
+           transform="translate(14 20)" filter="url(#{uid}-innerblur)" />
+    </g>
   {/if}
 
   {#if glow}
-    <!-- Light escaping from the opening, before the plate resolves over it. -->
-    <g opacity="0.34" filter="url(#{uid}-bloom)">
-      <use href="#{uid}-n" fill="#C8F81A" transform={cut} />
+    <!-- Smoke leaving the cut: the same letter, blurred at four radii so the
+         light bleeds off the whole shape rather than glowing from one point.
+         The wide haze is the fog; the violet is only a hint of depth in it. -->
+    <g transform={cut} opacity="0.12" filter="url(#{uid}-haze)">
+      <use href="#{uid}-n" fill="#9F23DD" />
     </g>
-    <g opacity="0.5" filter="url(#{uid}-soft)">
-      <use href="#{uid}-n" fill="#C8F81A" transform={cut} />
+    <g transform={cut} opacity="0.28" filter="url(#{uid}-haze)">
+      <use href="#{uid}-n" fill="#C8F81A" />
+    </g>
+    <g transform={cut} opacity="0.30" filter="url(#{uid}-bloom)">
+      <use href="#{uid}-n" fill="#C8F81A" />
+    </g>
+    <g transform={cut} opacity="0.45" filter="url(#{uid}-soft)">
+      <use href="#{uid}-n" fill="#C8F81A" />
     </g>
   {/if}
 
-  <!-- The plate, with the N removed. -->
-  <g mask="url(#{uid}-cut)">
-    <rect x="-40" y="200" width="880" height="880" rx="180"
-          fill="url(#{uid}-plate)" />
-    <rect x="-40" y="200" width="880" height="880" rx="180"
-          fill="url(#{uid}-sheen)" opacity="0.5"
-          style="mix-blend-mode:screen" />
-  </g>
-
-  <!-- The shadow the cut casts back onto the plate. -->
-  <g mask="url(#{uid}-cut)">
+  <!-- The letter itself: light in the opening, shadow on the walls of the cut. -->
+  <g mask="url(#{uid}-letter)">
     <g transform={cut}>
-      <use href="#{uid}-n" fill="none" stroke="#000000" stroke-width="54"
-           opacity="0.72" transform="translate(16 22)"
+      <use href="#{uid}-n" fill="url(#{uid}-light)" />
+      <!-- The thickness of the cut, dark on every side, heavier at the bottom
+           right where the light does not reach. -->
+      <use href="#{uid}-n" fill="none" stroke="#000000" stroke-width="30"
+           opacity="0.30" filter="url(#{uid}-innerblur)" />
+      <use href="#{uid}-n" fill="none" stroke="#000000" stroke-width="58"
+           opacity="0.38" transform="translate(12 16)"
            filter="url(#{uid}-innerblur)" />
+      <!-- The crisp lip of the cut: a dark edge with no blur, so the letter
+           keeps a hard silhouette at rail size. -->
+      <use href="#{uid}-n" fill="none" stroke="#0B1304" stroke-width="12"
+           opacity="0.55" transform="translate(3 4)" />
+      <!-- The upper-left wall catches the light. -->
+      <use href="#{uid}-n" fill="none" stroke="#F7FFD0" stroke-width="7"
+           opacity="0.42" transform="translate(-3 -4)" />
+      <use href="#{uid}-n" fill="none" stroke="#9F23DD" stroke-width="3"
+           opacity="0.10" transform="translate(2 3)" />
     </g>
   </g>
-
-  <!-- The whole N leaves the cut as fog, so the light bleeds softly onto the
-       plate around it instead of glowing from one point. -->
-  <g opacity="0.30" filter="url(#{uid}-soft)">
-    <use href="#{uid}-n" fill="#C8F81A" transform={cut} />
-  </g>
-  <g opacity="0.18" filter="url(#{uid}-bloom)">
-    <use href="#{uid}-n" fill="#C8F81A" transform={cut} />
-  </g>
-
-  <!-- Inside the opening: broad, even light. The mask keeps the cut edge
-       crisp, while the wall shadow inside stays soft. -->
-  <g mask="url(#{uid}-aperture)">
-    <rect x="-40" y="200" width="880" height="880" fill="url(#{uid}-burst)" />
-    <g transform={cut}>
-      <!-- A soft shadow all around the inner edge gives the cut thickness
-           without drawing an outline. -->
-      <use href="#{uid}-n" fill="none" stroke="#000000" stroke-width="26"
-           opacity="0.22" filter="url(#{uid}-innerblur)" />
-      <use href="#{uid}-n" fill="none" stroke="#000000" stroke-width="54"
-           opacity="0.30" transform="translate(12 16)"
-           filter="url(#{uid}-innerblur)" />
-      <use href="#{uid}-n" fill="none" stroke="#9F23DD" stroke-width="4"
-           opacity="0.10" transform="translate(3 4)" />
-    </g>
-  </g>
-
-  <!-- A 1px violet hairline and a lit upper rim keep the plate part of the rail. -->
-  <rect x="-40" y="200" width="880" height="880" rx="180"
-        fill="none" stroke="url(#{uid}-rim)" stroke-width="1"
-        vector-effect="non-scaling-stroke" opacity="0.8" />
-  <path d="M142 200 H658" stroke="#F5E9DC" stroke-opacity="0.16"
-        stroke-width="1" vector-effect="non-scaling-stroke" />
 </svg>
 
 <style>
