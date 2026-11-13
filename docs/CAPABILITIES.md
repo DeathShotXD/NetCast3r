@@ -29,6 +29,16 @@ Output is parsed (`nmap` services, `nuclei` findings, `sqlmap` vulnerability,
 shared knowledge, and **candidates** with raw evidence. `toolbox_processes` and
 `toolbox_kill` manage long runs.
 
+## The proof engine
+
+`planner.py` compiles a goal and observed signals into an ordered, typed step
+graph over the real tool catalog: every step names a tool that exists, the
+arguments known from the target, the arguments still missing, and a
+verification assertion. `verifier.py` judges one observation against one
+assertion with no model, returning `pass`, `fail`, or `repeat` (a transport
+refusal or a missing field is `repeat`, never a pass). A model may reorder
+candidate plans but can never invent a step or relax a gate. See `docs/PLANNER.md`.
+
 ## Native DNS and takeover checks
 
 `dnsq.py` speaks DNS over UDP and TCP with no third-party dependency: IDNA name

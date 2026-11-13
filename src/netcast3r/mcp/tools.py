@@ -2337,6 +2337,11 @@ _ROUTE_RULES = (
      "scan the JavaScript for a source that reaches a request sink"),
     (r"websocket|\bcswsh\b|\bwss\b|\bws\b|origin check", "ws_audit",
      "complete a WebSocket upgrade from same and hostile origins"),
+    (r"multi-step plan|plan the chain|step graph|build a plan|proof plan",
+     "plan_compile",
+     "compile a gated plan, then run and verify each step"),
+    (r"verify the step|assertion|observation match", "plan_step_verify",
+     "judge the recorded observation against the assertion"),
     (r"redirect|status code|response body|endpoint|route|dashboard",
      "http_request",
      "capture the exact status, headers, and body for the named endpoint",
@@ -4556,6 +4561,40 @@ def ws_audit(ctx: ToolContext, args: dict) -> dict:
                      cookie=str(args.get("cookie") or ""), timeout=timeout)
 
 
+def plan_compile(ctx: ToolContext, args: dict) -> dict:
+    """Compile a typed, gated step plan from a goal and observed signals."""
+    from netcast3r import planner as _planner
+    return _planner.compile_plan(
+        goal=str(args.get("goal") or ""),
+        target=str(args.get("target") or ""),
+        signals=args.get("signals") or [],
+        mission_id=str(args.get("mission_id") or ""),
+        profile=str(args.get("profile") or ""),
+        extra=args.get("extra") or {},
+        candidates=bool(args.get("candidates", True)))
+
+
+def plan_library(ctx: ToolContext, args: dict) -> dict:
+    """Browse the compiled plan library."""
+    from netcast3r import planner as _planner
+    return _planner.library(str(args.get("query") or ""),
+                            int(args.get("limit", 50)))
+
+
+def plan_step_verify(ctx: ToolContext, args: dict) -> dict:
+    """Judge one observation against one assertion, deterministically."""
+    from netcast3r import verifier as _verifier
+    assertion = args.get("assertion")
+    if not isinstance(assertion, (dict, list)):
+        raise ToolError("invalid_arguments", "assertion must be an object or list")
+    if args.get("observation") is None:
+        raise ToolError("invalid_arguments", "observation is required")
+    result = _verifier.verify(assertion, args.get("observation"),
+                              args.get("baseline"))
+    result["assertion"] = assertion
+    return result
+
+
 def _race_request(ctx: ToolContext, args: dict, methods: set[str],
                   schemes: tuple[str, ...]) -> tuple[str, str, dict, bytes | None]:
     """Build one scoped request shape shared by the race primitives."""
@@ -6094,6 +6133,9 @@ _HANDLERS.update({
     "orm_leak_probe": orm_leak_probe,
     "csp_scan": csp_scan,
     "ws_audit": ws_audit,
+    "plan_compile": plan_compile,
+    "plan_library": plan_library,
+    "plan_step_verify": plan_step_verify,
     "http_path_diff": http_path_diff,
     "reveng_analyze": reveng_analyze,
     "rea_analyze": rea_analyze,
@@ -8674,6 +8716,36 @@ TOOLS: tuple[Tool, ...] = (
                   "scope": _array("explicit scope entries when no mission is used"),
                   "timeout": _integer("timeout in seconds", 2, 30, 8)},
                  ["target"]), "ws_audit", read_only=True, open_world=True),
+    Tool("plan_compile", "Compile a gated multi-step plan",
+         "Turn a goal and observed signals into an ordered, typed step graph "
+         "over the real tool catalog. Each step names a tool that exists, the "
+         "arguments known from the target, the arguments still missing, and a "
+         "verification assertion the deterministic verifier must satisfy. "
+         "Model-independent: it never invents a step or relaxes a gate.",
+         "low", "workspace",
+         _schema({"goal": _string("what the plan should achieve"),
+                  "target": _string("the in-scope target"),
+                  "signals": _array("observed signals", {"type": "string"}),
+                  "mission_id": _string("mission to bind the steps to"),
+                  "profile": _string("stored auth profile for identity steps"),
+                  "extra": _object("extra placeholder values, e.g. parameter"),
+                  "candidates": _boolean("include runner-up plans", True)},
+                 []), "plan_compile", read_only=True),
+    Tool("plan_library", "Browse the plan library",
+         "List the compiled plan templates with their signals and step tools.",
+         "low", "workspace",
+         _schema({"query": _string("text filter"),
+                  "limit": _integer("page size", 1, 100, 50)},
+                 []), "plan_library", read_only=True),
+    Tool("plan_step_verify", "Verify one step against its assertion",
+         "Judge a recorded observation against an explicit assertion with no "
+         "model: eq, ne, gte, lte, gt, lt, contains, not_contains, regex, in, "
+         "present, and changed-versus-baseline. Returns pass, fail, or repeat.",
+         "low", "workspace",
+         _schema({"assertion": _object("assertion object or {all: [checks]}"),
+                  "observation": _object("the recorded tool payload"),
+                  "baseline": _object("optional baseline for changed checks")},
+                 ["assertion", "observation"]), "plan_step_verify", read_only=True),
     Tool("single_packet_race", "HTTP/2 single-packet race",
          "Open one TLS/HTTP/2 connection, send every request's headers and all "
          "but the final body byte, then write every final DATA frame in one "

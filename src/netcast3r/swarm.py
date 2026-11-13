@@ -64,6 +64,7 @@ ROLE_ACTIONS = {
               "takeover_scan", "dns_posture", "vhost_scan",
               "cache_audit", "oauth_audit", "graphql_probe",
               "orm_leak_probe", "csp_scan", "ws_audit",
+              "plan_compile", "plan_library",
               "web_surface_inventory", "auth_flow_inventory",
               "reset_flow_inventory", "session_cookie_audit",
               "security_headers_audit", "cors_policy_audit",
@@ -92,7 +93,7 @@ ROLE_ACTIONS = {
                  "chain_execute"),
     "validator": ("hypothesis_list", "http_probe", "retest_request",
                   "access_control_compare", "lessons_list", "agent_notes_list",
-                  "auth_profile_list", "browser_snapshot"),
+                  "auth_profile_list", "browser_snapshot", "plan_step_verify"),
     "scribe": ("agent_notes_write", "agent_notes_list", "lessons_list",
                "evidence_pack"),
 }
