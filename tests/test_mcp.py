@@ -481,6 +481,28 @@ class MCPIntegrationTests(unittest.TestCase):
         self.assertIn("agent_notes_write", [item["tool"] for item in calls])
         self.assertIn("counts", payload["focus"]["coverage"])
 
+    def test_cascade_record_dedupes(self):
+        mission = self.create_mission(status="active")
+        items = [
+            {"title": "Check for an IDOR on order 7", "target":
+             "https://example.com/orders/7", "technique": "idor"},
+            {"title": "Check for an IDOR on order 8", "target":
+             "https://example.com/orders/8", "technique": "idor"},
+        ]
+        payload, is_error = self.call("cascade_record", mission_id=mission["id"],
+                                      items=items)
+        self.assertFalse(is_error, payload)
+        # the two items share a signature, so only the first is recorded
+        self.assertEqual(payload["created_count"], 1)
+        self.assertEqual(payload["skipped_count"], 1)
+        again, is_error = self.call("cascade_record", mission_id=mission["id"],
+                                    items=items)
+        self.assertFalse(is_error, again)
+        self.assertEqual(again["created_count"], 0)
+        self.assertEqual(again["skipped_count"], 2)
+        listed = self.call("hypothesis_list", mission_id=mission["id"])[0]
+        self.assertEqual(listed["total"], 1)
+
     def test_workspace_brief_folds_duplicate_leads(self):
         mission = self.create_mission(status="active")
         self.call("hypothesis_create", mission_id=mission["id"],

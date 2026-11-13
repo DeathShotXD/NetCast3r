@@ -2346,6 +2346,11 @@ _ROUTE_RULES = (
      "compile, run, and gate the plan, then record follow-up leads"),
     (r"dedupe|duplicate lead|same bug|consolidate leads", "lead_dedupe",
      "group leads that share a host, path, parameter, and class"),
+    (r"record the cascade|record follow-up|record the leads", "cascade_record",
+     "write the follow-up leads as hypotheses, skipping duplicates"),
+    (r"desync|request smuggling|parser discrepanc|cl\.te|te\.cl|cl\.0|"
+     r"transfer-encoding", "desync_probe",
+     "hide a header and compare the response to baseline, omitted, and masked"),
     (r"redirect|status code|response body|endpoint|route|dashboard",
      "http_request",
      "capture the exact status, headers, and body for the named endpoint",
@@ -4673,6 +4678,86 @@ def lead_dedupe(ctx: ToolContext, args: dict) -> dict:
     return result
 
 
+def cascade_record(ctx: ToolContext, args: dict) -> dict:
+    """Record follow-up leads as hypotheses, deduped. Explicit, never automatic."""
+    from netcast3r import leads as _leads
+    mission_id = str(args.get("mission_id") or "").strip()
+    if not mission_id:
+        raise ToolError("invalid_arguments", "mission_id is required")
+    items = args.get("items")
+    if items is None:
+        # Derive from a plan result: one follow-up per supported step.
+        plan = args.get("plan") if isinstance(args.get("plan"), dict) else {}
+        results = args.get("results") if isinstance(args.get("results"), list) else []
+        followups = plan.get("followups") or []
+        items = []
+        for row in results:
+            if row.get("verdict") != "supports":
+                continue
+            for follow in followups:
+                items.append({"title": str(follow),
+                              "target": str(row.get("target")
+                                            or plan.get("target") or ""),
+                              "technique": str(plan.get("title") or "")})
+    if not isinstance(items, list) or not items:
+        raise ToolError("invalid_arguments",
+                        "provide items, or a plan and results to derive them from")
+    items = [item for item in items if isinstance(item, dict)][:12]
+    existing = _call(ctx, "GET", "/api/v1/hypotheses",
+                     {"mission_id": mission_id, "limit": 200})
+    rows = existing.get("items") if isinstance(existing, dict) else []
+    have_title = {str(item.get("title") or "").lower() for item in (rows or [])}
+    have_signature = {_leads.signature_of(item) for item in (rows or [])}
+    created: list = []
+    skipped: list = []
+    for item in items:
+        title = str(item.get("title") or "").strip()
+        if not title:
+            continue
+        target = str(item.get("target") or "")
+        technique = str(item.get("technique") or "")
+        signature = _leads.signature(title, target, technique)
+        if title.lower() in have_title or (signature and not signature.startswith("|")
+                                           and signature in have_signature):
+            skipped.append({"title": title, "reason": "already recorded"})
+            continue
+        body = {key: item[key] for key in
+                ("title", "target", "technique", "rationale", "expected")
+                if item.get(key)}
+        body["mission_id"] = mission_id
+        payload = _call(ctx, "POST", "/api/v1/hypotheses", body=body)
+        created.append({"id": (payload.get("id") if isinstance(payload, dict) else None),
+                        "title": title})
+        have_title.add(title.lower())
+        if signature:
+            have_signature.add(signature)
+    return {
+        "created": created, "skipped": skipped,
+        "created_count": len(created), "skipped_count": len(skipped),
+        "note": ("Leads are recorded only when explicitly requested. A lead is a "
+                 "question with an expected observation, never a finding."),
+    }
+
+
+def desync_probe(ctx: ToolContext, args: dict) -> dict:
+    """Send parser-discrepancy probes to one scoped host."""
+    from netcast3r import desync as _desync
+    target = str(args.get("target") or "").strip()
+    if not target:
+        raise ToolError("invalid_arguments", "target is required")
+    base = target if "://" in target else f"https://{target}"
+    host = urlsplit(base).hostname
+    if not host:
+        raise ToolError("invalid_arguments", "target must be a host or URL")
+    _require_scope(ctx, host, str(args.get("mission_id") or ""),
+                   args.get("scope"), probe=True)
+    timeout = max(2.0, min(float(args.get("timeout", 8)), 30.0))
+    ctx.limiter.check("probe")
+    return _desync.probe(
+        base, timeout=timeout, header=str(args.get("header") or "Host"),
+        include_transfer_encoding=bool(args.get("include_transfer_encoding", True)))
+
+
 def _race_request(ctx: ToolContext, args: dict, methods: set[str],
                   schemes: tuple[str, ...]) -> tuple[str, str, dict, bytes | None]:
     """Build one scoped request shape shared by the race primitives."""
@@ -6248,6 +6333,8 @@ _HANDLERS.update({
     "plan_step_verify": plan_step_verify,
     "plan_run": plan_run,
     "lead_dedupe": lead_dedupe,
+    "cascade_record": cascade_record,
+    "desync_probe": desync_probe,
     "http_path_diff": http_path_diff,
     "reveng_analyze": reveng_analyze,
     "rea_analyze": rea_analyze,
@@ -8882,6 +8969,32 @@ TOOLS: tuple[Tool, ...] = (
                                   {"type": "object"}),
                   "mission_id": _string("mission whose hypotheses to dedupe")},
                  []), "lead_dedupe", read_only=True),
+    Tool("cascade_record", "Record follow-up leads as hypotheses",
+         "Turn plan follow-ups or an explicit item list into hypotheses, "
+         "skipping any that already share a title or a host/path/parameter/class "
+         "signature. Explicit and bounded: at most 12 per call, and a lead is "
+         "never a finding.",
+         "medium", "findings",
+         _schema({"mission_id": _string("mission to record the leads against"),
+                  "items": _array("lead objects with title, target, technique",
+                                  {"type": "object"}),
+                  "plan": _object("a compiled plan whose followups to record"),
+                  "results": _array("plan_run results to derive follow-ups from",
+                                    {"type": "object"})},
+                 ["mission_id"]), "cascade_record"),
+    Tool("desync_probe", "Detect a parser discrepancy (desync signal)",
+         "Send a header hidden in different shapes and Transfer-Encoding "
+         "obfuscations to one scoped host, one request per fresh connection, "
+         "and report a response that the baseline, omitted, and masked requests "
+         "do not produce. Detection only: no smuggled request is sent.",
+         "medium", "web",
+         _schema({"target": _string("in-scope host or URL"),
+                  "header": _string("header to hide, default Host"),
+                  "include_transfer_encoding": _boolean("also probe TE variants", True),
+                  "mission_id": _string("mission whose scope authorizes the probes"),
+                  "scope": _array("explicit scope entries when no mission is used"),
+                  "timeout": _integer("timeout in seconds", 2, 30, 8)},
+                 ["target"]), "desync_probe", read_only=True, open_world=True),
     Tool("single_packet_race", "HTTP/2 single-packet race",
          "Open one TLS/HTTP/2 connection, send every request's headers and all "
          "but the final body byte, then write every final DATA frame in one "

@@ -349,6 +349,7 @@ ITEMS = (
           "CL.TE, TE.CL, H2.CL, and TE obfuscation are tested behind the CDN with "
           "a timing confirmation.",
           modules=("server-request-smuggling",), severity="critical",
+          tools=("desync_probe",),
           evidence="a delayed next request or a poisoned response",
           source="WSTG v4.2 4.7"),
     _item("wstg-inpv-12", "WSTG", "input-validation",

@@ -71,6 +71,8 @@ ACTIONS = {
     "plan_step_verify": "judge one observation against an assertion",
     "plan_run": "compile, run, and gate a plan end to end",
     "lead_dedupe": "collapse duplicate leads by signature",
+    "cascade_record": "record follow-up leads as hypotheses, deduped",
+    "desync_probe": "detect a parser discrepancy with hidden-header probes",
     "technique_search": "search the research library by keyword",
     "technique_plan": "rank techniques for a target and its signals",
     "chain_search": "search the exploit-chain library",
@@ -130,7 +132,7 @@ DEFAULT_TARGET_ACTIONS = {
     "injection_differential_probe", "upload_policy_probe", "retest_request",
     "takeover_scan", "dns_posture", "vhost_scan",
     "cache_audit", "oauth_audit", "graphql_probe",
-    "orm_leak_probe", "ws_audit", "plan_compile", "plan_run",
+    "orm_leak_probe", "ws_audit", "plan_compile", "plan_run", "desync_probe",
 }
 TARGET_ALIASES = ("url", "uri", "host", "hostname", "target_url", "endpoint",
                   "base_url", "address")

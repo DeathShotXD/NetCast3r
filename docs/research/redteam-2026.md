@@ -39,7 +39,7 @@ risk profile of the tool.
 | ORM leaks (Django, Prisma, OData) | high (top-10 #2) | none | integrated `ormleak.py` + `orm_leak_probe` |
 | Unicode normalization / parser differential | high (top-10 #4, #10) | path variants only | next |
 | ETag / XS-Leak side channels | medium (top-10 #6) | none | length oracle in `oracle_extract` |
-| Request smuggling / desync | high | race primitives only | next |
+| Request smuggling / desync | high | race primitives only | parser-discrepancy detection in `desync.py` + `desync_probe` |
 | SSRF redirect loops | medium (top-10 #3) | SSRF classify | next |
 | WebSocket / CSWSH | medium | none | integrated `wsprobe.py` + `ws_audit` |
 | SAML injection | medium | none | next |
@@ -112,16 +112,21 @@ ingestion, and secret hunting.
   a cookie-authenticated socket is CSWSH. The handshake is the whole test; no
   frame is sent after the upgrade.
 
+### Parser discrepancies / desync signal (`src/netcast3r/desync.py`)
+
+- Sends a header hidden in different shapes (leading space, trailing space, tab
+  before the colon, double colon, null after the name, newline value) plus
+  Transfer-Encoding obfuscations, one request per fresh connection. A response
+  that the baseline, omitted, and masked requests do not produce is a parser
+  discrepancy. Detection only: no smuggled request is ever sent.
+
 Each module is dependency-free, transport-injectable, and tested offline.
 
 ## 4. What remains, in order
 
-1. Unicode normalization and encoding-transformation variants folded into
-   `pathdiff.py`.
-2. Desync probes (CL.TE, TE.CL, CL.0, H2.CL, H2.TE) built on the existing race
-   transport, with a confirmation repeat before a hit counts.
-3. SSRF redirect-loop detection layered onto the SSRF verdicts.
-4. SAML assertion analysis and reverse-proxy misconfiguration probes.
+1. SSRF redirect-loop detection layered onto the SSRF verdicts.
+2. SAML assertion analysis and reverse-proxy misconfiguration probes.
+3. Confirm a detected parser discrepancy in a lab desync farm.
 
 Every one should arrive the same way this pass did: a deterministic module, an
 injectable transport, a scope-gated read-only tool, a checklist link, and

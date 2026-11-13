@@ -27,6 +27,7 @@ VERIFY_ACTIONS = {
     "path_traversal_probe", "source_disclosure_scan", "takeover_scan",
     "dns_posture", "vhost_scan", "cache_audit", "oauth_audit", "graphql_probe",
     "orm_leak_probe", "ws_audit", "oast_create", "oast_poll", "oast_list",
+    "desync_probe",
 }
 
 VERIFIER_SYSTEM = """You are the verifier in NetCast3r.
