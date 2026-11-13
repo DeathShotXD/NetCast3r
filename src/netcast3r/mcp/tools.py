@@ -2248,6 +2248,232 @@ def hypothesis_evidence(ctx: ToolContext, args: dict) -> dict:
                  query=query)
 
 
+def _target_query_keys(target: str) -> list[str]:
+    """Query parameter names already present in a hypothesis target."""
+    raw = str(target or "").strip()
+    if not raw:
+        return []
+    try:
+        parts = urlsplit(raw if "://" in raw else "https://" + raw)
+    except ValueError:
+        return []
+    return [key for key, _ in parse_qsl(parts.query, keep_blank_values=True)]
+
+
+def _git_repo_target(target: str) -> str:
+    """Point git-dumper at the site root, not at a .git/config file."""
+    raw = str(target or "").strip()
+    if not raw:
+        return raw
+    try:
+        parts = urlsplit(raw if "://" in raw else "https://" + raw)
+    except ValueError:
+        return raw
+    path = parts.path or "/"
+    marker = path.find("/.git")
+    if marker >= 0:
+        path = path[:marker] or "/"
+    return f"{parts.scheme}://{parts.netloc}{path}"
+
+
+# Ordered by specificity. The first field with a match wins: a human-written
+# title outranks a stale technique, which outranks a derived rationale. Within
+# that field every matching rule is returned, primary first.
+_ROUTE_RULES = (
+    (r"\bgit\b|\.git\b|repository|commit history|repo dump", "git_dump",
+     "recover the exposed repository, then audit the recovered tree"),
+    (r"\bsql\b|\bsqli\b|sql injection|union select|mysql|database error|"
+     r"error-based", "injection_differential_probe",
+     "compare a baseline parameter with syntax-character variants"),
+    (r"\bxss\b|reflection|reflected|cross-site script", "input_reflection_probe",
+     "place one inert marker in each parameter and read its reflection context"),
+    (r"\bidor\b|\bbola\b|object reference|cross-account|another user|ownership",
+     "idor_sequence_probe",
+     "replace the object id with controlled ids and compare scoped responses"),
+    (r"traversal|\blfi\b|local file|file read|path parameter",
+     "path_traversal_probe",
+     "send plain, parent-directory, and encoded paths through the file parameter"),
+    (r"upload|multipart|file extension|\bmime\b", "upload_policy_probe",
+     "compare extension and MIME handling with inert canaries"),
+    (r"cookie|session fixation|auth bypass|authentication bypass|"
+     r"login handler|login bypass", "auth_cookie_probe",
+     "read the login handler with bounded cookie payloads, then check a protected page"),
+    (r"access control|authorization|role|privilege|\badmin\b",
+     "access_control_compare",
+     "replay one request anonymously and with stored profiles, then compare shape"),
+    (r"\bjwt\b|json web token|token confusion|\balg\b", "jwt_forge",
+     "build the exact token from a key recovered from source or an artifact"),
+    (r"encoding|normalization|case-variant|slash|path diff", "http_path_diff",
+     "send literal, encoded, and case-varied paths, then compare divergence"),
+    (r"graphql|introspection", "http_request",
+     "ask for __typename first, then test field-level authorization",
+     {"method": "POST", "json": {"query": "{__typename}"}}),
+    (r"\bssrf\b|server-side request|callback|out-of-band|\boob\b|"
+     r"169\.254\.169\.254", "oast_create",
+     "create a controlled callback, then aim the server-side fetch at it"),
+    (r"header|\bcsp\b|\bhsts\b|x-frame", "security_headers_audit",
+     "read the actual response headers before judging the policy"),
+    (r"\bcors\b|origin", "cors_policy_audit",
+     "compare the preflight and actual response for the named origin"),
+    (r"source disclosure|backup|\.env\b|phpinfo|debug page|config file",
+     "source_disclosure_scan",
+     "fetch a bounded path list through the confirmed file-read template"),
+    (r"takeover|dangling cname|\bcname\b|unclaimed subdomain", "takeover_scan",
+     "resolve the CNAME chain and compare the terminal service to the fingerprint table"),
+    (r"\bspf\b|dmarc|dkim|\bcaa\b|zone transfer|\baxfr\b|mail posture",
+     "dns_posture",
+     "read NS, MX, and the SPF/DMARC/DKIM TXT records"),
+    (r"redirect|status code|response body|endpoint|route|dashboard",
+     "http_request",
+     "capture the exact status, headers, and body for the named endpoint",
+     {"method": "GET", "follow_redirects": False, "max_bytes": 32768}),
+)
+
+
+def _hypothesis_routes(hypothesis: dict, target: str, mission_id: str,
+                       policy: str) -> tuple[dict | None, list[dict], str]:
+    """Rank concrete tests for one hypothesis without running anything."""
+    fields = (
+        ("title", str(hypothesis.get("title") or "")),
+        ("technique", str(hypothesis.get("technique") or "")),
+        ("rationale", str(hypothesis.get("rationale") or "")),
+        ("expected", str(hypothesis.get("expected") or "")),
+    )
+    query_keys = _target_query_keys(target)
+    base = {"mission_id": mission_id} if mission_id else {}
+    if target:
+        base["target"] = target
+
+    def build(rule) -> dict | None:
+        pattern, tool_name, why = rule[:3]
+        extra = dict(rule[3]) if len(rule) > 3 else {}
+        tool = _TOOL_MAP.get(tool_name)
+        if tool is None:
+            return None
+        arguments = dict(base)
+        arguments.update(extra)
+        adjusted = False
+        if tool_name == "git_dump" and target:
+            arguments["target"] = _git_repo_target(target)
+            adjusted = arguments["target"] != target
+        if tool_name == "injection_differential_probe" and len(query_keys) == 1:
+            arguments["parameter"] = query_keys[0]
+        if tool_name == "input_reflection_probe" and query_keys:
+            arguments["parameters"] = query_keys
+        if tool_name == "oast_create":
+            arguments["label"] = str(hypothesis.get("id") or "hypothesis")
+        if tool_name == "dns_posture" and target:
+            host = urlsplit(target if "://" in target else f"https://{target}").hostname
+            if host:
+                arguments.pop("target", None)
+                arguments["domain"] = host
+        required = tool.input_schema.get("required") or []
+        missing = [name for name in required
+                   if name not in arguments
+                   or arguments[name] in ("", None, [])]
+        return {
+            "tool": tool_name,
+            "arguments": arguments,
+            "why": why,
+            "risk": tool.risk,
+            "read_only": tool.read_only,
+            "requires": _tool_requires(tool, policy),
+            "missing_arguments": missing,
+            "ready": not missing,
+            "target_adjusted": adjusted,
+        }
+
+    matched_on = ""
+    routes: list[dict] = []
+    for name, text in fields:
+        low = text.lower()
+        if not low.strip():
+            continue
+        candidates = [rule for rule in _ROUTE_RULES
+                      if re.search(rule[0], low)]
+        if not candidates:
+            continue
+        matched_on = name
+        for rule in candidates:
+            route = build(rule)
+            if route is not None:
+                routes.append(route)
+        break
+    if not routes:
+        route = build(_ROUTE_RULES[-1])
+        if route is not None:
+            routes = [route]
+            matched_on = "fallback"
+    return (routes[0] if routes else None), routes[1:4], matched_on
+
+
+def hypothesis_route(ctx: ToolContext, args: dict) -> dict:
+    """Turn one hypothesis into a concrete next test without executing it."""
+    hypothesis = _call(ctx, "GET", f"/api/v1/hypotheses/{args['hypothesis_id']}")
+    mission_id = str(args.get("mission_id")
+                     or hypothesis.get("mission_id") or "")
+    mission = _mission(ctx, mission_id) if mission_id else None
+    target = str(hypothesis.get("target")
+                 or (mission or {}).get("target") or "")
+    route, alternatives, matched_on = _hypothesis_routes(
+        hypothesis, target, mission_id, ctx.policy)
+
+    scope = {"target": target, "in_scope": None, "rules": []}
+    if target:
+        entries = _scope_entries(mission)
+        scope["rules"] = entries
+        if entries:
+            manager = ScopeManager(in_scope=entries)
+            scope["in_scope"] = manager.is_in_scope(target)
+
+    evidence, evidence_error = _safe_call(
+        ctx, "GET", f"/api/v1/hypotheses/{hypothesis['id']}/evidence",
+        {"limit": 20})
+    ranked = []
+    if mission_id:
+        actions, _ = _safe_call(
+            ctx, "GET", f"/api/v1/missions/{mission_id}/next-actions")
+        if isinstance(actions, dict):
+            for action in actions.get("actions") or []:
+                action_args = (action.get("args")
+                               if isinstance(action.get("args"), dict) else {})
+                if str(action_args.get("hypothesis_id") or "") == hypothesis["id"]:
+                    ranked.append({
+                        "title": action.get("title"),
+                        "why": action.get("why"),
+                        "tool": action.get("tool"),
+                        "arguments": action_args,
+                        "risk": action.get("risk"),
+                    })
+
+    return {
+        "ok": True,
+        "hypothesis": {
+            "id": hypothesis.get("id"),
+            "mission_id": hypothesis.get("mission_id"),
+            "target": hypothesis.get("target"),
+            "title": hypothesis.get("title"),
+            "technique": hypothesis.get("technique"),
+            "status": hypothesis.get("status"),
+            "test": hypothesis.get("test"),
+            "result": hypothesis.get("result"),
+            "finding_id": hypothesis.get("finding_id"),
+        },
+        "progress": (evidence.get("progress")
+                     if isinstance(evidence, dict) else None),
+        "counts": (evidence.get("counts")
+                   if isinstance(evidence, dict) else None),
+        "evidence_error": evidence_error,
+        "scope": scope,
+        "matched_on": matched_on,
+        "route": route,
+        "alternatives": alternatives,
+        "server_ranked": ranked[:3],
+        "note": "Read-only routing. Nothing was executed. Every suggested call "
+                "still passes the registry's scope, policy, and approval gates.",
+    }
+
+
 def leads_sync(ctx: ToolContext, args: dict) -> dict:
     return _call(ctx, "POST",
                  f"/api/v1/missions/{args['mission_id']}/leads/sync",
@@ -4101,6 +4327,57 @@ def host_probe(ctx: ToolContext, args: dict) -> dict:
     }
 
 
+def takeover_scan(ctx: ToolContext, args: dict) -> dict:
+    """Check scoped names for a dangling CNAME. Reads DNS and HTTP only."""
+    from netcast3r import takeover as _takeover
+    mission_id = str(args.get("mission_id") or "")
+    scope = args.get("scope")
+    names: list[str] = []
+    target = str(args.get("target") or "").strip()
+    if target:
+        host = urlsplit(target if "://" in target else f"https://{target}").hostname
+        if not host:
+            raise ToolError("invalid_arguments", "target must be a host or URL")
+        names.append(host.lower())
+    for value in (args.get("hosts") or []):
+        name = str(value).strip().lower().rstrip(".")
+        if name:
+            names.append(name)
+    names = list(dict.fromkeys(names))
+    if not names:
+        raise ToolError("invalid_arguments", "target or hosts is required")
+    if len(names) > 200:
+        raise ToolError("invalid_arguments", "at most 200 hosts per scan")
+    for name in names:
+        _require_scope(ctx, name, mission_id, scope, probe=True)
+    timeout = max(2.0, min(float(args.get("timeout", 8)), 30.0))
+    ctx.limiter.check("probe")
+    result = _takeover.scan(names, limit=len(names), timeout=timeout)
+    result["note"] = ("A vulnerable verdict is a dangling delegation, not a "
+                      "claim. Confirm ownership before touching the provider.")
+    return result
+
+
+def dns_posture(ctx: ToolContext, args: dict) -> dict:
+    """Read the DNS and email posture for one scoped apex domain."""
+    from netcast3r import dnsposture as _dnsposture
+    domain = str(args.get("domain") or args.get("target") or "").strip().lower()
+    if not domain:
+        raise ToolError("invalid_arguments", "domain is required")
+    domain = urlsplit(domain if "://" in domain else f"https://{domain}").hostname or ""
+    domain = domain.rstrip(".")
+    if not domain:
+        raise ToolError("invalid_arguments", "domain must be a host name")
+    mission_id = str(args.get("mission_id") or "")
+    _require_scope(ctx, domain, mission_id, args.get("scope"), probe=True)
+    timeout = max(2.0, min(float(args.get("timeout", 5)), 30.0))
+    ctx.limiter.check("probe")
+    return _dnsposture.posture(
+        domain, timeout=timeout,
+        zone_transfer=bool(args.get("zone_transfer")),
+        dkim_selectors=args.get("dkim_selectors") or None)
+
+
 def _race_request(ctx: ToolContext, args: dict, methods: set[str],
                   schemes: tuple[str, ...]) -> tuple[str, str, dict, bytes | None]:
     """Build one scoped request shape shared by the race primitives."""
@@ -5533,6 +5810,7 @@ _HANDLERS.update({
     "hypothesis_list": hypothesis_list,
     "hypothesis_get": hypothesis_get,
     "hypothesis_evidence": hypothesis_evidence,
+    "hypothesis_route": hypothesis_route,
     "leads_sync": leads_sync,
     "hypothesis_test": hypothesis_test,
     "hypothesis_promote": hypothesis_promote,
@@ -5629,6 +5907,8 @@ _HANDLERS.update({
     "single_packet_race": single_packet_race,
     "last_byte_race": last_byte_race,
     "host_probe": host_probe,
+    "takeover_scan": takeover_scan,
+    "dns_posture": dns_posture,
     "http_path_diff": http_path_diff,
     "reveng_analyze": reveng_analyze,
     "rea_analyze": rea_analyze,
@@ -7065,6 +7345,16 @@ TOOLS: tuple[Tool, ...] = (
                   "rationale": _string("why this target should be vulnerable"),
                   "expected": _string("observation that would support it")},
                  ["title"]), "hypothesis_create"),
+    Tool("hypothesis_route", "Route a hypothesis to a concrete test",
+         "Read one hypothesis and its evidence, then name the next concrete tool "
+         "that could test it. Known arguments are filled from the hypothesis "
+         "target; required arguments still missing are listed. A title outranks "
+         "a stale technique, so a Git lead is routed to git_dump even when its "
+         "technique field says something else. Read-only: nothing is executed.",
+         "low", "findings",
+         _schema({"hypothesis_id": _string("hypothesis id"),
+                  "mission_id": _string("optional mission override")},
+                 ["hypothesis_id"]), "hypothesis_route", read_only=True),
     Tool("hypothesis_list", "List hypotheses",
          "List recorded hypotheses, optionally filtered by mission, status, or text.",
          "low", "findings",
@@ -8081,6 +8371,32 @@ TOOLS: tuple[Tool, ...] = (
                                   {"type": "integer"}),
                   "timeout": _integer("per-port timeout in seconds", 1, 20, 3)},
                  ["target"]), "host_probe", open_world=True),
+    Tool("takeover_scan", "Detect dangling-CNAME subdomain takeover",
+         "Resolve the CNAME chain for one or more scoped names, match the "
+         "terminal service against a pinned fingerprint table, and confirm with "
+         "the provider's own unclaimed-name response. Read-only: it reads DNS "
+         "and one HTTP page and never claims a name.",
+         "medium", "recon",
+         _schema({"target": _string("in-scope host or URL"),
+                  "hosts": _array("extra in-scope host names", {"type": "string"}),
+                  "mission_id": _string("mission whose scope authorizes the scan"),
+                  "scope": _array("explicit scope entries when no mission is used"),
+                  "timeout": _integer("per-host timeout in seconds", 2, 30, 8)},
+                 ["target"]), "takeover_scan", read_only=True, open_world=True),
+    Tool("dns_posture", "Read DNS and email posture",
+         "Read NS, MX, SOA, and CAA records plus the SPF, DMARC, and DKIM TXT "
+         "records for one scoped apex domain, and optionally attempt an AXFR. "
+         "Reports misconfigurations as findings. Read-only.",
+         "low", "recon",
+         _schema({"domain": _string("in-scope apex domain"),
+                  "target": _string("alias for domain"),
+                  "mission_id": _string("mission whose scope authorizes the reads"),
+                  "scope": _array("explicit scope entries when no mission is used"),
+                  "zone_transfer": _boolean("attempt an AXFR (visible to the NS)", False),
+                  "dkim_selectors": _array("DKIM selectors to test",
+                                           {"type": "string"}),
+                  "timeout": _integer("per-query timeout in seconds", 2, 30, 5)},
+                 []), "dns_posture", read_only=True, open_world=True),
     Tool("single_packet_race", "HTTP/2 single-packet race",
          "Open one TLS/HTTP/2 connection, send every request's headers and all "
          "but the final body byte, then write every final DATA frame in one "

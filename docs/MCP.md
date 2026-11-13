@@ -6,7 +6,7 @@ process that drives the same HTTP API the Svelte UI uses. A scan started by an
 agent appears in the dashboard. A human decision in the dashboard is visible to
 the agent. There is one database and one audit trail.
 
-Status: implemented and tested · 2026-11-13 · MCP protocol `2025-06-18` · 288 tools
+Status: implemented and tested · 2026-11-13 · MCP protocol `2025-06-18` · 291 tools
 
 ---
 
@@ -164,9 +164,9 @@ A short wait (1.5 s or less) is slept instead of refused. Longer waits return
 
 ## 3. The autonomy spine
 
-Six read-only tools make the 288-tool surface navigable and safe to drive in a
-loop. They are ordinary tools: same schema validation, same policy, same audit.
-None of them can mutate state, decide an approval, or submit a report.
+Seven read-only tools make the 291-tool surface navigable and safe to drive in
+a loop. They are ordinary tools: same schema validation, same policy, same
+audit. None of them can mutate state, decide an approval, or submit a report.
 
 | Tool | What it does |
 | --- | --- |
@@ -174,13 +174,16 @@ None of them can mutate state, decide an approval, or submit a report.
 | `tool_describe` | The authoritative contract for one tool: full schema, required and optional arguments, placeholder example arguments, policy gate, resource templates, and related tools. |
 | `tool_batch` | Run up to 12 read-only tools in one call. Every sub-call passes the real registry gates: schema, policy, scope, rate limit, and its own audit row. Nested batches are refused. |
 | `workspace_brief` | The resume brain: workspace counters, active missions, live runs, the focused mission's latest run and stored operator directive, open hypotheses split into actionable and dead ends, recent notes and tool calls, coverage, stall detection, pending approvals, the publish gate, and ranked `recommended_calls` grounded in stored records. |
+| `hypothesis_route` | Turn one stored lead into a concrete next test. The route names the tool, the arguments already known from the hypothesis target, the required arguments still missing, and whether the call is ready. Field order is title, technique, rationale, expected, so a fresh title outranks a stale technique. Nothing is executed. |
 | `run_watch` | Long-poll one run instead of hammering `runs_events`. `until=any` returns on the first new event; `until=terminal` accumulates events until the run leaves queued/running. Cap 60 s. |
 | `tool_health` | Preflight: catalog counts, policy step-up counts, database integrity, provider health, pending approvals, and per-check status. |
 
-134 of the 288 tools are labelled `read_only`, and 130 of those are eligible for
+137 of the 291 tools are labelled `read_only`, and 131 of those are eligible for
 context-mode batches. A tool only carries the label when its handler is a pure
-read; the two open-world TAXII reads stay `read_only` but are excluded from
-`context` batches so a batch cannot touch the network.
+read; the six open-world tools (`taxii_collections`, `taxii_poll`,
+`sampling_complete`, `http_probe`, `takeover_scan`, `dns_posture`) stay
+`read_only` but are excluded from `context` batches so a batch cannot touch the
+network or the client.
 
 `tool_batch` has two modes:
 
@@ -269,7 +272,7 @@ Tokens are bound per call and restored afterwards.
 
 ## 4. Tools
 
-288 tools, grouped by job. Every tool publishes a JSON schema with
+291 tools, grouped by job. Every tool publishes a JSON schema with
 `additionalProperties: false`; unknown arguments are rejected rather than
 silently ignored.
 
@@ -282,6 +285,7 @@ silently ignored.
 | `tool_describe` | low | Full schema, policy gate, and examples for one tool |
 | `tool_batch` | low | Up to 12 read-only tools through the real gates |
 | `workspace_brief` | low | Planner snapshot with grounded recommended calls |
+| `hypothesis_route` | low | Route one lead to a concrete tool and its missing arguments |
 | `tool_health` | low | Catalog, runtime, database, and provider preflight |
 | `tool_calls_list` | low | Read the audit trail |
 | `self_audit` / `diagnostics` | low | Local posture and database integrity |
@@ -678,6 +682,8 @@ stored, so experience cannot be invented:
 | `offsec_frameworks` | low | Map Metasploit, BloodHound, Impacket, etc. to real NetCast3r coverage |
 | `boot2root_plan` | low | Turn an OS and service list into a phased host route |
 | `host_probe` | medium | Explicit-port banner and TLS certificate grab |
+| `takeover_scan` | medium | Dangling-CNAME subdomain takeover check against a pinned fingerprint table |
+| `dns_posture` | low | NS, MX, SOA, CAA, SPF, DMARC, and DKIM posture, with opt-in AXFR |
 | `single_packet_race` | medium | HTTP/2 last-byte-aligned burst for check-then-act bugs |
 | `last_byte_race` | medium | HTTP/1.1 burst that releases every request's final byte together |
 | `research_sources` | low | Coverage of the technique library by class and rarity |
@@ -1003,8 +1009,16 @@ tool call. The UI can show whether an MCP client is alive without guessing.
 - `workspace_brief` live and unavailable sections, grounded recommendations,
   the stored operator directive, dead-end `avoid` filtering, recent notes and
   tool calls, and the stalled-mission flag;
+- `hypothesis_route` field precedence, Git target normalization, argument
+  filling from the target query, and missing-argument reporting;
 - `run_watch` terminal accumulation, cursor resumption, and unknown runs;
 - `tool_health` catalog/runtime/provider checks;
+- the native DNS client's name encoding, record decoding, compression-pointer
+  handling, rcode reporting, and CNAME-chain resolution;
+- `takeover_scan` service matching, NXDOMAIN verdicts, body fingerprints,
+  claimed detection, and scan ranking;
+- `dns_posture` SPF/DMARC parsing, permissive-policy findings, DKIM selector
+  discovery, and the opt-in AXFR verdict;
 - the `netcast3r://tools` resource, approval and submission templates, and
   their completions;
 - progress notifications flowing from a tool through `tools/call`;

@@ -76,6 +76,14 @@ ITEMS = (
           tools=("gau", "waybackurls", "katana"), severity="low",
           evidence="archived URLs that still answer or differ",
           source="WSTG v4.2 4.1"),
+    _item("wstg-info-06", "WSTG", "information-gathering",
+          "Read DNS and email posture",
+          "NS, MX, SOA, and CAA records plus SPF, DMARC, and DKIM policies are "
+          "read; a permissive SPF, a monitor-only DMARC, or a missing CAA is a "
+          "lead to corroborate.",
+          tools=("dns_posture", "dig"), severity="low",
+          evidence="the record set and the exact policy that is weak",
+          source="WSTG v4.2 4.2 / M3AAWG sender best practice"),
     # -- WSTG 4.2 configuration and deployment --------------------------
     _item("wstg-conf-01", "WSTG", "configuration",
           "Test transport security and HSTS",
@@ -680,7 +688,7 @@ ITEMS = (
           "Test subdomain takeover candidates",
           "Dangling CNAMEs and unclaimed SaaS names are identified and claimed "
           "only with a harmless marker.",
-          tools=("subzy", "dnsx", "httpx"), severity="high",
+          tools=("takeover_scan", "subzy", "dnsx"), severity="high",
           evidence="an unclaimed host that serves attacker content",
           source="Taken over baseline"),
     # -- mobile ---------------------------------------------------------

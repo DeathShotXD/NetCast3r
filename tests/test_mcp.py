@@ -486,6 +486,61 @@ class MCPIntegrationTests(unittest.TestCase):
         self.assertEqual(len(opened["items"]), 10)
         self.assertEqual(len(payload["avoid"]), 2)
 
+    def test_hypothesis_route_picks_a_concrete_test_and_names_missing_arguments(self):
+        mission = self.create_mission()
+        self.assertTrue(_TOOL_MAP["hypothesis_route"].read_only)
+        git = self.call(
+            "hypothesis_create", mission_id=mission["id"],
+            title="Git HEAD metadata is exposed", technique="ssrf",
+            target="https://example.com/.git/config")[0]
+        payload, is_error = self.call("hypothesis_route",
+                                      hypothesis_id=git["id"])
+        self.assertFalse(is_error, payload)
+        route = payload["route"]
+        self.assertEqual(route["tool"], "git_dump")
+        self.assertEqual(route["arguments"]["target"], "https://example.com/")
+        self.assertTrue(route["target_adjusted"])
+        self.assertTrue(route["ready"])
+        self.assertFalse(route["read_only"])
+        self.assertEqual(payload["matched_on"], "title")
+        self.assertTrue(payload["scope"]["in_scope"])
+        self.assertNotIn("oast_create",
+                         [route["tool"]] +
+                         [item["tool"] for item in payload["alternatives"]])
+
+        sql = self.call(
+            "hypothesis_create", mission_id=mission["id"],
+            title="SQL injection in the id parameter",
+            target="https://example.com/item?id=1")[0]
+        payload, _ = self.call("hypothesis_route", hypothesis_id=sql["id"])
+        self.assertEqual(payload["route"]["tool"],
+                         "injection_differential_probe")
+        self.assertEqual(payload["route"]["arguments"]["parameter"], "id")
+        self.assertTrue(payload["route"]["ready"])
+
+        jwt = self.call(
+            "hypothesis_create", mission_id=mission["id"],
+            title="JWT token confusion",
+            target="https://example.com/api")[0]
+        payload, _ = self.call("hypothesis_route", hypothesis_id=jwt["id"])
+        self.assertEqual(payload["route"]["tool"], "jwt_forge")
+        self.assertIn("key", payload["route"]["missing_arguments"])
+        self.assertFalse(payload["route"]["ready"])
+
+        redirect = self.call(
+            "hypothesis_create", mission_id=mission["id"],
+            title="Dashboard redirects to the landing login page",
+            target="https://example.com/index.php/Dashboard")[0]
+        payload, _ = self.call("hypothesis_route",
+                               hypothesis_id=redirect["id"])
+        self.assertEqual(payload["route"]["tool"], "http_request")
+        self.assertEqual(payload["route"]["arguments"]["method"], "GET")
+        self.assertFalse(payload["route"]["arguments"]["follow_redirects"])
+
+        # Routing is read-only and never runs the suggested tool.
+        rows = self.plane.request("GET", "/api/v1/tool-calls")["items"]
+        self.assertNotIn("git_dump", [row["tool"] for row in rows])
+
     def test_workspace_brief_flags_a_stalled_active_mission(self):
         from netcast3r.mcp import tools as tools_module
 

@@ -1,0 +1,842 @@
+{
+  "source": "https://github.com/EdOverflow/can-i-take-over-xyz",
+  "retrieved": "2026-11-13",
+  "license": "CC0-1.0 (upstream project)",
+  "note": "Service fingerprints for dangling-CNAME detection. A match is a lead: the name is only vulnerable when the provider still answers for the unclaimed name. No entry here authorizes claiming a name.",
+  "count": 76,
+  "services": [
+    {
+      "service": "Acquia",
+      "cname": [],
+      "fingerprint": "Web Site Not Found",
+      "http_status": null,
+      "nxdomain": false,
+      "vulnerable": false,
+      "status": "Not vulnerable",
+      "documentation": ""
+    },
+    {
+      "service": "Agile CRM",
+      "cname": [
+        "agilecrm.com"
+      ],
+      "fingerprint": "Sorry, this page is no longer available.",
+      "http_status": null,
+      "nxdomain": false,
+      "vulnerable": true,
+      "status": "Vulnerable",
+      "documentation": ""
+    },
+    {
+      "service": "Airee.ru",
+      "cname": [
+        "airee.ru"
+      ],
+      "fingerprint": "Ошибка 402. Сервис Айри.рф не оплачен",
+      "http_status": null,
+      "nxdomain": false,
+      "vulnerable": true,
+      "status": "Vulnerable",
+      "documentation": ""
+    },
+    {
+      "service": "Akamai",
+      "cname": [],
+      "fingerprint": "",
+      "http_status": null,
+      "nxdomain": false,
+      "vulnerable": false,
+      "status": "Not vulnerable",
+      "documentation": ""
+    },
+    {
+      "service": "Anima",
+      "cname": [
+        "animaapp.io"
+      ],
+      "fingerprint": "The page you were looking for does not exist.",
+      "http_status": null,
+      "nxdomain": false,
+      "vulnerable": true,
+      "status": "Vulnerable",
+      "documentation": "[Anima Documentation](https://docs.animaapp.com/v1/launchpad/08-custom-domain.html)"
+    },
+    {
+      "service": "AWS/Elastic Beanstalk",
+      "cname": [
+        "elasticbeanstalk.com"
+      ],
+      "fingerprint": "NXDOMAIN",
+      "http_status": null,
+      "nxdomain": true,
+      "vulnerable": true,
+      "status": "Vulnerable",
+      "documentation": ""
+    },
+    {
+      "service": "AWS/Load Balancer (ELB)",
+      "cname": [
+        "elb.amazonaws.com"
+      ],
+      "fingerprint": "NXDOMAIN",
+      "http_status": null,
+      "nxdomain": true,
+      "vulnerable": false,
+      "status": "Not vulnerable",
+      "documentation": ""
+    },
+    {
+      "service": "AWS/S3",
+      "cname": [
+        "s3.amazonaws.com"
+      ],
+      "fingerprint": "The specified bucket does not exist",
+      "http_status": null,
+      "nxdomain": false,
+      "vulnerable": true,
+      "status": "Vulnerable",
+      "documentation": ""
+    },
+    {
+      "service": "Bitbucket",
+      "cname": [
+        "bitbucket.io"
+      ],
+      "fingerprint": "Repository not found",
+      "http_status": null,
+      "nxdomain": false,
+      "vulnerable": true,
+      "status": "Vulnerable",
+      "documentation": ""
+    },
+    {
+      "service": "Campaign Monitor",
+      "cname": [],
+      "fingerprint": "Trying to access your account?",
+      "http_status": null,
+      "nxdomain": false,
+      "vulnerable": true,
+      "status": "Vulnerable",
+      "documentation": "[Support Page](https://help.campaignmonitor.com/custom-domain-names)"
+    },
+    {
+      "service": "Canny",
+      "cname": [],
+      "fingerprint": "Company Not Found` `There is no such company. Did you enter the right URL?",
+      "http_status": null,
+      "nxdomain": false,
+      "vulnerable": true,
+      "status": "Vulnerable",
+      "documentation": ""
+    },
+    {
+      "service": "Cargo Collective",
+      "cname": [],
+      "fingerprint": "404 Not Found",
+      "http_status": null,
+      "nxdomain": false,
+      "vulnerable": true,
+      "status": "Vulnerable",
+      "documentation": "[Cargo Support Page](https://support.2.cargocollective.com/Using-a-Third-Party-Domain)"
+    },
+    {
+      "service": "Cloudfront",
+      "cname": [],
+      "fingerprint": "ViewerCertificateException",
+      "http_status": null,
+      "nxdomain": false,
+      "vulnerable": false,
+      "status": "Not vulnerable",
+      "documentation": "[Domain Security on Amazon CloudFront](https://aws.amazon.com/blogs/networking-and-content-delivery/continually-enhancing-domain-security-on-amazon-cloudfront/)"
+    },
+    {
+      "service": "Desk",
+      "cname": [],
+      "fingerprint": "Please try again or try Desk.com free for 14 days.",
+      "http_status": null,
+      "nxdomain": false,
+      "vulnerable": false,
+      "status": "Not vulnerable",
+      "documentation": ""
+    },
+    {
+      "service": "Digital Ocean",
+      "cname": [],
+      "fingerprint": "Domain uses DO name servers with no records in DO.",
+      "http_status": null,
+      "nxdomain": false,
+      "vulnerable": true,
+      "status": "Vulnerable",
+      "documentation": ""
+    },
+    {
+      "service": "Discourse",
+      "cname": [
+        "trydiscourse.com"
+      ],
+      "fingerprint": "NXDOMAIN",
+      "http_status": null,
+      "nxdomain": true,
+      "vulnerable": true,
+      "status": "Vulnerable",
+      "documentation": "[Hackerone](https://hackerone.com/reports/264494)"
+    },
+    {
+      "service": "Dreamhost",
+      "cname": [],
+      "fingerprint": "Site Not Found Well, this is awkward. The site you're looking for is not here.",
+      "http_status": null,
+      "nxdomain": false,
+      "vulnerable": false,
+      "status": "Not vulnerable",
+      "documentation": ""
+    },
+    {
+      "service": "Fastly",
+      "cname": [],
+      "fingerprint": "Fastly error: unknown domain:",
+      "http_status": null,
+      "nxdomain": false,
+      "vulnerable": false,
+      "status": "Not vulnerable",
+      "documentation": ""
+    },
+    {
+      "service": "Feedpress",
+      "cname": [],
+      "fingerprint": "The feed has not been found.",
+      "http_status": null,
+      "nxdomain": false,
+      "vulnerable": false,
+      "status": "Not vulnerable",
+      "documentation": ""
+    },
+    {
+      "service": "Firebase",
+      "cname": [],
+      "fingerprint": "",
+      "http_status": null,
+      "nxdomain": false,
+      "vulnerable": false,
+      "status": "Not vulnerable",
+      "documentation": ""
+    },
+    {
+      "service": "Fly.io",
+      "cname": [],
+      "fingerprint": "404 Not Found",
+      "http_status": null,
+      "nxdomain": false,
+      "vulnerable": false,
+      "status": "Not vulnerable",
+      "documentation": ""
+    },
+    {
+      "service": "Freshdesk",
+      "cname": [],
+      "fingerprint": "We couldn't find servicedesk.victim.tld Maybe this is still fresh! You can claim it now at http://www.freshservice.com/signup",
+      "http_status": null,
+      "nxdomain": false,
+      "vulnerable": false,
+      "status": "Not vulnerable",
+      "documentation": "[Freshdesk Support Page](https://support.freshdesk.com/support/solutions/articles/37590-using-a-vanity-support-url-and-pointing-the-cname)"
+    },
+    {
+      "service": "Frontify",
+      "cname": [],
+      "fingerprint": "404 - Page Not Found` `Oops… looks like you got lost",
+      "http_status": null,
+      "nxdomain": false,
+      "vulnerable": false,
+      "status": "Edge case",
+      "documentation": ""
+    },
+    {
+      "service": "Gemfury",
+      "cname": [
+        "furyns.com"
+      ],
+      "fingerprint": "404: This page could not be found.",
+      "http_status": null,
+      "nxdomain": false,
+      "vulnerable": true,
+      "status": "Vulnerable",
+      "documentation": "[Article](https://khaledibnalwalid.wordpress.com/2020/06/25/gemfury-subdomain-takeover/)"
+    },
+    {
+      "service": "Getresponse",
+      "cname": [],
+      "fingerprint": "With GetResponse Landing Pages, lead generation has never been easier",
+      "http_status": null,
+      "nxdomain": false,
+      "vulnerable": true,
+      "status": "Vulnerable",
+      "documentation": ""
+    },
+    {
+      "service": "Ghost",
+      "cname": [
+        "ghost.io"
+      ],
+      "fingerprint": "Site unavailable\\.&#124;Failed to resolve DNS path for this host",
+      "http_status": null,
+      "nxdomain": false,
+      "vulnerable": true,
+      "status": "Vulnerable",
+      "documentation": ""
+    },
+    {
+      "service": "Github",
+      "cname": [],
+      "fingerprint": "There isn't a GitHub Pages site here.",
+      "http_status": null,
+      "nxdomain": false,
+      "vulnerable": false,
+      "status": "Edge case",
+      "documentation": ""
+    },
+    {
+      "service": "Gitlab",
+      "cname": [],
+      "fingerprint": "",
+      "http_status": null,
+      "nxdomain": false,
+      "vulnerable": false,
+      "status": "Not vulnerable",
+      "documentation": ""
+    },
+    {
+      "service": "Google Cloud Storage",
+      "cname": [],
+      "fingerprint": "<?xml version='1.0' encoding='UTF-8'?><Error><Code>NoSuchBucket</Code><Message>The specified bucket does not exist.</Message></Error>",
+      "http_status": null,
+      "nxdomain": false,
+      "vulnerable": false,
+      "status": "Not vulnerable",
+      "documentation": ""
+    },
+    {
+      "service": "Google Sites",
+      "cname": [],
+      "fingerprint": "The requested URL was not found on this server. That’s all we know.",
+      "http_status": null,
+      "nxdomain": false,
+      "vulnerable": false,
+      "status": "Not vulnerable",
+      "documentation": "[Google Support](https://support.google.com/webmasters/answer/9008080?visit_id=637981741431097680-3818919062&rd=2)"
+    },
+    {
+      "service": "HatenaBlog",
+      "cname": [
+        "hatenablog.com"
+      ],
+      "fingerprint": "404 Blog is not found",
+      "http_status": null,
+      "nxdomain": false,
+      "vulnerable": true,
+      "status": "Vulnerable",
+      "documentation": ""
+    },
+    {
+      "service": "Help Juice",
+      "cname": [
+        "helpjuice.com"
+      ],
+      "fingerprint": "We could not find what you're looking for.",
+      "http_status": null,
+      "nxdomain": false,
+      "vulnerable": true,
+      "status": "Vulnerable",
+      "documentation": "[Help Juice Support Page](https://help.helpjuice.com/en_US/using-your-custom-domain/how-to-set-up-a-custom-domain)"
+    },
+    {
+      "service": "Help Scout",
+      "cname": [
+        "helpscoutdocs.com"
+      ],
+      "fingerprint": "No settings were found for this company:",
+      "http_status": null,
+      "nxdomain": false,
+      "vulnerable": true,
+      "status": "Vulnerable",
+      "documentation": "[HelpScout Docs](https://docs.helpscout.net/article/42-setup-custom-domain)"
+    },
+    {
+      "service": "Helprace",
+      "cname": [
+        "helprace.com"
+      ],
+      "fingerprint": "HTTP_STATUS=301",
+      "http_status": 301,
+      "nxdomain": false,
+      "vulnerable": true,
+      "status": "Vulnerable",
+      "documentation": ""
+    },
+    {
+      "service": "Heroku",
+      "cname": [],
+      "fingerprint": "No such app",
+      "http_status": null,
+      "nxdomain": false,
+      "vulnerable": false,
+      "status": "Edge case",
+      "documentation": ""
+    },
+    {
+      "service": "HubSpot",
+      "cname": [],
+      "fingerprint": "This page isn't available",
+      "http_status": null,
+      "nxdomain": false,
+      "vulnerable": false,
+      "status": "Not vulnerable",
+      "documentation": ""
+    },
+    {
+      "service": "Instapage",
+      "cname": [],
+      "fingerprint": "",
+      "http_status": null,
+      "nxdomain": false,
+      "vulnerable": false,
+      "status": "Not vulnerable",
+      "documentation": ""
+    },
+    {
+      "service": "Intercom",
+      "cname": [],
+      "fingerprint": "Uh oh. That page doesn't exist.",
+      "http_status": null,
+      "nxdomain": false,
+      "vulnerable": false,
+      "status": "Edge case",
+      "documentation": "[Help center](https://www.intercom.com/help/)"
+    },
+    {
+      "service": "JetBrains",
+      "cname": [
+        "youtrack.cloud"
+      ],
+      "fingerprint": "is not a registered InCloud YouTrack",
+      "http_status": null,
+      "nxdomain": false,
+      "vulnerable": true,
+      "status": "Vulnerable",
+      "documentation": "[YouTrack InCloud Help Page](https://www.jetbrains.com/help/youtrack/incloud/Domain-Settings.html)"
+    },
+    {
+      "service": "Key CDN",
+      "cname": [],
+      "fingerprint": "",
+      "http_status": null,
+      "nxdomain": false,
+      "vulnerable": false,
+      "status": "Not vulnerable",
+      "documentation": ""
+    },
+    {
+      "service": "Kinsta",
+      "cname": [],
+      "fingerprint": "No Site For Domain",
+      "http_status": null,
+      "nxdomain": false,
+      "vulnerable": false,
+      "status": "Not vulnerable",
+      "documentation": "[kinsta-add-domain](https://kinsta.com/knowledgebase/add-domain/)"
+    },
+    {
+      "service": "Landingi",
+      "cname": [],
+      "fingerprint": "It looks like you’re lost...",
+      "http_status": null,
+      "nxdomain": false,
+      "vulnerable": false,
+      "status": "Edge case",
+      "documentation": ""
+    },
+    {
+      "service": "LaunchRock",
+      "cname": [
+        "launchrock.com"
+      ],
+      "fingerprint": "HTTP_STATUS=500",
+      "http_status": 500,
+      "nxdomain": false,
+      "vulnerable": true,
+      "status": "Vulnerable",
+      "documentation": ""
+    },
+    {
+      "service": "Mailchimp",
+      "cname": [],
+      "fingerprint": "We can't find that page It looks like you're trying to reach a page that was built by Mailchimp but is no longer active.",
+      "http_status": null,
+      "nxdomain": false,
+      "vulnerable": false,
+      "status": "Not vulnerable",
+      "documentation": ""
+    },
+    {
+      "service": "Mashery",
+      "cname": [],
+      "fingerprint": "Unrecognized domain",
+      "http_status": null,
+      "nxdomain": false,
+      "vulnerable": false,
+      "status": "Edge case",
+      "documentation": "[HackerOne](https://hackerone.com/reports/275714)"
+    },
+    {
+      "service": "Microsoft Azure",
+      "cname": [
+        "cloudapp.net",
+        "cloudapp.azure.com",
+        "azurewebsites.net",
+        "blob.core.windows.net",
+        "cloudapp.azure.com",
+        "azure-api.net",
+        "azurehdinsight.net",
+        "azureedge.net",
+        "azurecontainer.io",
+        "database.windows.net",
+        "azuredatalakestore.net",
+        "search.windows.net",
+        "azurecr.io",
+        "redis.cache.windows.net",
+        "azurehdinsight.net",
+        "servicebus.windows.net",
+        "visualstudio.com"
+      ],
+      "fingerprint": "NXDOMAIN",
+      "http_status": null,
+      "nxdomain": true,
+      "vulnerable": true,
+      "status": "Vulnerable",
+      "documentation": ""
+    },
+    {
+      "service": "Netlify",
+      "cname": [],
+      "fingerprint": "Not Found - Request ID:",
+      "http_status": null,
+      "nxdomain": false,
+      "vulnerable": false,
+      "status": "Edge case",
+      "documentation": ""
+    },
+    {
+      "service": "Ngrok",
+      "cname": [
+        "ngrok.io"
+      ],
+      "fingerprint": "Tunnel .*.ngrok.io not found",
+      "http_status": null,
+      "nxdomain": false,
+      "vulnerable": true,
+      "status": "Vulnerable",
+      "documentation": "[Ngrok Documentation](https://ngrok.com/docs#http-custom-domains)"
+    },
+    {
+      "service": "Pantheon",
+      "cname": [],
+      "fingerprint": "404 error unknown site!",
+      "http_status": null,
+      "nxdomain": false,
+      "vulnerable": true,
+      "status": "Vulnerable",
+      "documentation": "[Documentation](https://pantheon.io/docs/guides/domains/custom-domains) [Pantheon-Sub-takeover](https://medium.com/@hussain_0x3c/hostile-subdomain-takeover-using-pantheon-ebf4ab813111)"
+    },
+    {
+      "service": "Pingdom",
+      "cname": [],
+      "fingerprint": "Sorry, couldn't find the status page",
+      "http_status": null,
+      "nxdomain": false,
+      "vulnerable": true,
+      "status": "Vulnerable",
+      "documentation": "[Support Page](https://help.pingdom.com/hc/en-us/articles/205386171-Public-Status-Page)"
+    },
+    {
+      "service": "Readme.io",
+      "cname": [
+        "readme.io"
+      ],
+      "fingerprint": "The creators of this project are still working on making everything perfect!",
+      "http_status": null,
+      "nxdomain": false,
+      "vulnerable": true,
+      "status": "Vulnerable",
+      "documentation": ""
+    },
+    {
+      "service": "Readthedocs",
+      "cname": [],
+      "fingerprint": "The link you have followed or the URL that you entered does not exist.",
+      "http_status": null,
+      "nxdomain": false,
+      "vulnerable": true,
+      "status": "Vulnerable",
+      "documentation": ""
+    },
+    {
+      "service": "Sendgrid",
+      "cname": [],
+      "fingerprint": "",
+      "http_status": null,
+      "nxdomain": false,
+      "vulnerable": false,
+      "status": "Not vulnerable",
+      "documentation": ""
+    },
+    {
+      "service": "Shopify",
+      "cname": [],
+      "fingerprint": "Sorry, this shop is currently unavailable.",
+      "http_status": null,
+      "nxdomain": false,
+      "vulnerable": false,
+      "status": "Edge case",
+      "documentation": "[Medium Article](https://medium.com/@thebuckhacker/how-to-do-55-000-subdomain-takeover-in-a-blink-of-an-eye-a94954c3fc75)"
+    },
+    {
+      "service": "Short.io",
+      "cname": [],
+      "fingerprint": "Link does not exist",
+      "http_status": null,
+      "nxdomain": false,
+      "vulnerable": true,
+      "status": "Vulnerable",
+      "documentation": ""
+    },
+    {
+      "service": "SmartJobBoard",
+      "cname": [
+        "52.16.160.97"
+      ],
+      "fingerprint": "This job board website is either expired or its domain name is invalid.",
+      "http_status": null,
+      "nxdomain": false,
+      "vulnerable": true,
+      "status": "Vulnerable",
+      "documentation": "[Support Page](https://help.smartjobboard.com/en/articles/1269655-connecting-a-custom-domain-name)"
+    },
+    {
+      "service": "Smartling",
+      "cname": [],
+      "fingerprint": "Domain is not configured",
+      "http_status": null,
+      "nxdomain": false,
+      "vulnerable": false,
+      "status": "Edge case",
+      "documentation": ""
+    },
+    {
+      "service": "Smugsmug",
+      "cname": [],
+      "fingerprint": "",
+      "http_status": null,
+      "nxdomain": false,
+      "vulnerable": true,
+      "status": "Vulnerable",
+      "documentation": ""
+    },
+    {
+      "service": "Squarespace",
+      "cname": [],
+      "fingerprint": "",
+      "http_status": null,
+      "nxdomain": false,
+      "vulnerable": false,
+      "status": "Not vulnerable",
+      "documentation": ""
+    },
+    {
+      "service": "Statuspage",
+      "cname": [],
+      "fingerprint": "",
+      "http_status": null,
+      "nxdomain": false,
+      "vulnerable": false,
+      "status": "Not vulnerable",
+      "documentation": "[Statuspage documentation](https://help.statuspage.io/knowledge_base/topics/domain-ownership)"
+    },
+    {
+      "service": "Strikingly",
+      "cname": [
+        "s.strikinglydns.com"
+      ],
+      "fingerprint": "PAGE NOT FOUND.",
+      "http_status": null,
+      "nxdomain": false,
+      "vulnerable": true,
+      "status": "Vulnerable",
+      "documentation": "[Strikingly-Sub-takeover](https://medium.com/@sherif0x00/takeover-subdomains-pointing-to-strikingly-5e67df80cdfd)"
+    },
+    {
+      "service": "Surge.sh",
+      "cname": [
+        "na-west1.surge.sh"
+      ],
+      "fingerprint": "project not found",
+      "http_status": null,
+      "nxdomain": false,
+      "vulnerable": true,
+      "status": "Vulnerable",
+      "documentation": "[Surge Documentation](https://surge.sh/help/adding-a-custom-domain)"
+    },
+    {
+      "service": "SurveySparrow",
+      "cname": [
+        "surveysparrow.com"
+      ],
+      "fingerprint": "Account not found.",
+      "http_status": null,
+      "nxdomain": false,
+      "vulnerable": true,
+      "status": "Vulnerable",
+      "documentation": "[Custom domain](https://help.surveysparrow.com/custom-domain)"
+    },
+    {
+      "service": "Tilda",
+      "cname": [],
+      "fingerprint": "Please renew your subscription",
+      "http_status": null,
+      "nxdomain": false,
+      "vulnerable": false,
+      "status": "Edge case",
+      "documentation": ""
+    },
+    {
+      "service": "Tumblr",
+      "cname": [],
+      "fingerprint": "Whatever you were looking for doesn't currently exist at this address",
+      "http_status": null,
+      "nxdomain": false,
+      "vulnerable": false,
+      "status": "Edge case",
+      "documentation": "[Tumblr Custom Domains](https://www.tumblr.com/docs/en/custom_domains)"
+    },
+    {
+      "service": "Uberflip",
+      "cname": [
+        "read.uberflip.com"
+      ],
+      "fingerprint": "The URL you've accessed does not provide a hub.",
+      "http_status": null,
+      "nxdomain": false,
+      "vulnerable": true,
+      "status": "Vulnerable",
+      "documentation": "[Uberflip Documentation](https://help.uberflip.com/hc/en-us/articles/360018786372-Custom-Domain-Set-up-Your-Hub-on-a-Subdomain)"
+    },
+    {
+      "service": "Unbounce",
+      "cname": [],
+      "fingerprint": "The requested URL was not found on this server.",
+      "http_status": null,
+      "nxdomain": false,
+      "vulnerable": false,
+      "status": "Not vulnerable",
+      "documentation": ""
+    },
+    {
+      "service": "Uptimerobot",
+      "cname": [
+        "stats.uptimerobot.com"
+      ],
+      "fingerprint": "page not found",
+      "http_status": null,
+      "nxdomain": false,
+      "vulnerable": true,
+      "status": "Vulnerable",
+      "documentation": "[Uptimerobot-Sub-takeover](https://exploit.linuxsec.org/uptimerobot-com-custom-domain-subdomain-takeover/)"
+    },
+    {
+      "service": "UserVoice",
+      "cname": [],
+      "fingerprint": "This UserVoice subdomain is currently available!",
+      "http_status": null,
+      "nxdomain": false,
+      "vulnerable": false,
+      "status": "Not vulnerable",
+      "documentation": ""
+    },
+    {
+      "service": "Vercel",
+      "cname": [
+        "https://nonexistent-example.vercel.com/"
+      ],
+      "fingerprint": "DEPLOYMENT_NOT_FOUND.",
+      "http_status": null,
+      "nxdomain": false,
+      "vulnerable": false,
+      "status": "Edge case",
+      "documentation": "[Adding & Configuring a Custom Domain](https://vercel.com/docs/concepts/projects/domains/add-a-domain)"
+    },
+    {
+      "service": "Webflow",
+      "cname": [],
+      "fingerprint": "The page you are looking for doesn't exist or has been moved.",
+      "http_status": null,
+      "nxdomain": false,
+      "vulnerable": false,
+      "status": "Edge case",
+      "documentation": "[forum webflow](https://forum.webflow.com/t/hosting-a-subdomain-on-webflow/59201)"
+    },
+    {
+      "service": "Wix",
+      "cname": [],
+      "fingerprint": "Looks Like This Domain Isn't Connected To A Website Yet!",
+      "http_status": null,
+      "nxdomain": false,
+      "vulnerable": false,
+      "status": "Edge case",
+      "documentation": ""
+    },
+    {
+      "service": "Wordpress",
+      "cname": [
+        "wordpress.com"
+      ],
+      "fingerprint": "Do you want to register .*.wordpress.com?",
+      "http_status": null,
+      "nxdomain": false,
+      "vulnerable": true,
+      "status": "Vulnerable",
+      "documentation": ""
+    },
+    {
+      "service": "Worksites",
+      "cname": [
+        "worksites.net",
+        "69.164.223.206"
+      ],
+      "fingerprint": "Hello! Sorry, but the website you&rsquo;re looking for doesn&rsquo;t exist.",
+      "http_status": null,
+      "nxdomain": false,
+      "vulnerable": true,
+      "status": "Vulnerable",
+      "documentation": ""
+    },
+    {
+      "service": "WP Engine",
+      "cname": [],
+      "fingerprint": "",
+      "http_status": null,
+      "nxdomain": false,
+      "vulnerable": false,
+      "status": "Not vulnerable",
+      "documentation": ""
+    },
+    {
+      "service": "Zendesk",
+      "cname": [],
+      "fingerprint": "Help Center Closed",
+      "http_status": null,
+      "nxdomain": false,
+      "vulnerable": false,
+      "status": "Not vulnerable",
+      "documentation": "[Zendesk Support](https://support.zendesk.com/hc/en-us/articles/203664356-Changing-the-address-of-your-Help-Center-subdomain-host-mapping-)"
+    }
+  ]
+}

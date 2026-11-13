@@ -29,6 +29,19 @@ Output is parsed (`nmap` services, `nuclei` findings, `sqlmap` vulnerability,
 shared knowledge, and **candidates** with raw evidence. `toolbox_processes` and
 `toolbox_kill` manage long runs.
 
+## Native DNS and takeover checks
+
+`dnsq.py` speaks DNS over UDP and TCP with no third-party dependency: IDNA name
+encoding, compression-pointer decoding with a loop guard, A/AAAA/CNAME/NS/MX/
+TXT/SOA/SRV/DS/CAA parsing, rcode-as-data, CNAME-chain resolution, and AXFR.
+
+`takeover_scan` matches a resolved CNAME chain against a pinned copy of the
+can-i-take-over-xyz corpus (76 services, `data/takeover_fingerprints.json`) and
+confirms with the provider's own unclaimed-name response. `dns_posture` reads
+SPF, DMARC, DKIM, CAA, MX, NS, and SOA and can attempt an AXFR on request. Both
+are read-only, scope-gated, and audited; a match is a lead, and claiming a name
+stays a human action.
+
 ## API-spec ingestion
 
 `api_spec_ingest` reads an OpenAPI/Swagger or Postman contract and records every

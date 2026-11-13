@@ -28,6 +28,7 @@ def _run_db(index, run_id: str) -> Path:
 def _rows(path: Path, table: str, column: str) -> set[str]:
     try:
         conn = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
+        conn.execute("PRAGMA busy_timeout=5000")
         try:
             return {str(row[0]) for row in conn.execute(
                 f"SELECT {column} FROM {table} WHERE {column} IS NOT NULL AND {column} != ''")}
@@ -41,6 +42,7 @@ def _findings(path: Path) -> dict[str, dict]:
     try:
         conn = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
         conn.row_factory = sqlite3.Row
+        conn.execute("PRAGMA busy_timeout=5000")
         try:
             return {
                 str(row["title"]): {"severity": row["severity"],

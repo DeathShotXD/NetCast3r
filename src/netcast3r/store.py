@@ -165,6 +165,12 @@ class Store:
         self.path = Path(path)
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self.conn = sqlite3.connect(str(self.path))
+        # WAL keeps a long crawl from blocking a reader, and the busy timeout
+        # turns a transient write lock into a short wait instead of an error.
+        self.conn.execute("PRAGMA journal_mode=WAL")
+        self.conn.execute("PRAGMA synchronous=NORMAL")
+        self.conn.execute("PRAGMA busy_timeout=5000")
+        self.conn.execute("PRAGMA foreign_keys=ON")
         self.conn.executescript(SCHEMA)
         self._ensure_column("findings", FINDING_COLUMNS)
         self._ensure_column("secrets", SECRET_COLUMNS)
