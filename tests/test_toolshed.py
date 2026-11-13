@@ -1,5 +1,6 @@
 """Helix toolsmith: write, run, reuse, and study tools."""
 
+import shutil
 import tempfile
 import unittest
 from pathlib import Path
@@ -48,10 +49,17 @@ class ToolsmithTests(unittest.TestCase):
                                   language="ruby")
 
     def test_study_an_installed_tool_and_delete_a_script(self):
-        note = toolshed.study_tool(self.index, name="git-dumper")
+        # Study a binary the host actually has, so the test does not depend on
+        # one tool being installed (git-dumper is present on some hosts only).
+        name = next((candidate for candidate in
+                     ("git-dumper", "nmap", "python3", "sh")
+                     if shutil.which(candidate)), "")
+        if not name:
+            self.skipTest("no studyable binary on PATH")
+        note = toolshed.study_tool(self.index, name=name)
         self.assertTrue(note["installed"])
-        self.assertTrue(note["path"].endswith("git-dumper"))
-        self.assertTrue(self.index.list_tool_notes(query="git"))
+        self.assertTrue(note["path"].endswith(name))
+        self.assertTrue(self.index.list_tool_notes(query=name))
 
         toolshed.write_script(self.index, self.tmp, "temp-tool", "print('x')")
         self.assertTrue(toolshed.delete_script(self.index, self.tmp, "temp-tool"))
