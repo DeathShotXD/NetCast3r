@@ -178,24 +178,24 @@ body {
   isolation: isolate;
 }
 
-/* The monogram sits in a bare pocket of the rail. A soft acid fog rises
-   behind the brushstroke so the N reads as neon emerging from a deep hollow
-   rather than a badge pinned to a frame. */
+/* The monogram is a cut in the rail, not a badge on it. A soft acid fog
+   bleeds out of the opening so the plate reads as part of the same dark
+   surface. */
 .obs-brand-mark::before {
   content: '';
   position: absolute;
-  inset: -4px;
+  inset: -5px;
   z-index: -1;
   border-radius: 50%;
   background: radial-gradient(
-    circle at 50% 54%,
-    rgba(200, 248, 26, 0.18) 0%,
-    rgba(200, 248, 26, 0.07) 38%,
-    rgba(200, 248, 26, 0.02) 62%,
-    transparent 74%
+    circle at 50% 50%,
+    rgba(200, 248, 26, 0.16) 0%,
+    rgba(200, 248, 26, 0.05) 42%,
+    rgba(159, 35, 221, 0.04) 60%,
+    transparent 72%
   );
-  filter: blur(3px);
-  opacity: 0.85;
+  filter: blur(5px);
+  opacity: 0.9;
   transition: opacity 180ms var(--ease);
   pointer-events: none;
 }
@@ -203,7 +203,6 @@ body {
 .obs-brand-mark .nc-brandmark {
   width: 30px;
   height: 30px;
-  filter: drop-shadow(0 0 10px rgba(200, 248, 26, 0.32));
 }
 
 .obs-brand-name {
